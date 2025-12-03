@@ -226,8 +226,32 @@ namespace ChillPatcher.UIFramework.Data
             }
         }
 
-        #region 收藏管理
+        /// <summary>
+        /// 清理指定歌单中不存在的歌曲记录（孤儿记录）
+        /// </summary>
+        /// <param name="tagId">歌单ID</param>
+        /// <param name="validSongUuids">有效的歌曲UUID集合</param>
+        /// <returns>清理的记录数</returns>
+        public int CleanupOrphanSongRecords(string tagId, HashSet<string> validSongUuids)
+        {
+            if (string.IsNullOrEmpty(tagId) || validSongUuids == null)
+                return 0;
+                
+            return _database.CleanupOrphanSongRecords(tagId, validSongUuids);
+        }
 
+        /// <summary>
+        /// 获取歌单的数据库统计信息
+        /// </summary>
+        public (int orderCount, int favoriteCount, int excludedCount) GetTagStats(string tagId)
+        {
+            if (string.IsNullOrEmpty(tagId))
+                return (0, 0, 0);
+                
+            return _database.GetTagStats(tagId);
+        }
+
+        #region 收藏管理
         /// <summary>
         /// 添加收藏
         /// </summary>

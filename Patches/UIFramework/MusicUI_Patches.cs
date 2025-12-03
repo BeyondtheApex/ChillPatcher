@@ -7,6 +7,7 @@ using HarmonyLib;
 using NestopiSystem.DIContainers;
 using ObservableCollections;
 using R3;
+using R3.Triggers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -30,6 +31,11 @@ namespace ChillPatcher.Patches.UIFramework
         /// 是否正在显示队列模式（禁用虚拟滚动，使用原版列表但自定义数据）
         /// </summary>
         public static bool IsShowingQueue { get; set; } = false;
+        
+        /// <summary>
+        /// 是否正在创建队列视图中的按钮（用于阻止原始删除事件绑定）
+        /// </summary>
+        internal static bool IsCreatingQueueButtons { get; set; } = false;
         
         /// <summary>
         /// 队列模式下要显示的数据（直接使用 PlayQueueManager 作为数据源）
@@ -414,40 +420,50 @@ namespace ChillPatcher.Patches.UIFramework
                 }
                 
                 // 创建队列项目
-                foreach (var audioInfo in QueueDataSource)
+                // 设置标志，让 MusicPlayListButtons.Setup 中的删除按钮逻辑被跳过
+                IsCreatingQueueButtons = true;
+                try
                 {
-                    var buttonObj = UnityEngine.Object.Instantiate(playListButtonsPrefab, playListButtonsParent.transform, false);
-                    var localPos = buttonObj.transform.localPosition;
-                    localPos.z = 0f;
-                    buttonObj.transform.localPosition = localPos;
-                    buttonObj.transform.localScale = Vector3.one;
-                    
-                    var button = buttonObj.GetComponent<MusicPlayListButtons>();
-                    button.Setup(audioInfo, facilityMusic);
-                    
-                    // 强制显示删除按钮（用于从队列移除）
-                    var removeInteractableUI = Traverse.Create(button)
-                        .Field("removeInteractableUI")
-                        .GetValue<InteractableUI>();
-                    if (removeInteractableUI != null)
+                    foreach (var audioInfo in QueueDataSource)
                     {
-                        removeInteractableUI.gameObject.SetActive(true);
+                        var buttonObj = UnityEngine.Object.Instantiate(playListButtonsPrefab, playListButtonsParent.transform, false);
+                        var localPos = buttonObj.transform.localPosition;
+                        localPos.z = 0f;
+                        buttonObj.transform.localPosition = localPos;
+                        buttonObj.transform.localScale = Vector3.one;
+                        
+                        var button = buttonObj.GetComponent<MusicPlayListButtons>();
+                        button.Setup(audioInfo, facilityMusic);
+                        
+                        // 强制显示删除按钮（用于从队列移除）
+                        var removeInteractableUI = Traverse.Create(button)
+                            .Field("removeInteractableUI")
+                            .GetValue<InteractableUI>();
+                        if (removeInteractableUI != null)
+                        {
+                            removeInteractableUI.gameObject.SetActive(true);
+                        }
+                        
+                        // 替换删除按钮的行为：从队列移除而非从音乐库移除
+                        var removeButton = Traverse.Create(button)
+                            .Field("removeButton")
+                            .GetValue<ButtonEventObservable>();
+                        if (removeButton != null)
+                        {
+                            // 添加自定义删除逻辑（仅从队列移除）
+                            // 注意：原始删除逻辑已被 MusicPlayListButtons_QueueRemove_Patch 阻止
+                            var currentAudioInfo = audioInfo; // 捕获闭包
+                            removeButton.OnClick
+                                .Subscribe(_ => OnQueueItemRemoveClicked(button, currentAudioInfo))
+                                .AddTo(_queueListDisposable);
+                        }
+                        
+                        _queueButtonList.Add(button);
                     }
-                    
-                    // 替换删除按钮的行为：从队列移除而非从音乐库移除
-                    var removeButton = Traverse.Create(button)
-                        .Field("removeButton")
-                        .GetValue<ButtonEventObservable>();
-                    if (removeButton != null)
-                    {
-                        // 添加自定义删除逻辑
-                        var currentAudioInfo = audioInfo; // 捕获闭包
-                        removeButton.OnClick
-                            .Subscribe(_ => OnQueueItemRemoveClicked(button, currentAudioInfo))
-                            .AddTo(_queueListDisposable);
-                    }
-                    
-                    _queueButtonList.Add(button);
+                }
+                finally
+                {
+                    IsCreatingQueueButtons = false;
                 }
                 
                 // 订阅拖拽事件 - 使用 R3.Observable.Merge
@@ -924,6 +940,69 @@ namespace ChillPatcher.Patches.UIFramework
             }
             
             RefreshPlaylistDisplay();
+        }
+    }
+    
+    /// <summary>
+    /// Harmony Patch: 在队列视图创建按钮时阻止原始删除逻辑绑定
+    /// 
+    /// 问题：MusicPlayListButtons.Setup() 会为本地歌曲绑定 removeButton.OnClick 事件，
+    /// 该事件会调用 RemoveLocalMusicItem 删除歌曲文件。
+    /// 在队列视图中，删除按钮应该只执行"从队列移除"，而不是删除文件。
+    /// 
+    /// 解决方案：使用 Transpiler 在创建队列按钮时阻止原始订阅逻辑执行。
+    /// </summary>
+    [HarmonyPatch(typeof(MusicPlayListButtons))]
+    [HarmonyPatch("Setup", typeof(GameAudioInfo), typeof(FacilityMusic))]
+    public static class MusicPlayListButtons_QueueRemove_Patch
+    {
+        /// <summary>
+        /// Postfix: 如果正在创建队列按钮，直接销毁 removeButton 组件上的 Button 组件所有监听器
+        /// 并禁用底层 Button，这样原始的删除逻辑不会执行
+        /// </summary>
+        [HarmonyPostfix]
+        static void Postfix(MusicPlayListButtons __instance)
+        {
+            // 只在创建队列按钮时处理
+            if (!MusicUI_VirtualScroll_Patch.IsCreatingQueueButtons)
+                return;
+            
+            try
+            {
+                // 获取 removeButton 字段
+                var removeButton = Traverse.Create(__instance)
+                    .Field("removeButton")
+                    .GetValue<ButtonEventObservable>();
+                
+                if (removeButton == null)
+                    return;
+                
+                // 直接销毁 ButtonEventObservable 组件，这会断开所有 R3 订阅
+                UnityEngine.Object.Destroy(removeButton);
+                
+                // 获取底层 Button 组件
+                var buttonGO = removeButton.gameObject;
+                var underlyingButton = buttonGO.GetComponent<UnityEngine.UI.Button>();
+                if (underlyingButton != null)
+                {
+                    // 移除所有 onClick 监听器
+                    underlyingButton.onClick.RemoveAllListeners();
+                }
+                
+                // 创建新的 ButtonEventObservable 组件
+                var newButtonEventObservable = buttonGO.AddComponent<ButtonEventObservable>();
+                
+                // 更新 MusicPlayListButtons 中的 removeButton 引用
+                Traverse.Create(__instance)
+                    .Field("removeButton")
+                    .SetValue(newButtonEventObservable);
+                
+                Plugin.Log.LogDebug($"[QueueRemovePatch] Replaced removeButton component for queue button: {__instance.AudioInfo?.AudioClipName}");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"[QueueRemovePatch] Error replacing removeButton: {ex}");
+            }
         }
     }
 }

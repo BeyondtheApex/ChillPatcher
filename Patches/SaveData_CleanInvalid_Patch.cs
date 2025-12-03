@@ -55,12 +55,14 @@ namespace ChillPatcher.Patches
                 int cleanedFavorites = CleanInvalidFavorites(validMusicUUIDs, musicItems);
                 int cleanedPlaylistOrder = CleanInvalidPlaylistOrder(validMusicUUIDs);
                 int cleanedExcluded = CleanInvalidExcluded(validMusicUUIDs);
+                int cleanedCustomDb = CleanInvalidCustomDatabase(validMusicUUIDs, musicItems);
 
                 Plugin.Log.LogInfo($"[CleanInvalidMusicData] 清理完成:");
                 Plugin.Log.LogInfo($"  - 清理无效本地音乐: {cleanedLocalMusic} 个");
                 Plugin.Log.LogInfo($"  - 清理无效收藏: {cleanedFavorites} 个");
                 Plugin.Log.LogInfo($"  - 清理无效播放顺序: {cleanedPlaylistOrder} 个");
                 Plugin.Log.LogInfo($"  - 清理无效排除列表: {cleanedExcluded} 个");
+                Plugin.Log.LogInfo($"  - 清理自定义数据库孤儿记录: {cleanedCustomDb} 个");
 
                 // 保存更新后的数据
                 if (cleanedLocalMusic > 0 || cleanedFavorites > 0 || cleanedPlaylistOrder > 0 || cleanedExcluded > 0)
@@ -281,6 +283,67 @@ namespace ChillPatcher.Patches
             }
 
             return count;
+        }
+
+        /// <summary>
+        /// 清理自定义数据库中的孤儿记录
+        /// 检查 CustomPlaylistOrder、CustomFavorites、CustomExcludedSongs 表
+        /// 删除引用不存在歌曲的记录
+        /// </summary>
+        private static int CleanInvalidCustomDatabase(HashSet<string> validMusicUUIDs, IReadOnlyCollection<GameAudioInfo> musicItems)
+        {
+            try
+            {
+                var manager = ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.Instance;
+                if (manager == null)
+                {
+                    Plugin.Log.LogWarning("[CleanInvalidCustomDatabase] CustomPlaylistDataManager 未初始化，跳过清理");
+                    return 0;
+                }
+
+                // 按歌单分组有效的UUID
+                var tagToValidUuids = new Dictionary<string, HashSet<string>>();
+                
+                foreach (var music in musicItems)
+                {
+                    if (string.IsNullOrEmpty(music.UUID))
+                        continue;
+                    
+                    // 检查是否是自定义歌单的歌曲
+                    if (ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.IsCustomTag(music.Tag))
+                    {
+                        var tagId = ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.GetTagIdFromAudio(music);
+                        if (!string.IsNullOrEmpty(tagId))
+                        {
+                            if (!tagToValidUuids.TryGetValue(tagId, out var uuidSet))
+                            {
+                                uuidSet = new HashSet<string>();
+                                tagToValidUuids[tagId] = uuidSet;
+                            }
+                            uuidSet.Add(music.UUID);
+                        }
+                    }
+                }
+
+                int totalCleaned = 0;
+                
+                // 对每个歌单执行清理
+                foreach (var kvp in tagToValidUuids)
+                {
+                    var tagId = kvp.Key;
+                    var validUuids = kvp.Value;
+                    
+                    int cleaned = manager.CleanupOrphanSongRecords(tagId, validUuids);
+                    totalCleaned += cleaned;
+                }
+
+                return totalCleaned;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"[CleanInvalidCustomDatabase] 清理失败: {ex}");
+                return 0;
+            }
         }
     }
 }

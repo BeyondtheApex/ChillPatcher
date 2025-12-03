@@ -817,6 +817,201 @@ namespace ChillPatcher.UIFramework.Data
 
         #endregion
 
+        #region 数据完整性检查
+
+        /// <summary>
+        /// 清理指定歌单中不存在的歌曲记录（孤儿记录）
+        /// </summary>
+        /// <param name="tagId">歌单ID</param>
+        /// <param name="validSongUuids">有效的歌曲UUID集合</param>
+        /// <returns>清理的记录数</returns>
+        public int CleanupOrphanSongRecords(string tagId, HashSet<string> validSongUuids)
+        {
+            lock (_lock)
+            {
+                int totalCleaned = 0;
+                var logger = BepInEx.Logging.Logger.CreateLogSource("PlaylistDB");
+                
+                try
+                {
+                    using (var transaction = _connection.BeginTransaction())
+                    {
+                        try
+                        {
+                            // 清理 CustomPlaylistOrder 中的孤儿记录
+                            var orphanOrderUuids = new List<string>();
+                            using (var cmd = _connection.CreateCommand())
+                            {
+                                cmd.CommandText = @"
+                                    SELECT song_uuid FROM CustomPlaylistOrder
+                                    WHERE tag_id = @tagId";
+                                cmd.Parameters.AddWithValue("@tagId", tagId);
+                                
+                                using (var reader = cmd.ExecuteReader())
+                                {
+                                    while (reader.Read())
+                                    {
+                                        var uuid = reader.GetString(0);
+                                        if (!validSongUuids.Contains(uuid))
+                                        {
+                                            orphanOrderUuids.Add(uuid);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            foreach (var uuid in orphanOrderUuids)
+                            {
+                                using (var cmd = _connection.CreateCommand())
+                                {
+                                    cmd.CommandText = @"
+                                        DELETE FROM CustomPlaylistOrder
+                                        WHERE tag_id = @tagId AND song_uuid = @songUuid";
+                                    cmd.Parameters.AddWithValue("@tagId", tagId);
+                                    cmd.Parameters.AddWithValue("@songUuid", uuid);
+                                    totalCleaned += cmd.ExecuteNonQuery();
+                                }
+                                logger.LogDebug($"清理孤儿顺序记录: Tag={tagId}, UUID={uuid}");
+                            }
+                            
+                            // 清理 CustomFavorites 中的孤儿记录
+                            var orphanFavoriteUuids = new List<string>();
+                            using (var cmd = _connection.CreateCommand())
+                            {
+                                cmd.CommandText = @"
+                                    SELECT song_uuid FROM CustomFavorites
+                                    WHERE tag_id = @tagId";
+                                cmd.Parameters.AddWithValue("@tagId", tagId);
+                                
+                                using (var reader = cmd.ExecuteReader())
+                                {
+                                    while (reader.Read())
+                                    {
+                                        var uuid = reader.GetString(0);
+                                        if (!validSongUuids.Contains(uuid))
+                                        {
+                                            orphanFavoriteUuids.Add(uuid);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            foreach (var uuid in orphanFavoriteUuids)
+                            {
+                                using (var cmd = _connection.CreateCommand())
+                                {
+                                    cmd.CommandText = @"
+                                        DELETE FROM CustomFavorites
+                                        WHERE tag_id = @tagId AND song_uuid = @songUuid";
+                                    cmd.Parameters.AddWithValue("@tagId", tagId);
+                                    cmd.Parameters.AddWithValue("@songUuid", uuid);
+                                    totalCleaned += cmd.ExecuteNonQuery();
+                                }
+                                logger.LogDebug($"清理孤儿收藏记录: Tag={tagId}, UUID={uuid}");
+                            }
+                            
+                            // 清理 CustomExcludedSongs 中的孤儿记录
+                            var orphanExcludedUuids = new List<string>();
+                            using (var cmd = _connection.CreateCommand())
+                            {
+                                cmd.CommandText = @"
+                                    SELECT song_uuid FROM CustomExcludedSongs
+                                    WHERE tag_id = @tagId";
+                                cmd.Parameters.AddWithValue("@tagId", tagId);
+                                
+                                using (var reader = cmd.ExecuteReader())
+                                {
+                                    while (reader.Read())
+                                    {
+                                        var uuid = reader.GetString(0);
+                                        if (!validSongUuids.Contains(uuid))
+                                        {
+                                            orphanExcludedUuids.Add(uuid);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            foreach (var uuid in orphanExcludedUuids)
+                            {
+                                using (var cmd = _connection.CreateCommand())
+                                {
+                                    cmd.CommandText = @"
+                                        DELETE FROM CustomExcludedSongs
+                                        WHERE tag_id = @tagId AND song_uuid = @songUuid";
+                                    cmd.Parameters.AddWithValue("@tagId", tagId);
+                                    cmd.Parameters.AddWithValue("@songUuid", uuid);
+                                    totalCleaned += cmd.ExecuteNonQuery();
+                                }
+                                logger.LogDebug($"清理孤儿排除记录: Tag={tagId}, UUID={uuid}");
+                            }
+                            
+                            transaction.Commit();
+                            
+                            if (totalCleaned > 0)
+                            {
+                                logger.LogInfo($"清理歌单 {tagId} 的孤儿记录: {totalCleaned} 条");
+                            }
+                        }
+                        catch
+                        {
+                            transaction.Rollback();
+                            throw;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError($"清理孤儿记录失败: {ex.Message}");
+                }
+                
+                return totalCleaned;
+            }
+        }
+
+        /// <summary>
+        /// 获取数据库统计信息（用于调试）
+        /// </summary>
+        public (int orderCount, int favoriteCount, int excludedCount) GetTagStats(string tagId)
+        {
+            lock (_lock)
+            {
+                int orderCount = 0, favoriteCount = 0, excludedCount = 0;
+                
+                try
+                {
+                    using (var cmd = _connection.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT COUNT(*) FROM CustomPlaylistOrder WHERE tag_id = @tagId";
+                        cmd.Parameters.AddWithValue("@tagId", tagId);
+                        orderCount = Convert.ToInt32(cmd.ExecuteScalar());
+                    }
+                    
+                    using (var cmd = _connection.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT COUNT(*) FROM CustomFavorites WHERE tag_id = @tagId";
+                        cmd.Parameters.AddWithValue("@tagId", tagId);
+                        favoriteCount = Convert.ToInt32(cmd.ExecuteScalar());
+                    }
+                    
+                    using (var cmd = _connection.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT COUNT(*) FROM CustomExcludedSongs WHERE tag_id = @tagId";
+                        cmd.Parameters.AddWithValue("@tagId", tagId);
+                        excludedCount = Convert.ToInt32(cmd.ExecuteScalar());
+                    }
+                }
+                catch (Exception ex)
+                {
+                    BepInEx.Logging.Logger.CreateLogSource("PlaylistDB").LogError($"获取统计失败: {ex.Message}");
+                }
+                
+                return (orderCount, favoriteCount, excludedCount);
+            }
+        }
+
+        #endregion
+
         /// <summary>
         /// 清理指定Tag的所有数据
         /// </summary>
