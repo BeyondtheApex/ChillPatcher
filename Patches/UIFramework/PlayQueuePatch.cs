@@ -1,5 +1,8 @@
 using Bulbul;
+using ChillPatcher.UIFramework;
+using ChillPatcher.UIFramework.Audio;
 using ChillPatcher.UIFramework.Music;
+using ChillPatcher.ModuleSystem.Services;
 using Cysharp.Threading.Tasks;
 using HarmonyLib;
 using KanKikuchi.AudioManager;
@@ -24,6 +27,30 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         public static bool IsQueueSystemEnabled { get; set; } = true;
         
+        /// <summary>
+        /// 获取用于队列填充的播放列表（使用显示顺序）
+        /// </summary>
+        /// <param name="musicService">MusicService 实例</param>
+        /// <returns>显示顺序的歌曲列表，如果不可用则返回 CurrentPlayList</returns>
+        private static IReadOnlyList<GameAudioInfo> GetPlaylistForQueue(MusicService musicService)
+        {
+            // 优先使用显示顺序列表
+            var musicManager = ChillUIFramework.Music as MusicUIManager;
+            if (musicManager != null)
+            {
+                var displayOrder = musicManager.DisplayOrderSongs;
+                if (displayOrder != null && displayOrder.Count > 0)
+                {
+                    Plugin.Log.LogDebug($"[PlayQueuePatch] Using display order playlist: {displayOrder.Count} songs");
+                    return displayOrder;
+                }
+            }
+            
+            // 回退到 CurrentPlayList
+            Plugin.Log.LogDebug($"[PlayQueuePatch] Using CurrentPlayList: {musicService.CurrentPlayList.Count} songs");
+            return musicService.CurrentPlayList;
+        }
+        
         #region SkipCurrentMusic Patch
         
         /// <summary>
@@ -44,7 +71,7 @@ namespace ChillPatcher.Patches.UIFramework
         private static async UniTask<bool> SkipWithQueueAsync(MusicService musicService, MusicChangeKind kind)
         {
             var queueManager = PlayQueueManager.Instance;
-            var currentPlaylist = musicService.CurrentPlayList;
+            var currentPlaylist = GetPlaylistForQueue(musicService);
             Func<GameAudioInfo, bool> isExcludedFunc = audio => musicService.IsContainsExcludedFromPlaylist(audio);
             
             Plugin.Log.LogInfo($"[PlayQueuePatch] SkipWithQueueAsync: IsInHistoryMode={queueManager.IsInHistoryMode}, IsInExtendedMode={queueManager.IsInExtendedMode}, HistoryPosition={queueManager.HistoryPosition}, ExtendedSteps={queueManager.ExtendedSteps}");
@@ -135,7 +162,7 @@ namespace ChillPatcher.Patches.UIFramework
         private static async UniTask<bool> PlayPrevWithQueueAsync(MusicService musicService, MusicChangeKind changeKind)
         {
             var queueManager = PlayQueueManager.Instance;
-            var currentPlaylist = musicService.CurrentPlayList;
+            var currentPlaylist = GetPlaylistForQueue(musicService);
             Func<GameAudioInfo, bool> isExcludedFunc = audio => musicService.IsContainsExcludedFromPlaylist(audio);
             
             GameAudioInfo prevAudio;
@@ -189,8 +216,8 @@ namespace ChillPatcher.Patches.UIFramework
         {
             var queueManager = PlayQueueManager.Instance;
             
-            // 获取当前播放列表和设置
-            var currentPlaylist = musicService.CurrentPlayList;
+            // 获取当前播放列表和设置（使用显示顺序）
+            var currentPlaylist = GetPlaylistForQueue(musicService);
             bool isShuffle = musicService.IsShuffle;
             
             // 使用 MusicService.IsContainsExcludedFromPlaylist 检查排除
@@ -304,26 +331,75 @@ namespace ChillPatcher.Patches.UIFramework
             if (!IsQueueSystemEnabled)
                 return true;
             
-            __result = PlayFromPlaylistWithQueue(__instance, index);
+            // 启动异步播放
+            PlayFromPlaylistWithQueueAsync(__instance, index).Forget();
+            __result = true;  // 假设成功，实际播放在异步中完成
             return false;
         }
         
-        private static bool PlayFromPlaylistWithQueue(MusicService musicService, int index)
+        /// <summary>
+        /// 异步从播放列表播放，支持模块提供的音频（AudioClip 可能为 null）
+        /// </summary>
+        private static async UniTaskVoid PlayFromPlaylistWithQueueAsync(MusicService musicService, int index)
         {
+            Plugin.Log.LogInfo($"[PlayQueuePatch] PlayFromPlaylistWithQueueAsync START: index={index}");
+            
             var currentPlaylist = musicService.CurrentPlayList;
             
             if (currentPlaylist.Count == 0 || index < 0 || index >= currentPlaylist.Count)
             {
-                return false;
+                Plugin.Log.LogWarning($"[PlayQueuePatch] Invalid playlist index: {index}");
+                return;
             }
             
             var audio = currentPlaylist[index];
-            var audioClip = audio.AudioClip;
             
-            if (audio == null || audioClip == null)
+            if (audio == null)
             {
-                Plugin.Log.LogError($"[PlayQueuePatch] Invalid audio at index {index}");
-                return false;
+                Plugin.Log.LogError($"[PlayQueuePatch] Audio is null at index {index}");
+                return;
+            }
+            
+            Plugin.Log.LogInfo($"[PlayQueuePatch] Got audio: {audio.Title}, AudioClip={(audio.AudioClip != null ? "exists" : "null")}");
+            
+            // 获取或异步加载 AudioClip
+            AudioClip audioClip = audio.AudioClip;
+            if (audioClip == null)
+            {
+                // 模块提供的音频可能需要异步加载
+                if (audio.PathType == AudioMode.LocalPc && !string.IsNullOrEmpty(audio.LocalPath))
+                {
+                    Plugin.Log.LogInfo($"[PlayQueuePatch] Async loading audio: {audio.Title}");
+                    try
+                    {
+                        using (var cts = new CancellationTokenSource())
+                        {
+                            cts.CancelAfter(TimeSpan.FromSeconds(10));  // 10秒超时
+                            Plugin.Log.LogInfo($"[PlayQueuePatch] Calling GetAudioClip...");
+                            audioClip = await audio.GetAudioClip(cts.Token);
+                            Plugin.Log.LogInfo($"[PlayQueuePatch] GetAudioClip returned: {(audioClip != null ? audioClip.name : "null")}");
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        Plugin.Log.LogWarning($"[PlayQueuePatch] Audio load timeout: {audio.Title}");
+                        await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log.LogError($"[PlayQueuePatch] Audio load failed: {ex.Message}");
+                        await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                        return;
+                    }
+                }
+            }
+            
+            if (audioClip == null)
+            {
+                Plugin.Log.LogError($"[PlayQueuePatch] AudioClip is null for: {audio.Title}");
+                await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                return;
             }
             
             // 更新队列管理器
@@ -332,16 +408,18 @@ namespace ChillPatcher.Patches.UIFramework
             
             // 停止当前播放
             var playingMusic = musicService.PlayingMusic;
-            if (playingMusic != null)
+            if (playingMusic != null && playingMusic.AudioClip != null)
             {
                 SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
             }
             
-            // 加载并播放
-            if (audioClip.loadState != AudioDataLoadState.Loaded)
+            // 加载音频数据（跳过流式 AudioClip）
+            if (audioClip.loadState == AudioDataLoadState.Unloaded && !IsStreamingClip(audioClip))
             {
                 audioClip.LoadAudioData();
             }
+            
+            Plugin.Log.LogInfo($"[PlayQueuePatch] About to play from playlist: {audio.Title}, loadState={audioClip.loadState}");
             
             SingletonMonoBehaviour<MusicManager>.Instance.Play(
                 audioClip, 1f, 0f, 1f,
@@ -357,7 +435,7 @@ namespace ChillPatcher.Patches.UIFramework
             InvokeOnChangeMusic(musicService, MusicChangeKind.Manual);
             InvokeOnPlayMusic(musicService, audio);
             
-            return true;
+            Plugin.Log.LogInfo($"[PlayQueuePatch] Now playing: {audio.Title}");
         }
         
         #endregion
@@ -374,11 +452,10 @@ namespace ChillPatcher.Patches.UIFramework
             if (!IsQueueSystemEnabled)
                 return true;
             
-            var audioClip = audioInfo?.AudioClip;
-            if (audioInfo == null || audioClip == null)
+            if (audioInfo == null)
             {
-                Plugin.Log.LogError("[PlayQueuePatch] Invalid audioInfo in PlayArugumentMusic");
-                return true;  // 让原始方法处理错误
+                Plugin.Log.LogError("[PlayQueuePatch] audioInfo is null in PlayArugumentMusic");
+                return false;
             }
             
             var queueManager = PlayQueueManager.Instance;
@@ -394,33 +471,119 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         // 已经是正在播放的，不需要处理
                         Plugin.Log.LogInfo("[PlayQueuePatch] Already playing this song");
+                        return false;
                     }
                     else
                     {
-                        // 移动到队列第一位，丢弃当前播放的
-                        // 先移除点击的项目
-                        queueManager.Remove(audioInfo);
-                        // 移除当前播放的（队列第一个）
-                        if (queueManager.Queue.Count > 0)
-                        {
-                            queueManager.RemoveAt(0);
-                        }
-                        // 把点击的项目设为当前播放
-                        queueManager.SetCurrentPlaying(audioInfo);
+                        // 把点击的项目移动到下一首位置，然后跳过当前播放
+                        // 这样逻辑和"下一首"保持一致
+                        
+                        // 1. 移除点击的项目（从原位置）
+                        queueManager.RemoveAt(queueIndex);
+                        
+                        // 2. 在位置 1 插入（下一首位置）
+                        queueManager.Insert(1, audioInfo);
+                        
+                        // 3. 移除位置 0（当前播放的）→ 点击的项目自动变成位置 0
+                        queueManager.RemoveAt(0);
+                        
+                        // 4. 添加到历史
+                        queueManager.AddToHistory(audioInfo);
+                        
+                        // 5. 触发队列变更事件
+                        queueManager.NotifyCurrentChanged(audioInfo);
                         
                         Plugin.Log.LogInfo($"[PlayQueuePatch] Moved queue item to play: {audioInfo.AudioClipName}");
+                        
+                        // 队列处理完成，后续让原始方法处理实际播放
+                        // 不需要再调用 SetCurrentPlaying，因为 audioInfo 已经在队列第一位了
                     }
-                    
-                    // 继续执行原始方法播放
-                    return true;
                 }
             }
+            else
+            {
+                // 非队列视图：普通播放更新队列管理器
+                queueManager.SetCurrentPlaying(audioInfo);
+                queueManager.SetPlaylistPositionByAudio(audioInfo, __instance.CurrentPlayList);
+            }
             
-            // 普通播放：更新队列管理器
-            queueManager.SetCurrentPlaying(audioInfo);
-            queueManager.SetPlaylistPositionByAudio(audioInfo, __instance.CurrentPlayList);
+            // 检查是否需要异步加载
+            var audioClip = audioInfo.AudioClip;
+            if (audioClip == null && audioInfo.PathType == AudioMode.LocalPc && !string.IsNullOrEmpty(audioInfo.LocalPath))
+            {
+                // 需要异步加载，启动异步播放
+                PlayArugumentMusicAsync(__instance, audioInfo, changeKind).Forget();
+                return false;  // 跳过原方法
+            }
             
-            return true;  // 继续执行原始方法
+            return true;  // 让原始方法处理（AudioClip 已加载）
+        }
+        
+        /// <summary>
+        /// 异步播放指定歌曲
+        /// </summary>
+        private static async UniTaskVoid PlayArugumentMusicAsync(MusicService musicService, GameAudioInfo audioInfo, MusicChangeKind changeKind)
+        {
+            AudioClip audioClip;
+            try
+            {
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Async loading: {audioInfo.Title}");
+                using (var cts = new CancellationTokenSource())
+                {
+                    cts.CancelAfter(TimeSpan.FromSeconds(10));
+                    audioClip = await audioInfo.GetAudioClip(cts.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Plugin.Log.LogWarning($"[PlayQueuePatch] Audio load timeout: {audioInfo.Title}");
+                await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"[PlayQueuePatch] Audio load failed: {ex.Message}");
+                await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                return;
+            }
+            
+            if (audioClip == null)
+            {
+                Plugin.Log.LogError($"[PlayQueuePatch] AudioClip is null for: {audioInfo.Title}");
+                await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                return;
+            }
+            
+            // 停止当前播放
+            var playingMusic = musicService.PlayingMusic;
+            if (playingMusic != null && playingMusic.AudioClip != null)
+            {
+                SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
+            }
+            
+            // 加载音频数据（跳过流式 AudioClip）
+            if (audioClip.loadState == AudioDataLoadState.Unloaded && !IsStreamingClip(audioClip))
+            {
+                audioClip.LoadAudioData();
+            }
+            
+            Plugin.Log.LogInfo($"[PlayQueuePatch] About to play argument music: {audioInfo.Title}, loadState={audioClip.loadState}");
+            
+            SingletonMonoBehaviour<MusicManager>.Instance.Play(
+                audioClip, 1f, 0f, 1f,
+                musicService.IsRepeatOneMusic,
+                true, "",
+                () => musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>()
+            );
+            
+            // 更新 MusicService 状态
+            SetPlayingMusic(musicService, audioInfo);
+            
+            // 触发事件
+            InvokeOnChangeMusic(musicService, changeKind);
+            InvokeOnPlayMusic(musicService, audioInfo);
+            
+            Plugin.Log.LogInfo($"[PlayQueuePatch] Now playing: {audioInfo.Title}");
         }
         
         #endregion
@@ -442,7 +605,9 @@ namespace ChillPatcher.Patches.UIFramework
             AudioClip audioClip;
             try
             {
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Calling GetAudioClip for: {audio.Title}");
                 audioClip = await audio.GetAudioClip(CancellationToken.None);
+                Plugin.Log.LogInfo($"[PlayQueuePatch] GetAudioClip returned: {(audioClip != null ? audioClip.name : "null")}");
             }
             catch (Exception ex)
             {
@@ -456,18 +621,28 @@ namespace ChillPatcher.Patches.UIFramework
                 return false;
             }
             
+            Plugin.Log.LogInfo($"[PlayQueuePatch] AudioClip ready: {audioClip.name}, loadType={audioClip.loadType}");
+            
             // 停止当前播放
             var playingMusic = musicService.PlayingMusic;
-            if (playingMusic != null)
+            if (playingMusic != null && playingMusic.AudioClip != null)
             {
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Stopping current: {playingMusic.AudioClipName}");
                 SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
             }
             
-            // 加载并播放
-            if (audioClip.loadState != AudioDataLoadState.Loaded)
+            // 加载音频数据（跳过流式 AudioClip，它们不需要预加载）
+            // 流式 clip 的 loadState 永远是 Unloaded 但不能调用 LoadAudioData
+            bool isStreaming = IsStreamingClip(audioClip);
+            Plugin.Log.LogInfo($"[PlayQueuePatch] loadState={audioClip.loadState}, isStreaming={isStreaming}");
+            
+            if (audioClip.loadState == AudioDataLoadState.Unloaded && !isStreaming)
             {
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Loading audio data...");
                 audioClip.LoadAudioData();
             }
+            
+            Plugin.Log.LogInfo($"[PlayQueuePatch] About to play: {audio.AudioClipName}, loadState={audioClip.loadState}");
             
             SingletonMonoBehaviour<MusicManager>.Instance.Play(
                 audioClip, 1f, 0f, 1f,
@@ -488,11 +663,64 @@ namespace ChillPatcher.Patches.UIFramework
         }
         
         /// <summary>
+        /// 检查是否是流式 AudioClip
+        /// 流式 clip 使用 PCMReaderCallback，loadState 永远是 Unloaded
+        /// </summary>
+        private static bool IsStreamingClip(AudioClip clip)
+        {
+            // 流式 clip 的 loadType 是 Streaming
+            return clip.loadType == AudioClipLoadType.Streaming;
+        }
+        
+        /// <summary>
         /// 设置 PlayingMusic（Publicize 后可直接访问 private setter）
+        /// 同时清理上一首歌曲的资源（模块歌曲的 AudioClip 和封面缓存）
         /// </summary>
         private static void SetPlayingMusic(MusicService musicService, GameAudioInfo audio)
         {
+            var previousMusic = musicService.PlayingMusic;
+            
+            // 清理上一首歌曲的资源
+            if (previousMusic != null && previousMusic.UUID != audio?.UUID)
+            {
+                CleanupPreviousMusicResources(previousMusic);
+            }
+            
             musicService.PlayingMusic = audio;
+        }
+        
+        /// <summary>
+        /// 清理上一首歌曲的资源
+        /// </summary>
+        private static void CleanupPreviousMusicResources(GameAudioInfo previousMusic)
+        {
+            if (previousMusic == null) return;
+            
+            var uuid = previousMusic.UUID;
+            
+            // 清理模块歌曲的封面缓存
+            // 只清理模块导入的歌曲（Tag 包含自定义位，即位 5+）
+            bool isModuleImported = ((ulong)previousMusic.Tag & ~31UL) != 0;
+            if (isModuleImported)
+            {
+                CoverService.Instance?.RemoveMusicCover(uuid);
+                Plugin.Log.LogDebug($"[PlayQueuePatch] Cleaned up cover for: {previousMusic.Title}");
+            }
+            
+            // 清理流式 AudioClip 的资源（FlacStreamReader）
+            if (previousMusic.AudioClip != null)
+            {
+                AudioResourceManager.Instance.CleanupClip(previousMusic.AudioClip);
+            }
+            
+            // 对于模块导入的歌曲，销毁 AudioClip
+            if (isModuleImported && previousMusic.AudioClip != null)
+            {
+                // 模块导入的歌曲需要完全销毁 AudioClip
+                UnityEngine.Object.Destroy(previousMusic.AudioClip);
+                previousMusic.AudioClip = null;
+                Plugin.Log.LogDebug($"[PlayQueuePatch] Destroyed AudioClip for: {previousMusic.Title}");
+            }
         }
         
         /// <summary>
@@ -502,6 +730,7 @@ namespace ChillPatcher.Patches.UIFramework
         {
             musicService.onChangeMusic.OnNext(kind);
         }
+
         
         /// <summary>
         /// 触发 OnPlayMusic 事件（Publicize 后可直接访问 private 字段）
@@ -594,11 +823,13 @@ namespace ChillPatcher.Patches.UIFramework
                 SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
             }
             
-            // 加载并播放
-            if (audioClip.loadState != AudioDataLoadState.Loaded)
+            // 加载音频数据（跳过流式 AudioClip）
+            if (audioClip.loadState == AudioDataLoadState.Unloaded && !IsStreamingClip(audioClip))
             {
                 audioClip.LoadAudioData();
             }
+            
+            Plugin.Log.LogInfo($"[PlayQueuePatch] About to play from queue: {audio.AudioClipName}, loadState={audioClip.loadState}");
             
             SingletonMonoBehaviour<MusicManager>.Instance.Play(
                 audioClip, 1f, 0f, 1f,

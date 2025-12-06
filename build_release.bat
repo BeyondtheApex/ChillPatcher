@@ -1,0 +1,233 @@
+@echo off
+REM ChillPatcher - Complete Build and Release Script
+REM Builds all projects and creates release directory structure
+
+setlocal EnableDelayedExpansion
+
+echo ========================================
+echo ChillPatcher Complete Build Script
+echo ========================================
+
+REM 切换到项目根目录
+cd /d %~dp0
+
+REM 配置
+set Configuration=Release
+if not "%1"=="" set Configuration=%1
+
+set ReleaseDir=%~dp0release
+set PluginDir=%ReleaseDir%\ChillPatcher
+set ModulesDir=%PluginDir%\Modules
+set NativeDir=%PluginDir%\native
+
+REM 清理旧的发布目录
+echo.
+echo [0/5] Cleaning release directory...
+if exist "%ReleaseDir%" rmdir /s /q "%ReleaseDir%"
+mkdir "%PluginDir%"
+mkdir "%ModulesDir%"
+mkdir "%NativeDir%\x64"
+mkdir "%PluginDir%\SDK"
+
+REM ========== Step 1: Build SDK ==========
+echo.
+echo [1/5] Building ChillPatcher.SDK...
+dotnet build ChillPatcher.SDK\ChillPatcher.SDK.csproj -c %Configuration% --no-restore
+if %errorlevel% neq 0 (
+    echo ERROR: SDK build failed!
+    exit /b 1
+)
+
+REM ========== Step 2: Build Main Plugin ==========
+echo.
+echo [2/5] Building ChillPatcher (Main Plugin)...
+dotnet build ChillPatcher.csproj -c %Configuration% --no-restore
+if %errorlevel% neq 0 (
+    echo ERROR: Main plugin build failed!
+    exit /b 1
+)
+
+REM ========== Step 3: Build LocalFolder Module ==========
+echo.
+echo [3/5] Building ChillPatcher.Module.LocalFolder...
+dotnet build ChillPatcher.Module.LocalFolder\ChillPatcher.Module.LocalFolder.csproj -c %Configuration% --no-restore
+if %errorlevel% neq 0 (
+    echo ERROR: LocalFolder module build failed!
+    exit /b 1
+)
+
+REM ========== Step 4: Build Native Plugins (Optional) ==========
+echo.
+echo [4/5] Building Native Plugins...
+
+if exist "NativePlugins\FlacDecoder\build.bat" (
+    echo   - Building FLAC Decoder...
+    cd NativePlugins\FlacDecoder
+    call build.bat >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo WARNING: Native FLAC decoder build failed, using existing if available
+    )
+    cd ..\..
+)
+
+if exist "NativePlugins\SmtcBridge\build.bat" (
+    echo   - Building SMTC Bridge...
+    cd NativePlugins\SmtcBridge
+    call build.bat >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo WARNING: Native SMTC bridge build failed, using existing if available
+    )
+    cd ..\..
+)
+
+REM ========== Step 5: Copy files to release directory ==========
+echo.
+echo [5/5] Copying files to release directory...
+
+REM Main Plugin
+echo   - Main Plugin files...
+copy /y "bin\ChillPatcher.dll" "%PluginDir%\" >nul
+
+REM SDK (for developers)
+echo   - SDK files...
+copy /y "bin\SDK\ChillPatcher.SDK.dll" "%PluginDir%\SDK\" >nul
+
+REM Dependencies (主插件依赖)
+echo   - Dependencies...
+if exist "bin\NAudio.Core.dll" copy /y "bin\NAudio.Core.dll" "%PluginDir%\" >nul
+if exist "bin\NAudio.Wasapi.dll" copy /y "bin\NAudio.Wasapi.dll" "%PluginDir%\" >nul
+
+REM Native Plugins (只需 x64，放在 native/x64/)
+echo   - Native plugins...
+if exist "bin\native\x64\ChillFlacDecoder.dll" copy /y "bin\native\x64\ChillFlacDecoder.dll" "%NativeDir%\x64\" >nul
+if exist "bin\native\x64\ChillSmtcBridge.dll" copy /y "bin\native\x64\ChillSmtcBridge.dll" "%NativeDir%\x64\" >nul
+
+REM VC++ Runtime DLLs (from lib folder)
+echo   - VC++ Runtime DLLs...
+if exist "lib\vcruntime140.dll" copy /y "lib\vcruntime140.dll" "%NativeDir%\x64\" >nul
+if exist "lib\vcruntime140_1.dll" copy /y "lib\vcruntime140_1.dll" "%NativeDir%\x64\" >nul
+if exist "lib\msvcp140.dll" copy /y "lib\msvcp140.dll" "%NativeDir%\x64\" >nul
+if exist "lib\concrt140.dll" copy /y "lib\concrt140.dll" "%NativeDir%\x64\" >nul
+
+REM RIME library (from librime build)
+if exist "librime\build\bin\Release\rime.dll" (
+    echo   - RIME library...
+    copy /y "librime\build\bin\Release\rime.dll" "%PluginDir%\" >nul
+)
+
+REM Modules
+echo   - Modules...
+if not exist "%ModulesDir%\LocalFolder" mkdir "%ModulesDir%\LocalFolder"
+if not exist "%ModulesDir%\LocalFolder\native" mkdir "%ModulesDir%\LocalFolder\native"
+if not exist "%ModulesDir%\LocalFolder\native\x64" mkdir "%ModulesDir%\LocalFolder\native\x64"
+copy /y "ChillPatcher.Module.LocalFolder\bin\ChillPatcher.Module.LocalFolder.dll" "%ModulesDir%\LocalFolder\" >nul
+REM LocalFolder 模块的依赖
+copy /y "ChillPatcher.Module.LocalFolder\bin\System.Data.SQLite.dll" "%ModulesDir%\LocalFolder\" >nul
+copy /y "ChillPatcher.Module.LocalFolder\bin\Newtonsoft.Json.dll" "%ModulesDir%\LocalFolder\" >nul
+copy /y "ChillPatcher.Module.LocalFolder\bin\TagLibSharp.dll" "%ModulesDir%\LocalFolder\" >nul
+REM SQLite 原生库复制到模块的 native 目录
+if exist "ChillPatcher.Module.LocalFolder\bin\native\x64\SQLite.Interop.dll" (
+    copy /y "ChillPatcher.Module.LocalFolder\bin\native\x64\SQLite.Interop.dll" "%ModulesDir%\LocalFolder\native\x64\" >nul
+)
+
+REM RIME data directory (rime-data/shared 和 rime-data/user)
+echo   - RIME data...
+set RimeDataDir=%PluginDir%\rime-data
+set RimeSharedDir=%RimeDataDir%\shared
+set RimeUserDir=%RimeDataDir%\user
+set OpenCCDir=%RimeSharedDir%\opencc
+
+if not exist "%RimeSharedDir%" mkdir "%RimeSharedDir%"
+if not exist "%RimeUserDir%" mkdir "%RimeUserDir%"
+if not exist "%OpenCCDir%" mkdir "%OpenCCDir%"
+
+REM Copy prelude (基础配置文件)
+if exist "rime-schemas\prelude\symbols.yaml" copy /y "rime-schemas\prelude\symbols.yaml" "%RimeSharedDir%\" >nul
+if exist "rime-schemas\prelude\punctuation.yaml" copy /y "rime-schemas\prelude\punctuation.yaml" "%RimeSharedDir%\" >nul
+if exist "rime-schemas\prelude\key_bindings.yaml" copy /y "rime-schemas\prelude\key_bindings.yaml" "%RimeSharedDir%\" >nul
+
+REM Copy custom default.yaml (使用我们的配置)
+if exist "RimeDefaultConfig\default.yaml" copy /y "RimeDefaultConfig\default.yaml" "%RimeSharedDir%\" >nul
+if exist "RimeDefaultConfig\luna_pinyin.custom.yaml" copy /y "RimeDefaultConfig\luna_pinyin.custom.yaml" "%RimeSharedDir%\" >nul
+
+REM Copy essay (语言模型)
+if exist "rime-schemas\essay\essay.txt" copy /y "rime-schemas\essay\essay.txt" "%RimeSharedDir%\" >nul
+
+REM Copy luna_pinyin schemas
+if exist "rime-schemas\luna-pinyin\luna_pinyin.schema.yaml" copy /y "rime-schemas\luna-pinyin\luna_pinyin.schema.yaml" "%RimeSharedDir%\" >nul
+if exist "rime-schemas\luna-pinyin\luna_pinyin.dict.yaml" copy /y "rime-schemas\luna-pinyin\luna_pinyin.dict.yaml" "%RimeSharedDir%\" >nul
+if exist "rime-schemas\luna-pinyin\pinyin.yaml" copy /y "rime-schemas\luna-pinyin\pinyin.yaml" "%RimeSharedDir%\" >nul
+
+REM Copy stroke dependency
+if exist "rime-schemas\stroke\stroke.schema.yaml" copy /y "rime-schemas\stroke\stroke.schema.yaml" "%RimeSharedDir%\" >nul
+if exist "rime-schemas\stroke\stroke.dict.yaml" copy /y "rime-schemas\stroke\stroke.dict.yaml" "%RimeSharedDir%\" >nul
+
+REM Copy double_pinyin schemas
+if exist "rime-schemas\double-pinyin\double_pinyin.schema.yaml" copy /y "rime-schemas\double-pinyin\double_pinyin.schema.yaml" "%RimeSharedDir%\" >nul
+if exist "rime-schemas\double-pinyin\double_pinyin_abc.schema.yaml" copy /y "rime-schemas\double-pinyin\double_pinyin_abc.schema.yaml" "%RimeSharedDir%\" >nul
+if exist "rime-schemas\double-pinyin\double_pinyin_flypy.schema.yaml" copy /y "rime-schemas\double-pinyin\double_pinyin_flypy.schema.yaml" "%RimeSharedDir%\" >nul
+if exist "rime-schemas\double-pinyin\double_pinyin_mspy.schema.yaml" copy /y "rime-schemas\double-pinyin\double_pinyin_mspy.schema.yaml" "%RimeSharedDir%\" >nul
+
+REM Copy OpenCC data files (繁简转换必需)
+if exist "librime\share\opencc\*.json" copy /y "librime\share\opencc\*.json" "%OpenCCDir%\" >nul 2>&1
+if exist "librime\share\opencc\*.ocd2" copy /y "librime\share\opencc\*.ocd2" "%OpenCCDir%\" >nul 2>&1
+
+REM Resources (if exists)
+if exist "Resources" (
+    echo   - Resources...
+    if not exist "%PluginDir%\Resources" mkdir "%PluginDir%\Resources"
+    xcopy /s /q /y "Resources\*" "%PluginDir%\Resources\" >nul 2>&1
+)
+
+REM License files
+echo   - License files...
+set LicenseDir=%PluginDir%\licenses
+if not exist "%LicenseDir%" mkdir "%LicenseDir%"
+if exist "LICENSE" copy /y "LICENSE" "%LicenseDir%\ChillPatcher-LICENSE.txt" >nul
+if exist "librime\LICENSE" copy /y "librime\LICENSE" "%LicenseDir%\librime-LICENSE.txt" >nul
+if exist "NativePlugins\dr_libs\LICENSE" copy /y "NativePlugins\dr_libs\LICENSE" "%LicenseDir%\dr_libs-LICENSE.txt" >nul
+
+echo.
+echo ========================================
+echo Build Complete!
+echo ========================================
+echo.
+echo Release Directory: %ReleaseDir%
+echo.
+echo Directory Structure:
+echo   ChillPatcher\
+echo   +-- ChillPatcher.dll            (Main Plugin)
+echo   +-- NAudio.*.dll
+echo   +-- rime.dll                    (RIME library)
+echo   +-- licenses\                   (License files)
+echo   +-- native\
+echo   ^|   +-- x64\
+echo   ^|       +-- vcruntime140*.dll   (VC++ Runtime)
+echo   ^|       +-- msvcp140.dll
+echo   ^|       +-- concrt140.dll
+echo   ^|       +-- ChillFlacDecoder.dll
+echo   ^|       +-- ChillSmtcBridge.dll
+echo   +-- rime-data\
+echo   ^|   +-- shared\                 (RIME schemas and dictionaries)
+echo   ^|   ^|   +-- *.yaml, *.txt
+echo   ^|   ^|   +-- opencc\             (OpenCC data)
+echo   ^|   +-- user\                   (User data, empty initially)
+echo   +-- SDK\
+echo   ^|   +-- ChillPatcher.SDK.dll    (For module developers)
+echo   +-- Modules\
+echo       +-- LocalFolder\
+echo           +-- ChillPatcher.Module.LocalFolder.dll
+echo           +-- TagLibSharp.dll     (For module cover loading)
+echo           +-- System.Data.SQLite.dll
+echo           +-- Newtonsoft.Json.dll
+echo           +-- native\
+echo               +-- x64\
+echo                   +-- SQLite.Interop.dll
+echo.
+echo To deploy: Copy ChillPatcher folder to
+echo   ^<game^>\BepInEx\plugins\
+echo.
+echo ========================================
+
+endlocal
+exit /b 0

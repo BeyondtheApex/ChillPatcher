@@ -4,7 +4,7 @@ using R3;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ChillPatcher.UIFramework.Music;
+using ChillPatcher.ModuleSystem.Registry;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -30,8 +30,12 @@ namespace ChillPatcher.Patches.UIFramework
         {
             // ✅ 保存实例引用
             CurrentInstance = __instance;
-            // 检查配置开关：启用文件夹歌单或无限歌曲时，移除100首限制
-            if (!UIFrameworkConfig.EnableUnlimitedSongs.Value && !PluginConfig.EnableFolderPlaylists.Value)
+            
+            // 检查是否需要移除100首限制：
+            // 1. 启用了无限歌曲配置，或者
+            // 2. 有模块注册了音乐（通过 MusicRegistry）
+            bool hasModuleMusic = MusicRegistry.Instance.GetAllMusic().Count > 0;
+            if (!UIFrameworkConfig.EnableUnlimitedSongs.Value && !hasModuleMusic)
             {
                 return true; // 两者都关闭，执行原方法（保持100首限制）
             }
@@ -80,12 +84,16 @@ namespace ChillPatcher.Patches.UIFramework
             // 添加到列表
             allMusicList.Add(music);
 
-            // ✅ 合并自定义Tag到音频对象
-            var customTags = CustomTagManager.Instance.GetSongCustomTags(music.UUID);
-            if (customTags != 0)
+            // ✅ 合并自定义Tag到音频对象 (通过 TagRegistry 获取)
+            var musicInfo = MusicRegistry.Instance?.GetByUUID(music.UUID);
+            if (musicInfo != null && !string.IsNullOrEmpty(musicInfo.TagId))
             {
-                music.Tag |= customTags;
-                Plugin.Log.LogDebug($"[TagMerge] {music.Title}: {music.Tag} (merged custom: {customTags})");
+                var tagInfo = TagRegistry.Instance?.GetTag(musicInfo.TagId);
+                if (tagInfo != null)
+                {
+                    music.Tag |= (AudioTag)tagInfo.BitValue;
+                    Plugin.Log.LogDebug($"[TagMerge] {music.Title}: {music.Tag} (merged tag: {tagInfo.DisplayName})");
+                }
             }
 
             // ⚠️ 注释掉存档保存：运行时加载的歌曲不需要保存到存档
@@ -129,8 +137,9 @@ namespace ChillPatcher.Patches.UIFramework
             // ✅ 保存实例引用
             CurrentInstance = __instance;
             
-            // 检查配置开关：启用文件夹歌单或无限歌曲时，移除100首限制
-            if (!UIFrameworkConfig.EnableUnlimitedSongs.Value && !PluginConfig.EnableFolderPlaylists.Value)
+            // 检查是否需要移除100首限制
+            bool hasModuleMusic = MusicRegistry.Instance.GetAllMusic().Count > 0;
+            if (!UIFrameworkConfig.EnableUnlimitedSongs.Value && !hasModuleMusic)
             {
                 return true; // 两者都关闭，执行原方法
             }
@@ -170,12 +179,16 @@ namespace ChillPatcher.Patches.UIFramework
             // 添加到列表
             allMusicList.Add(music);
             
-            // ✅ 合并自定义Tag到音频对象
-            var customTags = CustomTagManager.Instance.GetSongCustomTags(music.UUID);
-            if (customTags != 0)
+            // ✅ 合并自定义Tag到音频对象 (通过 TagRegistry 获取)
+            var musicInfo = MusicRegistry.Instance?.GetByUUID(music.UUID);
+            if (musicInfo != null && !string.IsNullOrEmpty(musicInfo.TagId))
             {
-                music.Tag |= customTags;
-                Plugin.Log.LogDebug($"[TagMerge] {music.Title}: {music.Tag} (merged custom: {customTags})");
+                var tagInfo = TagRegistry.Instance?.GetTag(musicInfo.TagId);
+                if (tagInfo != null)
+                {
+                    music.Tag |= (AudioTag)tagInfo.BitValue;
+                    Plugin.Log.LogDebug($"[TagMerge] {music.Title}: {music.Tag} (merged tag: {tagInfo.DisplayName})");
+                }
             }
             
             // ⚠️ 注释掉存档保存：运行时加载的歌曲不需要保存到存档

@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <AssemblyName>ChillPatcher.Module.LocalFolder</AssemblyName>
+    <OutputPath>bin\</OutputPath>
+    <RootNamespace>ChillPatcher.Module.LocalFolder</RootNamespace>
+  </PropertyGroup>
+
+  <!-- 引用 SDK -->
+  <ItemGroup>
+    <ProjectReference Include="..\ChillPatcher.SDK\ChillPatcher.SDK.csproj">
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- NuGet Packages -->
+  <ItemGroup>
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.118" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- Unity Engine -->
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- BepInEx -->
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core\BepInEx.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- 嵌入封面资源 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\localcover.jpg" Condition="Exists('Resources\localcover.jpg')">
+      <LogicalName>ChillPatcher.Module.LocalFolder.Resources.localcover.jpg</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- 构建后复制原生 DLL 到模块 native 目录 -->
+  <Target Name="CopySQLiteNative" AfterTargets="Build">
+    <PropertyGroup>
+      <ModuleNativeX64>$(OutputPath)native\x64\</ModuleNativeX64>
+    </PropertyGroup>
+    <MakeDir Directories="$(ModuleNativeX64)" />
+    <Copy SourceFiles="$(OutputPath)x64\SQLite.Interop.dll" 
+          DestinationFolder="$(ModuleNativeX64)" 
+          Condition="Exists('$(OutputPath)x64\SQLite.Interop.dll')" />
+  </Target>
+
+</Project>

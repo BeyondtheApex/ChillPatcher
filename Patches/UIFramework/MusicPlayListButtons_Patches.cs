@@ -1,6 +1,6 @@
 using Bulbul;
 using HarmonyLib;
-using ChillPatcher.UIFramework.Music;
+using ChillPatcher.ModuleSystem.Registry;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -24,12 +24,12 @@ namespace ChillPatcher.Patches.UIFramework
                 if (audioInfo == null)
                     return;
                 
-                // 检查是否是歌单歌曲 (有自定义Tag)
-                var customTags = CustomTagManager.Instance.GetSongCustomTags(audioInfo.UUID);
-                if (customTags == 0)
-                    return;  // 不是歌单歌曲,保持原样
+                // 检查是否是自定义歌曲 (来自模块)
+                var musicInfo = MusicRegistry.Instance?.GetByUUID(audioInfo.UUID);
+                if (musicInfo == null)
+                    return;  // 不是自定义歌曲,保持原样
                 
-                // ✅ 是歌单歌曲,隐藏删除按钮
+                // ✅ 是自定义歌曲,隐藏删除按钮
                 var removeInteractableUI = Traverse.Create(__instance)
                     .Field("removeInteractableUI")
                     .GetValue<InteractableUI>();

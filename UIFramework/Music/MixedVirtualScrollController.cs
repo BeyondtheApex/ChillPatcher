@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bulbul;
+using ChillPatcher.ModuleSystem.Services;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -116,7 +117,41 @@ namespace ChillPatcher.UIFramework.Music
             // 订阅滚动事件
             _scrollRect.onValueChanged.AddListener(OnScrollValueChanged);
 
+            // 订阅 CoverService 封面加载完成事件
+            CoverService.Instance.OnAlbumCoverLoaded += OnCoverLoaded;
+
             _isInitialized = true;
+        }
+
+        /// <summary>
+        /// 封面加载完成回调
+        /// </summary>
+        private void OnCoverLoaded(string albumId, Sprite cover)
+        {
+            if (cover == null || _items == null) return;
+
+            // 1. 更新数据源中的 AlbumHeaderInfo
+            foreach (var item in _items)
+            {
+                if (item.ItemType == PlaylistItemType.AlbumHeader 
+                    && item.AlbumHeader != null 
+                    && item.AlbumHeader.AlbumId == albumId)
+                {
+                    item.AlbumHeader.CoverImage = cover;
+                    break;
+                }
+            }
+
+            // 2. 更新当前可见的 AlbumHeaderView
+            foreach (var kvp in _activeHeaderItems)
+            {
+                var headerView = kvp.Value;
+                if (headerView != null && headerView.CurrentAlbumId == albumId)
+                {
+                    headerView.UpdateCover(cover);
+                    break;
+                }
+            }
         }
 
         /// <summary>
@@ -362,7 +397,7 @@ namespace ChillPatcher.UIFramework.Music
                 return;
             }
 
-            button.Setup(item.SongInfo, _facilityMusic);
+            button.Setup(item.AudioInfo, _facilityMusic);
             PositionItem(go.GetComponent<RectTransform>(), index, item.Height);
             
             // 应用 RemoveButton 水平偏移
@@ -487,6 +522,9 @@ namespace ChillPatcher.UIFramework.Music
             {
                 _scrollRect.onValueChanged.RemoveListener(OnScrollValueChanged);
             }
+
+            // 取消订阅 CoverService 封面加载事件
+            CoverService.Instance.OnAlbumCoverLoaded -= OnCoverLoaded;
 
             ClearAllActiveItems();
 

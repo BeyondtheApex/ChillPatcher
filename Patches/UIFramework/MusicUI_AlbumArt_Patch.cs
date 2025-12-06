@@ -1,14 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using Bulbul;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.UI;
 using R3;
-using ChillPatcher.UIFramework.Audio;
+using ChillPatcher.UIFramework.Core;
 using ChillPatcher.UIFramework.Music;
-using ChillPatcher.UIFramework.Data;
+using ChillPatcher.ModuleSystem.Services;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -43,6 +44,9 @@ namespace ChillPatcher.Patches.UIFramework
         
         // 订阅管理
         private static IDisposable _musicPlaySubscription;
+
+        // 当前正在等待的歌曲 UUID（用于事件回调匹配）
+        private static string _pendingMusicUuid;
 
         /// <summary>
         /// 检查是否已经有封面被设置（用于 UI 重排列补丁判断）
@@ -132,6 +136,10 @@ namespace ChillPatcher.Patches.UIFramework
                     UpdateAlbumArt(music);
                 });
 
+                // 订阅 CoverService 歌曲封面加载完成事件
+                CoverService.Instance.OnMusicCoverLoaded -= OnMusicCoverLoaded;
+                CoverService.Instance.OnMusicCoverLoaded += OnMusicCoverLoaded;
+
                 // 立即更新当前播放的音乐封面
                 if (facilityMusic.PlayingMusic != null)
                 {
@@ -143,6 +151,31 @@ namespace ChillPatcher.Patches.UIFramework
             catch (Exception ex)
             {
                 Plugin.Logger.LogError($"[MusicUI_AlbumArt_Patch] Error in Setup_Postfix: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 歌曲封面加载完成回调
+        /// </summary>
+        private static void OnMusicCoverLoaded(string uuid, Sprite cover)
+        {
+            // 只更新当前等待的歌曲
+            if (uuid == _pendingMusicUuid && cover != null)
+            {
+                bool useSquareMode = UIFrameworkConfig.EnableUIRearrange.Value;
+                
+                // 如果需要圆形模式，需要处理
+                if (!useSquareMode && cover.texture != null)
+                {
+                    var circularSprite = AlbumArtReader.CreateCircularSprite(cover.texture, 88);
+                    if (circularSprite != null)
+                    {
+                        cover = circularSprite;
+                    }
+                }
+                
+                ApplyAlbumArt(cover, uuid, "");
+                _pendingMusicUuid = null;
             }
         }
 
@@ -181,7 +214,7 @@ namespace ChillPatcher.Patches.UIFramework
         }
 
         /// <summary>
-        /// 更新封面图标
+        /// 更新封面图标（使用 CoverService 统一加载逻辑）
         /// </summary>
         private static void UpdateAlbumArt(GameAudioInfo audioInfo)
         {
@@ -194,81 +227,92 @@ namespace ChillPatcher.Patches.UIFramework
 
             bool useSquareMode = UIFrameworkConfig.EnableUIRearrange.Value;
 
-            try
+            // 如果有 UUID，使用 CoverService 的统一 API
+            if (!string.IsNullOrEmpty(audioInfo.UUID))
             {
-                // 如果是本地文件且路径存在
-                if (audioInfo.PathType == AudioMode.LocalPc && !string.IsNullOrEmpty(audioInfo.LocalPath))
+                // 记录正在等待的 UUID
+                _pendingMusicUuid = audioInfo.UUID;
+                
+                // 使用 CoverService 的同步 API（返回占位图或缓存，异步加载后通过事件更新）
+                var sprite = CoverService.Instance.GetMusicCoverOrPlaceholder(audioInfo.UUID);
+                
+                // 如果需要圆形模式且返回的不是占位图，需要处理
+                if (!useSquareMode && sprite != CoverService.Instance.LoadingPlaceholder && sprite?.texture != null)
                 {
-                    // 如果已经加载过相同的文件，不需要重新加载
-                    if (_currentAudioPath == audioInfo.LocalPath && _currentAlbumArtSprite != null)
+                    var circularSprite = AlbumArtReader.CreateCircularSprite(sprite.texture, 88);
+                    if (circularSprite != null)
                     {
-                        Plugin.Logger.LogDebug($"[MusicUI_AlbumArt_Patch] Using cached album art for: {audioInfo.Title}");
+                        sprite = circularSprite;
+                    }
+                }
+                
+                _iconDeactiveImage.sprite = sprite;
+                _iconActiveImage.sprite = sprite;
+                _currentAlbumArtSprite = sprite;
+                _currentAudioPath = audioInfo.UUID;
+                return;
+            }
+
+            // 如果是本地文件且路径存在，尝试加载目录封面
+            if (audioInfo.PathType == AudioMode.LocalPc && !string.IsNullOrEmpty(audioInfo.LocalPath))
+            {
+                _pendingMusicUuid = null;
+                var albumArtTexture = TryLoadAlbumCover(audioInfo.LocalPath);
+                if (albumArtTexture != null)
+                {
+                    int resolution = useSquareMode ? UIRearrangePatch.AlbumArtResolution : 88;
+                    Sprite albumArtSprite = useSquareMode
+                        ? AlbumArtReader.CreateSquareSprite(albumArtTexture, resolution)
+                        : AlbumArtReader.CreateCircularSprite(albumArtTexture, resolution);
+
+                    if (albumArtSprite != null)
+                    {
+                        ApplyAlbumArt(albumArtSprite, audioInfo.LocalPath, audioInfo.Title);
                         return;
                     }
-
-                    // 1. 先尝试读取歌曲嵌入封面
-                    var albumArtTexture = AlbumArtReader.GetAlbumArt(audioInfo.LocalPath);
-                    
-                    // 2. 如果没有嵌入封面，尝试使用专辑封面
-                    if (albumArtTexture == null)
+                    else
                     {
-                        albumArtTexture = TryLoadAlbumCover(audioInfo.LocalPath);
+                        UnityEngine.Object.Destroy(albumArtTexture);
                     }
-                    
-                    if (albumArtTexture != null)
-                    {
-                        // 根据模式创建 Sprite
-                        // 如果启用 UI 重排列，使用高分辨率以支持缩放
-                        int resolution = useSquareMode ? UIRearrangePatch.AlbumArtResolution : 88;
-                        
-                        Sprite albumArtSprite;
-                        if (useSquareMode)
-                        {
-                            albumArtSprite = AlbumArtReader.CreateSquareSprite(albumArtTexture, resolution);
-                        }
-                        else
-                        {
-                            albumArtSprite = AlbumArtReader.CreateCircularSprite(albumArtTexture, resolution);
-                        }
-                        
-                        if (albumArtSprite != null)
-                        {
-                            // 销毁旧的封面 Sprite
-                            if (_currentAlbumArtSprite != null)
-                            {
-                                UnityEngine.Object.Destroy(_currentAlbumArtSprite.texture);
-                                UnityEngine.Object.Destroy(_currentAlbumArtSprite);
-                            }
-
-                            // 应用新的封面
-                            _currentAlbumArtSprite = albumArtSprite;
-                            _currentAudioPath = audioInfo.LocalPath;
-                            
-                            _iconDeactiveImage.sprite = albumArtSprite;
-                            _iconActiveImage.sprite = albumArtSprite;
-                            
-                            Plugin.Logger.LogInfo($"[MusicUI_AlbumArt_Patch] Updated album art for: {audioInfo.Title}");
-                            return;
-                        }
-                        else
-                        {
-                            // 创建 Sprite 失败，销毁纹理
-                            UnityEngine.Object.Destroy(albumArtTexture);
-                        }
-                    }
-                    
-                    // 本地文件但没有封面，使用本地导入专用封面
-                    TryUseDefaultCover(useSquareMode, isLocalImport: true);
-                    return;
                 }
-
-                // 不是本地文件，使用默认封面
-                TryUseDefaultCover(useSquareMode, isLocalImport: false);
+                
+                // 本地文件但没有封面，使用本地导入专用封面
+                TryUseDefaultCover(useSquareMode, isLocalImport: true);
+                return;
             }
-            catch (Exception ex)
+
+            // 不是本地文件，使用默认封面
+            _pendingMusicUuid = null;
+            TryUseDefaultCover(useSquareMode, isLocalImport: false);
+        }
+
+        /// <summary>
+        /// 应用封面到 UI
+        /// </summary>
+        private static void ApplyAlbumArt(Sprite sprite, string cacheKey, string title)
+        {
+            // 只销毁非缓存的封面
+            var defaultCover = CoverService.Instance.GetDefaultMusicCover();
+            var localCover = CoverService.Instance.GetLocalMusicCover();
+            var loadingPlaceholder = CoverService.Instance.LoadingPlaceholder;
+            if (_currentAlbumArtSprite != null
+                && _currentAlbumArtSprite != defaultCover
+                && _currentAlbumArtSprite != localCover
+                && _currentAlbumArtSprite != loadingPlaceholder)
             {
-                Plugin.Logger.LogError($"[MusicUI_AlbumArt_Patch] Error updating album art: {ex.Message}");
-                RestoreOriginalIcon();
+                UnityEngine.Object.Destroy(_currentAlbumArtSprite.texture);
+                UnityEngine.Object.Destroy(_currentAlbumArtSprite);
+            }
+
+            _currentAlbumArtSprite = sprite;
+            _currentAudioPath = cacheKey;
+            
+            _iconDeactiveImage.sprite = sprite;
+            _iconActiveImage.sprite = sprite;
+            
+            if (!string.IsNullOrEmpty(title))
+            {
+                Plugin.Logger.LogInfo($"[MusicUI_AlbumArt_Patch] Updated album art for: {title}");
             }
         }
 
@@ -324,45 +368,32 @@ namespace ChillPatcher.Patches.UIFramework
             try
             {
                 // 根据是否是本地导入选择不同的封面
-                string resourceName = isLocalImport 
-                    ? "ChillPatcher.Resources.localcover.jpg" 
-                    : "ChillPatcher.Resources.defaultcover.png";
-                
-                // 加载嵌入的封面
-                var texture = AlbumCoverLoader.LoadEmbeddedCoverTexture(resourceName);
-                if (texture != null)
+                Sprite sprite = isLocalImport 
+                    ? CoverService.Instance.GetLocalMusicCover()
+                    : CoverService.Instance.GetDefaultMusicCover();
+                    
+                if (sprite != null)
                 {
-                    // 如果启用 UI 重排列，使用高分辨率以支持缩放
-                    int resolution = useSquareMode ? UIRearrangePatch.AlbumArtResolution : 88;
-                    
-                    Sprite sprite;
-                    if (useSquareMode)
+                    // 只销毁非缓存的封面
+                    var defaultCover = CoverService.Instance.GetDefaultMusicCover();
+                    var localCover = CoverService.Instance.GetLocalMusicCover();
+                    if (_currentAlbumArtSprite != null 
+                        && _currentAlbumArtSprite != defaultCover
+                        && _currentAlbumArtSprite != localCover)
                     {
-                        sprite = AlbumArtReader.CreateSquareSprite(texture, resolution);
-                    }
-                    else
-                    {
-                        sprite = AlbumArtReader.CreateCircularSprite(texture, resolution);
+                        UnityEngine.Object.Destroy(_currentAlbumArtSprite.texture);
+                        UnityEngine.Object.Destroy(_currentAlbumArtSprite);
                     }
                     
-                    if (sprite != null)
-                    {
-                        if (_currentAlbumArtSprite != null)
-                        {
-                            UnityEngine.Object.Destroy(_currentAlbumArtSprite.texture);
-                            UnityEngine.Object.Destroy(_currentAlbumArtSprite);
-                        }
-                        
-                        _currentAlbumArtSprite = sprite;
-                        _currentAudioPath = null;
-                        
-                        _iconDeactiveImage.sprite = sprite;
-                        _iconActiveImage.sprite = sprite;
-                        
-                        var coverType = isLocalImport ? "local import" : "default";
-                        Plugin.Logger.LogInfo($"[MusicUI_AlbumArt_Patch] Using {coverType} cover, resolution: {resolution}");
-                        return;
-                    }
+                    _currentAlbumArtSprite = sprite;
+                    _currentAudioPath = null;
+                    
+                    _iconDeactiveImage.sprite = sprite;
+                    _iconActiveImage.sprite = sprite;
+                    
+                    var coverType = isLocalImport ? "local import" : "default";
+                    Plugin.Logger.LogInfo($"[MusicUI_AlbumArt_Patch] Using {coverType} cover");
+                    return;
                 }
             }
             catch (Exception ex)
@@ -389,13 +420,17 @@ namespace ChillPatcher.Patches.UIFramework
                 _iconActiveImage.sprite = _originalActiveIcon;
             }
             
-            // 清理当前封面
-            if (_currentAlbumArtSprite != null)
+            // 只销毁非缓存的封面
+            var defaultCover = CoverService.Instance?.GetDefaultMusicCover();
+            var localCover = CoverService.Instance?.GetLocalMusicCover();
+            if (_currentAlbumArtSprite != null
+                && _currentAlbumArtSprite != defaultCover
+                && _currentAlbumArtSprite != localCover)
             {
                 UnityEngine.Object.Destroy(_currentAlbumArtSprite.texture);
                 UnityEngine.Object.Destroy(_currentAlbumArtSprite);
-                _currentAlbumArtSprite = null;
             }
+            _currentAlbumArtSprite = null;
             
             _currentAudioPath = null;
         }

@@ -43,7 +43,20 @@ namespace ChillPatcher.UIFramework.Music
 
         // 默认占位图
         private static Sprite _defaultPlaceholder;
+        private static Sprite _loadingPlaceholder;
         private static bool _placeholderLoadAttempted = false;
+
+        /// <summary>
+        /// 获取加载中占位图
+        /// </summary>
+        private static Sprite GetLoadingPlaceholder()
+        {
+            if (_loadingPlaceholder == null)
+            {
+                _loadingPlaceholder = Core.EmbeddedResources.LoadingPlaceholder;
+            }
+            return _loadingPlaceholder;
+        }
 
         /// <summary>
         /// 获取或创建默认封面占位图
@@ -54,57 +67,8 @@ namespace ChillPatcher.UIFramework.Music
             if (_defaultPlaceholder == null && !_placeholderLoadAttempted)
             {
                 _placeholderLoadAttempted = true;
-                
-                // 尝试从嵌入资源加载
-                try
-                {
-                    var assembly = System.Reflection.Assembly.GetExecutingAssembly();
-                    using (var stream = assembly.GetManifestResourceStream("ChillPatcher.Resources.defaultcover.png"))
-                    {
-                        if (stream != null)
-                        {
-                            var bytes = new byte[stream.Length];
-                            stream.Read(bytes, 0, bytes.Length);
-                            
-                            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-                            if (texture.LoadImage(bytes))
-                            {
-                                _defaultPlaceholder = Sprite.Create(
-                                    texture,
-                                    new Rect(0, 0, texture.width, texture.height),
-                                    new Vector2(0.5f, 0.5f)
-                                );
-                                BepInEx.Logging.Logger.CreateLogSource("AlbumHeaderView")
-                                    .LogInfo("Loaded embedded default cover");
-                            }
-                        }
-                    }
-                }
-                catch (System.Exception ex)
-                {
-                    BepInEx.Logging.Logger.CreateLogSource("AlbumHeaderView")
-                        .LogWarning($"Failed to load embedded cover: {ex.Message}");
-                }
+                _defaultPlaceholder = Core.EmbeddedResources.DefaultPlaceholder;
             }
-            
-            // 如果嵌入资源加载失败，使用白色纹理作为后备
-            if (_defaultPlaceholder == null)
-            {
-                var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false);
-                var whiteColor = new Color(0.95f, 0.95f, 0.95f, 1f);
-                var pixels = new Color[16];
-                for (int i = 0; i < 16; i++)
-                    pixels[i] = whiteColor;
-                texture.SetPixels(pixels);
-                texture.Apply();
-                
-                _defaultPlaceholder = Sprite.Create(
-                    texture,
-                    new Rect(0, 0, 4, 4),
-                    new Vector2(0.5f, 0.5f)
-                );
-            }
-            
             return _defaultPlaceholder;
         }
 
@@ -378,7 +342,7 @@ namespace ChillPatcher.UIFramework.Music
                 _statsText.color = isDisabled ? new Color(0.7f, 0.3f, 0.3f, 0.8f) : new Color(0.6f, 0.6f, 0.6f, 1f);
             }
 
-            // 设置封面（始终显示，无封面时使用白色占位图）
+            // 设置封面（未加载时使用 loading 占位图）
             if (_coverContainer != null)
             {
                 _coverContainer.SetActive(true);
@@ -391,13 +355,47 @@ namespace ChillPatcher.UIFramework.Music
                 }
                 else
                 {
-                    // 使用白色占位图
-                    _coverImage.sprite = GetDefaultPlaceholder();
-                    // 禁用时显示更暗的灰色
-                    _coverImage.color = isDisabled ? new Color(0.4f, 0.4f, 0.4f, 0.5f) : new Color(0.85f, 0.85f, 0.85f, 1f);
+                    // 使用 loading 占位图（表示正在加载）
+                    _coverImage.sprite = GetLoadingPlaceholder();
+                    _coverImage.color = isDisabled ? new Color(0.4f, 0.4f, 0.4f, 0.5f) : Color.white;
                 }
             }
         }
+
+        /// <summary>
+        /// 更新封面图片（异步加载完成后调用）
+        /// </summary>
+        public void UpdateCover(Sprite cover)
+        {
+            if (_coverImage == null) return;
+            
+            bool isDisabled = _currentHeader != null && 
+                              _currentHeader.EnabledSongCount == 0 && 
+                              _currentHeader.TotalSongCount > 0;
+            
+            if (cover != null)
+            {
+                _coverImage.sprite = cover;
+                _coverImage.color = isDisabled ? new Color(0.5f, 0.5f, 0.5f, 0.5f) : Color.white;
+                
+                // 更新 header 的封面引用
+                if (_currentHeader != null)
+                {
+                    _currentHeader.CoverImage = cover;
+                }
+            }
+            else
+            {
+                // 加载失败，使用默认占位图
+                _coverImage.sprite = GetDefaultPlaceholder();
+                _coverImage.color = isDisabled ? new Color(0.4f, 0.4f, 0.4f, 0.5f) : new Color(0.85f, 0.85f, 0.85f, 1f);
+            }
+        }
+
+        /// <summary>
+        /// 获取当前显示的 AlbumId
+        /// </summary>
+        public string CurrentAlbumId => _currentHeader?.AlbumId;
 
         /// <summary>
         /// 调整布局（根据是否有封面）

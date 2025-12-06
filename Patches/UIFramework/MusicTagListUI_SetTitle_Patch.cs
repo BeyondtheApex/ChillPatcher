@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bulbul;
-using ChillPatcher.UIFramework.Music;
+using ChillPatcher.ModuleSystem.Registry;
+using ChillPatcher.SDK.Models;
 using HarmonyLib;
 
 namespace ChillPatcher.Patches.UIFramework
@@ -42,15 +43,16 @@ namespace ChillPatcher.Patches.UIFramework
                 AudioTag tagsWithoutFavorite = currentTag.RemoveFlag(AudioTag.Favorite);
 
                 // 获取所有自定义Tag的位值（用于排除）
-                var allCustomBits = CustomTagManager.Instance.GetAllTags()
-                    .Select(kvp => kvp.Value.BitValue)
+                var allCustomTags = TagRegistry.Instance?.GetAllTags() ?? new List<TagInfo>();
+                var allCustomBits = allCustomTags
+                    .Select(t => (AudioTag)t.BitValue)
                     .Aggregate(AudioTag.All, (acc, bit) => acc.AddFlag(bit));
 
                 // 移除所有自定义Tag位
                 AudioTag tagsWithoutFavoriteAndCustom = tagsWithoutFavorite;
-                foreach (var customTag in CustomTagManager.Instance.GetAllTags().Values)
+                foreach (var customTag in allCustomTags)
                 {
-                    tagsWithoutFavoriteAndCustom = tagsWithoutFavoriteAndCustom.RemoveFlag(customTag.BitValue);
+                    tagsWithoutFavoriteAndCustom = tagsWithoutFavoriteAndCustom.RemoveFlag((AudioTag)customTag.BitValue);
                 }
 
                 // 获取所有预定义Tag的位值（All减去Favorite）
@@ -242,7 +244,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// <summary>
         /// 构建纯自定义Tag标题
         /// </summary>
-        private static string BuildCustomOnlyTitle(List<CustomTag> customTags)
+        private static string BuildCustomOnlyTitle(List<TagInfo> customTags)
         {
             if (customTags.Count == 1)
             {
@@ -288,7 +290,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static string BuildMixedTitle(
             List<AudioTag> predefinedTags,
-            List<CustomTag> customTags,
+            List<TagInfo> customTags,
             Dictionary<AudioTag, string> audioTagLocalizationMap,
             LocalizationMasterWrapper localizationMaster,
             MusicTagListUI instance)
@@ -346,16 +348,16 @@ namespace ChillPatcher.Patches.UIFramework
         /// <summary>
         /// 获取自定义Tag列表
         /// </summary>
-        private static List<CustomTag> GetCustomTags(AudioTag tags)
+        private static List<TagInfo> GetCustomTags(AudioTag tags)
         {
-            var allCustomTags = CustomTagManager.Instance.GetAllTags();
+            var allCustomTags = TagRegistry.Instance?.GetAllTags() ?? new List<TagInfo>();
             Plugin.Log.LogDebug($"[GetCustomTags] Total custom tags registered: {allCustomTags.Count}");
             Plugin.Log.LogDebug($"[GetCustomTags] Input tags: {tags}");
             
-            var result = allCustomTags.Values
+            var result = allCustomTags
                 .Where(customTag =>
                 {
-                    bool hasTag = (tags & customTag.BitValue) == customTag.BitValue;
+                    bool hasTag = (tags & (AudioTag)customTag.BitValue) == (AudioTag)customTag.BitValue;
                     Plugin.Log.LogDebug($"[GetCustomTags] Tag '{customTag.DisplayName}' (bit: {customTag.BitValue}): {hasTag}");
                     return hasTag;
                 })

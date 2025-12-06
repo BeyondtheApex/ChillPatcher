@@ -19,13 +19,13 @@ namespace ChillPatcher
                 var arch = IntPtr.Size == 8 ? "x64" : "x86"; // 基本上都是 x64
                 var nativeDir = Path.Combine(pluginDir, "native", arch);
 
-                // 2. 必须按顺序加载的 4 个“救命”文件
+                // 2. 必须按顺序加载的依赖文件（VC++ 运行时 + 核心原生插件）
+                // 注意: SQLite.Interop.dll 由 System.Data.SQLite 自行加载
                 string[] libs = {
                     "vcruntime140.dll",
                     "vcruntime140_1.dll", // <-- 重点文件
                     "msvcp140.dll",
                     "concrt140.dll",
-                    "SQLite.Interop.dll",
                     "ChillFlacDecoder.dll",
                     "ChillSmtcBridge.dll"
                 };

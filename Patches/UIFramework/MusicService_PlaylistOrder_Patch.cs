@@ -2,19 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bulbul;
-using ChillPatcher.UIFramework.Data;
+using ChillPatcher.ModuleSystem;
+using ChillPatcher.ModuleSystem.Registry;
+using ChillPatcher.SDK.Events;
 using HarmonyLib;
 
 namespace ChillPatcher.Patches.UIFramework
 {
     /// <summary>
-    /// 拦截MusicService的播放顺序操作，自定义Tag存储到数据库
+    /// 拦截MusicService的播放顺序操作，通过事件通知模块
     /// </summary>
     [HarmonyPatch(typeof(MusicService))]
     public class MusicService_PlaylistOrder_Patch
     {
         /// <summary>
-        /// 拦截添加音乐到播放列表（AddMusicItem）
+        /// 拦截添加音乐到播放列表
         /// </summary>
         [HarmonyPatch("AddMusicItem")]
         [HarmonyPostfix]
@@ -22,35 +24,29 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                // 只在成功添加后处理
                 if (!__result || music == null)
                     return;
 
-                // ✅ 判断是否是自定义Tag
-                if (CustomPlaylistDataManager.IsCustomTag(music.Tag))
+                var musicInfo = MusicRegistry.Instance?.GetMusic(music.UUID);
+                if (musicInfo != null)
                 {
-                    // 自定义Tag → 添加到数据库的播放顺序
-                    var tagId = CustomPlaylistDataManager.GetTagIdFromAudio(music);
-                    
-                    if (!string.IsNullOrEmpty(tagId))
+                    EventBus.Instance?.Publish(new PlaylistOrderChangedEvent
                     {
-                        var manager = CustomPlaylistDataManager.Instance;
-                        if (manager != null)
-                        {
-                            manager.AddToPlaylistOrder(tagId, music.UUID);
-                            Plugin.Log.LogInfo($"[PlaylistOrder] 添加到数据库: Tag={tagId}, UUID={music.UUID}");
-                        }
-                    }
+                        UpdateType = PlaylistUpdateType.SongAdded,
+                        AffectedSongUUIDs = new string[] { music.UUID },
+                        ModuleId = musicInfo.ModuleId
+                    });
+                    Plugin.Log.LogInfo($"[PlaylistOrder] Music added: {music.UUID}");
                 }
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[PlaylistOrder] 添加失败: {ex}");
+                Plugin.Log.LogError($"[PlaylistOrder] Add failed: {ex}");
             }
         }
 
         /// <summary>
-        /// 拦截添加本地音乐（AddLocalMusicItem）
+        /// 拦截添加本地音乐
         /// </summary>
         [HarmonyPatch("AddLocalMusicItem")]
         [HarmonyPostfix]
@@ -58,35 +54,29 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                // 只在成功添加后处理
                 if (!__result || music == null)
                     return;
 
-                // ✅ 判断是否是自定义Tag
-                if (CustomPlaylistDataManager.IsCustomTag(music.Tag))
+                var musicInfo = MusicRegistry.Instance?.GetMusic(music.UUID);
+                if (musicInfo != null)
                 {
-                    // 自定义Tag → 添加到数据库的播放顺序
-                    var tagId = CustomPlaylistDataManager.GetTagIdFromAudio(music);
-                    
-                    if (!string.IsNullOrEmpty(tagId))
+                    EventBus.Instance?.Publish(new PlaylistOrderChangedEvent
                     {
-                        var manager = CustomPlaylistDataManager.Instance;
-                        if (manager != null)
-                        {
-                            manager.AddToPlaylistOrder(tagId, music.UUID);
-                            Plugin.Log.LogInfo($"[PlaylistOrder] 添加本地音乐到数据库: Tag={tagId}, UUID={music.UUID}");
-                        }
-                    }
+                        UpdateType = PlaylistUpdateType.SongAdded,
+                        AffectedSongUUIDs = new string[] { music.UUID },
+                        ModuleId = musicInfo.ModuleId
+                    });
+                    Plugin.Log.LogInfo($"[PlaylistOrder] Local music added: {music.UUID}");
                 }
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[PlaylistOrder] 添加本地音乐失败: {ex}");
+                Plugin.Log.LogError($"[PlaylistOrder] Add local failed: {ex}");
             }
         }
 
         /// <summary>
-        /// 拦截移除本地音乐（RemoveLocalMusicItem）
+        /// 拦截移除本地音乐
         /// </summary>
         [HarmonyPatch("RemoveLocalMusicItem")]
         [HarmonyPostfix]
@@ -97,32 +87,26 @@ namespace ChillPatcher.Patches.UIFramework
                 if (music == null)
                     return;
 
-                // ✅ 判断是否是自定义Tag
-                if (CustomPlaylistDataManager.IsCustomTag(music.Tag))
+                var musicInfo = MusicRegistry.Instance?.GetMusic(music.UUID);
+                if (musicInfo != null)
                 {
-                    // 自定义Tag → 从数据库移除
-                    var tagId = CustomPlaylistDataManager.GetTagIdFromAudio(music);
-                    
-                    if (!string.IsNullOrEmpty(tagId))
+                    EventBus.Instance?.Publish(new PlaylistOrderChangedEvent
                     {
-                        var manager = CustomPlaylistDataManager.Instance;
-                        if (manager != null)
-                        {
-                            manager.RemoveFromPlaylistOrder(tagId, music.UUID);
-                            manager.RemoveFavorite(tagId, music.UUID); // 同时移除收藏
-                            Plugin.Log.LogInfo($"[PlaylistOrder] 从数据库移除: Tag={tagId}, UUID={music.UUID}");
-                        }
-                    }
+                        UpdateType = PlaylistUpdateType.SongRemoved,
+                        AffectedSongUUIDs = new string[] { music.UUID },
+                        ModuleId = musicInfo.ModuleId
+                    });
+                    Plugin.Log.LogInfo($"[PlaylistOrder] Music removed: {music.UUID}");
                 }
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[PlaylistOrder] 移除失败: {ex}");
+                Plugin.Log.LogError($"[PlaylistOrder] Remove failed: {ex}");
             }
         }
 
         /// <summary>
-        /// 拦截交换顺序（SwapAfter）
+        /// 拦截交换顺序
         /// </summary>
         [HarmonyPatch("SwapAfter")]
         [HarmonyPostfix]
@@ -133,57 +117,43 @@ namespace ChillPatcher.Patches.UIFramework
                 if (target == null)
                     return;
 
-                // 检查是否在收藏模式或随机播放模式
-                var currentAudioTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag;
-                var currentValue = currentAudioTag.CurrentValue;
                 var isShuffle = Traverse.Create(__instance).Property("IsShuffle").GetValue<bool>();
-
-                // 随机播放不保存顺序
                 if (isShuffle)
                     return;
 
-                // ✅ 判断是否是自定义Tag
-                if (CustomPlaylistDataManager.IsCustomTag(target.Tag))
+                var musicInfo = MusicRegistry.Instance?.GetMusic(target.UUID);
+                if (musicInfo != null)
                 {
-                    var tagId = CustomPlaylistDataManager.GetTagIdFromAudio(target);
-                    
-                    if (!string.IsNullOrEmpty(tagId))
+                    var currentAudioTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag.CurrentValue;
+                    if (currentAudioTag == AudioTag.Favorite)
+                        return;
+
+                    // 获取当前所有音乐的UUID顺序
+                    var allMusicList = Traverse.Create(__instance)
+                        .Field("_allMusicList")
+                        .GetValue<List<GameAudioInfo>>();
+
+                    if (allMusicList != null)
                     {
-                        var manager = CustomPlaylistDataManager.Instance;
-                        if (manager != null)
+                        var sameTagUuids = allMusicList
+                            .Where(m => MusicRegistry.Instance?.GetMusic(m.UUID)?.TagId == musicInfo.TagId)
+                            .Select(m => m.UUID)
+                            .ToArray();
+
+                        EventBus.Instance?.Publish(new PlaylistOrderChangedEvent
                         {
-                            // 如果是收藏模式，不更新播放顺序（只更新收藏列表）
-                            if (currentValue == AudioTag.Favorite)
-                            {
-                                // 收藏模式下不需要更新数据库（收藏列表不需要排序）
-                                return;
-                            }
-
-                            // 获取当前所有音乐列表
-                            var allMusicList = Traverse.Create(__instance)
-                                .Field("_allMusicList")
-                                .GetValue<List<GameAudioInfo>>();
-
-                            if (allMusicList != null)
-                            {
-                                // 提取同Tag的所有UUID（按当前顺序）
-                                var sameTagUuids = allMusicList
-                                    .Where(m => CustomPlaylistDataManager.GetTagIdFromAudio(m) == tagId)
-                                    .Select(m => m.UUID)
-                                    .ToList();
-
-                                // 更新数据库中的播放顺序
-                                manager.SetPlaylistOrder(tagId, sameTagUuids);
-                                
-                                Plugin.Log.LogInfo($"[PlaylistOrder] 更新排序到数据库: Tag={tagId}, Count={sameTagUuids.Count}");
-                            }
-                        }
+                            UpdateType = PlaylistUpdateType.Reordered,
+                            AffectedSongUUIDs = sameTagUuids,
+                            ModuleId = musicInfo.ModuleId
+                        });
+                        
+                        Plugin.Log.LogInfo($"[PlaylistOrder] Order updated: {sameTagUuids.Length} songs");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[PlaylistOrder] 交换顺序失败: {ex}");
+                Plugin.Log.LogError($"[PlaylistOrder] Swap failed: {ex}");
             }
         }
     }

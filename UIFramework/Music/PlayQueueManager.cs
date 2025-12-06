@@ -681,6 +681,15 @@ namespace ChillPatcher.UIFramework.Music
         }
         
         /// <summary>
+        /// 手动触发当前播放变更事件（用于外部代码直接操作队列后通知）
+        /// </summary>
+        public void NotifyCurrentChanged(GameAudioInfo audio)
+        {
+            OnCurrentChanged?.Invoke(audio);
+            OnQueueChanged?.Invoke();
+        }
+        
+        /// <summary>
         /// 播放完成，前进到下一首
         /// </summary>
         /// <param name="currentPlaylist">当前播放列表（原始列表，不要提前过滤）</param>

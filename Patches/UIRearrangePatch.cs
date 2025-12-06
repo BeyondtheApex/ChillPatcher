@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using ChillPatcher.UIFramework.Audio;
 using ChillPatcher.UIFramework.Music;
 using ChillPatcher.Patches.UIFramework;
+using ChillPatcher.ModuleSystem.Services;
 
 namespace ChillPatcher.Patches
 {
@@ -423,16 +424,13 @@ namespace ChillPatcher.Patches
                 }
 
                 // 加载默认封面并创建方形 Sprite（使用高分辨率以支持缩放）
-                var defaultTexture = AlbumCoverLoader.LoadEmbeddedCoverTexture("ChillPatcher.Resources.defaultcover.png");
-                if (defaultTexture != null)
+                // 使用 CoverService 获取默认封面
+                var defaultSprite = CoverService.Instance.GetDefaultMusicCover();
+                if (defaultSprite != null)
                 {
-                    var squareSprite = AlbumArtReader.CreateSquareSprite(defaultTexture, AlbumArtResolution);
-                    if (squareSprite != null)
-                    {
-                        deactiveImage.sprite = squareSprite;
-                        activeImage.sprite = squareSprite;
-                        Logger.LogInfo($"已设置方形默认封面，分辨率: {AlbumArtResolution}x{AlbumArtResolution}");
-                    }
+                    deactiveImage.sprite = defaultSprite;
+                    activeImage.sprite = defaultSprite;
+                    Logger.LogInfo($"已设置默认封面");
                 }
                 else
                 {

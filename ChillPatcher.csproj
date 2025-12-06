@@ -11,17 +11,37 @@
     <OutputPath>bin\</OutputPath>
   </PropertyGroup>
 
+  <!-- 引用 SDK 项目 -->
+  <ItemGroup>
+    <ProjectReference Include="ChillPatcher.SDK\ChillPatcher.SDK.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Exclude game source files -->
     <Compile Remove="game\**" />
     <EmbeddedResource Remove="game\**" />
     <None Remove="game\**" />
+    <!-- Exclude SDK project sources (referenced as project) -->
+    <Compile Remove="ChillPatcher.SDK\**" />
+    <EmbeddedResource Remove="ChillPatcher.SDK\**" />
+    <None Remove="ChillPatcher.SDK\**" />
+    <!-- Exclude module project sources -->
+    <Compile Remove="ChillPatcher.Module.LocalFolder\**" />
+    <EmbeddedResource Remove="ChillPatcher.Module.LocalFolder\**" />
+    <None Remove="ChillPatcher.Module.LocalFolder\**" />
+    <!-- Exclude librime sources -->
+    <Compile Remove="librime\**" />
+    <EmbeddedResource Remove="librime\**" />
+    <None Remove="librime\**" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- Embedded Resources -->
     <EmbeddedResource Include="covers/defaultcover.png">
       <LogicalName>ChillPatcher.Resources.defaultcover.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="covers/loading.png">
+      <LogicalName>ChillPatcher.Resources.loading.png</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="covers/localcover.jpg">
       <LogicalName>ChillPatcher.Resources.localcover.jpg</LogicalName>
@@ -39,8 +59,6 @@
 
   <ItemGroup>
     <!-- NuGet Packages -->
-    <PackageReference Include="TagLibSharp" Version="2.3.0" />
-    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.118" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.*" PrivateAssets="all" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
   </ItemGroup>
@@ -158,137 +176,9 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="CopyToPlugins" AfterTargets="Build">
-    <PropertyGroup>
-      <PluginDir>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\plugins\ChillPatcher\</PluginDir>
-      <NativePluginDir>$(PluginDir)native\</NativePluginDir>
-      <RimeDllPath>$(ProjectDir)librime\build\bin\Release\rime.dll</RimeDllPath>
-      <RimeDataDir>$(PluginDir)rime-data\</RimeDataDir>
-      <RimeSharedDir>$(RimeDataDir)shared\</RimeSharedDir>
-      <RimeUserDir>$(RimeDataDir)user\</RimeUserDir>
-      <OpenCCDir>$(RimeSharedDir)opencc\</OpenCCDir>
-    </PropertyGroup>
-    
-    <MakeDir Directories="$(PluginDir)" />
-    <MakeDir Directories="$(RimeSharedDir)" />
-    <MakeDir Directories="$(RimeUserDir)" />
-    <MakeDir Directories="$(OpenCCDir)" />
-    <MakeDir Directories="$(NativePluginDir)x64\" />
-    <!-- <MakeDir Directories="$(NativePluginDir)x86\" /> -->
-    
-    <!-- Copy main DLL -->
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginDir)" />
-    
-    <!-- Copy TagLibSharp.dll -->
-    <ItemGroup>
-      <TagLibFiles Include="$(OutputPath)TagLibSharp.dll" />
-    </ItemGroup>
-    <Copy SourceFiles="@(TagLibFiles)" DestinationFolder="$(PluginDir)" Condition="Exists('$(OutputPath)TagLibSharp.dll')" />
-    
-    <!-- Copy System.Data.SQLite DLLs (从构建输出目录) -->
-    <ItemGroup>
-      <SQLiteFiles Include="$(OutputPath)System.Data.SQLite.dll" />
-      <SQLiteNativeX64 Include="$(OutputPath)x64\SQLite.Interop.dll" />
-      <!-- <SQLiteNativeX86 Include="$(OutputPath)x86\SQLite.Interop.dll" /> -->
-    </ItemGroup>
-    <Copy SourceFiles="@(SQLiteFiles)" DestinationFolder="$(PluginDir)" Condition="Exists('$(OutputPath)System.Data.SQLite.dll')" />
-    <Copy SourceFiles="@(SQLiteNativeX64)" DestinationFiles="$(NativePluginDir)x64\SQLite.Interop.dll" Condition="Exists('$(OutputPath)x64\SQLite.Interop.dll')" />
-    <!-- <Copy SourceFiles="@(SQLiteNativeX86)" DestinationFiles="$(NativePluginDir)x86\SQLite.Interop.dll" Condition="Exists('$(OutputPath)x86\SQLite.Interop.dll')" />     -->
-    
-    <!-- Copy NAudio.Wasapi DLLs (用于系统音频监控) -->
-    <ItemGroup>
-      <NAudioFiles Include="$(OutputPath)NAudio.Core.dll" />
-      <NAudioFiles Include="$(OutputPath)NAudio.Wasapi.dll" />
-    </ItemGroup>
-    <Copy SourceFiles="@(NAudioFiles)" DestinationFolder="$(PluginDir)" Condition="Exists('$(OutputPath)NAudio.Wasapi.dll')" />
-    
-    <!-- Copy rime.dll -->
-    <Copy SourceFiles="$(RimeDllPath)" DestinationFolder="$(PluginDir)" Condition="Exists('$(RimeDllPath)')" />
-    
-    <!-- Copy prelude (基础配置文件,不包括default.yaml) -->
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\prelude\symbols.yaml" DestinationFolder="$(RimeSharedDir)" />
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\prelude\punctuation.yaml" DestinationFolder="$(RimeSharedDir)" />
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\prelude\key_bindings.yaml" DestinationFolder="$(RimeSharedDir)" />
-    
-    <!-- Copy custom default.yaml to shared/ (使用我们的配置) -->
-    <Copy SourceFiles="$(ProjectDir)RimeDefaultConfig\default.yaml" DestinationFolder="$(RimeSharedDir)" />
-    
-    <!-- Copy luna_pinyin.custom.yaml to shared/ (繁简转换配置) -->
-    <Copy SourceFiles="$(ProjectDir)RimeDefaultConfig\luna_pinyin.custom.yaml" DestinationFolder="$(RimeSharedDir)" Condition="Exists('$(ProjectDir)RimeDefaultConfig\luna_pinyin.custom.yaml')" />
-    
-    <!-- Copy essay (语言模型) -->
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\essay\essay.txt" DestinationFolder="$(RimeSharedDir)" />
-    
-    <!-- Copy custom default.yaml to user/ (覆盖配置) - 移除,不需要重复 -->
-    <!-- <Copy SourceFiles="$(ProjectDir)RimeDefaultConfig\default.yaml" DestinationFiles="$(RimeUserDir)default.custom.yaml" /> -->
-    
-    <!-- Copy luna_pinyin schemas + dependencies -->
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\luna-pinyin\luna_pinyin.schema.yaml" DestinationFolder="$(RimeSharedDir)" />
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\luna-pinyin\luna_pinyin.dict.yaml" DestinationFolder="$(RimeSharedDir)" />
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\luna-pinyin\pinyin.yaml" DestinationFolder="$(RimeSharedDir)" />
-    
-    <!-- Copy stroke dependency -->
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\stroke\stroke.schema.yaml" DestinationFolder="$(RimeSharedDir)" />
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\stroke\stroke.dict.yaml" DestinationFolder="$(RimeSharedDir)" />
-    
-    <!-- Copy double_pinyin schemas -->
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\double-pinyin\double_pinyin.schema.yaml" DestinationFolder="$(RimeSharedDir)" />
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\double-pinyin\double_pinyin_abc.schema.yaml" DestinationFolder="$(RimeSharedDir)" />
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\double-pinyin\double_pinyin_flypy.schema.yaml" DestinationFolder="$(RimeSharedDir)" />
-    <Copy SourceFiles="$(ProjectDir)rime-schemas\double-pinyin\double_pinyin_mspy.schema.yaml" DestinationFolder="$(RimeSharedDir)" />
-    
-    <!-- Copy OpenCC data files (繁简转换必需) -->
-    <ItemGroup>
-      <OpenCCFiles Include="$(ProjectDir)librime\share\opencc\*.json" />
-      <OpenCCFiles Include="$(ProjectDir)librime\share\opencc\*.ocd2" />
-    </ItemGroup>
-    <Copy SourceFiles="@(OpenCCFiles)" DestinationFolder="$(OpenCCDir)" />
-    
-    <!-- Copy Native FLAC Decoder DLLs -->
-    <PropertyGroup>
-      <NativePluginDir>$(PluginDir)native\</NativePluginDir>
-    </PropertyGroup>
-    <MakeDir Directories="$(NativePluginDir)x64" Condition="!Exists('$(NativePluginDir)x64')" />
-    <!-- <MakeDir Directories="$(NativePluginDir)x86" Condition="!Exists('$(NativePluginDir)x86')" /> -->
-    
-    <ItemGroup>
-      <FlacDecoderX64 Include="$(ProjectDir)bin\native\x64\ChillFlacDecoder.dll" />
-      <!-- <FlacDecoderX86 Include="$(ProjectDir)bin\native\x86\ChillFlacDecoder.dll" /> -->
-    </ItemGroup>
-    
-    <Copy SourceFiles="@(FlacDecoderX64)" DestinationFolder="$(NativePluginDir)x64" Condition="Exists('$(ProjectDir)bin\native\x64\ChillFlacDecoder.dll')" />
-    <!-- <Copy SourceFiles="@(FlacDecoderX86)" DestinationFolder="$(NativePluginDir)x86" Condition="Exists('$(ProjectDir)bin\native\x86\ChillFlacDecoder.dll')" /> -->
-    
-    <!-- Copy Native SMTC Bridge DLL -->
-    <ItemGroup>
-      <SmtcBridgeX64 Include="$(ProjectDir)bin\native\x64\ChillSmtcBridge.dll" />
-    </ItemGroup>
-    <Copy SourceFiles="@(SmtcBridgeX64)" DestinationFolder="$(NativePluginDir)x64" Condition="Exists('$(ProjectDir)bin\native\x64\ChillSmtcBridge.dll')" />
-    
-    <ItemGroup>
-       <VCRuntimeFiles Include="$(ProjectDir)lib\*.dll" /> 
-    </ItemGroup>
-    <Copy SourceFiles="@(VCRuntimeFiles)" DestinationFolder="$(NativePluginDir)x64" />
-    
-    <!-- Copy License files -->
-    <MakeDir Directories="$(PluginDir)licenses" Condition="!Exists('$(PluginDir)licenses')" />
-    <Copy SourceFiles="$(ProjectDir)LICENSE" DestinationFiles="$(PluginDir)licenses\ChillPatcher-LICENSE.txt" />
-    <Copy SourceFiles="$(ProjectDir)librime\LICENSE" DestinationFiles="$(PluginDir)licenses\librime-LICENSE.txt" Condition="Exists('$(ProjectDir)librime\LICENSE')" />
-    <Copy SourceFiles="$(ProjectDir)NativePlugins\dr_libs\LICENSE" DestinationFiles="$(PluginDir)licenses\dr_libs-LICENSE.txt" Condition="Exists('$(ProjectDir)NativePlugins\dr_libs\LICENSE')" />
-    
-    <Message Text="Deployed to: $(PluginDir)" Importance="high" />
-    <Message Text="Copied rime.dll" Importance="high" Condition="Exists('$(RimeDllPath)')" />
-    <Message Text="Copied Rime schemas to shared: $(RimeSharedDir)" Importance="high" />
-    <Message Text="Copied OpenCC data to: $(OpenCCDir)" Importance="high" />
-    <Message Text="Copied Native FLAC decoder (x64)" Importance="high" Condition="Exists('$(ProjectDir)bin\native\x64\ChillFlacDecoder.dll')" />
-    <!-- <Message Text="Copied Native FLAC decoder (x86)" Importance="high" Condition="Exists('$(ProjectDir)bin\native\x86\ChillFlacDecoder.dll')" /> -->
-    <Message Text="Copied Native SMTC bridge (x64)" Importance="high" Condition="Exists('$(ProjectDir)bin\native\x64\ChillSmtcBridge.dll')" />
-    <Message Text="Copied license files to: $(PluginDir)licenses" Importance="high" />
-    <Message Text="User data directory: $(RimeUserDir)" Importance="high" />
-    <Warning Text="rime.dll not found at $(RimeDllPath)" Condition="!Exists('$(RimeDllPath)')" />
-    <Warning Text="Native FLAC decoder (x64) not found - FLAC decoding will fall back to Unity" Condition="!Exists('$(ProjectDir)bin\native\x64\ChillFlacDecoder.dll')" />
-    <Warning Text="Native SMTC bridge (x64) not found - System media transport controls will be disabled" Condition="!Exists('$(ProjectDir)bin\native\x64\ChillSmtcBridge.dll')" />
-    <!-- <Warning Text="Native FLAC decoder (x86) not found - FLAC decoding will fall back to Unity" Condition="!Exists('$(ProjectDir)bin\native\x86\ChillFlacDecoder.dll')" /> -->
-  </Target>
+  <!-- 
+    开发调试：使用 dotnet build 构建，手动复制到游戏目录
+    发布构建：使用 build_release.bat 脚本，自动创建完整的发布目录结构
+  -->
 
 </Project>

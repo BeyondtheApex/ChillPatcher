@@ -35,6 +35,122 @@ namespace ChillPatcher.Patches.UIFramework
         // 订阅管理
         private static System.IDisposable _musicChangeSubscription;
         private static bool _queueChangeSubscribed = false;
+        private static bool _prefabEventSubscribed = false;
+        
+        /// <summary>
+        /// 确保订阅了 Prefab 缓存事件
+        /// </summary>
+        private static void EnsurePrefabEventSubscription()
+        {
+            if (_prefabEventSubscribed)
+                return;
+                
+            _prefabEventSubscribed = true;
+            
+            // 订阅 Prefab 缓存完成事件
+            PrefabFactory.OnXCloseButtonPrefabCached += OnPrefabCached;
+            PrefabFactory.OnCircleArrowButtonPrefabCached += OnPrefabCached;
+        }
+        
+        /// <summary>
+        /// 当 Prefab 缓存完成时，刷新所有活动实例的按钮
+        /// </summary>
+        private static void OnPrefabCached()
+        {
+            Plugin.Log.LogInfo("[QueueActions] Prefab cached, refreshing existing instances...");
+            
+            // 清理已销毁的实例
+            _activeInstances.RemoveAll(instance => instance == null);
+            
+            // 刷新所有活动实例
+            foreach (var instance in _activeInstances)
+            {
+                try
+                {
+                    var audioInfo = instance.AudioInfo;
+                    if (audioInfo == null)
+                        continue;
+                        
+                    var contents = instance.transform.Find("PlayListMusicPlayButton/Contents");
+                    if (contents == null)
+                        continue;
+                        
+                    var container = contents.Find(QueueButtonsContainerName);
+                    if (container != null)
+                    {
+                        // 尝试补充缺失的按钮
+                        EnsureQueueButtons(container, audioInfo);
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Plugin.Log.LogDebug($"[QueueActions] Error refreshing instance: {ex.Message}");
+                }
+            }
+        }
+        
+        /// <summary>
+        /// 确保容器内有所有需要的按钮
+        /// </summary>
+        private static void EnsureQueueButtons(Transform container, GameAudioInfo audioInfo)
+        {
+            // 获取或创建数据组件
+            var data = container.GetComponent<QueueButtonData>();
+            if (data == null)
+            {
+                data = container.gameObject.AddComponent<QueueButtonData>();
+                data.AudioInfo = audioInfo;
+            }
+            
+            // 获取按钮大小（从容器的 RectTransform）
+            var containerRect = container.GetComponent<RectTransform>();
+            float buttonSize = containerRect != null ? containerRect.sizeDelta.y : 30f;
+            
+            // 检查并创建 AddToQueue 按钮
+            var addToQueueBtn = container.Find(AddToQueueButtonName);
+            if (addToQueueBtn == null && PrefabFactory.XCloseButtonPrefab != null)
+            {
+                addToQueueBtn = CreateAddToQueueButton(container, audioInfo);
+                if (addToQueueBtn != null)
+                {
+                    // 添加 LayoutElement 控制大小
+                    var layoutElement = addToQueueBtn.gameObject.AddComponent<LayoutElement>();
+                    layoutElement.preferredWidth = buttonSize;
+                    layoutElement.preferredHeight = buttonSize;
+                    // 禁用大小变化动画
+                    DisableScaleAnimations(addToQueueBtn.gameObject);
+                    // 确保按钮在 PlayNext 之前
+                    addToQueueBtn.SetAsFirstSibling();
+                    
+                    Plugin.Log.LogDebug($"[QueueActions] Late-created AddToQueue button for {audioInfo.AudioClipName}");
+                }
+            }
+            
+            // 获取 AddToQueue 按钮的数据引用
+            QueueButtonData addToQueueData = null;
+            if (addToQueueBtn != null)
+            {
+                addToQueueData = addToQueueBtn.GetComponent<QueueButtonData>();
+            }
+            
+            // 检查并创建 PlayNext 按钮
+            var playNextBtn = container.Find(PlayNextButtonName);
+            if (playNextBtn == null && PrefabFactory.CircleArrowButtonPrefab != null)
+            {
+                playNextBtn = CreatePlayNextButton(container, audioInfo, addToQueueData);
+                if (playNextBtn != null)
+                {
+                    // 添加 LayoutElement 控制大小
+                    var layoutElement = playNextBtn.gameObject.AddComponent<LayoutElement>();
+                    layoutElement.preferredWidth = buttonSize;
+                    layoutElement.preferredHeight = buttonSize;
+                    // 禁用大小变化动画
+                    DisableScaleAnimations(playNextBtn.gameObject);
+                    
+                    Plugin.Log.LogDebug($"[QueueActions] Late-created PlayNext button for {audioInfo.AudioClipName}");
+                }
+            }
+        }
         
         /// <summary>
         /// Patch Setup方法 - 添加队列操作按钮
@@ -42,6 +158,9 @@ namespace ChillPatcher.Patches.UIFramework
         [HarmonyPostfix]
         static void Setup_AddQueueButtons_Postfix(MusicPlayListButtons __instance)
         {
+            // 确保订阅了 Prefab 缓存事件
+            EnsurePrefabEventSubscription();
+            
             try
             {
                 // 只在播放列表视图中添加(非队列视图)

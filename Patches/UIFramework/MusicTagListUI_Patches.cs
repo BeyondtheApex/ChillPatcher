@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bulbul;
+using ChillPatcher.ModuleSystem.Registry;
+using ChillPatcher.SDK.Models;
 using ChillPatcher.UIFramework.Music;
 using Cysharp.Threading.Tasks;
 using HarmonyLib;
@@ -41,20 +43,23 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
+                // 检查是否有模块注册了标签
+                bool hasModuleTags = TagRegistry.Instance?.GetAllTags()?.Count > 0;
+                
                 // 1. 隐藏空Tag功能
                 if (PluginConfig.HideEmptyTags.Value)
                 {
                     HideEmptyTags(__instance);
                 }
 
-                // 2. 添加自定义Tag按钮
-                if (PluginConfig.EnableFolderPlaylists.Value)
+                // 2. 添加自定义Tag按钮（如果有模块注册了标签）
+                if (hasModuleTags)
                 {
                     AddCustomTagButtons(__instance);
                 }
 
                 // 3. 更新下拉框高度
-                if (PluginConfig.HideEmptyTags.Value || PluginConfig.EnableFolderPlaylists.Value)
+                if (PluginConfig.HideEmptyTags.Value || hasModuleTags)
                 {
                     UpdateDropdownHeight(__instance);
                 }
@@ -240,20 +245,18 @@ namespace ChillPatcher.Patches.UIFramework
             var buttonPrefab = firstButton.gameObject;
 
             // 添加自定义Tag按钮
-            var customTags = CustomTagManager.Instance.GetAllTags();
-            foreach (var tagKvp in customTags)
+            var customTags = TagRegistry.Instance?.GetAllTags() ?? new List<TagInfo>();
+            foreach (var customTag in customTags)
             {
-                var customTag = tagKvp.Value;
-
                 // 克隆按钮
                 var newButtonObj = UnityEngine.Object.Instantiate(buttonPrefab, container);
-                newButtonObj.name = $"CustomTag_{customTag.Id}";
+                newButtonObj.name = $"CustomTag_{customTag.TagId}";
 
                 var newButton = newButtonObj.GetComponent<MusicTagListButton>();
                 if (newButton != null)
                 {
                     // ✅ 设置按钮Tag为实际的位值
-                    Traverse.Create(newButton).Field("Tag").SetValue(customTag.BitValue);
+                    Traverse.Create(newButton).Field("Tag").SetValue((AudioTag)customTag.BitValue);
 
                     // ✅ 找到Buttons/TagName子物体并替换为纯Text
                     var buttonsContainer = newButtonObj.transform.Find("Buttons");
@@ -323,7 +326,7 @@ namespace ChillPatcher.Patches.UIFramework
                     
                     // ✅ 同步按钮初始状态 (根据CurrentAudioTag是否包含该位)
                     var currentTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value;
-                    bool isActive = currentTag.HasFlagFast(customTag.BitValue);
+                    bool isActive = currentTag.HasFlagFast((AudioTag)customTag.BitValue);
                     newButton.SetCheck(isActive);
                     Plugin.Log.LogDebug($"[CustomTag] Button '{customTag.DisplayName}' initial state: {(isActive ? "Checked" : "Unchecked")} (CurrentTag: {currentTag})");
 
@@ -344,7 +347,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// 设置自定义Tag按钮点击事件
         /// ✅ 直接操作MusicService.CurrentAudioTag，完全复用游戏筛选逻辑
         /// </summary>
-        private static void SetupCustomTagButton(MusicTagListButton button, CustomTag customTag, MusicTagListUI tagListUI)
+        private static void SetupCustomTagButton(MusicTagListButton button, TagInfo customTag, MusicTagListUI tagListUI)
         {
             var musicService = Traverse.Create(tagListUI).Field("musicService").GetValue<MusicService>();
             if (musicService == null)
@@ -355,17 +358,17 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 // 获取当前Tag状态
                 var currentTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value;
-                bool hasTag = currentTag.HasFlagFast(customTag.BitValue);
+                bool hasTag = currentTag.HasFlagFast((AudioTag)customTag.BitValue);
 
                 // ✅ 使用位运算切换
                 if (hasTag)
                 {
-                    SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = currentTag.RemoveFlag(customTag.BitValue);
+                    SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = currentTag.RemoveFlag((AudioTag)customTag.BitValue);
                     Plugin.Log.LogInfo($"[CustomTag] Removed: {customTag.DisplayName} ({customTag.BitValue})");
                 }
                 else
                 {
-                    SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = currentTag.AddFlag(customTag.BitValue);
+                    SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = currentTag.AddFlag((AudioTag)customTag.BitValue);
                     Plugin.Log.LogInfo($"[CustomTag] Added: {customTag.DisplayName} ({customTag.BitValue})");
                 }
 
@@ -834,6 +837,9 @@ namespace ChillPatcher.Patches.UIFramework
             
             // 清空播放历史
             PlayQueueManager.Instance.ClearHistory();
+            
+            // 自动切换回播放列表视图
+            PlayQueueButton_Patch.SwitchToPlaylist();
             
             Plugin.Log.LogInfo("[TagListUI] Play history cleared");
         }

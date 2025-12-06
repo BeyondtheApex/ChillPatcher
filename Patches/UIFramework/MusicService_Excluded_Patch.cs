@@ -1,10 +1,14 @@
+using System;
 using Bulbul;
+using ChillPatcher.ModuleSystem;
+using ChillPatcher.ModuleSystem.Registry;
+using ChillPatcher.SDK.Events;
 using HarmonyLib;
 
 namespace ChillPatcher.Patches.UIFramework
 {
     /// <summary>
-    /// 拦截MusicService的排除列表操作，对自定义Tag使用独立数据库
+    /// 拦截MusicService的排除列表操作，对模块歌曲使用事件通知
     /// </summary>
     [HarmonyPatch(typeof(MusicService))]
     public class MusicService_Excluded_Patch
@@ -12,7 +16,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// <summary>
         /// 歌曲排除状态变化事件
         /// </summary>
-        public static event System.Action<string, bool> OnSongExcludedChanged;  // (songUUID, isExcluded)
+        public static event Action<string, bool> OnSongExcludedChanged;
 
         /// <summary>
         /// Patch ExcludeFromPlaylist - 排除歌曲
@@ -23,55 +27,46 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                // 检查是否是自定义Tag
-                if (ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.IsCustomTag(gameAudioInfo.Tag))
+                // 检查是否是模块注册的歌曲
+                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
+                if (musicInfo != null)
                 {
-                    // 检查是否已经在排除列表中
                     if (__instance.IsContainsExcludedFromPlaylist(gameAudioInfo))
                     {
                         __result = false;
-                        return false; // 跳过原方法
+                        return false;
                     }
 
-                    var tagId = ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.GetTagIdFromAudio(gameAudioInfo);
-                    if (!string.IsNullOrEmpty(tagId))
+                    // 发布排除事件，让模块处理
+                    EventBus.Instance?.Publish(new ExcludeChangedEvent
                     {
-                        var manager = ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.Instance;
-                        if (manager != null)
-                        {
-                            // 使用独立数据库保存
-                            __result = manager.AddExcluded(tagId, gameAudioInfo.UUID);
-                            
-                            // 触发状态变化事件
-                            if (__result)
-                            {
-                                OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, true);
-                            }
-                            
-                            return false; // 跳过原方法
-                        }
-                    }
+                        Music = musicInfo,
+                        IsExcluded = true,
+                        ModuleId = musicInfo.ModuleId
+                    });
+                    
+                    __result = true;
+                    OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, true);
+                    
+                    Plugin.Log.LogInfo($"[Excluded] Module song excluded: {gameAudioInfo.UUID}");
+                    return false;
                 }
 
-                // 游戏原生Tag使用原方法
                 return true;
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                Plugin.Log.LogError($"[ExcludedPatch] 排除歌曲失败: {ex}");
+                Plugin.Log.LogError($"[Excluded] Exclude failed: {ex}");
                 return true;
             }
         }
         
-        /// <summary>
-        /// Postfix for ExcludeFromPlaylist - 原生Tag排除成功后触发事件
-        /// </summary>
         [HarmonyPatch("ExcludeFromPlaylist")]
         [HarmonyPostfix]
         static void ExcludeFromPlaylist_Postfix(GameAudioInfo gameAudioInfo, bool __result)
         {
-            // 只在原方法成功执行后触发（非自定义Tag的情况）
-            if (__result && !ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.IsCustomTag(gameAudioInfo.Tag))
+            var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
+            if (__result && musicInfo == null)
             {
                 OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, true);
             }
@@ -86,48 +81,41 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                // 检查是否是自定义Tag
-                if (ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.IsCustomTag(gameAudioInfo.Tag))
+                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
+                if (musicInfo != null)
                 {
-                    // 检查是否不在排除列表中
                     if (!__instance.IsContainsExcludedFromPlaylist(gameAudioInfo))
                     {
                         __result = false;
-                        return false; // 跳过原方法
+                        return false;
                     }
 
-                    var tagId = ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.GetTagIdFromAudio(gameAudioInfo);
-                    if (!string.IsNullOrEmpty(tagId))
+                    // 发布包含事件
+                    EventBus.Instance?.Publish(new ExcludeChangedEvent
                     {
-                        var manager = ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.Instance;
-                        if (manager != null)
-                        {
-                            // 使用独立数据库移除
-                            __result = manager.RemoveExcluded(tagId, gameAudioInfo.UUID);
-                            
-                            // 触发状态变化事件
-                            if (__result)
-                            {
-                                OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, false);
-                            }
-                            
-                            return false; // 跳过原方法
-                        }
-                    }
+                        Music = musicInfo,
+                        IsExcluded = false,
+                        ModuleId = musicInfo.ModuleId
+                    });
+                    
+                    __result = true;
+                    OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, false);
+                    
+                    Plugin.Log.LogInfo($"[Excluded] Module song included: {gameAudioInfo.UUID}");
+                    return false;
                 }
 
-                // 游戏原生Tag使用原方法
                 return true;
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                Plugin.Log.LogError($"[ExcludedPatch] 包含歌曲失败: {ex}");
+                Plugin.Log.LogError($"[Excluded] Include failed: {ex}");
                 return true;
             }
         }
 
         /// <summary>
-        /// Patch IsContainsExcludedFromPlaylist - 检查是否在排除列表
+        /// Patch IsContainsExcludedFromPlaylist - 检查排除状态
         /// </summary>
         [HarmonyPatch("IsContainsExcludedFromPlaylist")]
         [HarmonyPrefix]
@@ -135,28 +123,19 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                // 检查是否是自定义Tag
-                if (ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.IsCustomTag(gameAudioInfo.Tag))
+                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
+                if (musicInfo != null)
                 {
-                    var tagId = ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.GetTagIdFromAudio(gameAudioInfo);
-                    if (!string.IsNullOrEmpty(tagId))
-                    {
-                        var manager = ChillPatcher.UIFramework.Data.CustomPlaylistDataManager.Instance;
-                        if (manager != null)
-                        {
-                            // 从独立数据库检查
-                            __result = manager.IsExcluded(tagId, gameAudioInfo.UUID);
-                            return false; // 跳过原方法
-                        }
-                    }
+                    // 模块歌曲使用 MusicInfo.IsExcluded 属性
+                    __result = musicInfo.IsExcluded;
+                    return false;
                 }
 
-                // 游戏原生Tag使用原方法
                 return true;
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                Plugin.Log.LogError($"[ExcludedPatch] 检查排除状态失败: {ex}");
+                Plugin.Log.LogError($"[Excluded] Check status failed: {ex}");
                 return true;
             }
         }

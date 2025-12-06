@@ -1,9 +1,14 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using BepInEx.Logging;
 using Bulbul;
 using ChillPatcher.Native;
 using ChillPatcher.UIFramework.Music;
+using ChillPatcher.ModuleSystem;
+using ChillPatcher.ModuleSystem.Registry;
+using ChillPatcher.ModuleSystem.Services;
+using ChillPatcher.SDK.Interfaces;
 using UnityEngine;
 
 namespace ChillPatcher.UIFramework.Audio
@@ -25,6 +30,7 @@ namespace ChillPatcher.UIFramework.Audio
         private string _currentTitle;
         private string _currentArtist;
         private string _currentAlbum;
+        private string _currentMusicUuid; // 当前播放的歌曲 UUID
         private bool _isPlaying;
 
         // 游戏服务引用
@@ -61,6 +67,9 @@ namespace ChillPatcher.UIFramework.Audio
                 // 注册按钮事件
                 SmtcBridge.OnButtonPressed += OnButtonPressed;
                 
+                // 订阅封面加载完成事件（用于异步更新封面）
+                CoverService.Instance.OnMusicCoverLoaded += OnMusicCoverLoaded;
+                
                 // 设置媒体类型
                 SmtcBridge.SetMediaType(SmtcBridge.MediaType.Music);
                 
@@ -70,6 +79,34 @@ namespace ChillPatcher.UIFramework.Audio
             catch (Exception ex)
             {
                 _log.LogError($"SMTC 服务初始化异常: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 歌曲封面加载完成回调
+        /// </summary>
+        private async void OnMusicCoverLoaded(string uuid, UnityEngine.Sprite sprite)
+        {
+            // 只更新当前播放歌曲的封面
+            if (uuid == _currentMusicUuid && _initialized)
+            {
+                try
+                {
+                    // 重新获取封面字节数据并更新 SMTC
+                    var (data, mimeType) = await CoverService.Instance.GetMusicCoverBytesAsync(uuid);
+                    if (data != null && data.Length > 0)
+                    {
+                        if (SmtcBridge.SetThumbnailFromMemory(data, mimeType ?? "image/jpeg"))
+                        {
+                            SmtcBridge.UpdateDisplay();
+                            _log.LogDebug($"封面异步加载完成，已更新 SMTC 封面: {uuid}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.LogDebug($"异步更新 SMTC 封面失败: {ex.Message}");
+                }
             }
         }
 
@@ -125,37 +162,16 @@ namespace ChillPatcher.UIFramework.Audio
         {
             try
             {
-                // 首先尝试从本地文件的 TagLib 读取专辑信息
-                if (!string.IsNullOrEmpty(audioInfo.LocalPath) && System.IO.File.Exists(audioInfo.LocalPath))
-                {
-                    try
-                    {
-                        using var tagFile = TagLib.File.Create(audioInfo.LocalPath);
-                        if (!string.IsNullOrEmpty(tagFile.Tag.Album))
-                        {
-                            return tagFile.Tag.Album;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.LogDebug($"无法从文件读取专辑信息: {ex.Message}");
-                    }
-                }
-                
-                // 然后尝试从 AlbumManager 获取
+                // 从 AlbumRegistry 获取专辑名称
                 if (!string.IsNullOrEmpty(audioInfo.UUID))
                 {
-                    var albumManager = AlbumManager.Instance;
-                    if (albumManager != null)
+                    var musicInfo = MusicRegistry.Instance?.GetByUUID(audioInfo.UUID);
+                    if (musicInfo != null && !string.IsNullOrEmpty(musicInfo.AlbumId))
                     {
-                        var albumId = albumManager.GetAlbumIdBySong(audioInfo.UUID);
-                        if (!string.IsNullOrEmpty(albumId))
+                        var albumInfo = AlbumRegistry.Instance?.GetAlbum(musicInfo.AlbumId);
+                        if (albumInfo != null && !string.IsNullOrEmpty(albumInfo.DisplayName))
                         {
-                            var albumInfo = albumManager.GetAlbum(albumId);
-                            if (albumInfo != null && !string.IsNullOrEmpty(albumInfo.DisplayName))
-                            {
-                                return albumInfo.DisplayName;
-                            }
+                            return albumInfo.DisplayName;
                         }
                     }
                 }
@@ -170,61 +186,39 @@ namespace ChillPatcher.UIFramework.Audio
         }
 
         /// <summary>
-        /// 尝试设置封面图片
+        /// 尝试设置封面图片（异步，不阻塞主线程）
         /// </summary>
         private void TrySetThumbnail(GameAudioInfo audioInfo)
+        {
+            // 记录当前播放的歌曲 UUID
+            _currentMusicUuid = audioInfo.UUID;
+            
+            // 使用 fire-and-forget 模式，避免阻塞主线程
+            _ = TrySetThumbnailAsync(audioInfo);
+        }
+
+        /// <summary>
+        /// 异步设置封面图片
+        /// </summary>
+        private async Task TrySetThumbnailAsync(GameAudioInfo audioInfo)
         {
             try
             {
                 bool thumbnailSet = false;
                 
-                // 1. 如果有文件路径，尝试从文件读取内嵌封面
-                if (!string.IsNullOrEmpty(audioInfo.LocalPath) && File.Exists(audioInfo.LocalPath))
+                // 1. 如果有 UUID，尝试从 CoverService 获取封面（异步）
+                if (!string.IsNullOrEmpty(audioInfo.UUID))
                 {
-                    try
-                    {
-                        using var tagFile = TagLib.File.Create(audioInfo.LocalPath);
-                        var pictures = tagFile.Tag.Pictures;
-                        if (pictures != null && pictures.Length > 0)
-                        {
-                            var picture = pictures[0];
-                            string mimeType = picture.MimeType ?? "image/jpeg";
-                            if (SmtcBridge.SetThumbnailFromMemory(picture.Data.Data, mimeType))
-                            {
-                                thumbnailSet = true;
-                                _log.LogDebug($"从文件内嵌封面设置缩略图成功");
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.LogDebug($"读取内嵌封面失败: {ex.Message}");
-                    }
-                    
-                    // 2. 如果没有内嵌封面，尝试查找同目录下的封面文件
-                    if (!thumbnailSet)
-                    {
-                        var coverPath = TryFindCoverFile(audioInfo.LocalPath);
-                        if (!string.IsNullOrEmpty(coverPath))
-                        {
-                            var coverData = File.ReadAllBytes(coverPath);
-                            var coverMime = GetMimeType(coverPath);
-                            if (SmtcBridge.SetThumbnailFromMemory(coverData, coverMime))
-                            {
-                                thumbnailSet = true;
-                                _log.LogDebug($"从封面文件设置缩略图成功: {coverPath}");
-                            }
-                        }
-                    }
+                    thumbnailSet = await TrySetThumbnailFromCoverServiceAsync(audioInfo.UUID);
                 }
 
-                // 3. 如果是游戏原生歌曲，使用游戏内置封面
+                // 2. 如果是游戏原生歌曲，使用游戏内置封面
                 if (!thumbnailSet && audioInfo.PathType == AudioMode.Normal && audioInfo.Tag != AudioTag.Local)
                 {
                     thumbnailSet = TrySetGameCover((int)audioInfo.Tag);
                 }
 
-                // 4. 如果还是没有封面，使用默认封面
+                // 3. 如果还是没有封面，使用默认封面
                 if (!thumbnailSet)
                 {
                     thumbnailSet = TrySetDefaultCover(audioInfo.Tag == AudioTag.Local);
@@ -239,31 +233,42 @@ namespace ChillPatcher.UIFramework.Audio
         }
 
         /// <summary>
+        /// 异步从 CoverService 获取封面（不阻塞主线程）
+        /// </summary>
+        private async Task<bool> TrySetThumbnailFromCoverServiceAsync(string uuid)
+        {
+            try
+            {
+                // 使用统一的 CoverService 获取封面字节（真正的异步）
+                var (data, mimeType) = await CoverService.Instance.GetMusicCoverBytesAsync(uuid);
+                
+                if (data != null && data.Length > 0)
+                {
+                    if (SmtcBridge.SetThumbnailFromMemory(data, mimeType ?? "image/jpeg"))
+                    {
+                        _log.LogDebug($"从 CoverService 获取封面成功: {uuid}");
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogDebug($"从 CoverService 获取封面失败: {ex.Message}");
+            }
+            
+            return false;
+        }
+
+        /// <summary>
         /// 尝试设置游戏内置封面
         /// </summary>
         private bool TrySetGameCover(int audioTag)
         {
             try
             {
-                // 根据 AudioTag 确定资源名称
-                // Original=1 -> gamecover1.jpg
-                // Special=2 -> gamecover2.jpg
-                // Other=4 -> gamecover3.png
-                string resourceName = audioTag switch
-                {
-                    1 => "ChillPatcher.Resources.gamecover1.jpg", // Original
-                    2 => "ChillPatcher.Resources.gamecover2.jpg", // Special
-                    4 => "ChillPatcher.Resources.gamecover3.png", // Other
-                    _ => null
-                };
-
-                if (resourceName == null)
-                    return false;
-
-                var coverData = LoadEmbeddedResourceBytes(resourceName);
+                var (coverData, mimeType) = CoverService.Instance.GetGameCoverBytes(audioTag);
                 if (coverData != null && coverData.Length > 0)
                 {
-                    string mimeType = resourceName.EndsWith(".png") ? "image/png" : "image/jpeg";
                     if (SmtcBridge.SetThumbnailFromMemory(coverData, mimeType))
                     {
                         _log.LogDebug($"从游戏内置封面设置缩略图成功: tag={audioTag}");
@@ -285,18 +290,12 @@ namespace ChillPatcher.UIFramework.Audio
         {
             try
             {
-                // 本地歌曲使用 localcover，其他使用 defaultcover
-                string resourceName = isLocal 
-                    ? "ChillPatcher.Resources.localcover.jpg"
-                    : "ChillPatcher.Resources.defaultcover.png";
-
-                var coverData = LoadEmbeddedResourceBytes(resourceName);
+                var (coverData, mimeType) = CoverService.Instance.GetDefaultCoverBytes(isLocal);
                 if (coverData != null && coverData.Length > 0)
                 {
-                    string mimeType = resourceName.EndsWith(".png") ? "image/png" : "image/jpeg";
                     if (SmtcBridge.SetThumbnailFromMemory(coverData, mimeType))
                     {
-                        _log.LogDebug($"使用默认封面设置缩略图成功: {resourceName}");
+                        _log.LogDebug($"使用默认封面设置缩略图成功");
                         return true;
                     }
                 }
@@ -306,94 +305,6 @@ namespace ChillPatcher.UIFramework.Audio
                 _log.LogDebug($"设置默认封面失败: {ex.Message}");
             }
             return false;
-        }
-
-        /// <summary>
-        /// 从嵌入资源加载字节数组
-        /// </summary>
-        private byte[] LoadEmbeddedResourceBytes(string resourceName)
-        {
-            try
-            {
-                var assembly = System.Reflection.Assembly.GetExecutingAssembly();
-                using var stream = assembly.GetManifestResourceStream(resourceName);
-                if (stream == null)
-                {
-                    _log.LogDebug($"嵌入资源未找到: {resourceName}");
-                    return null;
-                }
-
-                var bytes = new byte[stream.Length];
-                stream.Read(bytes, 0, bytes.Length);
-                return bytes;
-            }
-            catch (Exception ex)
-            {
-                _log.LogDebug($"加载嵌入资源失败 [{resourceName}]: {ex.Message}");
-                return null;
-            }
-        }
-        
-        /// <summary>
-        /// 尝试在音频文件同目录下查找封面文件
-        /// </summary>
-        private string TryFindCoverFile(string audioPath)
-        {
-            try
-            {
-                var directory = Path.GetDirectoryName(audioPath);
-                if (string.IsNullOrEmpty(directory)) return null;
-                
-                // 常见的封面文件名（与 AlbumCoverLoader 一致）
-                string[] coverNames = { "cover", "folder", "front", "album", "thumb", "artwork" };
-                string[] extensions = { ".jpg", ".jpeg", ".png", ".bmp", ".webp" };
-                
-                foreach (var name in coverNames)
-                {
-                    foreach (var ext in extensions)
-                    {
-                        var coverPath = Path.Combine(directory, name + ext);
-                        if (File.Exists(coverPath))
-                            return coverPath;
-                        
-                        // 也检查大写版本
-                        coverPath = Path.Combine(directory, name.ToUpper() + ext);
-                        if (File.Exists(coverPath))
-                            return coverPath;
-                    }
-                }
-                
-                // 也尝试查找任意图片文件
-                foreach (var ext in extensions)
-                {
-                    var images = Directory.GetFiles(directory, $"*{ext}", SearchOption.TopDirectoryOnly);
-                    if (images.Length > 0)
-                        return images[0];
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.LogDebug($"查找封面文件失败: {ex.Message}");
-            }
-            
-            return null;
-        }
-        
-        /// <summary>
-        /// 根据文件扩展名获取 MIME 类型
-        /// </summary>
-        private string GetMimeType(string filePath)
-        {
-            var ext = Path.GetExtension(filePath).ToLower();
-            return ext switch
-            {
-                ".jpg" or ".jpeg" => "image/jpeg",
-                ".png" => "image/png",
-                ".bmp" => "image/bmp",
-                ".gif" => "image/gif",
-                ".webp" => "image/webp",
-                _ => "image/jpeg"
-            };
         }
 
         /// <summary>
@@ -489,6 +400,7 @@ namespace ChillPatcher.UIFramework.Audio
             try
             {
                 SmtcBridge.OnButtonPressed -= OnButtonPressed;
+                CoverService.Instance.OnMusicCoverLoaded -= OnMusicCoverLoaded;
                 SmtcBridge.SetPlaybackStatus(SmtcBridge.PlaybackStatus.Closed);
                 SmtcBridge.Shutdown();
                 

@@ -17,7 +17,6 @@ namespace ChillPatcher
             { "Achievement", 1 },
             { "Keyboard", 1 },
             { "Rime", 1 },
-            { "Playlist", 1 },
             { "UI", 2 },        // v2: TagDropdownHeightOffset 默认值从50改为80
             { "Maintenance", 1 },
             { "Audio", 1 }      // 音频自动静音功能
@@ -32,7 +31,6 @@ namespace ChillPatcher
         private static ConfigEntry<int> _achievementVersion;
         private static ConfigEntry<int> _keyboardVersion;
         private static ConfigEntry<int> _rimeVersion;
-        private static ConfigEntry<int> _playlistVersion;
         private static ConfigEntry<int> _uiVersion;
         private static ConfigEntry<int> _maintenanceVersion;
         private static ConfigEntry<int> _audioVersion;
@@ -63,11 +61,7 @@ namespace ChillPatcher
         public static ConfigEntry<string> RimeUserDataPath { get; private set; }
         public static ConfigEntry<bool> EnableRimeInputMethod { get; private set; }
 
-        // 文件夹歌单设置
-        public static ConfigEntry<bool> EnableFolderPlaylists { get; private set; }
-        public static ConfigEntry<string> PlaylistRootFolder { get; private set; }
-        public static ConfigEntry<bool> AutoGeneratePlaylistJson { get; private set; }
-        public static ConfigEntry<bool> EnablePlaylistCache { get; private set; }
+        // UI 设置
         public static ConfigEntry<bool> HideEmptyTags { get; private set; }
         public static ConfigEntry<float> TagDropdownHeightMultiplier { get; private set; }
         public static ConfigEntry<float> TagDropdownHeightOffset { get; private set; }
@@ -216,51 +210,7 @@ namespace ChillPatcher
                 "留空则使用：BepInEx/plugins/ChillPatcher/rime-data/user"
             );
 
-            // 文件夹歌单配置
-            EnableFolderPlaylists = config.Bind(
-                "Playlist",
-                "EnableFolderPlaylists",
-                true,
-                "是否启用文件夹歌单系统\n" +
-                "true = 启用（默认），扫描目录并创建自定义Tag\n" +
-                "false = 禁用，不会扫描文件夹也不会添加自定义Tag"
-            );
-
-            PlaylistRootFolder = config.Bind(
-                "Playlist",
-                "RootFolder",
-                "playlist",
-                "歌单根目录路径\n" +
-                "相对路径基于游戏根目录（.dll所在目录）\n" +
-                "默认：playlist（与ChillPatcher.dll同级的playlist文件夹）\n" +
-                "目录结构：\n" +
-                "  playlist/\n" +
-                "    ├─ default/        ← 默认歌单\n" +
-                "    ├─ 歌单A/          ← 一级子文件夹作为歌单\n" +
-                "    │   ├─ 专辑1/     ← 二级子文件夹作为专辑\n" +
-                "    │   └─ 专辑2/\n" +
-                "    └─ 歌单B/\n" +
-                "注意：根目录的音频文件会自动移动到default文件夹"
-            );
-
-            AutoGeneratePlaylistJson = config.Bind(
-                "Playlist",
-                "AutoGenerateJson",
-                true,
-                "是否自动生成playlist.json\n" +
-                "true = 首次扫描目录时自动生成JSON缓存（默认）\n" +
-                "false = 仅使用已存在的JSON文件"
-            );
-
-            EnablePlaylistCache = config.Bind(
-                "Playlist",
-                "EnableCache",
-                true,
-                "是否启用歌单缓存\n" +
-                "true = 读取playlist.json缓存，加快启动速度（默认）\n" +
-                "false = 每次启动重新扫描所有音频文件"
-            );
-
+            // UI 配置
             HideEmptyTags = config.Bind(
                 "UI",
                 "HideEmptyTags",
@@ -404,9 +354,6 @@ namespace ChillPatcher
                 Plugin.Logger.LogInfo($"  - Rime共享目录: {RimeSharedDataPath.Value}");
             if (!string.IsNullOrEmpty(RimeUserDataPath.Value))
                 Plugin.Logger.LogInfo($"  - Rime用户目录: {RimeUserDataPath.Value}");
-            Plugin.Logger.LogInfo($"  - 歌单根目录: {PlaylistRootFolder.Value}");
-            Plugin.Logger.LogInfo($"  - 自动生成JSON: {AutoGeneratePlaylistJson.Value}");
-            Plugin.Logger.LogInfo($"  - 启用缓存: {EnablePlaylistCache.Value}");
             Plugin.Logger.LogInfo($"  - 隐藏空Tag: {HideEmptyTags.Value}");
             Plugin.Logger.LogInfo($"  - Tag下拉框高度: a={TagDropdownHeightMultiplier.Value}, b={TagDropdownHeightOffset.Value}");
             Plugin.Logger.LogInfo($"  - 自动静音功能: {EnableAutoMuteOnOtherAudio.Value}");
@@ -436,7 +383,6 @@ namespace ChillPatcher
                 { "Achievement", new ConfigDefinition("_Version", "Achievement") },
                 { "Keyboard", new ConfigDefinition("_Version", "Keyboard") },
                 { "Rime", new ConfigDefinition("_Version", "Rime") },
-                { "Playlist", new ConfigDefinition("_Version", "Playlist") },
                 { "UI", new ConfigDefinition("_Version", "UI") },
                 { "Maintenance", new ConfigDefinition("_Version", "Maintenance") },
                 { "Audio", new ConfigDefinition("_Version", "Audio") }
@@ -472,7 +418,6 @@ namespace ChillPatcher
             _achievementVersion = config.Bind("_Version", "Achievement", SectionVersions["Achievement"], "配置分区版本号（请勿手动修改）");
             _keyboardVersion = config.Bind("_Version", "Keyboard", SectionVersions["Keyboard"], "配置分区版本号（请勿手动修改）");
             _rimeVersion = config.Bind("_Version", "Rime", SectionVersions["Rime"], "配置分区版本号（请勿手动修改）");
-            _playlistVersion = config.Bind("_Version", "Playlist", SectionVersions["Playlist"], "配置分区版本号（请勿手动修改）");
             _uiVersion = config.Bind("_Version", "UI", SectionVersions["UI"], "配置分区版本号（请勿手动修改）");
             _maintenanceVersion = config.Bind("_Version", "Maintenance", SectionVersions["Maintenance"], "配置分区版本号（请勿手动修改）");
             _audioVersion = config.Bind("_Version", "Audio", SectionVersions["Audio"], "配置分区版本号（请勿手动修改）");
@@ -500,7 +445,6 @@ namespace ChillPatcher
             if (_achievementVersion.Value < SectionVersions["Achievement"] && !sectionsToReset.Contains("Achievement")) sectionsToReset.Add("Achievement");
             if (_keyboardVersion.Value < SectionVersions["Keyboard"] && !sectionsToReset.Contains("Keyboard")) sectionsToReset.Add("Keyboard");
             if (_rimeVersion.Value < SectionVersions["Rime"] && !sectionsToReset.Contains("Rime")) sectionsToReset.Add("Rime");
-            if (_playlistVersion.Value < SectionVersions["Playlist"] && !sectionsToReset.Contains("Playlist")) sectionsToReset.Add("Playlist");
             if (_uiVersion.Value < SectionVersions["UI"] && !sectionsToReset.Contains("UI")) sectionsToReset.Add("UI");
             if (_maintenanceVersion.Value < SectionVersions["Maintenance"] && !sectionsToReset.Contains("Maintenance")) sectionsToReset.Add("Maintenance");
             if (_audioVersion.Value < SectionVersions["Audio"] && !sectionsToReset.Contains("Audio")) sectionsToReset.Add("Audio");
@@ -553,7 +497,6 @@ namespace ChillPatcher
                 case "Achievement": _achievementVersion.Value = SectionVersions["Achievement"]; break;
                 case "Keyboard": _keyboardVersion.Value = SectionVersions["Keyboard"]; break;
                 case "Rime": _rimeVersion.Value = SectionVersions["Rime"]; break;
-                case "Playlist": _playlistVersion.Value = SectionVersions["Playlist"]; break;
                 case "UI": _uiVersion.Value = SectionVersions["UI"]; break;
                 case "Maintenance": _maintenanceVersion.Value = SectionVersions["Maintenance"]; break;
             }

@@ -3,8 +3,10 @@ using HarmonyLib;
 using System.IO;
 using UnityEngine;
 using ChillPatcher.UIFramework.Music;
+using ChillPatcher.UIFramework.Audio;
 using ChillPatcher.Native;
 using System;
+using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using System.Threading;
 
@@ -18,6 +20,13 @@ namespace ChillPatcher.Patches.UIFramework
     {
         private static bool _nativeDecoderChecked = false;
         private static bool _nativeDecoderAvailable = false;
+
+        /// <summary>
+        /// 临时存储 AudioClip 到 FlacStreamReader 的映射
+        /// 用于在 LoadLocalFile 中获取并注册到 AudioResourceManager
+        /// </summary>
+        private static readonly Dictionary<int, FlacDecoder.FlacStreamReader> _pendingStreamReaders 
+            = new Dictionary<int, FlacDecoder.FlacStreamReader>();
 
         /// <summary>
         /// 拦截 DownloadAudioFile 方法，为 FLAC 提供流式加载
@@ -66,6 +75,7 @@ namespace ChillPatcher.Patches.UIFramework
                 }
 
                 FlacDecoder.FlacStreamReader streamReader = null;
+                string title = Path.GetFileNameWithoutExtension(filePath);
 
                 // 在后台线程打开流
                 await UniTask.RunOnThreadPool(() =>
@@ -79,7 +89,7 @@ namespace ChillPatcher.Patches.UIFramework
                     return (null, "", "");
                 }
 
-                var clipName = Path.GetFileNameWithoutExtension(filePath);
+                var clipName = title;
                 
                 // 在主线程创建流式 AudioClip
                 AudioClip clip = null;
@@ -92,9 +102,12 @@ namespace ChillPatcher.Patches.UIFramework
                     return (null, "", "");
                 }
 
+                // 暂存 streamReader，等待 LoadLocalFile 中注册到 AudioResourceManager
+                _pendingStreamReaders[clip.GetInstanceID()] = streamReader;
+
                 Plugin.Log.LogInfo($"[FlacStreamLoader] ✅ Created streaming clip: {clipName} ({streamReader.SampleRate}Hz, {streamReader.Channels}ch)");
                 
-                return (clip, "", "");
+                return (clip, title, "");
             }
             catch (Exception ex)
             {
@@ -212,6 +225,98 @@ namespace ChillPatcher.Patches.UIFramework
 
             // 阻止原方法执行
             return false;
+        }
+
+        /// <summary>
+        /// 拦截 LoadLocalFile 方法，保留模块设置的元数据（Title, Credit）
+        /// 模块导入的歌曲元数据已在扫描时读取，不需要在播放时再读取
+        /// 原游戏会在加载音频时用 DownloadAudioFile 返回值覆盖这些字段
+        /// 
+        /// 注意：这是异步方法，我们需要完全替换实现
+        /// </summary>
+        [HarmonyPatch(typeof(GameAudioInfo), "LoadLocalFile")]
+        [HarmonyPrefix]
+        static bool LoadLocalFile_Prefix(GameAudioInfo __instance, string filepath, CancellationToken ct, ref UniTask<AudioClip> __result)
+        {
+            // 检查是否是模块导入的歌曲（Tag 包含自定义位，即位 5+）
+            // 游戏原生 Tag 只使用位 0-4 (值 1-16, All=31)
+            bool isModuleImported = ((ulong)__instance.Tag & ~31UL) != 0;
+            
+            if (!isModuleImported)
+            {
+                // 非模块导入的歌曲，使用原方法
+                return true;
+            }
+            
+            // 模块导入的歌曲：保留原有元数据
+            string savedTitle = __instance.Title;
+            string savedCredit = __instance.Credit;
+            
+            Plugin.Log.LogDebug($"[LoadLocalFile] Module imported song: {savedTitle}, preserving metadata");
+            
+            // 替换为自定义实现
+            __result = LoadLocalFilePreserveMetadata(__instance, filepath, ct, savedTitle, savedCredit);
+            return false;
+        }
+
+        /// <summary>
+        /// 自定义 LoadLocalFile 实现，保留模块设置的元数据
+        /// </summary>
+        private static async UniTask<AudioClip> LoadLocalFilePreserveMetadata(
+            GameAudioInfo instance, 
+            string filepath, 
+            CancellationToken ct,
+            string savedTitle,
+            string savedCredit)
+        {
+            instance.LocalPath = filepath;
+            
+            var result = await GameAudioInfo.DownloadAudioFile(filepath, ct);
+            var clip = result.Item1;
+            
+            if (clip == null)
+            {
+                Plugin.Log.LogError($"{filepath} is not audio");
+                return null;
+            }
+            
+            // 如果是流式 AudioClip（FLAC），注册到资源管理器
+            if (clip != null)
+            {
+                var clipId = clip.GetInstanceID();
+                if (_pendingStreamReaders.TryGetValue(clipId, out var streamReader))
+                {
+                    _pendingStreamReaders.Remove(clipId);
+                    AudioResourceManager.Instance.RegisterStreamingClip(instance.UUID, clip, streamReader);
+                }
+            }
+            
+            // 恢复模块设置的元数据（而不是使用 DownloadAudioFile 返回的）
+            if (!string.IsNullOrEmpty(savedTitle))
+            {
+                instance.Title = savedTitle;
+            }
+            else
+            {
+                // 如果原来没有标题，使用 DownloadAudioFile 返回的或文件名
+                var downloadedTitle = result.Item2;
+                instance.Title = string.IsNullOrEmpty(downloadedTitle) 
+                    ? Path.GetFileNameWithoutExtension(filepath) 
+                    : downloadedTitle;
+            }
+            
+            clip.name = instance.Title;
+            
+            // 恢复艺术家信息
+            if (!string.IsNullOrEmpty(savedCredit))
+            {
+                instance.Credit = savedCredit;
+            }
+            // 如果原来没有 Credit，保持为空（不覆盖为 DownloadAudioFile 返回的值）
+            
+            Plugin.Log.LogDebug($"[LoadLocalFile] Restored metadata: Title={instance.Title}, Credit={instance.Credit}");
+            
+            return clip;
         }
     }
 }

@@ -1,6 +1,7 @@
 using Bulbul;
 using ChillPatcher.UIFramework;
 using ChillPatcher.UIFramework.Music;
+using ChillPatcher.ModuleSystem.Registry;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using HarmonyLib;
@@ -221,6 +222,9 @@ namespace ChillPatcher.Patches.UIFramework
                     loadCovers: true
                 );
 
+                // 更新显示顺序列表（用于队列系统）
+                musicManager.UpdateDisplayOrderFromItems(items);
+
                 mixedScroll.SetDataSource(items);
                 
                 var albumCount = items.Count(i => i.ItemType == PlaylistItemType.AlbumHeader);
@@ -237,9 +241,9 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static string GetCurrentPlaylistId()
         {
-            // 尝试从CustomTagManager获取当前选中的标签
-            var tagManager = CustomTagManager.Instance;
-            if (tagManager == null)
+            // 使用 TagRegistry 检查是否有自定义 Tag
+            var tagRegistry = TagRegistry.Instance;
+            if (tagRegistry == null)
                 return null;
 
             // TODO: 需要跟踪当前选中的歌单
@@ -254,26 +258,26 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                var albumManager = AlbumManager.Instance;
-                if (albumManager == null)
+                var albumRegistry = AlbumRegistry.Instance;
+                if (albumRegistry == null)
                 {
-                    Plugin.Log.LogWarning("AlbumManager not initialized");
+                    Plugin.Log.LogWarning("AlbumRegistry not initialized");
                     return;
                 }
 
-                // 获取专辑信息以得到 playlistId (tagId)
-                var albumInfo = albumManager.GetAlbum(albumId);
+                // 获取专辑信息以得到 tagId
+                var albumInfo = albumRegistry.GetAlbum(albumId);
                 if (albumInfo == null)
                 {
                     Plugin.Log.LogWarning($"Album not found: {albumId}");
                     return;
                 }
 
-                var tagId = albumInfo.PlaylistId;
+                var tagId = albumInfo.TagId;
                 
-                // 切换专辑启用状态
-                bool newState = albumManager.ToggleAlbumEnabled(albumId, tagId);
-                Plugin.Log.LogInfo($"Album '{albumInfo.DisplayName}' toggled to {(newState ? "enabled" : "disabled")}");
+                // TODO: ToggleAlbumEnabled 功能暂未在 AlbumRegistry 中实现
+                // 需要在 AlbumRegistry 中添加专辑启用/禁用状态管理功能
+                Plugin.Log.LogWarning($"Album toggle not implemented yet for album: {albumInfo.DisplayName} (TagId: {tagId})");
 
                 // 刷新播放列表以更新显示
                 RefreshPlaylistDisplay();

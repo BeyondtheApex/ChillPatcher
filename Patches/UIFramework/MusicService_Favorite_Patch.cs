@@ -1,12 +1,15 @@
 using System;
 using Bulbul;
-using ChillPatcher.UIFramework.Data;
+using ChillPatcher.ModuleSystem;
+using ChillPatcher.ModuleSystem.Registry;
+using ChillPatcher.SDK.Events;
+using ChillPatcher.SDK.Interfaces;
 using HarmonyLib;
 
 namespace ChillPatcher.Patches.UIFramework
 {
     /// <summary>
-    /// 拦截MusicService的收藏操作，自定义Tag存储到数据库
+    /// 拦截MusicService的收藏操作，通过事件通知模块处理
     /// </summary>
     [HarmonyPatch(typeof(MusicService))]
     public class MusicService_Favorite_Patch
@@ -23,42 +26,35 @@ namespace ChillPatcher.Patches.UIFramework
                 if (gameAudioInfo == null)
                     return true;
 
-                // 检查是否已经收藏
                 if (gameAudioInfo.Tag.HasFlagFast(AudioTag.Favorite))
                     return false;
 
-                // ✅ 判断是否是自定义Tag
-                if (CustomPlaylistDataManager.IsCustomTag(gameAudioInfo.Tag))
+                // 检查是否是模块注册的歌曲
+                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
+                if (musicInfo != null)
                 {
-                    // 自定义Tag → 存储到数据库
-                    var tagId = CustomPlaylistDataManager.GetTagIdFromAudio(gameAudioInfo);
+                    // 模块歌曲 - 添加收藏标记并通过事件通知
+                    gameAudioInfo.Tag = gameAudioInfo.Tag | AudioTag.Favorite;
                     
-                    if (!string.IsNullOrEmpty(tagId))
+                    // 发布收藏事件，让模块处理持久化
+                    EventBus.Instance?.Publish(new FavoriteChangedEvent
                     {
-                        var manager = CustomPlaylistDataManager.Instance;
-                        if (manager != null)
-                        {
-                            // 添加收藏标记
-                            gameAudioInfo.Tag = gameAudioInfo.Tag | AudioTag.Favorite;
-                            
-                            // 保存到数据库
-                            manager.AddFavorite(tagId, gameAudioInfo.UUID);
-                            
-                            Plugin.Log.LogInfo($"[Favorite] 添加到数据库: Tag={tagId}, UUID={gameAudioInfo.UUID}");
-                            
-                            // 阻止原方法执行（不保存到存档）
-                            return false;
-                        }
-                    }
+                        Music = musicInfo,
+                        IsFavorite = true,
+                        ModuleId = musicInfo.ModuleId
+                    });
+                    
+                    Plugin.Log.LogInfo($"[Favorite] Module song favorited: {gameAudioInfo.UUID}");
+                    return false; // 不执行原逻辑
                 }
                 
-                // 非自定义Tag → 执行原逻辑（保存到存档）
+                // 非模块歌曲 - 执行原逻辑
                 return true;
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[Favorite] 添加收藏失败: {ex}");
-                return true; // 出错时执行原逻辑
+                Plugin.Log.LogError($"[Favorite] Add failed: {ex}");
+                return true;
             }
         }
 
@@ -74,55 +70,52 @@ namespace ChillPatcher.Patches.UIFramework
                 if (gameAudioInfo == null)
                     return true;
 
-                // 检查是否已收藏
                 if (!gameAudioInfo.Tag.HasFlagFast(AudioTag.Favorite))
                     return false;
 
-                // ✅ 判断是否是自定义Tag
-                if (CustomPlaylistDataManager.IsCustomTag(gameAudioInfo.Tag))
+                // 检查是否是模块注册的歌曲
+                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
+                if (musicInfo != null)
                 {
-                    // 自定义Tag → 从数据库移除
-                    var tagId = CustomPlaylistDataManager.GetTagIdFromAudio(gameAudioInfo);
+                    // 模块歌曲 - 移除收藏标记并通过事件通知
+                    gameAudioInfo.Tag = gameAudioInfo.Tag & ~AudioTag.Favorite;
                     
-                    if (!string.IsNullOrEmpty(tagId))
+                    // 更新播放列表
+                    var currentAudioTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag;
+                    var currentValue = currentAudioTag.CurrentValue;
+                    
+                    if (!currentValue.HasFlagFast(gameAudioInfo.Tag))
                     {
-                        var manager = CustomPlaylistDataManager.Instance;
-                        if (manager != null)
-                        {
-                            // 移除收藏标记
-                            gameAudioInfo.Tag = gameAudioInfo.Tag & ~AudioTag.Favorite;
-                            
-                            // 更新播放列表（复制原逻辑）
-                            var currentAudioTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag;
-                            var currentValue = currentAudioTag.CurrentValue;
-                            
-                            if (!currentValue.HasFlagFast(gameAudioInfo.Tag))
-                            {
-                                var currentPlayList = Traverse.Create(__instance).Field("CurrentPlayList").GetValue<System.Collections.Generic.List<GameAudioInfo>>();
-                                var shuffleList = Traverse.Create(__instance).Field("shuffleList").GetValue<System.Collections.Generic.List<GameAudioInfo>>();
-                                
-                                currentPlayList?.Remove(gameAudioInfo);
-                                shuffleList?.Remove(gameAudioInfo);
-                            }
-                            
-                            // 从数据库移除
-                            manager.RemoveFavorite(tagId, gameAudioInfo.UUID);
-                            
-                            Plugin.Log.LogInfo($"[Favorite] 从数据库移除: Tag={tagId}, UUID={gameAudioInfo.UUID}");
-                            
-                            // 阻止原方法执行（不保存到存档）
-                            return false;
-                        }
+                        var currentPlayList = Traverse.Create(__instance)
+                            .Field("CurrentPlayList")
+                            .GetValue<System.Collections.Generic.List<GameAudioInfo>>();
+                        var shuffleList = Traverse.Create(__instance)
+                            .Field("shuffleList")
+                            .GetValue<System.Collections.Generic.List<GameAudioInfo>>();
+                        
+                        currentPlayList?.Remove(gameAudioInfo);
+                        shuffleList?.Remove(gameAudioInfo);
                     }
+                    
+                    // 发布收藏事件，让模块处理持久化
+                    EventBus.Instance?.Publish(new FavoriteChangedEvent
+                    {
+                        Music = musicInfo,
+                        IsFavorite = false,
+                        ModuleId = musicInfo.ModuleId
+                    });
+                    
+                    Plugin.Log.LogInfo($"[Favorite] Module song unfavorited: {gameAudioInfo.UUID}");
+                    return false; // 不执行原逻辑
                 }
                 
-                // 非自定义Tag → 执行原逻辑（保存到存档）
+                // 非模块歌曲 - 执行原逻辑
                 return true;
             }
             catch (Exception ex)
             {
-                Plugin.Log.LogError($"[Favorite] 移除收藏失败: {ex}");
-                return true; // 出错时执行原逻辑
+                Plugin.Log.LogError($"[Favorite] Remove failed: {ex}");
+                return true;
             }
         }
     }

@@ -38,7 +38,7 @@ namespace ChillPatcher.UIFramework.Music
         /// <summary>
         /// 歌曲信息（仅当 ItemType == Song 时有效）
         /// </summary>
-        public GameAudioInfo SongInfo { get; }
+        public GameAudioInfo AudioInfo { get; }
 
         /// <summary>
         /// 专辑头信息（仅当 ItemType == AlbumHeader 时有效）
@@ -69,10 +69,10 @@ namespace ChillPatcher.UIFramework.Music
             }
         }
 
-        private PlaylistListItem(PlaylistItemType type, GameAudioInfo songInfo, AlbumHeaderInfo albumHeader, int originalIndex)
+        private PlaylistListItem(PlaylistItemType type, GameAudioInfo audioInfo, AlbumHeaderInfo albumHeader, int originalIndex)
         {
             ItemType = type;
-            SongInfo = songInfo;
+            AudioInfo = audioInfo;
             AlbumHeader = albumHeader;
             OriginalIndex = originalIndex;
         }
@@ -80,9 +80,9 @@ namespace ChillPatcher.UIFramework.Music
         /// <summary>
         /// 创建歌曲项
         /// </summary>
-        public static PlaylistListItem CreateSongItem(GameAudioInfo songInfo, int originalIndex)
+        public static PlaylistListItem CreateSongItem(GameAudioInfo audioInfo, int originalIndex)
         {
-            return new PlaylistListItem(PlaylistItemType.Song, songInfo, null, originalIndex);
+            return new PlaylistListItem(PlaylistItemType.Song, audioInfo, null, originalIndex);
         }
 
         /// <summary>

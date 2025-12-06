@@ -48,6 +48,16 @@ namespace ChillPatcher.UIFramework.Core
         /// </summary>
         public static bool IsInitialized => SimpleRectButtonPrefab != null || SimpleCapsuleButtonPrefab != null;
         
+        /// <summary>
+        /// 当 XCloseButtonPrefab 被缓存时触发
+        /// </summary>
+        public static event System.Action OnXCloseButtonPrefabCached;
+        
+        /// <summary>
+        /// 当 CircleArrowButtonPrefab 被缓存时触发
+        /// </summary>
+        public static event System.Action OnCircleArrowButtonPrefabCached;
+        
         #endregion
         
         #region Initialization
@@ -178,6 +188,9 @@ namespace ChillPatcher.UIFramework.Core
                     {
                         CircleArrowButtonPrefab = CreateGenericButtonPrefab(target.gameObject, "CircleArrowButton_Prefab");
                         Plugin.Log.LogInfo($"Cached CircleArrowButtonPrefab from PomodoroSetting/LoopTime/UpButtonUI");
+                        
+                        // 触发缓存完成事件
+                        OnCircleArrowButtonPrefabCached?.Invoke();
                     }
                     else
                     {
@@ -218,6 +231,9 @@ namespace ChillPatcher.UIFramework.Core
                     {
                         XCloseButtonPrefab = CreateGenericButtonPrefab(removeInteractableUI.gameObject, "XCloseButton_Prefab");
                         Plugin.Log.LogInfo($"Cached XCloseButtonPrefab from MusicPlayListButtons.removeInteractableUI");
+                        
+                        // 触发缓存完成事件
+                        OnXCloseButtonPrefabCached?.Invoke();
                     }
                     else
                     {
