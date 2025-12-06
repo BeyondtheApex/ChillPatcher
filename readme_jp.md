@@ -57,6 +57,34 @@ Issue を報告する際は、必ずログファイルを添付してくださ�
   - **📐 UI レイアウト変更**：ゲーム UI を音楽プレイヤーに近いレイアウトに調整。
   - **📜 アルバムグループ化**：アルバムごとに楽曲をグループ化し、折りたたみ/展開に対応。
 
+-----
+
+## 🏗️ プロジェクト構成
+
+ChillPatcher はモジュラーアーキテクチャを採用しており、SDK を通じて拡張インターフェースを提供し、サードパーティの音楽ソースモジュールをサポートしています。
+
+### コアコンポーネント
+
+```
+ChillPatcher/
+├── ChillPatcher.SDK/           ← SDK プロジェクト、モジュール開発インターフェースを提供
+├── ChillPatcher.Module.LocalFolder/  ← ローカルフォルダモジュール（SDK 使用例）
+├── ModuleSystem/               ← モジュールローダーと管理システム
+├── Patches/                    ← Harmony パッチ
+├── UIFramework/                ← UI フレームワーク拡張
+└── NativePlugins/              ← ネイティブプラグイン（FLAC デコーダーなど）
+```
+
+### SDK 開発
+
+ChillPatcher は SDK を提供しており、開発者がカスタム音楽ソースモジュール（ネットワーク音楽サービス、他の音楽ライブラリなど）を作成できます。
+
+詳細なドキュメントは以下を参照してください：
+- **[ChillPatcher.SDK](ChillPatcher.SDK/README.md)** - SDK インターフェースドキュメントと開発ガイド
+- **[ローカルフォルダモジュール](ChillPatcher.Module.LocalFolder/README.md)** - 完全なモジュール開発例
+
+-----
+
 ## 📦 インストール方法
 
 ### 1\. BepInEx のインストール
@@ -246,38 +274,23 @@ EnableUIRearrange = true
 VirtualScrollBufferSize = 3
 ```
 
-### フォルダプレイリスト設定
+### ローカルフォルダモジュール設定
 
 ```ini
-[Playlist]
+[Module:com.chillpatcher.localfolder]
 
-## フォルダプレイリストシステムを有効にするか
-## true = 有効（デフォルト）、ディレクトリをスキャンしてカスタムタグを作成
-## false = 無効、フォルダのスキャンもカスタムタグの追加も行わない
-# Setting type: Boolean
-# Default value: true
-EnableFolderPlaylists = true
-
-## プレイリストのルートディレクトリパス
-## ゲームのルートディレクトリ（.dllがある場所）からの相対パス
-## デフォルト：playlist（ChillPatcher.dll と同階層の playlist フォルダ）
+## ローカル音楽のルートディレクトリ
+## サブフォルダがプレイリストとして、その中のサブフォルダがアルバムとして扱われます
 # Setting type: String
-# Default value: playlist
-RootFolder = playlist
+# Default value: C:\Users\<ユーザー名>\Music\ChillWithYou
+RootFolder = C:\Users\<ユーザー名>\Music\ChillWithYou
 
-## playlist.json を自動生成するか
-## true = 初回スキャン時に JSON キャッシュを自動生成（デフォルト）
-## false = 既存の JSON ファイルのみを使用
+## 起動ごとに強制再スキャンするか
+## true = 再スキャンフラグとデータベースキャッシュを無視して、毎回フルスキャン
+## false = 差分スキャンを使用（デフォルト）、変更が検出された場合のみ再スキャン
 # Setting type: Boolean
-# Default value: true
-AutoGenerateJson = true
-
-## プレイリストキャッシュを有効にするか
-## true = playlist.json キャッシュを読み込み、起動を高速化（デフォルト）
-## false = 起動ごとにすべてのオーディオファイルを再スキャン
-# Setting type: Boolean
-# Default value: true
-EnableCache = true
+# Default value: false
+ForceRescan = false
 ```
 
 **使用例**：
@@ -285,9 +298,9 @@ EnableCache = true
 音楽フォルダ構成が以下のようになっていると仮定します：
 
 ```
-playlist/
+C:\Users\ユーザー名\Music\ChillWithYou\    ← 音楽ルートディレクトリ（RootFolder）
 ├── PlaylistA/                  ← 第1階層フォルダ = プレイリスト名
-│   ├── song1.mp3               ← ルートの曲は「その他」アルバムに入る
+│   ├── song1.mp3               ← ルートの曲はデフォルトアルバムに入る
 │   ├── song2.ogg
 │   ├── Album1/                 ← 第2階層フォルダ = アルバム名
 │   │   ├── cover.jpg           ← アルバムアート（任意）
@@ -299,15 +312,15 @@ playlist/
     └── ...
 ```
 
-`RootFolder = playlist` と設定すると、以下のプレイリストが自動生成されます：
+`RootFolder` を設定すると、以下のプレイリストが自動生成されます：
 
-  - 📁 PlaylistA（「その他」アルバム + Album1 + Album2 を含む）
+  - 📁 PlaylistA（デフォルトアルバム + Album1 + Album2 を含む）
   - 📁 PlaylistB
 
 **注意**：
 
-  - ルートディレクトリ（playlist/直下）のオーディオファイルは自動的に `default` フォルダに移動されます。
   - 第1階層フォルダがプレイリスト、第2階層フォルダがアルバムとして扱われます。
+  - プレイリストフォルダ直下の曲は、プレイリスト名のデフォルトアルバムに入ります。
   - 各アルバムには個別のカバー画像を設定できます。
 
 **対応オーディオ形式**：
@@ -332,13 +345,13 @@ playlist/
 
 **新曲の追加方法（差分更新）**：
 
-初回実行後、各プレイリストフォルダにキャッシュファイルが生成されます：
+初回実行後、各プレイリストフォルダにスキャンフラグファイルが生成されます：
 
 ```
-playlist/
+音楽ルートディレクトリ/
+├── .localfolder.db         ← データベースキャッシュ（自動管理）
 ├── MyFavorites/
 │   ├── !rescan_playlist    ← 再スキャン用フラグファイル
-│   ├── playlist.json       ← 楽曲キャッシュ
 │   ├── song1.mp3
 │   └── Album1/
 │       ├── cover.jpg       ← カバー画像
@@ -355,14 +368,15 @@ playlist/
 
   - ✅ 既存曲の UUID を保持（お気に入り、並び順、除外状態を維持）
   - ✅ 新曲に新しい UUID を割り当て
-  - ✅ `playlist.json` キャッシュを更新
+  - ✅ データベースキャッシュを更新
   - ✅ `!rescan_playlist` フラグファイルを再作成
 
 **注意**：
 
   - 各プレイリストフォルダは独立して管理され、相互に影響しません。
   - 更新が必要なフォルダのフラグファイルのみを削除してください。
-  - フラグファイルを削除しない場合、キャッシュを使用して高速に読み込まれます。
+  - フラグファイルを削除しない場合、データベースキャッシュを使用して高速に読み込まれます。
+  - 設定で `ForceRescan = true` を指定すると、毎回強制的に再スキャンすることもできます。
 
 ### 🔊 オーディオ制御
 

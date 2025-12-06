@@ -55,6 +55,34 @@ C:\Users\<你的用户名>\AppData\LocalLow\Nestopi\Chill With You\Player.log
 - **📐 UI 重排列**：将游戏 UI 调整为更接近音乐播放器的布局
 - **📜 专辑分组**：歌曲按专辑分组显示，支持专辑折叠/展开
 
+---
+
+## 🏗️ 项目架构
+
+ChillPatcher 采用模块化架构设计，通过 SDK 提供扩展接口，支持第三方音乐源模块。
+
+### 核心组件
+
+```
+ChillPatcher/
+├── ChillPatcher.SDK/           ← SDK 项目，提供模块开发接口
+├── ChillPatcher.Module.LocalFolder/  ← 本地文件夹模块（SDK 使用示例）
+├── ModuleSystem/               ← 模块加载和管理系统
+├── Patches/                    ← Harmony 补丁
+├── UIFramework/                ← UI 框架扩展
+└── NativePlugins/              ← 原生插件（FLAC 解码器等）
+```
+
+### SDK 开发
+
+ChillPatcher 提供了 SDK，允许开发者创建自定义音乐源模块（如网络音乐服务、其他音乐库等）。
+
+详细文档请参见：
+- **[ChillPatcher.SDK](ChillPatcher.SDK/README.md)** - SDK 接口文档和开发指南
+- **[本地文件夹模块](ChillPatcher.Module.LocalFolder/README.md)** - 完整的模块开发示例
+
+---
+
 ## 📦 安装方式
 
 ### 1. 安装 BepInEx
@@ -234,47 +262,32 @@ EnableUIRearrange = true
 VirtualScrollBufferSize = 3
 ```
 
-### 文件夹播放列表设置
+### 本地文件夹模块设置
 
 ```ini
-[Playlist]
+[Module:com.chillpatcher.localfolder]
 
-## 是否启用文件夹歌单系统
-## true = 启用（默认），扫描目录并创建自定义Tag
-## false = 禁用，不会扫描文件夹也不会添加自定义Tag
-# Setting type: Boolean
-# Default value: true
-EnableFolderPlaylists = true
-
-## 歌单根目录路径
-## 相对路径基于游戏根目录（.dll所在目录）
-## 默认：playlist（与ChillPatcher.dll同级的playlist文件夹）
+## 本地音乐根目录
+## 子目录将作为歌单，歌单下的子目录将作为专辑
 # Setting type: String
-# Default value: playlist
-RootFolder = playlist
+# Default value: C:\Users\<用户名>\Music\ChillWithYou
+RootFolder = C:\Users\<用户名>\Music\ChillWithYou
 
-## 是否自动生成playlist.json
-## true = 首次扫描目录时自动生成JSON缓存（默认）
-## false = 仅使用已存在的JSON文件
+## 是否每次启动都强制重新扫描
+## true = 忽略重扫描标记和数据库缓存，每次都全量扫描
+## false = 使用增量扫描（默认），只在检测到变化时重新扫描
 # Setting type: Boolean
-# Default value: true
-AutoGenerateJson = true
-
-## 是否启用歌单缓存
-## true = 读取playlist.json缓存，加快启动速度（默认）
-## false = 每次启动重新扫描所有音频文件
-# Setting type: Boolean
-# Default value: true
-EnableCache = true
+# Default value: false
+ForceRescan = false
 ```
 
 **使用示例**：
 
 假设你的音乐文件夹结构如下：
 ```
-playlist/
+C:\Users\用户名\Music\ChillWithYou\    ← 音乐根目录（RootFolder）
 ├── 歌单A/                    ← 一级子文件夹 = 歌单
-│   ├── song1.mp3            ← 根目录歌曲归入"其他"专辑
+│   ├── song1.mp3            ← 根目录歌曲归入默认专辑
 │   ├── song2.ogg
 │   ├── 专辑1/               ← 二级子文件夹 = 专辑
 │   │   ├── cover.jpg        ← 专辑封面（可选）
@@ -287,13 +300,13 @@ playlist/
 
 ```
 
-配置 `RootFolder = playlist` 后，将自动生成以下播放列表：
-- 📁 歌单A（包含"其他"专辑 + 专辑1 + 专辑2）
+配置 `RootFolder` 后，将自动生成以下播放列表：
+- 📁 歌单A（包含默认专辑 + 专辑1 + 专辑2）
 - 📁 歌单B
 
 **注意**：
-- 根目录（playlist/）中的音频文件会自动移动到 `default` 文件夹
 - 一级子文件夹作为歌单，二级子文件夹作为专辑
+- 歌单文件夹中的散装歌曲归入以歌单命名的默认专辑
 - 每个专辑可以有独立的封面图片
 
 **支持的音频格式**：
@@ -316,12 +329,12 @@ playlist/
 
 **如何添加新歌曲（增量更新）**：
 
-首次运行后，每个歌单文件夹会生成缓存文件：
+首次运行后，每个歌单文件夹会生成扫描标志文件：
 ```
-playlist/
+音乐根目录/
+├── .localfolder.db         ← 数据库缓存（自动管理）
 ├── 我的收藏/
 │   ├── !rescan_playlist    ← 扫描标志文件
-│   ├── playlist.json       ← 歌曲缓存
 │   ├── song1.mp3
 │   └── 专辑1/
 │       ├── cover.jpg       ← 专辑封面
@@ -336,13 +349,14 @@ playlist/
 系统会：
 - ✅ 保留已有歌曲的 UUID（收藏、排序、排除状态不丢失）
 - ✅ 为新歌曲分配新的 UUID
-- ✅ 更新 `playlist.json` 缓存
+- ✅ 更新数据库缓存
 - ✅ 重新创建 `!rescan_playlist` 标志文件
 
 **注意**：
 - 每个歌单文件夹独立管理，互不影响
 - 只需删除需要更新的文件夹的标志文件
-- 不删除标志文件时，使用缓存快速加载
+- 不删除标志文件时，使用数据库缓存快速加载
+- 也可以在配置中设置 `ForceRescan = true` 强制每次都重新扫描
 
 ### 🔊 音频控制
 
