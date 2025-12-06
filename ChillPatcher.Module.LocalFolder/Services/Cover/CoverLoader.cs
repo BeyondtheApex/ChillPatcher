@@ -41,7 +41,13 @@ namespace ChillPatcher.Module.LocalFolder.Services.Cover
 
             var cacheKey = $"music:{filePath}";
             if (_spriteCache.TryGetValue(cacheKey, out var cached))
-                return cached;
+            {
+                // 检查缓存的 Sprite 是否仍然有效（可能被外部销毁）
+                if (cached != null && cached.texture != null)
+                    return cached;
+                // 缓存失效，移除并重新加载
+                _spriteCache.Remove(cacheKey);
+            }
 
             Sprite cover = null;
 
@@ -79,7 +85,13 @@ namespace ChillPatcher.Module.LocalFolder.Services.Cover
 
             var cacheKey = $"album:{directoryPath}";
             if (_spriteCache.TryGetValue(cacheKey, out var cached))
-                return cached;
+            {
+                // 检查缓存的 Sprite 是否仍然有效（可能被外部销毁）
+                if (cached != null && cached.texture != null)
+                    return cached;
+                // 缓存失效，移除并重新加载
+                _spriteCache.Remove(cacheKey);
+            }
 
             // 检查数据库缓存
             var dbCache = _database.GetCoverCache(cacheKey);
@@ -122,7 +134,13 @@ namespace ChillPatcher.Module.LocalFolder.Services.Cover
 
             var cacheKey = $"playlist:{directoryPath}";
             if (_spriteCache.TryGetValue(cacheKey, out var cached))
-                return cached;
+            {
+                // 检查缓存的 Sprite 是否仍然有效（可能被外部销毁）
+                if (cached != null && cached.texture != null)
+                    return cached;
+                // 缓存失效，移除并重新加载
+                _spriteCache.Remove(cacheKey);
+            }
 
             var cover = await LoadFromDirectoryOnlyAsync(directoryPath);
             if (cover == null)
@@ -181,6 +199,59 @@ namespace ChillPatcher.Module.LocalFolder.Services.Cover
             }
             _spriteCache.Clear();
             _database.ClearAllCoverCache();
+        }
+
+        /// <summary>
+        /// 移除指定歌曲的封面缓存
+        /// </summary>
+        /// <param name="filePath">歌曲文件路径</param>
+        public void RemoveMusicCoverCache(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return;
+
+            var cacheKey = $"music:{filePath}";
+            if (_spriteCache.TryGetValue(cacheKey, out var sprite))
+            {
+                // 只销毁非默认封面
+                if (sprite != null 
+                    && sprite != _defaultCover.LocalMusicCover 
+                    && sprite != _defaultCover.DefaultAlbumCover
+                    && sprite != _defaultCover.DefaultMusicCover)
+                {
+                    if (sprite.texture != null)
+                        UnityEngine.Object.Destroy(sprite.texture);
+                    UnityEngine.Object.Destroy(sprite);
+                }
+                _spriteCache.Remove(cacheKey);
+            }
+        }
+
+        /// <summary>
+        /// 移除指定专辑的封面缓存
+        /// </summary>
+        /// <param name="directoryPath">专辑目录路径</param>
+        public void RemoveAlbumCoverCache(string directoryPath)
+        {
+            if (string.IsNullOrEmpty(directoryPath))
+                return;
+
+            var cacheKey = $"album:{directoryPath}";
+            if (_spriteCache.TryGetValue(cacheKey, out var sprite))
+            {
+                // 只销毁非默认封面
+                if (sprite != null 
+                    && sprite != _defaultCover.LocalMusicCover 
+                    && sprite != _defaultCover.DefaultAlbumCover
+                    && sprite != _defaultCover.DefaultMusicCover)
+                {
+                    if (sprite.texture != null)
+                        UnityEngine.Object.Destroy(sprite.texture);
+                    UnityEngine.Object.Destroy(sprite);
+                }
+                _spriteCache.Remove(cacheKey);
+                _database.RemoveCoverCache(cacheKey);
+            }
         }
 
         /// <summary>

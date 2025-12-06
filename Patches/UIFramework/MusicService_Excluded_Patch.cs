@@ -3,6 +3,7 @@ using Bulbul;
 using ChillPatcher.ModuleSystem;
 using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.SDK.Events;
+using ChillPatcher.SDK.Interfaces;
 using HarmonyLib;
 
 namespace ChillPatcher.Patches.UIFramework
@@ -31,19 +32,21 @@ namespace ChillPatcher.Patches.UIFramework
                 var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
                 if (musicInfo != null)
                 {
-                    if (__instance.IsContainsExcludedFromPlaylist(gameAudioInfo))
+                    // 使用模块的 IFavoriteExcludeHandler 检查当前状态
+                    var handler = ModuleLoader.Instance?.GetProvider<IFavoriteExcludeHandler>(musicInfo.ModuleId);
+                    bool currentlyExcluded = handler?.IsExcluded(gameAudioInfo.UUID) ?? musicInfo.IsExcluded;
+                    
+                    if (currentlyExcluded)
                     {
                         __result = false;
                         return false;
                     }
 
-                    // 发布排除事件，让模块处理
-                    EventBus.Instance?.Publish(new ExcludeChangedEvent
-                    {
-                        Music = musicInfo,
-                        IsExcluded = true,
-                        ModuleId = musicInfo.ModuleId
-                    });
+                    // 通过模块处理器设置排除状态（这会保存到数据库并发布事件）
+                    handler?.SetExcluded(gameAudioInfo.UUID, true);
+                    
+                    // 更新 MusicInfo.IsExcluded 属性以保持同步
+                    musicInfo.IsExcluded = true;
                     
                     __result = true;
                     OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, true);
@@ -84,19 +87,21 @@ namespace ChillPatcher.Patches.UIFramework
                 var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
                 if (musicInfo != null)
                 {
-                    if (!__instance.IsContainsExcludedFromPlaylist(gameAudioInfo))
+                    // 使用模块的 IFavoriteExcludeHandler 检查当前状态
+                    var handler = ModuleLoader.Instance?.GetProvider<IFavoriteExcludeHandler>(musicInfo.ModuleId);
+                    bool currentlyExcluded = handler?.IsExcluded(gameAudioInfo.UUID) ?? musicInfo.IsExcluded;
+                    
+                    if (!currentlyExcluded)
                     {
                         __result = false;
                         return false;
                     }
 
-                    // 发布包含事件
-                    EventBus.Instance?.Publish(new ExcludeChangedEvent
-                    {
-                        Music = musicInfo,
-                        IsExcluded = false,
-                        ModuleId = musicInfo.ModuleId
-                    });
+                    // 通过模块处理器设置包含状态（这会保存到数据库并发布事件）
+                    handler?.SetExcluded(gameAudioInfo.UUID, false);
+                    
+                    // 更新 MusicInfo.IsExcluded 属性以保持同步
+                    musicInfo.IsExcluded = false;
                     
                     __result = true;
                     OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, false);
@@ -126,8 +131,17 @@ namespace ChillPatcher.Patches.UIFramework
                 var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
                 if (musicInfo != null)
                 {
-                    // 模块歌曲使用 MusicInfo.IsExcluded 属性
-                    __result = musicInfo.IsExcluded;
+                    // 从模块的 IFavoriteExcludeHandler 获取最新状态
+                    var handler = ModuleLoader.Instance?.GetProvider<IFavoriteExcludeHandler>(musicInfo.ModuleId);
+                    if (handler != null)
+                    {
+                        __result = handler.IsExcluded(gameAudioInfo.UUID);
+                    }
+                    else
+                    {
+                        // 回退到 MusicInfo.IsExcluded 属性
+                        __result = musicInfo.IsExcluded;
+                    }
                     return false;
                 }
 

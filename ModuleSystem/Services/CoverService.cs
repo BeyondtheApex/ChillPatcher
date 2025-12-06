@@ -310,21 +310,19 @@ namespace ChillPatcher.ModuleSystem.Services
         {
             if (string.IsNullOrEmpty(uuid)) return;
 
-            // 清理 Sprite 缓存
-            var spriteKey = $"music:{uuid}";
-            if (_spriteCache.TryGetValue(spriteKey, out var sprite))
+            // 通知模块清理其内部缓存
+            var music = MusicRegistry.Instance?.GetMusic(uuid);
+            if (music != null)
             {
-                // 只销毁非默认封面
-                if (sprite != null 
-                    && sprite != GetDefaultMusicCover() 
-                    && sprite != GetDefaultAlbumCover() 
-                    && sprite != GetLocalMusicCover()
-                    && sprite != LoadingPlaceholder)
-                {
-                    if (sprite.texture != null)
-                        UnityEngine.Object.Destroy(sprite.texture);
-                    UnityEngine.Object.Destroy(sprite);
-                }
+                var provider = GetCoverProvider(music.ModuleId);
+                provider?.RemoveMusicCoverCache(uuid);
+            }
+
+            // 清理 CoverService 的 Sprite 缓存
+            // 注意：不再销毁 Sprite，因为模块已经负责销毁
+            var spriteKey = $"music:{uuid}";
+            if (_spriteCache.ContainsKey(spriteKey))
+            {
                 _spriteCache.Remove(spriteKey);
                 _logger.LogDebug($"Removed music cover cache: {uuid}");
             }
@@ -334,6 +332,31 @@ namespace ChillPatcher.ModuleSystem.Services
             if (_bytesCache.ContainsKey(bytesKey))
             {
                 _bytesCache.Remove(bytesKey);
+            }
+        }
+
+        /// <summary>
+        /// 移除指定专辑的封面缓存
+        /// </summary>
+        /// <param name="albumId">专辑 ID</param>
+        public void RemoveAlbumCover(string albumId)
+        {
+            if (string.IsNullOrEmpty(albumId)) return;
+
+            // 通知模块清理其内部缓存
+            var album = AlbumRegistry.Instance?.GetAlbum(albumId);
+            if (album != null)
+            {
+                var provider = GetCoverProvider(album.ModuleId);
+                provider?.RemoveAlbumCoverCache(albumId);
+            }
+
+            // 清理 CoverService 的 Sprite 缓存
+            var spriteKey = $"album:{albumId}";
+            if (_spriteCache.ContainsKey(spriteKey))
+            {
+                _spriteCache.Remove(spriteKey);
+                _logger.LogDebug($"Removed album cover cache: {albumId}");
             }
         }
 

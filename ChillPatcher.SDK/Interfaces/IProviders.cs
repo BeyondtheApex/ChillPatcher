@@ -81,6 +81,18 @@ namespace ChillPatcher.SDK.Interfaces
         /// 清除封面缓存
         /// </summary>
         void ClearCache();
+
+        /// <summary>
+        /// 移除指定歌曲的封面缓存
+        /// </summary>
+        /// <param name="uuid">歌曲 UUID</param>
+        void RemoveMusicCoverCache(string uuid);
+
+        /// <summary>
+        /// 移除指定专辑的封面缓存
+        /// </summary>
+        /// <param name="albumId">专辑 ID</param>
+        void RemoveAlbumCoverCache(string albumId);
     }
 
     /// <summary>

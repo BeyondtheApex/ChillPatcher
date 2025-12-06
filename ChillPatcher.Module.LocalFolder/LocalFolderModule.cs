@@ -279,10 +279,17 @@ namespace ChillPatcher.Module.LocalFolder
             foreach (var music in scanResult.Music)
             {
                 // 恢复收藏和排除状态
-                if (_database.IsFavorite(music.UUID))
+                bool isFavorite = _database.IsFavorite(music.UUID);
+                bool isExcluded = _database.IsExcluded(music.UUID);
+                
+                if (isFavorite || isExcluded)
                 {
-                    music.ExtendedData = new LocalMusicData { IsFavorite = true };
+                    music.ExtendedData = new LocalMusicData { IsFavorite = isFavorite, IsExcluded = isExcluded };
                 }
+                
+                // 同步 MusicInfo.IsExcluded 属性
+                music.IsExcluded = isExcluded;
+                music.IsFavorite = isFavorite;
 
                 _context.MusicRegistry.RegisterMusic(music, ModuleId);
             }
@@ -407,6 +414,24 @@ namespace ChillPatcher.Module.LocalFolder
         public void ClearCache()
         {
             _coverLoader?.ClearCache();
+        }
+
+        public void RemoveMusicCoverCache(string uuid)
+        {
+            var music = _context.MusicRegistry.GetMusic(uuid);
+            if (music == null || music.ModuleId != ModuleId)
+                return;
+
+            _coverLoader?.RemoveMusicCoverCache(music.SourcePath);
+        }
+
+        public void RemoveAlbumCoverCache(string albumId)
+        {
+            var album = _context.AlbumRegistry.GetAlbum(albumId);
+            if (album == null || album.ModuleId != ModuleId)
+                return;
+
+            _coverLoader?.RemoveAlbumCoverCache(album.DirectoryPath);
         }
 
         #endregion

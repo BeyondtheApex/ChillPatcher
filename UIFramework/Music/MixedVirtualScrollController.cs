@@ -282,6 +282,14 @@ namespace ChillPatcher.UIFramework.Music
                 return (0, 0);
 
             float viewportHeight = _viewportTransform.rect.height;
+            
+            // 如果 viewport 高度无效（还没有布局完成），使用默认值或渲染更多项目
+            if (viewportHeight <= 0)
+            {
+                // 使用屏幕高度作为备用，确保足够的项目被渲染
+                viewportHeight = Screen.height;
+            }
+            
             float scrollPosition = _contentTransform.anchoredPosition.y;
 
             // 二分查找起始位置
