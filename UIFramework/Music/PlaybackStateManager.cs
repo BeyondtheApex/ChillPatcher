@@ -86,6 +86,12 @@ namespace ChillPatcher.UIFramework.Music
 
         // 是否已加载
         private bool _loaded = false;
+        
+        // 是否正在恢复中（阻止事件覆盖保存的 UUID）
+        private bool _isRestoring = false;
+        
+        // 恢复用的原始 UUID（防止被事件覆盖）
+        private string _originalSavedUUID;
 
         // 事件订阅
         private IDisposable _audioTagSubscription;
@@ -181,6 +187,13 @@ namespace ChillPatcher.UIFramework.Music
         /// </summary>
         private void OnMusicChanged(MusicService musicService)
         {
+            // 在恢复期间，不要覆盖保存的 UUID
+            if (_isRestoring)
+            {
+                Logger.LogDebug("Skipping OnMusicChanged during restore");
+                return;
+            }
+            
             if (_currentState == null)
             {
                 _currentState = new PlaybackState();
@@ -257,11 +270,14 @@ namespace ChillPatcher.UIFramework.Music
                 {
                     var json = File.ReadAllText(_stateFilePath);
                     _currentState = DeserializeState(json);
+                    // 保存原始 UUID，防止被事件覆盖
+                    _originalSavedUUID = _currentState.CurrentSongUUID;
                     Logger.LogInfo($"Loaded playback state: Tag={_currentState.CurrentAudioTagValue}, Song={_currentState.CurrentSongUUID}");
                 }
                 else
                 {
                     _currentState = new PlaybackState();
+                    _originalSavedUUID = null;
                     Logger.LogInfo("No saved playback state found, using defaults");
                 }
             }
@@ -269,9 +285,9 @@ namespace ChillPatcher.UIFramework.Music
             {
                 Logger.LogWarning($"Failed to load playback state: {ex.Message}");
                 _currentState = new PlaybackState();
+                _originalSavedUUID = null;
             }
         }
-
         /// <summary>
         /// 保存当前状态
         /// </summary>
@@ -429,9 +445,15 @@ namespace ChillPatcher.UIFramework.Music
 
         /// <summary>
         /// 获取保存的歌曲UUID
+        /// 在恢复期间使用原始保存的 UUID（防止被事件覆盖）
         /// </summary>
         public string GetSavedSongUUID()
         {
+            // 如果有原始 UUID，优先使用（防止被事件覆盖）
+            if (!string.IsNullOrEmpty(_originalSavedUUID))
+            {
+                return _originalSavedUUID;
+            }
             return _currentState?.CurrentSongUUID;
         }
 
@@ -515,6 +537,25 @@ namespace ChillPatcher.UIFramework.Music
         }
 
         /// <summary>
+        /// 开始恢复状态（阻止事件覆盖保存的 UUID）
+        /// </summary>
+        public void BeginRestore()
+        {
+            _isRestoring = true;
+            Logger.LogDebug("Begin restore - blocking OnMusicChanged");
+        }
+
+        /// <summary>
+        /// 结束恢复状态（恢复正常的事件处理）
+        /// </summary>
+        public void EndRestore()
+        {
+            _isRestoring = false;
+            _originalSavedUUID = null; // 清除原始 UUID，之后使用正常的状态
+            Logger.LogDebug("End restore - OnMusicChanged enabled");
+        }
+
+        /// <summary>
         /// 在播放列表中查找并播放保存的歌曲
         /// 如果歌曲不存在，返回false，游戏会正常从头播放
         /// </summary>
@@ -524,6 +565,7 @@ namespace ChillPatcher.UIFramework.Music
             if (string.IsNullOrEmpty(savedUUID))
             {
                 Logger.LogInfo("No saved song UUID found, playing from beginning");
+                EndRestore();
                 return false;
             }
 
@@ -531,6 +573,7 @@ namespace ChillPatcher.UIFramework.Music
             if (playlist == null || playlist.Count == 0)
             {
                 Logger.LogWarning("Current playlist is empty, playing from beginning");
+                EndRestore();
                 return false;
             }
 
@@ -550,11 +593,16 @@ namespace ChillPatcher.UIFramework.Music
                 Logger.LogInfo($"Found saved song at index {index}: {savedUUID}");
                 
                 // 使用 MusicService.PlayMusicInPlaylist 播放
-                return musicService.PlayMusicInPlaylist(index);
+                var result = musicService.PlayMusicInPlaylist(index);
+                
+                // 恢复完成，允许事件更新状态
+                EndRestore();
+                return result;
             }
             else
             {
                 Logger.LogInfo($"Saved song not in current playlist: {savedUUID}, playing from beginning");
+                EndRestore();
                 // 不重置状态，因为歌曲可能只是暂时被过滤掉了
                 return false;
             }

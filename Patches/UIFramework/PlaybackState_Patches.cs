@@ -76,6 +76,9 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 // 等待足够的帧数，让游戏完成初始播放和UI初始化
                 await Cysharp.Threading.Tasks.UniTask.DelayFrame(5);
+                
+                // 开始恢复状态 - 阻止事件覆盖保存的 UUID
+                PlaybackStateManager.Instance.BeginRestore();
 
                 // 首先恢复队列和历史
                 var allMusic = musicService.AllMusicList;
@@ -101,6 +104,11 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         Plugin.Log.LogInfo($"[PlaybackState] Could not restore saved song, playing from beginning");
                     }
+                }
+                else
+                {
+                    // 没有保存的歌曲，结束恢复
+                    PlaybackStateManager.Instance.EndRestore();
                 }
             }
             catch (Exception ex)

@@ -366,6 +366,9 @@ namespace ChillPatcher.Patches.UIFramework
             AudioClip audioClip = audio.AudioClip;
             if (audioClip == null)
             {
+                // 设置加载标志，防止 UpdateFacility 在加载期间调用 PauseMusic
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = true;
+                
                 Plugin.Log.LogInfo($"[PlayQueuePatch] Smart loading audio: {audio.Title}");
                 try
                 {
@@ -379,12 +382,14 @@ namespace ChillPatcher.Patches.UIFramework
                 catch (OperationCanceledException)
                 {
                     Plugin.Log.LogWarning($"[PlayQueuePatch] Audio load timeout: {audio.Title}");
+                    FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                     await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
                     return;
                 }
                 catch (Exception ex)
                 {
                     Plugin.Log.LogError($"[PlayQueuePatch] Audio load failed: {ex.Message}");
+                    FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                     await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
                     return;
                 }
@@ -393,6 +398,7 @@ namespace ChillPatcher.Patches.UIFramework
             if (audioClip == null)
             {
                 Plugin.Log.LogError($"[PlayQueuePatch] AudioClip is null for: {audio.Title}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
                 return;
             }
@@ -429,6 +435,9 @@ namespace ChillPatcher.Patches.UIFramework
             // 触发事件
             InvokeOnChangeMusic(musicService, MusicChangeKind.Manual);
             InvokeOnPlayMusic(musicService, audio);
+            
+            // 清除加载标志
+            FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
             
             Plugin.Log.LogInfo($"[PlayQueuePatch] Now playing: {audio.Title}");
         }
@@ -526,6 +535,9 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static async UniTaskVoid PlayArugumentMusicAsync(MusicService musicService, GameAudioInfo audioInfo, MusicChangeKind changeKind)
         {
+            // 设置加载标志，防止 UpdateFacility 在加载期间调用 PauseMusic
+            FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = true;
+            
             AudioClip audioClip;
             try
             {
@@ -539,12 +551,14 @@ namespace ChillPatcher.Patches.UIFramework
             catch (OperationCanceledException)
             {
                 Plugin.Log.LogWarning($"[PlayQueuePatch] Audio load timeout: {audioInfo.Title}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
                 return;
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"[PlayQueuePatch] Audio load failed: {ex.Message}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
                 return;
             }
@@ -552,6 +566,7 @@ namespace ChillPatcher.Patches.UIFramework
             if (audioClip == null)
             {
                 Plugin.Log.LogError($"[PlayQueuePatch] AudioClip is null for: {audioInfo.Title}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
                 return;
             }
@@ -585,6 +600,9 @@ namespace ChillPatcher.Patches.UIFramework
             InvokeOnChangeMusic(musicService, changeKind);
             InvokeOnPlayMusic(musicService, audioInfo);
             
+            // 清除加载标志
+            FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+            
             Plugin.Log.LogInfo($"[PlayQueuePatch] Now playing: {audioInfo.Title}");
         }
         
@@ -603,6 +621,9 @@ namespace ChillPatcher.Patches.UIFramework
                 return false;
             }
             
+            // 设置加载标志，防止 UpdateFacility 在加载期间调用 PauseMusic
+            FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = true;
+            
             // 使用智能加载获取 AudioClip
             AudioClip audioClip;
             try
@@ -618,12 +639,14 @@ namespace ChillPatcher.Patches.UIFramework
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"[PlayQueuePatch] Failed to load audio clip: {ex.Message}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 return false;
             }
             
             if (audioClip == null)
             {
                 Plugin.Log.LogWarning($"[PlayQueuePatch] AudioClip is null for {audio.AudioClipName}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 return false;
             }
             
@@ -663,6 +686,9 @@ namespace ChillPatcher.Patches.UIFramework
             // 触发事件
             InvokeOnChangeMusic(musicService, changeKind);
             InvokeOnPlayMusic(musicService, audio);
+            
+            // 清除加载标志
+            FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
             
             Plugin.Log.LogInfo($"[PlayQueuePatch] Playing: {audio.AudioClipName}");
             return true;
