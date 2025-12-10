@@ -490,16 +490,30 @@ namespace ChillPatcher
                 if (allMusicList.Any(m => m.UUID == musicInfo.UUID))
                     continue;
 
-                // 获取对应的 Tag
-                var tag = TagRegistry.Instance.GetTag(musicInfo.TagId);
-                if (tag == null)
+                // 构造 AudioTag（所有关联的模块 Tags + Local + 收藏状态）
+                AudioTag audioTag = AudioTag.Local;
+                bool hasValidTag = false;
+                
+                // 遍历所有 TagIds，合并位值
+                if (musicInfo.TagIds != null && musicInfo.TagIds.Count > 0)
                 {
-                    Logger.LogWarning($"Tag not found for music: {musicInfo.Title} (TagId: {musicInfo.TagId})");
+                    foreach (var tagId in musicInfo.TagIds)
+                    {
+                        var tag = TagRegistry.Instance.GetTag(tagId);
+                        if (tag != null)
+                        {
+                            audioTag |= (AudioTag)tag.BitValue;
+                            hasValidTag = true;
+                        }
+                    }
+                }
+                
+                if (!hasValidTag)
+                {
+                    Logger.LogWarning($"No valid tags found for music: {musicInfo.Title} (TagIds: [{string.Join(", ", musicInfo.TagIds ?? new List<string>())}])");
                     continue;
                 }
-
-                // 构造 AudioTag（模块 Tag + Local + 收藏状态）
-                AudioTag audioTag = (AudioTag)tag.BitValue | AudioTag.Local;
+                
                 if (musicInfo.IsFavorite)
                 {
                     audioTag |= AudioTag.Favorite;

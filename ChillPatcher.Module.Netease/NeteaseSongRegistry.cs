@@ -288,13 +288,20 @@ namespace ChillPatcher.Module.Netease
             {
                 var uuid = GenerateUUID(song.Id);
 
-                // 如果已经注册过（可能在收藏列表或其他歌单中），跳过
+                // 如果已经注册过（可能在收藏列表或其他歌单中），需要将其添加到当前歌单的 Tag 中
                 if (_songInfoMap.ContainsKey(uuid))
                 {
-                    // 获取已存在的 MusicInfo 并添加到列表
+                    // 获取已存在的 MusicInfo
                     var existingMusic = _context.MusicRegistry.GetMusic(uuid);
                     if (existingMusic != null)
                     {
+                        // 通过重新注册来合并 TagIds（MusicRegistry.RegisterMusic 会自动合并）
+                        var mergeInfo = new MusicInfo
+                        {
+                            UUID = uuid,
+                            TagId = tagId,  // 添加当前歌单的 Tag
+                        };
+                        _context.MusicRegistry.RegisterMusic(mergeInfo, _moduleId);
                         musicList.Add(existingMusic);
                     }
                     continue;
