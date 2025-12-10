@@ -120,6 +120,7 @@ namespace ChillPatcher.Module.Netease
 
         /// <summary>
         /// 注册FM歌曲列表
+        /// 如果歌曲已在收藏中注册，会自动合并 TagIds（同时显示在收藏和FM中）
         /// </summary>
         public List<MusicInfo> RegisterFMSongs(IEnumerable<NeteaseBridge.SongInfo> songs)
         {
@@ -129,13 +130,23 @@ namespace ChillPatcher.Module.Netease
             {
                 var uuid = GenerateUUID(song.Id);
 
-                // 如果已经注册过（可能在收藏列表中），跳过
+                // 如果已经在本地缓存中，只需要确保添加 FM Tag
+                // MusicRegistry.RegisterMusic 会自动合并 TagIds
                 if (_songInfoMap.ContainsKey(uuid))
+                {
+                    // 仍然需要注册一次，让 MusicRegistry 合并 FM Tag
+                    var musicInfo = new MusicInfo
+                    {
+                        UUID = uuid,
+                        TagId = TAG_PERSONAL_FM,  // 只设置 FM Tag，让 Registry 合并
+                    };
+                    _context.MusicRegistry.RegisterMusic(musicInfo, _moduleId);
                     continue;
+                }
 
                 var isLiked = _favoriteManager.IsSongLiked(song.Id);
 
-                var musicInfo = new MusicInfo
+                var musicInfo2 = new MusicInfo
                 {
                     UUID = uuid,
                     Title = song.Name,
@@ -152,9 +163,9 @@ namespace ChillPatcher.Module.Netease
                     ExtendedData = song
                 };
 
-                musicList.Add(musicInfo);
+                musicList.Add(musicInfo2);
                 _songInfoMap[uuid] = song;
-                _context.MusicRegistry.RegisterMusic(musicInfo, _moduleId);
+                _context.MusicRegistry.RegisterMusic(musicInfo2, _moduleId);
             }
 
             return musicList;

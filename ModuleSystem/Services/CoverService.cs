@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using BepInEx.Logging;
+using ChillPatcher.SDK.Events;
 using ChillPatcher.SDK.Interfaces;
 using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.UIFramework.Core;
@@ -36,9 +37,42 @@ namespace ChillPatcher.ModuleSystem.Services
         /// </summary>
         public event Action<string, Sprite> OnMusicCoverLoaded;
 
+        private IDisposable _coverInvalidatedSubscription;
+
         private CoverService()
         {
             _logger = BepInEx.Logging.Logger.CreateLogSource("CoverService");
+        }
+
+        /// <summary>
+        /// 初始化事件订阅
+        /// 应在 EventBus 初始化后调用
+        /// </summary>
+        public void InitializeEventSubscriptions()
+        {
+            var eventBus = EventBus.Instance;
+            if (eventBus == null)
+            {
+                _logger.LogWarning("EventBus 未初始化，无法订阅封面失效事件");
+                return;
+            }
+
+            _coverInvalidatedSubscription = eventBus.Subscribe<CoverInvalidatedEvent>(OnCoverInvalidated);
+            _logger.LogDebug("已订阅 CoverInvalidatedEvent");
+        }
+
+        private void OnCoverInvalidated(CoverInvalidatedEvent evt)
+        {
+            if (!string.IsNullOrEmpty(evt.MusicUuid))
+            {
+                _logger.LogDebug($"封面缓存失效请求: music:{evt.MusicUuid}, reason: {evt.Reason}");
+                RemoveMusicCover(evt.MusicUuid);
+            }
+            else if (!string.IsNullOrEmpty(evt.AlbumId))
+            {
+                _logger.LogDebug($"封面缓存失效请求: album:{evt.AlbumId}, reason: {evt.Reason}");
+                RemoveAlbumCover(evt.AlbumId);
+            }
         }
 
         #region Loading Placeholder

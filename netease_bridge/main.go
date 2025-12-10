@@ -921,7 +921,7 @@ func NeteaseGetPlaylistSongs(playlistId C.longlong, getAll C.int) *C.char {
 		result[i] = SongInfo{
 			ID:       s.Id,
 			Name:     s.Name,
-			Duration: float64(s.Duration) / 1000.0, // 毫秒转秒
+			Duration: s.Duration.Seconds(), // time.Duration 转秒
 			Artists:  artists,
 			Album:    s.Album.Name,
 			AlbumID:  s.Album.Id,

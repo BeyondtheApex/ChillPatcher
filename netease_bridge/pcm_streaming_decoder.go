@@ -89,7 +89,7 @@ func (d *StreamingDecoder) startDecoding() {
 	if d.channels == 0 {
 		d.channels = 2
 	}
-	d.isReady = true
+	// 先不设置 isReady，等有数据后再设置
 	d.mutex.Unlock()
 
 	d.decodeLoop()
@@ -117,6 +117,12 @@ func (d *StreamingDecoder) decodeLoop() {
 		if n > 0 {
 			d.mutex.Lock()
 			d.buffer = append(d.buffer, buffer[:n]...)
+			// 当缓冲区有足够数据时才设置 isReady
+			// 这样 C# 端 WaitForReady 会等待到有实际数据
+			// 至少需要 0.5 秒的数据（44100 * 2ch * 2bytes * 0.5s = 88200 bytes）
+			if !d.isReady && len(d.buffer) >= 88200 {
+				d.isReady = true
+			}
 			d.mutex.Unlock()
 		}
 
@@ -127,6 +133,10 @@ func (d *StreamingDecoder) decodeLoop() {
 			} else {
 				d.lastError = err.Error()
 				d.isEOF = true
+			}
+			// 即使出错也设置 isReady，避免 C# 端无限等待
+			if !d.isReady {
+				d.isReady = true
 			}
 			d.mutex.Unlock()
 			return

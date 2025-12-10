@@ -259,5 +259,17 @@ namespace ChillPatcher.UIFramework.Audio
         /// 获取当前跟踪的资源数量
         /// </summary>
         public int TrackedCount => _flacStreamReaders.Count + _pcmStreamReaders.Count + _urlFlacLoaders.Count;
+
+        /// <summary>
+        /// 根据 AudioClip 获取对应的 PCM StreamReader
+        /// </summary>
+        /// <param name="clip">AudioClip</param>
+        /// <returns>对应的 IPcmStreamReader，如果没有则返回 null</returns>
+        public IPcmStreamReader GetPcmStreamReader(AudioClip clip)
+        {
+            if (clip == null) return null;
+            var clipId = clip.GetInstanceID();
+            return _pcmStreamReaders.TryGetValue(clipId, out var reader) ? reader : null;
+        }
     }
 }

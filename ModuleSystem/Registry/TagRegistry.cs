@@ -23,7 +23,9 @@ namespace ChillPatcher.ModuleSystem.Registry
 
         // 下一个可用的位索引 (从 5 开始，0-4 留给游戏原生 Tag)
         private int _nextBitIndex = 5;
-        private const int MAX_BIT_INDEX = 63; // ulong 最多 64 位
+        // AudioTag 是 int (32位)，位 31 是符号位不可用
+        // 游戏使用位 0-4，自定义 Tag 可用位 5-30 (共 26 个)
+        private const int MAX_BIT_INDEX = 30;
 
         // 当前选中的增长列表 Tag ID
         private string _currentGrowableTagId = null;

@@ -469,4 +469,30 @@ namespace ChillPatcher.SDK.Events
     }
 
     #endregion
+
+    #region 封面事件
+
+    /// <summary>
+    /// 封面缓存失效事件
+    /// 当模块需要通知 CoverService 清除缓存时发布此事件
+    /// </summary>
+    public class CoverInvalidatedEvent : ModuleEventBase
+    {
+        /// <summary>
+        /// 需要失效的歌曲 UUID (与 AlbumId 二选一)
+        /// </summary>
+        public string MusicUuid { get; set; }
+
+        /// <summary>
+        /// 需要失效的专辑 ID (与 MusicUuid 二选一)
+        /// </summary>
+        public string AlbumId { get; set; }
+
+        /// <summary>
+        /// 失效原因 (用于日志)
+        /// </summary>
+        public string Reason { get; set; }
+    }
+
+    #endregion
 }

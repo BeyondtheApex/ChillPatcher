@@ -142,7 +142,10 @@ func NeteaseCreatePcmStream(songIdC C.longlong, qualityC *C.char) C.longlong {
 		// FLAC: 需要等待足够的数据才能开始解码
 		// 创建 FLAC 流式解码器
 		if cache != nil {
-			stream.flacStreamingDec = NewFlacStreamingDecoder(cache.GetCachePath())
+			// 传入缓存完成检查回调
+			stream.flacStreamingDec = NewFlacStreamingDecoder(cache.GetCachePath(), func() bool {
+				return cache.IsComplete()
+			})
 			// FLAC 需要等缓存下载一部分后才能尝试打开
 			go stream.tryOpenFlacStream()
 		}
@@ -168,7 +171,7 @@ func (s *PcmStream) tryOpenFlacStream() {
 	}
 
 	// 每 100ms 尝试一次打开 FLAC
-	for i := 0; i < 100; i++ { // 最多等待 10 秒
+	for i := 0; i < 200; i++ { // 最多等待 20 秒
 		s.mutex.Lock()
 		if s.flacStreamingDec.TryOpen() {
 			sampleRate, channels, isReady, _ := s.flacStreamingDec.GetInfo()

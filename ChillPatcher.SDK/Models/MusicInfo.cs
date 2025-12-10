@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ChillPatcher.SDK.Models
 {
@@ -54,9 +55,28 @@ namespace ChillPatcher.SDK.Models
         public string AlbumId { get; set; }
 
         /// <summary>
-        /// 所属 Tag ID
+        /// 所属 Tag ID (已废弃，请使用 TagIds)
+        /// 为保持向后兼容，设置此属性会添加到 TagIds 中
         /// </summary>
-        public string TagId { get; set; }
+        public string TagId
+        {
+            get => TagIds?.Count > 0 ? TagIds[0] : null;
+            set
+            {
+                if (TagIds == null) TagIds = new List<string>();
+                if (!string.IsNullOrEmpty(value) && !TagIds.Contains(value))
+                {
+                    TagIds.Clear();
+                    TagIds.Add(value);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 所属 Tag ID 列表
+        /// 歌曲可以同时属于多个 Tag（如同时在收藏和个人FM中）
+        /// </summary>
+        public List<string> TagIds { get; set; } = new List<string>();
 
         /// <summary>
         /// 音乐源类型

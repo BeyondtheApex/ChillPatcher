@@ -38,15 +38,20 @@ namespace ChillPatcher.Module.Netease
         private bool _isLoggedIn = false;
 
         // 登录歌曲常量
-        private const string LOGIN_SONG_UUID = "netease_qr_login_song";
+        private const string LOGIN_SONG_UUID_PREFIX = "netease_qr_login_";
         private const string LOGIN_SONG_TITLE = "二维码登录";
         private const float LOGIN_SONG_DURATION = 60f; // 1 分钟
+        
+        // 当前登录歌曲的 UUID（每次登录生成新的）
+        private string _currentLoginSongUuid;
 
         // 配置项
         private ConfigEntry<string> _dataDir;
         private ConfigEntry<int> _audioQuality;
         private ConfigEntry<string> _satonePlaylistKeywords;  // 献给聪音歌单关键词
         private ConfigEntry<string> _customPlaylistIds;  // 直接指定歌单 ID
+        private ConfigEntry<int> _streamReadyTimeoutMs;  // PCM 流就绪超时
+        private ConfigEntry<int> _streamMaxRetries;  // PCM 流最大重试次数
 
         // 自定义歌单
         private Dictionary<long, List<MusicInfo>> _customPlaylistMusicLists = new Dictionary<long, List<MusicInfo>>();
@@ -96,19 +101,20 @@ namespace ChillPatcher.Module.Netease
                 return;
             }
 
-            // 注册 Tags（无论是否登录都需要）
-            RegisterTags();
-
             // 检查登录状态
             _isLoggedIn = _bridge.IsLoggedIn;
             if (!_isLoggedIn)
             {
                 context.Logger.LogWarning($"[{DisplayName}] 未登录网易云音乐，显示二维码登录");
                 
+                // 未登录时只注册收藏 Tag（用于显示登录二维码）
+                RegisterFavoritesTag();
+                
                 // 初始化二维码登录管理器
                 _qrLoginManager = new QRLoginManager(_bridge, context.Logger);
                 _qrLoginManager.OnLoginSuccess += OnQRLoginSuccess;
                 _qrLoginManager.OnStatusChanged += OnQRLoginStatusChanged;
+                _qrLoginManager.OnQRCodeUpdated += OnQRCodeUpdated;
                 
                 // 注册收藏专辑（包含登录歌曲）
                 RegisterLoginSongAlbum();
@@ -135,8 +141,9 @@ namespace ChillPatcher.Module.Netease
             _songRegistry = new NeteaseSongRegistry(context, ModuleId, _songInfoMap, _favoriteManager, context.Logger);
             _fmManager = new PersonalFMManager(_bridge);
 
-            // 注册 Tags
-            RegisterTags();
+            // 登录后注册所有 Tags（收藏 + FM）
+            RegisterFavoritesTag();
+            RegisterFMTag();
 
             // 获取并缓存收藏歌曲 ID 列表
             await _favoriteManager.LoadLikeListAsync();
@@ -234,10 +241,10 @@ namespace ChillPatcher.Module.Netease
 
         public async Task<PlayableSource> ResolveAsync(string uuid, AudioQuality quality = AudioQuality.ExHigh, CancellationToken cancellationToken = default)
         {
-            // 处理登录歌曲
-            if (uuid == LOGIN_SONG_UUID)
+            // 处理登录歌曲（使用前缀匹配，因为每次 UUID 都不同）
+            if (IsLoginSongUuid(uuid))
             {
-                return await ResolveLoginSongAsync(cancellationToken);
+                return await ResolveLoginSongAsync(uuid, cancellationToken);
             }
 
             if (!_songInfoMap.TryGetValue(uuid, out var songInfo))
@@ -250,35 +257,54 @@ namespace ChillPatcher.Module.Netease
             var effectiveQuality = GetEffectiveQuality(quality);
             var bridgeQuality = MapQuality(effectiveQuality);
             
-            // 创建 PCM 流
-            var streamId = _bridge.CreatePcmStream(songInfo.Id, bridgeQuality);
-            if (streamId < 0)
+            // 从配置读取重试和超时设置
+            int maxRetries = _streamMaxRetries?.Value ?? 3;
+            int readyTimeoutMs = _streamReadyTimeoutMs?.Value ?? 20000;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                _context.Logger.LogWarning($"[{DisplayName}] 创建 PCM 流失败: {songInfo.Name}");
-                return null;
+                // 创建 PCM 流
+                var streamId = _bridge.CreatePcmStream(songInfo.Id, bridgeQuality);
+                if (streamId < 0)
+                {
+                    _context.Logger.LogWarning($"[{DisplayName}] 创建 PCM 流失败: {songInfo.Name} (尝试 {attempt}/{maxRetries})");
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(1000, cancellationToken); // 等待 1 秒后重试
+                        continue;
+                    }
+                    return null;
+                }
+
+                // 创建 PCM 读取器，传入歌曲时长用于计算预估总帧数
+                var reader = new NeteasePcmStreamReader(_bridge, streamId, 44100, 2, (float)songInfo.Duration);
+
+                // 等待流准备好
+                var ready = await Task.Run(() => reader.WaitForReady(readyTimeoutMs), cancellationToken);
+                if (!ready)
+                {
+                    _context.Logger.LogWarning($"[{DisplayName}] PCM 流准备超时: {songInfo.Name} (尝试 {attempt}/{maxRetries})");
+                    reader.Dispose();
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(1000, cancellationToken); // 等待 1 秒后重试
+                        continue;
+                    }
+                    return null;
+                }
+
+                _context.Logger.LogInfo($"[{DisplayName}] PCM 流已就绪: {songInfo.Name} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch, {reader.Info.Format ?? "mp3"}]");
+
+                // 根据实际格式返回正确的 AudioFormat
+                var audioFormat = string.Equals(reader.Info.Format, "flac", StringComparison.OrdinalIgnoreCase)
+                    ? AudioFormat.Flac
+                    : AudioFormat.Mp3;
+
+                // 返回 PCM 流源
+                return PlayableSource.FromPcmStream(uuid, reader, audioFormat);
             }
 
-            // 创建 PCM 读取器，传入歌曲时长用于计算预估总帧数
-            var reader = new NeteasePcmStreamReader(_bridge, streamId, 44100, 2, (float)songInfo.Duration);
-
-            // 等待流准备好
-            var ready = await Task.Run(() => reader.WaitForReady(5000), cancellationToken);
-            if (!ready)
-            {
-                _context.Logger.LogWarning($"[{DisplayName}] PCM 流准备超时: {songInfo.Name}");
-                reader.Dispose();
-                return null;
-            }
-
-            _context.Logger.LogInfo($"[{DisplayName}] PCM 流已就绪: {songInfo.Name} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch, {reader.Info.Format ?? "mp3"}]");
-
-            // 根据实际格式返回正确的 AudioFormat
-            var audioFormat = string.Equals(reader.Info.Format, "flac", StringComparison.OrdinalIgnoreCase)
-                ? AudioFormat.Flac
-                : AudioFormat.Mp3;
-
-            // 返回 PCM 流源
-            return PlayableSource.FromPcmStream(uuid, reader, audioFormat);
+            return null;
         }
 
         public async Task<PlayableSource> RefreshUrlAsync(string uuid, AudioQuality quality = AudioQuality.ExHigh, CancellationToken cancellationToken = default)
@@ -289,7 +315,7 @@ namespace ChillPatcher.Module.Netease
         /// <summary>
         /// 处理登录歌曲的播放 - 返回静音流并启动二维码登录
         /// </summary>
-        private async Task<PlayableSource> ResolveLoginSongAsync(CancellationToken cancellationToken)
+        private async Task<PlayableSource> ResolveLoginSongAsync(string uuid, CancellationToken cancellationToken)
         {
             _context.Logger.LogInfo($"[{DisplayName}] 开始二维码登录流程...");
 
@@ -307,9 +333,9 @@ namespace ChillPatcher.Module.Netease
                 }
             }
 
-            // 返回静音流
+            // 返回静音流（使用传入的 uuid）
             var silentReader = new SilentPcmReader(44100, 2, LOGIN_SONG_DURATION);
-            return PlayableSource.FromPcmStream(LOGIN_SONG_UUID, silentReader, AudioFormat.Mp3);
+            return PlayableSource.FromPcmStream(uuid, silentReader, AudioFormat.Mp3);
         }
 
         #endregion
@@ -319,7 +345,7 @@ namespace ChillPatcher.Module.Netease
         public async Task<Sprite> GetMusicCoverAsync(string uuid)
         {
             // 登录歌曲使用二维码作为封面
-            if (uuid == LOGIN_SONG_UUID)
+            if (IsLoginSongUuid(uuid))
             {
                 return _qrLoginManager?.QRCodeSprite ?? _coverLoader.FavoritesCover;
             }
@@ -392,6 +418,16 @@ namespace ChillPatcher.Module.Netease
 
         public void RemoveMusicCoverCache(string uuid)
         {
+            // 登录歌曲的封面是动态生成的 QR 码，不在 _coverLoader 缓存中
+            // 由于 UUID 是动态生成的，CoverService 会用新 UUID 请求新封面
+            if (IsLoginSongUuid(uuid))
+            {
+                // 模块无法直接访问 CoverService，但登录歌曲每次登录会生成新 UUID
+                // 所以 CoverService 的缓存不会命中旧的登录歌曲
+                return;
+            }
+
+            // 普通歌曲：从 NeteaseCoverLoader 缓存中移除
             if (_songInfoMap.TryGetValue(uuid, out var songInfo) && !string.IsNullOrEmpty(songInfo.CoverUrl))
             {
                 // 需要使用 HTTPS 版本的 URL，因为缓存时已转换
@@ -452,9 +488,24 @@ namespace ChillPatcher.Module.Netease
                 "CustomPlaylistIds",
                 "",
                 "直接指定要导入的歌单 ID (多个 ID 用 , 分隔)");
+
+            _streamReadyTimeoutMs = configManager.Bind(
+                "",  // 使用默认 section
+                "StreamReadyTimeoutMs",
+                20000,
+                "PCM 流就绪超时时间 (毫秒)，默认 20000 (20秒)");
+
+            _streamMaxRetries = configManager.Bind(
+                "",  // 使用默认 section
+                "StreamMaxRetries",
+                3,
+                "PCM 流创建失败时的最大重试次数，默认 3 次");
         }
 
-        private void RegisterTags()
+        /// <summary>
+        /// 注册收藏 Tag（无论登录与否都需要）
+        /// </summary>
+        private void RegisterFavoritesTag()
         {
             // 注册"收藏歌曲" Tag（普通 Tag）
             _context.TagRegistry.RegisterTag(
@@ -462,7 +513,13 @@ namespace ChillPatcher.Module.Netease
                 "网易云收藏",
                 ModuleId);
             _context.Logger.LogInfo($"[{DisplayName}] 已注册 Tag: 网易云收藏");
+        }
 
+        /// <summary>
+        /// 注册个人 FM Tag（仅登录后需要）
+        /// </summary>
+        private void RegisterFMTag()
+        {
             // 注册"个人FM" Tag
             // 会在注册增长专辑 (IsGrowableAlbum=true) 时自动标记为增长 Tag
             _context.TagRegistry.RegisterTag(
@@ -505,9 +562,12 @@ namespace ChillPatcher.Module.Netease
         /// </summary>
         private void RegisterLoginSong(string statusText)
         {
+            // 每次生成新的 UUID，避免缓存问题
+            _currentLoginSongUuid = LOGIN_SONG_UUID_PREFIX + Guid.NewGuid().ToString("N").Substring(0, 8);
+
             var loginMusic = new MusicInfo
             {
-                UUID = LOGIN_SONG_UUID,
+                UUID = _currentLoginSongUuid,
                 Title = LOGIN_SONG_TITLE,
                 Artist = statusText,
                 AlbumId = NeteaseSongRegistry.FAVORITES_ALBUM_ID,
@@ -524,7 +584,15 @@ namespace ChillPatcher.Module.Netease
 
             _musicList.Add(loginMusic);
             _context.MusicRegistry.RegisterMusic(loginMusic, ModuleId);
-            _context.Logger.LogInfo($"[{DisplayName}] 已注册登录歌曲");
+            _context.Logger.LogInfo($"[{DisplayName}] 已注册登录歌曲: {_currentLoginSongUuid}");
+        }
+
+        /// <summary>
+        /// 判断是否为登录歌曲 UUID
+        /// </summary>
+        private bool IsLoginSongUuid(string uuid)
+        {
+            return uuid != null && uuid.StartsWith(LOGIN_SONG_UUID_PREFIX, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -532,7 +600,7 @@ namespace ChillPatcher.Module.Netease
         /// </summary>
         private void UpdateLoginSongStatus(string statusText)
         {
-            var loginMusic = _musicList.FirstOrDefault(m => m.UUID == LOGIN_SONG_UUID);
+            var loginMusic = _musicList.FirstOrDefault(m => IsLoginSongUuid(m.UUID));
             if (loginMusic != null)
             {
                 loginMusic.Artist = statusText;
@@ -545,11 +613,12 @@ namespace ChillPatcher.Module.Netease
         /// </summary>
         private void RemoveLoginSong()
         {
-            var loginMusic = _musicList.FirstOrDefault(m => m.UUID == LOGIN_SONG_UUID);
+            var loginMusic = _musicList.FirstOrDefault(m => IsLoginSongUuid(m.UUID));
             if (loginMusic != null)
             {
                 _musicList.Remove(loginMusic);
-                _context.MusicRegistry.UnregisterMusic(LOGIN_SONG_UUID);
+                _context.MusicRegistry.UnregisterMusic(loginMusic.UUID);
+                _currentLoginSongUuid = null;
                 _context.Logger.LogInfo($"[{DisplayName}] 已删除登录歌曲");
             }
         }
@@ -574,6 +643,9 @@ namespace ChillPatcher.Module.Netease
 
             // 注销旧的专辑
             _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
+
+            // 登录成功后注册 FM Tag
+            RegisterFMTag();
 
             // 初始化辅助管理器
             _favoriteManager = new NeteaseFavoriteManager(_bridge, _context.Logger, _songInfoMap);
@@ -617,6 +689,25 @@ namespace ChillPatcher.Module.Netease
         {
             _context.Logger.LogInfo($"[{DisplayName}] 登录状态: {status}");
             UpdateLoginSongStatus(status);
+        }
+
+        /// <summary>
+        /// 二维码更新回调（二维码过期后重新生成时调用）
+        /// </summary>
+        private void OnQRCodeUpdated(UnityEngine.Sprite newQRCode)
+        {
+            // 清除登录歌曲的封面缓存，以便显示新的二维码
+            if (!string.IsNullOrEmpty(_currentLoginSongUuid))
+            {
+                _context.Logger.LogInfo($"[{DisplayName}] 二维码已更新，清除封面缓存");
+                
+                // 通过事件总线通知 CoverService 清除缓存
+                _context.EventBus.Publish(new CoverInvalidatedEvent
+                {
+                    MusicUuid = _currentLoginSongUuid,
+                    Reason = "QR code expired and regenerated"
+                });
+            }
         }
 
         #endregion

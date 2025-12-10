@@ -6,6 +6,8 @@ using ChillPatcher.ModuleSystem;
 using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.SDK.Interfaces;
 using ChillPatcher.SDK.Models;
+using Cysharp.Threading.Tasks;
+using NestopiSystem.DIContainers;
 using UnityEngine;
 
 namespace ChillPatcher.UIFramework.Audio
@@ -83,6 +85,9 @@ namespace ChillPatcher.UIFramework.Audio
                     AudioQuality.ExHigh, 
                     cancellationToken);
 
+                // 检查是否被取消
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (source == null)
                 {
                     Plugin.Log.LogError($"[StreamingAudioLoader] Failed to resolve playable source for: {uuid}");
@@ -97,6 +102,9 @@ namespace ChillPatcher.UIFramework.Audio
                         uuid, 
                         AudioQuality.ExHigh, 
                         cancellationToken);
+                    
+                    // 再次检查是否被取消
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
 
                 if (source == null)
@@ -104,6 +112,9 @@ namespace ChillPatcher.UIFramework.Audio
                     Plugin.Log.LogError($"[StreamingAudioLoader] Failed to refresh URL for: {uuid}");
                     return null;
                 }
+                
+                // 最后一次检查是否被取消（在创建 AudioClip 之前）
+                cancellationToken.ThrowIfCancellationRequested();
 
                 Plugin.Log.LogInfo($"[StreamingAudioLoader] Loading from {source.SourceType}, Format: {source.Format}");
 
@@ -183,10 +194,30 @@ namespace ChillPatcher.UIFramework.Audio
             int lengthSamples;
             bool isStreaming;
 
+            // 最大合理长度：6小时的音频（考虑 Hi-Res 高采样率，防止溢出 int.MaxValue）
+            // 在 96000Hz 下，6 小时 = 2,073,600,000 samples，仍在 int.MaxValue 范围内
+            // 这足以涵盖古典音乐、CD 整轨、甚至超长作品
+            const int MAX_REASONABLE_SAMPLES = 44100 * 60 * 60 * 6; // 6 hours at 44100Hz
+            
+            // 【重要】使用超长余量策略：设置 30 分钟的余量
+            // 这样 Unity 永远不会因为"到达时长结尾"而停止播放
+            // 歌曲结束完全依靠 Go 端返回的 EOF 信号，由 AudioPlayer_Update_Patch 处理
+            // 这解决了 API 时长不准确导致歌曲提前结束的问题
+            int extraMargin = info.SampleRate * 60 * 30; // 30 分钟余量
+            
             if (info.TotalFrames > 0)
             {
-                // 已知长度 - 创建固定大小的 clip
-                lengthSamples = (int)info.TotalFrames;
+                // 检查是否会溢出 int 或超过合理范围
+                if (info.TotalFrames > int.MaxValue || info.TotalFrames > (ulong)MAX_REASONABLE_SAMPLES)
+                {
+                    Plugin.Log.LogWarning($"[StreamingAudioLoader] TotalFrames ({info.TotalFrames}) exceeds limit, using buffer mode");
+                    lengthSamples = info.SampleRate * 600; // 10 分钟缓冲
+                }
+                else
+                {
+                    // 已知长度 - 创建固定大小的 clip，加上 3 秒余量
+                    lengthSamples = (int)info.TotalFrames + extraMargin;
+                }
                 isStreaming = true; // 仍然使用流式读取
             }
             else
@@ -194,6 +225,13 @@ namespace ChillPatcher.UIFramework.Audio
                 // 未知长度 - 使用较大的缓冲区
                 lengthSamples = info.SampleRate * 600; // 10 分钟缓冲
                 isStreaming = true;
+            }
+            
+            // 最终安全检查
+            if (lengthSamples <= 0)
+            {
+                Plugin.Log.LogError($"[StreamingAudioLoader] Invalid lengthSamples: {lengthSamples}, falling back to buffer mode");
+                lengthSamples = info.SampleRate * 600; // 10 分钟缓冲
             }
 
             Plugin.Log.LogInfo($"[StreamingAudioLoader] Creating PCM stream clip: " +
@@ -236,13 +274,20 @@ namespace ChillPatcher.UIFramework.Audio
 
         /// <summary>
         /// PCM 数据读取回调
-        /// Unity 会在需要音频数据时调用此方法
+        /// Unity 会在需要音频数据时调用此方法（在音频线程）
+        /// EOF 检测主要由 AudioPlayer_Update_Patch 处理
         /// </summary>
         private static void OnPcmReaderCallback(IPcmStreamReader reader, float[] data)
         {
-            if (reader == null || reader.IsEndOfStream)
+            if (reader == null)
             {
-                // 填充静音
+                Array.Clear(data, 0, data.Length);
+                return;
+            }
+
+            // 如果已经 EOF，填充静音
+            if (reader.IsEndOfStream)
+            {
                 Array.Clear(data, 0, data.Length);
                 return;
             }
@@ -252,11 +297,21 @@ namespace ChillPatcher.UIFramework.Audio
                 int framesToRead = data.Length / reader.Info.Channels;
                 long framesRead = reader.ReadFrames(data, framesToRead);
 
+                // 如果读取返回 0 或负数，填充静音
+                if (framesRead <= 0)
+                {
+                    Array.Clear(data, 0, data.Length);
+                    return;
+                }
+
                 // 如果读取的帧数少于请求的，填充静音
                 if (framesRead < framesToRead)
                 {
                     int samplesRead = (int)(framesRead * reader.Info.Channels);
-                    Array.Clear(data, samplesRead, data.Length - samplesRead);
+                    if (samplesRead < data.Length)
+                    {
+                        Array.Clear(data, samplesRead, data.Length - samplesRead);
+                    }
                 }
             }
             catch (Exception ex)
@@ -278,6 +333,15 @@ namespace ChillPatcher.UIFramework.Audio
             // 因为 SetProgress 已经调用过 reader.Seek() 了
             if (Patches.UIFramework.MusicService_SetProgress_Patch.IsSeekingFromSetProgress)
             {
+                return;
+            }
+
+            // 只有非零位置才需要 Seek
+            // 创建 AudioClip 后 Unity 会调用 SetPosition(0)，但流式解码本来就从 0 开始
+            // 避免不必要的 Seek 调用，特别是在缓存未完成时会导致 isPaused
+            if (position == 0)
+            {
+                // 流式解码总是从 0 开始，不需要 Seek
                 return;
             }
 

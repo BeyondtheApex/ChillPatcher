@@ -28,6 +28,19 @@ namespace ChillPatcher.Patches.UIFramework
         public static bool IsQueueSystemEnabled { get; set; } = true;
         
         /// <summary>
+        /// 是否跳过启动时的默认播放（当有保存的播放状态时使用）
+        /// 这样可以避免播放状态恢复和默认播放冲突导致双播放
+        /// </summary>
+        public static bool SkipStartupDefaultPlay { get; set; } = false;
+        
+        /// <summary>
+        /// 当前加载任务的取消令牌源
+        /// 用于在切换歌曲时取消之前的加载任务，防止多首歌同时播放
+        /// </summary>
+        private static CancellationTokenSource _currentLoadCts;
+        private static readonly object _ctsLock = new object();
+        
+        /// <summary>
         /// 获取用于队列填充的播放列表（使用显示顺序）
         /// </summary>
         /// <param name="musicService">MusicService 实例</param>
@@ -49,6 +62,45 @@ namespace ChillPatcher.Patches.UIFramework
             // 回退到 CurrentPlayList
             Plugin.Log.LogDebug($"[PlayQueuePatch] Using CurrentPlayList: {musicService.CurrentPlayList.Count} songs");
             return musicService.CurrentPlayList;
+        }
+        
+        /// <summary>
+        /// 获取新的 CancellationToken 并取消之前的加载任务
+        /// </summary>
+        /// <param name="timeoutSeconds">超时时间（秒）</param>
+        /// <returns>新的 CancellationToken</returns>
+        private static CancellationToken GetNewLoadCancellationToken(int timeoutSeconds = 30)
+        {
+            lock (_ctsLock)
+            {
+                // 取消之前的加载任务
+                if (_currentLoadCts != null)
+                {
+                    Plugin.Log.LogInfo("[PlayQueuePatch] Cancelling previous load task");
+                    try
+                    {
+                        _currentLoadCts.Cancel();
+                        _currentLoadCts.Dispose();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // 已经 disposed，忽略
+                    }
+                }
+                
+                // 创建新的 CancellationTokenSource
+                _currentLoadCts = new CancellationTokenSource();
+                _currentLoadCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                return _currentLoadCts.Token;
+            }
+        }
+        
+        /// <summary>
+        /// 检查当前加载是否已被取消
+        /// </summary>
+        private static bool IsCurrentLoadCancelled(CancellationToken token)
+        {
+            return token.IsCancellationRequested;
         }
         
         #region SkipCurrentMusic Patch
@@ -146,6 +198,15 @@ namespace ChillPatcher.Patches.UIFramework
         [HarmonyPrefix]
         public static bool PlayNextMusic_Prefix(MusicService __instance, int nextCount, MusicChangeKind changeKind, ref UniTask<bool> __result)
         {
+            // 检查是否应该跳过启动时的默认播放
+            if (SkipStartupDefaultPlay && nextCount == 0 && changeKind == MusicChangeKind.Auto)
+            {
+                Plugin.Log.LogInfo("[PlayQueuePatch] Skipping startup default PlayNextMusic(0) - will restore saved playback state instead");
+                SkipStartupDefaultPlay = false; // 只跳过一次
+                __result = UniTask.FromResult(true);
+                return false;
+            }
+            
             if (!IsQueueSystemEnabled)
                 return true;
             
@@ -384,21 +445,49 @@ namespace ChillPatcher.Patches.UIFramework
                 // 设置加载标志，防止 UpdateFacility 在加载期间调用 PauseMusic
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = true;
                 
+                // 立即停止当前播放，减少用户感知延迟
+                var playingMusic = musicService.PlayingMusic;
+                if (playingMusic != null && playingMusic.AudioClip != null)
+                {
+                    Plugin.Log.LogInfo($"[PlayQueuePatch] Stopping current: {playingMusic.AudioClipName}");
+                    SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
+                }
+                
+                // 立即切换 UI 显示到新歌曲，进度条会停在 0 等待加载
+                SetPlayingMusic(musicService, audio);
+                MusicService_GetProgress_Patch.ResetProgress();  // 重置进度为 0
+                InvokeOnChangeMusic(musicService, MusicChangeKind.Manual);
+                InvokeOnPlayMusic(musicService, audio);
+                
                 Plugin.Log.LogInfo($"[PlayQueuePatch] Smart loading audio: {audio.Title}");
+                
+                // 获取新的 CancellationToken，会自动取消之前的加载任务
+                var loadToken = GetNewLoadCancellationToken(30);
+                
                 try
                 {
-                    using (var cts = new CancellationTokenSource())
+                    audioClip = await StreamingAudioLoader.SmartLoadAsync(audio, loadToken);
+                    
+                    // 检查是否在加载期间被取消（用户切换了歌曲）
+                    if (loadToken.IsCancellationRequested)
                     {
-                        cts.CancelAfter(TimeSpan.FromSeconds(30));  // 30秒超时（流媒体可能需要更长时间）
-                        audioClip = await StreamingAudioLoader.SmartLoadAsync(audio, cts.Token);
-                        Plugin.Log.LogInfo($"[PlayQueuePatch] SmartLoad returned: {(audioClip != null ? audioClip.name : "null")}");
+                        Plugin.Log.LogInfo($"[PlayQueuePatch] Load cancelled (user switched song): {audio.Title}");
+                        FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                        return;
                     }
+                    
+                    Plugin.Log.LogInfo($"[PlayQueuePatch] SmartLoad returned: {(audioClip != null ? audioClip.name : "null")}");
                 }
                 catch (OperationCanceledException)
                 {
-                    Plugin.Log.LogWarning($"[PlayQueuePatch] Audio load timeout: {audio.Title}");
+                    Plugin.Log.LogWarning($"[PlayQueuePatch] Audio load cancelled or timeout: {audio.Title}");
                     FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
-                    await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                    // 只有超时情况下才自动播放下一首，用户切换时不需要
+                    // 通过检查当前播放歌曲来判断
+                    if (musicService.PlayingMusic?.UUID == audio.UUID)
+                    {
+                        await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                    }
                     return;
                 }
                 catch (Exception ex)
@@ -415,6 +504,15 @@ namespace ChillPatcher.Patches.UIFramework
                 Plugin.Log.LogError($"[PlayQueuePatch] AudioClip is null for: {audio.Title}");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                return;
+            }
+            
+            // 再次检查是否被取消（加载可能成功但用户已切换）
+            // 检查当前 UI 显示的歌曲是否还是我们正在加载的
+            if (musicService.PlayingMusic?.UUID != audio.UUID)
+            {
+                Plugin.Log.LogInfo($"[PlayQueuePatch] User switched song during load, aborting play: {audio.Title}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
                 return;
             }
             
@@ -450,11 +548,15 @@ namespace ChillPatcher.Patches.UIFramework
             
             queueManager.SetCurrentPlaying(audio, updatePosition: true, newPosition: newPosition);
             
-            // 停止当前播放
-            var playingMusic = musicService.PlayingMusic;
-            if (playingMusic != null && playingMusic.AudioClip != null)
+            // 停止当前播放（如果在加载时还没停止）
+            // 注意：如果 AudioClip 已存在则还没停止，需要在这里停止
+            if (audio.AudioClip != null)
             {
-                SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
+                var playingMusic = musicService.PlayingMusic;
+                if (playingMusic != null && playingMusic.AudioClip != null)
+                {
+                    SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
+                }
             }
             
             // 加载音频数据（跳过流式 AudioClip）
@@ -472,12 +574,14 @@ namespace ChillPatcher.Patches.UIFramework
                 () => musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>()
             );
             
-            // 更新 MusicService 状态（使用反射，因为 PlayingMusic 是私有 setter）
-            SetPlayingMusic(musicService, audio);
-            
-            // 触发事件
-            InvokeOnChangeMusic(musicService, MusicChangeKind.Manual);
-            InvokeOnPlayMusic(musicService, audio);
+            // 如果是本地音频（AudioClip 已存在），需要在这里更新状态和触发事件
+            // 流媒体的话已经在加载前更新过了
+            if (audio.AudioClip != null)
+            {
+                SetPlayingMusic(musicService, audio);
+                InvokeOnChangeMusic(musicService, MusicChangeKind.Manual);
+                InvokeOnPlayMusic(musicService, audio);
+            }
             
             // 清除加载标志
             FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
@@ -655,21 +759,46 @@ namespace ChillPatcher.Patches.UIFramework
             // 设置加载标志，防止 UpdateFacility 在加载期间调用 PauseMusic
             FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = true;
             
+            // 立即停止当前播放
+            var playingMusic = musicService.PlayingMusic;
+            if (playingMusic != null && playingMusic.AudioClip != null)
+            {
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Stopping current: {playingMusic.AudioClipName}");
+                SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
+            }
+            
+            // 立即切换 UI 显示到新歌曲，进度条会停在 0 等待加载
+            SetPlayingMusic(musicService, audioInfo);
+            MusicService_GetProgress_Patch.ResetProgress();  // 重置进度为 0
+            InvokeOnChangeMusic(musicService, changeKind);
+            InvokeOnPlayMusic(musicService, audioInfo);
+            
+            // 获取新的 CancellationToken，会自动取消之前的加载任务
+            var loadToken = GetNewLoadCancellationToken(30);
+            
             AudioClip audioClip;
             try
             {
                 Plugin.Log.LogInfo($"[PlayQueuePatch] Smart async loading: {audioInfo.Title}");
-                using (var cts = new CancellationTokenSource())
+                audioClip = await StreamingAudioLoader.SmartLoadAsync(audioInfo, loadToken);
+                
+                // 检查是否在加载期间被取消（用户切换了歌曲）
+                if (loadToken.IsCancellationRequested)
                 {
-                    cts.CancelAfter(TimeSpan.FromSeconds(30));  // 30秒超时（流媒体可能需要更长时间）
-                    audioClip = await StreamingAudioLoader.SmartLoadAsync(audioInfo, cts.Token);
+                    Plugin.Log.LogInfo($"[PlayQueuePatch] Load cancelled (user switched song): {audioInfo.Title}");
+                    FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                    return;
                 }
             }
             catch (OperationCanceledException)
             {
-                Plugin.Log.LogWarning($"[PlayQueuePatch] Audio load timeout: {audioInfo.Title}");
+                Plugin.Log.LogWarning($"[PlayQueuePatch] Audio load cancelled or timeout: {audioInfo.Title}");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
-                await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                // 只有超时情况下才自动播放下一首
+                if (musicService.PlayingMusic?.UUID == audioInfo.UUID)
+                {
+                    await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                }
                 return;
             }
             catch (Exception ex)
@@ -688,11 +817,12 @@ namespace ChillPatcher.Patches.UIFramework
                 return;
             }
             
-            // 停止当前播放
-            var playingMusic = musicService.PlayingMusic;
-            if (playingMusic != null && playingMusic.AudioClip != null)
+            // 再次检查是否被取消（加载可能成功但用户已切换）
+            if (loadToken.IsCancellationRequested)
             {
-                SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Load cancelled after completion (user switched song): {audioInfo.Title}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                return;
             }
             
             // 加载音频数据（跳过流式 AudioClip）
@@ -710,14 +840,7 @@ namespace ChillPatcher.Patches.UIFramework
                 () => musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>()
             );
             
-            // 更新 MusicService 状态
-            SetPlayingMusic(musicService, audioInfo);
-            
-            // 触发事件
-            InvokeOnChangeMusic(musicService, changeKind);
-            InvokeOnPlayMusic(musicService, audioInfo);
-            
-            // 清除加载标志
+            // 清除加载标志（UI 已在加载前更新过了）
             FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
             
             Plugin.Log.LogInfo($"[PlayQueuePatch] Now playing: {audioInfo.Title}");
@@ -738,20 +861,51 @@ namespace ChillPatcher.Patches.UIFramework
                 return false;
             }
             
+            // 重置 EOF 追踪状态，允许新歌曲的 EOF 被检测
+            AudioPlayer_Update_Patch.ResetEofTracking();
+            
             // 设置加载标志，防止 UpdateFacility 在加载期间调用 PauseMusic
             FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = true;
             
+            // 立即停止当前播放，减少用户感知延迟
+            var playingMusic = musicService.PlayingMusic;
+            if (playingMusic != null && playingMusic.AudioClip != null)
+            {
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Stopping current: {playingMusic.AudioClipName}");
+                SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
+            }
+            
+            // 立即切换 UI 显示到新歌曲，进度条会停在 0 等待加载
+            SetPlayingMusic(musicService, audio);
+            MusicService_GetProgress_Patch.ResetProgress();  // 重置进度为 0
+            InvokeOnChangeMusic(musicService, changeKind);
+            InvokeOnPlayMusic(musicService, audio);
+            
             // 使用智能加载获取 AudioClip
+            // 获取新的 CancellationToken，会自动取消之前的加载任务
+            var loadToken = GetNewLoadCancellationToken(30);
+            
             AudioClip audioClip;
             try
             {
                 Plugin.Log.LogInfo($"[PlayQueuePatch] Smart loading for: {audio.Title}");
-                using (var cts = new CancellationTokenSource())
+                audioClip = await StreamingAudioLoader.SmartLoadAsync(audio, loadToken);
+                
+                // 检查是否在加载期间被取消（用户切换了歌曲）
+                if (loadToken.IsCancellationRequested)
                 {
-                    cts.CancelAfter(TimeSpan.FromSeconds(30));
-                    audioClip = await StreamingAudioLoader.SmartLoadAsync(audio, cts.Token);
+                    Plugin.Log.LogInfo($"[PlayQueuePatch] Load cancelled (user switched song): {audio.Title}");
+                    FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                    return false;
                 }
+                
                 Plugin.Log.LogInfo($"[PlayQueuePatch] SmartLoad returned: {(audioClip != null ? audioClip.name : "null")}");
+            }
+            catch (OperationCanceledException)
+            {
+                Plugin.Log.LogInfo($"[PlayQueuePatch] Load cancelled or timeout: {audio.Title}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                return false;
             }
             catch (Exception ex)
             {
@@ -767,15 +921,15 @@ namespace ChillPatcher.Patches.UIFramework
                 return false;
             }
             
-            Plugin.Log.LogInfo($"[PlayQueuePatch] AudioClip ready: {audioClip.name}, loadType={audioClip.loadType}");
-            
-            // 停止当前播放
-            var playingMusic = musicService.PlayingMusic;
-            if (playingMusic != null && playingMusic.AudioClip != null)
+            // 再次检查是否被取消（加载可能成功但用户已切换）
+            if (musicService.PlayingMusic?.UUID != audio.UUID)
             {
-                Plugin.Log.LogInfo($"[PlayQueuePatch] Stopping current: {playingMusic.AudioClipName}");
-                SingletonMonoBehaviour<MusicManager>.Instance.Stop(playingMusic.AudioClip);
+                Plugin.Log.LogInfo($"[PlayQueuePatch] User switched song during load, aborting play: {audio.Title}");
+                FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                return false;
             }
+            
+            Plugin.Log.LogInfo($"[PlayQueuePatch] AudioClip ready: {audioClip.name}, loadType={audioClip.loadType}");
             
             // 加载音频数据（跳过流式 AudioClip，它们不需要预加载）
             // 流式 clip 的 loadState 永远是 Unloaded 但不能调用 LoadAudioData
@@ -797,14 +951,7 @@ namespace ChillPatcher.Patches.UIFramework
                 () => musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>()
             );
             
-            // 更新 MusicService 状态
-            SetPlayingMusic(musicService, audio);
-            
-            // 触发事件
-            InvokeOnChangeMusic(musicService, changeKind);
-            InvokeOnPlayMusic(musicService, audio);
-            
-            // 清除加载标志
+            // 清除加载标志（UI 已在加载前更新过了）
             FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
             
             Plugin.Log.LogInfo($"[PlayQueuePatch] Playing: {audio.AudioClipName}");

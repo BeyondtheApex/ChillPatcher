@@ -113,6 +113,9 @@ namespace ChillPatcher
             DefaultCoverProvider.Initialize();
             CoreAudioLoader.Initialize();
             
+            // 初始化 CoverService 的事件订阅
+            CoverService.Instance.InitializeEventSubscriptions();
+            
             // 订阅 MusicRegistry 事件以同步到游戏 MusicService
             SubscribeMusicRegistryEvents();
             
@@ -199,16 +202,25 @@ namespace ChillPatcher
                     return;
                 }
 
-                // 检查歌曲的 Tag 是否在当前选中的 Tag 中
-                var tagInfo = TagRegistry.Instance?.GetTag(musicInfo.TagId);
-                if (tagInfo == null)
+                // 检查歌曲至少有一个有效的 Tag
+                SDK.Models.TagInfo primaryTagInfo = null;
+                if (musicInfo.TagIds != null && musicInfo.TagIds.Count > 0)
                 {
-                    Logger.LogWarning($"[MusicSync] Tag not found for music: {musicInfo.Title} (TagId: {musicInfo.TagId})");
+                    primaryTagInfo = TagRegistry.Instance?.GetTag(musicInfo.TagIds[0]);
+                }
+                else if (!string.IsNullOrEmpty(musicInfo.TagId))
+                {
+                    primaryTagInfo = TagRegistry.Instance?.GetTag(musicInfo.TagId);
+                }
+                
+                if (primaryTagInfo == null)
+                {
+                    Logger.LogWarning($"[MusicSync] No valid Tag found for music: {musicInfo.Title}");
                     return;
                 }
 
-                // 创建 GameAudioInfo
-                var gameAudio = ConvertToGameAudioInfo(musicInfo, tagInfo);
+                // 创建 GameAudioInfo（会合并所有 TagIds 的位值）
+                var gameAudio = ConvertToGameAudioInfo(musicInfo, primaryTagInfo);
                 if (gameAudio == null)
                 {
                     Logger.LogWarning($"[MusicSync] Failed to convert MusicInfo to GameAudioInfo: {musicInfo.Title}");
@@ -220,15 +232,41 @@ namespace ChillPatcher
                     .Field("_allMusicList")
                     .GetValue<List<GameAudioInfo>>();
                 
-                if (allMusicList != null && !allMusicList.Any(a => a.UUID == gameAudio.UUID))
+                if (allMusicList != null)
                 {
-                    allMusicList.Add(gameAudio);
-                    Logger.LogInfo($"[MusicSync] Added to AllMusicList: {musicInfo.Title}");
+                    var existing = allMusicList.FirstOrDefault(a => a.UUID == gameAudio.UUID);
+                    if (existing != null)
+                    {
+                        // 更新已存在歌曲的 Tag（合并新 Tag）
+                        existing.Tag |= gameAudio.Tag;
+                        Logger.LogDebug($"[MusicSync] Updated Tag for: {musicInfo.Title} -> {existing.Tag}");
+                    }
+                    else
+                    {
+                        allMusicList.Add(gameAudio);
+                        Logger.LogInfo($"[MusicSync] Added to AllMusicList: {musicInfo.Title}");
+                    }
                 }
 
-                // 如果当前 Tag 选中，也添加到 CurrentPlayList
+                // 检查是否有任何一个 Tag 被当前选中
                 var currentAudioTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag.CurrentValue;
-                if (currentAudioTag.HasFlagFast((AudioTag)tagInfo.BitValue))
+                bool shouldAddToPlaylist = false;
+                
+                // 检查歌曲的任意 Tag 是否在当前选中的 Tag 中
+                if (musicInfo.TagIds != null)
+                {
+                    foreach (var tagId in musicInfo.TagIds)
+                    {
+                        var tagInfo = TagRegistry.Instance?.GetTag(tagId);
+                        if (tagInfo != null && currentAudioTag.HasFlagFast((AudioTag)tagInfo.BitValue))
+                        {
+                            shouldAddToPlaylist = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (shouldAddToPlaylist)
                 {
                     var currentPlayList = musicService.CurrentPlayList;
                     if (currentPlayList != null && !currentPlayList.Any(a => a.UUID == gameAudio.UUID))
@@ -247,7 +285,7 @@ namespace ChillPatcher
         /// <summary>
         /// 将 MusicInfo 转换为 GameAudioInfo
         /// </summary>
-        private static GameAudioInfo ConvertToGameAudioInfo(SDK.Models.MusicInfo musicInfo, SDK.Models.TagInfo tagInfo)
+        private static GameAudioInfo ConvertToGameAudioInfo(SDK.Models.MusicInfo musicInfo, SDK.Models.TagInfo primaryTagInfo)
         {
             try
             {
@@ -267,8 +305,26 @@ namespace ChillPatcher
                         break;
                 }
 
-                // 构造 Tag（模块 Tag + 收藏状态）
-                AudioTag tag = (AudioTag)tagInfo.BitValue;
+                // 构造 Tag - 合并所有 TagIds 的位值
+                AudioTag tag = 0;  // AudioTag 没有 None，使用 0
+                
+                // 遍历歌曲的所有 TagIds，合并位值
+                if (musicInfo.TagIds != null && musicInfo.TagIds.Count > 0)
+                {
+                    foreach (var tagId in musicInfo.TagIds)
+                    {
+                        var tagInfo = TagRegistry.Instance?.GetTag(tagId);
+                        if (tagInfo != null)
+                        {
+                            tag |= (AudioTag)tagInfo.BitValue;
+                        }
+                    }
+                }
+                else if (primaryTagInfo != null)
+                {
+                    // 向后兼容：如果没有 TagIds，使用传入的 primaryTagInfo
+                    tag = (AudioTag)primaryTagInfo.BitValue;
+                }
                 
                 // 如果歌曲已收藏，添加 Favorite 标记
                 if (musicInfo.IsFavorite)

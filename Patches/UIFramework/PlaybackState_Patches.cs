@@ -30,6 +30,15 @@ namespace ChillPatcher.Patches.UIFramework
                 {
                     Plugin.Log.LogInfo("[PlaybackState] Applied saved AudioTag before MusicService.Setup");
                 }
+                
+                // 检查是否有保存的播放状态，如果有则跳过默认播放第一首
+                // 这样可以避免启动时播放两首歌的问题
+                var savedUUID = PlaybackStateManager.Instance.GetSavedSongUUID();
+                if (!string.IsNullOrEmpty(savedUUID))
+                {
+                    PlayQueuePatch.SkipStartupDefaultPlay = true;
+                    Plugin.Log.LogInfo($"[PlaybackState] Found saved song ({savedUUID}), will skip default PlayNextMusic(0)");
+                }
             }
             catch (Exception ex)
             {

@@ -376,6 +376,13 @@ namespace ChillPatcher.Patches.UIFramework
         /// <returns>新加载的歌曲数量，0 表示没有增长列表或加载失败</returns>
         public static async Task<int> TriggerLoadMoreAsync()
         {
+            // 【防重入检查】如果正在加载中，直接返回 0
+            if (_isLoadingMore)
+            {
+                Plugin.Log.LogDebug("[GrowableList] Already loading more, skipping duplicate request");
+                return 0;
+            }
+            
             // 获取当前选中的增长列表 Tag
             var tagRegistry = TagRegistry.Instance;
             var growableTag = tagRegistry?.GetCurrentGrowableTag();
@@ -406,6 +413,8 @@ namespace ChillPatcher.Patches.UIFramework
                 return 0;
             }
 
+            // 设置加载标志
+            _isLoadingMore = true;
             Plugin.Log.LogInfo($"[GrowableList] 触发加载更多: {growableTag.DisplayName}");
 
             try
@@ -424,6 +433,11 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 Plugin.Log.LogError($"[GrowableList] 加载更多失败: {ex}");
                 return 0;
+            }
+            finally
+            {
+                // 清除加载标志
+                _isLoadingMore = false;
             }
         }
 

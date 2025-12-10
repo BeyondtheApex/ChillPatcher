@@ -110,5 +110,31 @@ namespace ChillPatcher.Patches.UIFramework
             Plugin.Log.LogDebug("[FacilityMusic_Patch] No music playing, calling PauseMusic");
             return false; // 跳过原始方法
         }
+        
+        /// <summary>
+        /// 拦截 OnClickButtonPlayOrPauseMusic，防止在加载期间响应暂停点击
+        /// 
+        /// 问题场景：
+        /// 1. 用户快速双击一首歌曲
+        /// 2. 第一次点击触发播放（开始加载，SetPlayingMusic）
+        /// 3. 第二次点击被识别为"暂停当前歌曲"（因为 PlayingMusic 已设置）
+        /// 4. 但此时歌曲还在加载中，暂停操作无效
+        /// 5. 加载完成后开始播放，但 UI 已显示暂停状态
+        /// 
+        /// 修复：如果 IsLoadingMusic 为 true，忽略暂停/播放切换操作
+        /// </summary>
+        [HarmonyPatch(typeof(FacilityMusic), nameof(FacilityMusic.OnClickButtonPlayOrPauseMusic))]
+        [HarmonyPrefix]
+        public static bool OnClickButtonPlayOrPauseMusic_Prefix(FacilityMusic __instance)
+        {
+            // 如果正在加载音乐，忽略点击
+            if (IsLoadingMusic)
+            {
+                Plugin.Log.LogInfo("[FacilityMusic_Patch] Ignoring play/pause click during music loading");
+                return false; // 跳过原始方法
+            }
+            
+            return true; // 执行原始方法
+        }
     }
 }

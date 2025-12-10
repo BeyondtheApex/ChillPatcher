@@ -65,6 +65,7 @@ func (d *SeekableDecoder) Seek(frameIndex int64) error {
 	}
 
 	d.position = frameIndex
+	d.isEOF = false // 重置 EOF 标志
 	return nil
 }
 
@@ -91,6 +92,7 @@ func (d *SeekableDecoder) ReadFrames(buffer []float32, framesToRead int) int {
 		}
 		if err != nil {
 			d.lastError = err.Error()
+			d.isEOF = true // 错误也设置 EOF，确保 C# 能检测到流结束
 			return -1
 		}
 	}

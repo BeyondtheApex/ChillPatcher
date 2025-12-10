@@ -50,10 +50,33 @@ namespace ChillPatcher.ModuleSystem.Registry
 
             lock (_lock)
             {
-                // 如果已存在，先注销
+                // 如果已存在，合并 TagIds 而不是完全替换
                 if (_music.ContainsKey(music.UUID))
                 {
-                    UnregisterMusic(music.UUID);
+                    var existing = _music[music.UUID];
+                    // 合并新的 TagIds 到现有的
+                    if (music.TagIds != null)
+                    {
+                        foreach (var tagId in music.TagIds)
+                        {
+                            if (!string.IsNullOrEmpty(tagId) && !existing.TagIds.Contains(tagId))
+                            {
+                                existing.TagIds.Add(tagId);
+                                // 添加到新 Tag 的索引
+                                if (!_musicByTag.ContainsKey(tagId))
+                                {
+                                    _musicByTag[tagId] = new List<string>();
+                                }
+                                if (!_musicByTag[tagId].Contains(existing.UUID))
+                                {
+                                    _musicByTag[tagId].Add(existing.UUID);
+                                }
+                            }
+                        }
+                    }
+                    _logger.LogDebug($"合并歌曲 TagIds: {music.Title} -> [{string.Join(", ", existing.TagIds)}]");
+                    OnMusicRegistered?.Invoke(existing);
+                    return;
                 }
 
                 music.ModuleId = moduleId;
@@ -69,14 +92,18 @@ namespace ChillPatcher.ModuleSystem.Registry
                     _musicByAlbum[music.AlbumId].Add(music.UUID);
                 }
 
-                // 按 Tag 索引
-                if (!string.IsNullOrEmpty(music.TagId))
+                // 按 Tag 索引 - 支持多 Tag
+                if (music.TagIds != null && music.TagIds.Count > 0)
                 {
-                    if (!_musicByTag.ContainsKey(music.TagId))
+                    foreach (var tagId in music.TagIds)
                     {
-                        _musicByTag[music.TagId] = new List<string>();
+                        if (string.IsNullOrEmpty(tagId)) continue;
+                        if (!_musicByTag.ContainsKey(tagId))
+                        {
+                            _musicByTag[tagId] = new List<string>();
+                        }
+                        _musicByTag[tagId].Add(music.UUID);
                     }
-                    _musicByTag[music.TagId].Add(music.UUID);
                 }
 
                 // 按模块索引
@@ -118,10 +145,16 @@ namespace ChillPatcher.ModuleSystem.Registry
                     albumMusic.Remove(uuid);
                 }
 
-                // 从 Tag 索引中移除
-                if (!string.IsNullOrEmpty(music.TagId) && _musicByTag.TryGetValue(music.TagId, out var tagMusic))
+                // 从所有 Tag 索引中移除 - 支持多 Tag
+                if (music.TagIds != null)
                 {
-                    tagMusic.Remove(uuid);
+                    foreach (var tagId in music.TagIds)
+                    {
+                        if (!string.IsNullOrEmpty(tagId) && _musicByTag.TryGetValue(tagId, out var tagMusic))
+                        {
+                            tagMusic.Remove(uuid);
+                        }
+                    }
                 }
 
                 // 从模块索引中移除

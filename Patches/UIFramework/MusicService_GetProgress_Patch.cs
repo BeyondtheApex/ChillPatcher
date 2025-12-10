@@ -48,6 +48,14 @@ namespace ChillPatcher.Patches.UIFramework
                 return true;
             }
 
+            // 如果正在拖动且有预览进度，返回预览进度
+            // 这让进度条 UI 跟随用户拖动，但不执行实际 Seek
+            if (MusicService_SetProgress_Patch.IsDragging && MusicService_SetProgress_Patch.PreviewProgress >= 0)
+            {
+                __result = MusicService_SetProgress_Patch.PreviewProgress;
+                return false;
+            }
+
             // 获取活跃的 PCM 读取器
             var reader = MusicService_SetProgress_Patch.ActivePcmReader;
             
@@ -97,7 +105,19 @@ namespace ChillPatcher.Patches.UIFramework
 
             if (player != null && player.AudioSource != null && player.AudioSource.clip != null)
             {
-                __result = player.AudioSource.time / player.AudioSource.clip.length;
+                // 【注意】这里使用 clip.length 可能不准确（包含余量）
+                // 但这是 fallback，正常情况不会走到这里
+                var clip = player.AudioSource.clip;
+                float effectiveLength = clip.length;
+                
+                // 如果有 reader，尝试使用原始时长
+                if (reader != null && reader.Info.Duration > 0)
+                {
+                    effectiveLength = reader.Info.Duration;
+                }
+                
+                __result = player.AudioSource.time / effectiveLength;
+                __result = UnityEngine.Mathf.Clamp01(__result);
                 return false;
             }
 

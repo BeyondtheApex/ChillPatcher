@@ -7,3 +7,7 @@ build/
 # Netease bridge built artifacts (Go DLL)
 netease_bridge/*.dll
 netease_bridge/*.h
+
+.vscode/
+
+*.log
