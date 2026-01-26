@@ -29,8 +29,41 @@
 
 ### 3. 安装 ffmpeg（QQ 音乐必需）
 
-- 下载：https://ffmpeg.org/download.html
-- 将 `ffmpeg.exe` 添加到系统 PATH，或直接放到游戏根目录
+ffmpeg 用于将 QQ 音乐的 M4A 格式转换为游戏可播放的格式。
+
+#### 方法一：放到游戏目录（推荐，最简单）
+
+1. 下载 ffmpeg：https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+2. 解压下载的压缩包
+3. 在解压后的文件夹中找到 `bin\ffmpeg.exe`
+4. 将 `ffmpeg.exe` 复制到游戏根目录：
+   ```
+   # Steam 安装
+   steamapps\common\Chill with You Lo-Fi Story\ffmpeg.exe
+
+   # 壁纸引擎项目
+   wallpaper_engine\projects\myprojects\chill_with_you\ffmpeg.exe
+   ```
+
+#### 方法二：添加到系统 PATH
+
+1. 下载 ffmpeg：https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+2. 解压到一个固定位置，例如：`C:\ffmpeg`
+3. 添加到系统 PATH：
+   - 按 `Win + R`，输入 `sysdm.cpl`，回车
+   - 点击「高级」→「环境变量」
+   - 在「系统变量」中找到 `Path`，双击编辑
+   - 点击「新建」，添加 ffmpeg 的 bin 目录路径：`C:\ffmpeg\bin`
+   - 一路确定保存
+4. 打开新的命令提示符，输入 `ffmpeg -version` 验证安装成功
+
+#### 验证安装
+
+打开命令提示符（CMD），输入：
+```
+ffmpeg -version
+```
+如果显示版本信息，说明安装成功。
 
 ### 4. 首次启动
 
