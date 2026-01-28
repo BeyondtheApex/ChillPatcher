@@ -216,19 +216,133 @@ func (c *Client) GetSongURL(songMid string, quality models.AudioQuality) (*model
 }
 
 // GetSongURLWithFallback tries to get song URL with quality fallback
+// Strategy: VIP mode first (for VIP-only songs), then guest mode (for stability)
 func (c *Client) GetSongURLWithFallback(songMid string, preferredQuality models.AudioQuality) (*models.SongURL, error) {
-	debugLog("[GetSongURLWithFallback] Getting URL for %s (preferred: %s, using guest mode for stability)", songMid, preferredQuality)
+	debugLog("[GetSongURLWithFallback] Getting URL for %s (preferred: %s)", songMid, preferredQuality)
 
-	// Use guest mode directly for maximum stability
-	// Reason: High quality (320k/FLAC) downloads often fail with CDN 404
-	// even when API returns valid URL, because CDN requires APP-specific auth
-	// Guest mode (128k) works reliably for all songs
-	url, err := c.GetSongURLAuto(songMid)
+	// Step 1: Try VIP mode first (some songs require VIP even for 128k)
+	url, err := c.GetSongURLAutoVIP(songMid)
 	if err == nil && url.URL != "" {
+		debugLog("[GetSongURLWithFallback] VIP mode succeeded")
+		return url, nil
+	}
+	debugLog("[GetSongURLWithFallback] VIP mode failed: %v, trying guest mode...", err)
+
+	// Step 2: Fallback to guest mode (more stable for free songs)
+	url, err = c.GetSongURLAuto(songMid)
+	if err == nil && url.URL != "" {
+		debugLog("[GetSongURLWithFallback] Guest mode succeeded")
 		return url, nil
 	}
 
-	return nil, fmt.Errorf("failed to get song URL: %v", err)
+	return nil, fmt.Errorf("failed to get song URL (both VIP and guest mode failed): %v", err)
+}
+
+// GetSongURLAutoVIP gets song URL using VIP mode (real uin)
+// Some songs require VIP even for 128k quality
+// Does NOT specify filename - let server auto-select to avoid CDN 404
+func (c *Client) GetSongURLAutoVIP(songMid string) (*models.SongURL, error) {
+	c.mu.RLock()
+	cookies := c.cookies
+	uin := c.uin
+	c.mu.RUnlock()
+
+	debugLog("[GetSongURLAutoVIP] Getting URL for %s (VIP mode, uin=%d)", songMid, uin)
+
+	reqData := map[string]interface{}{
+		"req_1": map[string]interface{}{
+			"module": "vkey.GetVkeyServer",
+			"method": "CgiGetVkey",
+			"param": map[string]interface{}{
+				"guid":      c.guid,
+				"songmid":   []string{songMid},
+				"songtype":  []int{0},
+				"uin":       fmt.Sprintf("%d", uin),
+				"loginflag": 1,
+				"platform":  "20",
+			},
+		},
+		"comm": map[string]interface{}{
+			"format": "json",
+			"uin":    uin,
+			"ct":     24,
+			"cv":     0,
+		},
+	}
+
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return nil, err
+	}
+
+	debugLog("[GetSongURLAutoVIP] Request body: %s", string(jsonData))
+
+	resp, err := c.httpClient.R().
+		SetHeader("Cookie", cookies).
+		SetHeader("Referer", "https://y.qq.com/").
+		SetHeader("Origin", "https://y.qq.com").
+		SetHeader("Content-Type", "application/json;charset=UTF-8").
+		SetBody(jsonData).
+		Post("https://u.y.qq.com/cgi-bin/musicu.fcg")
+
+	if err != nil {
+		return nil, err
+	}
+
+	debugLog("[GetSongURLAutoVIP] Response: %s", string(resp.Body()[:min(500, len(resp.Body()))]))
+
+	var result struct {
+		Code int `json:"code"`
+		Req1 struct {
+			Code int `json:"code"`
+			Data struct {
+				Msg        string   `json:"msg"`
+				Sip        []string `json:"sip"`
+				MidURLInfo []struct {
+					Purl     string `json:"purl"`
+					FileName string `json:"filename"`
+				} `json:"midurlinfo"`
+			} `json:"data"`
+		} `json:"req_1"`
+	}
+
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, err
+	}
+
+	if result.Code != 0 || result.Req1.Code != 0 {
+		return nil, fmt.Errorf("API error: code=%d, req1.code=%d", result.Code, result.Req1.Code)
+	}
+
+	if len(result.Req1.Data.MidURLInfo) == 0 || result.Req1.Data.MidURLInfo[0].Purl == "" {
+		debugLog("[GetSongURLAutoVIP] No purl in response")
+		return nil, fmt.Errorf("no URL available (VIP mode)")
+	}
+
+	purl := result.Req1.Data.MidURLInfo[0].Purl
+
+	// Detect format from purl
+	ext := "m4a"
+	if strings.Contains(purl, ".mp3") {
+		ext = "mp3"
+	} else if strings.Contains(purl, ".flac") {
+		ext = "flac"
+	}
+
+	baseURL := "http://aqqmusic.tc.qq.com/"
+	if len(result.Req1.Data.Sip) > 0 && result.Req1.Data.Sip[0] != "" {
+		baseURL = result.Req1.Data.Sip[0]
+	}
+
+	fullURL := baseURL + purl
+	debugLog("[GetSongURLAutoVIP] Got URL: %s", fullURL)
+	debugLog("[GetSongURLAutoVIP] Detected format: %s", ext)
+
+	return &models.SongURL{
+		URL:     fullURL,
+		Quality: "128",
+		Format:  ext,
+	}, nil
 }
 
 // GetSongURLAuto gets song URL without specifying quality (guest mode for stability)

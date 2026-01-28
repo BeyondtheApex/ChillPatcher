@@ -102,6 +102,39 @@ namespace ChillPatcher.Patches.UIFramework
         {
             return token.IsCancellationRequested;
         }
+
+        /// <summary>
+        /// 处理歌曲播放完成的回调
+        /// 检查单曲循环模式，如果启用则重新播放当前歌曲
+        /// </summary>
+        private static void OnMusicPlaybackComplete(MusicService musicService)
+        {
+            // 检查单曲循环模式
+            if (musicService.IsRepeatOneMusic)
+            {
+                // 单曲循环：重新播放当前歌曲
+                var currentAudio = musicService.PlayingMusic;
+                if (currentAudio != null)
+                {
+                    Plugin.Log.LogInfo($"[PlayQueuePatch] Single loop mode: replaying {currentAudio.AudioClipName}");
+                    var audioClip = currentAudio.AudioClip;
+                    if (audioClip != null)
+                    {
+                        // 重新播放同一首歌
+                        SingletonMonoBehaviour<MusicManager>.Instance.Play(
+                            audioClip, 1f, 0f, 1f,
+                            true,  // loop = true
+                            true, "",
+                            () => OnMusicPlaybackComplete(musicService)
+                        );
+                        return;
+                    }
+                }
+            }
+
+            // 非单曲循环：跳到下一首
+            musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>();
+        }
         
         #region SkipCurrentMusic Patch
         
@@ -571,9 +604,9 @@ namespace ChillPatcher.Patches.UIFramework
                 audioClip, 1f, 0f, 1f,
                 musicService.IsRepeatOneMusic,
                 true, "",
-                () => musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>()
+                () => OnMusicPlaybackComplete(musicService)
             );
-            
+
             // 如果是本地音频（AudioClip 已存在），需要在这里更新状态和触发事件
             // 流媒体的话已经在加载前更新过了
             if (audio.AudioClip != null)
@@ -837,12 +870,12 @@ namespace ChillPatcher.Patches.UIFramework
                 audioClip, 1f, 0f, 1f,
                 musicService.IsRepeatOneMusic,
                 true, "",
-                () => musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>()
+                () => OnMusicPlaybackComplete(musicService)
             );
-            
+
             // 清除加载标志（UI 已在加载前更新过了）
             FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
-            
+
             Plugin.Log.LogInfo($"[PlayQueuePatch] Now playing: {audioInfo.Title}");
         }
         
@@ -948,12 +981,12 @@ namespace ChillPatcher.Patches.UIFramework
                 audioClip, 1f, 0f, 1f,
                 musicService.IsRepeatOneMusic,
                 true, "",
-                () => musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>()
+                () => OnMusicPlaybackComplete(musicService)
             );
-            
+
             // 清除加载标志（UI 已在加载前更新过了）
             FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
-            
+
             Plugin.Log.LogInfo($"[PlayQueuePatch] Playing: {audio.AudioClipName}");
             return true;
         }
@@ -1131,9 +1164,9 @@ namespace ChillPatcher.Patches.UIFramework
                 audioClip, 1f, 0f, 1f,
                 musicService.IsRepeatOneMusic,
                 true, "",
-                () => musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>()
+                () => OnMusicPlaybackComplete(musicService)
             );
-            
+
             // 更新 MusicService 状态
             SetPlayingMusic(musicService, audio);
             
