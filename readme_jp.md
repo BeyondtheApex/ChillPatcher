@@ -7,6 +7,8 @@
   - 『Chill With You』を Wallpaper Engine 環境で正しく動作させる機能
   - ゲーム内入力メソッド（IME）の追加
 
+> 🔗 **関連リソース**：[awesome-chillwithyou](https://github.com/clsty/awesome-chillwithyou) — コミュニティが管理する『Chill With You』の Mod コレクション一覧
+
 ## 🐛 問題が発生しましたか？
 
 **調査のためにログファイルを提供してください！**

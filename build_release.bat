@@ -68,6 +68,16 @@ REM ========== Step 5: Build Native Plugins (Optional) ==========
 echo.
 echo [5/6] Building Native Plugins...
 
+if exist "NativePlugins\AudioDecoder\build.bat" (
+    echo   - Building Audio Decoder...
+    cd NativePlugins\AudioDecoder
+    call build.bat >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo WARNING: Native audio decoder build failed, using existing if available
+    )
+    cd ..\..
+)
+
 if exist "NativePlugins\FlacDecoder\build.bat" (
     echo   - Building FLAC Decoder...
     cd NativePlugins\FlacDecoder
@@ -117,6 +127,7 @@ if exist "bin\NAudio.Wasapi.dll" copy /y "bin\NAudio.Wasapi.dll" "%PluginDir%\" 
 
 REM Native Plugins (只需 x64，放在 native/x64/)
 echo   - Native plugins...
+if exist "bin\native\x64\ChillAudioDecoder.dll" copy /y "bin\native\x64\ChillAudioDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillFlacDecoder.dll" copy /y "bin\native\x64\ChillFlacDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillSmtcBridge.dll" copy /y "bin\native\x64\ChillSmtcBridge.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillNetease.dll" copy /y "bin\native\x64\ChillNetease.dll" "%NativeDir%\x64\" >nul
@@ -242,6 +253,7 @@ echo   ^|   +-- x64\
 echo   ^|       +-- vcruntime140*.dll   (VC++ Runtime)
 echo   ^|       +-- msvcp140.dll
 echo   ^|       +-- concrt140.dll
+echo   ^|       +-- ChillAudioDecoder.dll
 echo   ^|       +-- ChillFlacDecoder.dll
 echo   ^|       +-- ChillSmtcBridge.dll
 echo   ^|       +-- ChillNetease.dll

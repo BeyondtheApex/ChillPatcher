@@ -10,6 +10,8 @@
 
 ![队列展示](<img/Screenshot 2025-12-02 235858.png>)
 
+> 🔗 **相关资源**：[awesome-chillwithyou](https://github.com/clsty/awesome-chillwithyou) — 一个社区维护的《Chill With You》Mod 合集列表
+
 ## 🐛 遇到问题？
 
 **请提供日志文件以便排查！**

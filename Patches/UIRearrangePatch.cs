@@ -150,9 +150,8 @@ namespace ChillPatcher.Patches
                     return;
                 }
 
-                // 2. 从 LeftIcons 移动按钮到 TopIcons
-                MoveButtonToParent(leftIcons, ButtonPaths.IconStory, topIcons);
-                MoveButtonToParent(leftIcons, ButtonPaths.IconCollaboToAlterEgo, topIcons);
+                // 2. 从 LeftIcons 自动移动所有启用的子项到 TopIcons
+                MoveAllActiveChildrenToParent(leftIcons, topIcons);
 
                 // 3. 从 CenterIcons 移动按钮到 TopIcons
                 MoveButtonToParent(centerIcons, ButtonPaths.IconDecoration, topIcons);
@@ -441,6 +440,46 @@ namespace ChillPatcher.Patches
             {
                 Logger.LogError($"设置方形默认封面失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 将源容器中所有启用的子对象移动到目标容器
+        /// </summary>
+        private static void MoveAllActiveChildrenToParent(GameObject sourceContainer, GameObject targetContainer)
+        {
+            if (sourceContainer == null || targetContainer == null)
+            {
+                Logger.LogWarning("容器为空，无法移动子项");
+                return;
+            }
+
+            // 先收集所有要移动的子对象（避免在遍历时修改层级）
+            var childrenToMove = new System.Collections.Generic.List<Transform>();
+            for (int i = 0; i < sourceContainer.transform.childCount; i++)
+            {
+                var child = sourceContainer.transform.GetChild(i);
+                if (child.gameObject.activeSelf)
+                {
+                    childrenToMove.Add(child);
+                }
+            }
+
+            foreach (var child in childrenToMove)
+            {
+                var rectTransform = child.GetComponent<RectTransform>();
+                var originalSize = rectTransform != null ? rectTransform.sizeDelta : Vector2.zero;
+
+                child.SetParent(targetContainer.transform, false);
+
+                if (rectTransform != null)
+                {
+                    rectTransform.sizeDelta = originalSize;
+                }
+
+                Logger.LogInfo($"已移动按钮 {child.name} 到 {targetContainer.name}");
+            }
+
+            Logger.LogInfo($"共从 {sourceContainer.name} 移动了 {childrenToMove.Count} 个启用的子项到 {targetContainer.name}");
         }
 
         /// <summary>

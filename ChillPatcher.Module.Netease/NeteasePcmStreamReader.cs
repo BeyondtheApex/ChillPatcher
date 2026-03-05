@@ -5,9 +5,10 @@ using ChillPatcher.SDK.Models;
 namespace ChillPatcher.Module.Netease
 {
     /// <summary>
-    /// 网易云 PCM 流读取器
-    /// 实现 IPcmStreamReader 接口，用于流式播放
+    /// [已废弃] 网易云 PCM 流读取器 (基于 Go DLL 的旧实现)
+    /// 已被主插件的 CorePcmStreamReader + CoreStreamingService 取代
     /// </summary>
+    [Obsolete("Use CoreStreamingService (主插件流式接口) instead. This Go-bridge-based implementation will be removed.")]
     public class NeteasePcmStreamReader : IPcmStreamReader
     {
         private readonly NeteaseBridge _bridge;

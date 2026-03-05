@@ -13,6 +13,7 @@ using ChillPatcher.UIFramework.Music;
 using ChillPatcher.ModuleSystem;
 using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.ModuleSystem.Services;
+using ChillPatcher.ModuleSystem.Services.Streaming;
 using ChillPatcher.SDK.Interfaces;
 using Cysharp.Threading.Tasks;
 using Bulbul;
@@ -420,7 +421,8 @@ namespace ChillPatcher
                     EventBus.Instance,
                     DefaultCoverProvider.Instance,
                     CoreAudioLoader.Instance,
-                    dependencyLoader
+                    dependencyLoader,
+                    CoreStreamingService.Instance
                 );
 
                 // 初始化模块加载器
