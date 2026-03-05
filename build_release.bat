@@ -22,7 +22,7 @@ set NativeDir=%PluginDir%\native
 
 REM 清理旧的发布目录
 echo.
-echo [0/5] Cleaning release directory...
+echo [0/8] Cleaning release directory...
 if exist "%ReleaseDir%" rmdir /s /q "%ReleaseDir%"
 mkdir "%PluginDir%"
 mkdir "%ModulesDir%"
@@ -31,7 +31,7 @@ mkdir "%PluginDir%\SDK"
 
 REM ========== Step 1: Build SDK ==========
 echo.
-echo [1/5] Building ChillPatcher.SDK...
+echo [1/8] Building ChillPatcher.SDK...
 dotnet build ChillPatcher.SDK\ChillPatcher.SDK.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: SDK build failed!
@@ -40,7 +40,7 @@ if %errorlevel% neq 0 (
 
 REM ========== Step 2: Build Main Plugin ==========
 echo.
-echo [2/5] Building ChillPatcher (Main Plugin)...
+echo [2/8] Building ChillPatcher (Main Plugin)...
 dotnet build ChillPatcher.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: Main plugin build failed!
@@ -49,7 +49,7 @@ if %errorlevel% neq 0 (
 
 REM ========== Step 3: Build Modules ==========
 echo.
-echo [3/6] Building ChillPatcher.Module.LocalFolder...
+echo [3/8] Building ChillPatcher.Module.LocalFolder...
 dotnet build ChillPatcher.Module.LocalFolder\ChillPatcher.Module.LocalFolder.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: LocalFolder module build failed!
@@ -57,16 +57,32 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [4/6] Building ChillPatcher.Module.Netease...
+echo [4/8] Building ChillPatcher.Module.Netease...
 dotnet build ChillPatcher.Module.Netease\ChillPatcher.Module.Netease.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: Netease module build failed!
     exit /b 1
 )
 
-REM ========== Step 5: Build Native Plugins (Optional) ==========
 echo.
-echo [5/6] Building Native Plugins...
+echo [5/8] Building ChillPatcher.Module.Bilibili...
+dotnet build ChillPatcher.Module.Bilibili\ChillPatcher.Module.Bilibili.csproj -c %Configuration% --no-restore
+if %errorlevel% neq 0 (
+    echo ERROR: Bilibili module build failed!
+    exit /b 1
+)
+
+echo.
+echo [6/8] Building ChillPatcher.Module.QQMusic...
+dotnet build ChillPatcher.Module.QQMusic\ChillPatcher.Module.QQMusic.csproj -c %Configuration% --no-restore
+if %errorlevel% neq 0 (
+    echo ERROR: QQMusic module build failed!
+    exit /b 1
+)
+
+REM ========== Step 7: Build Native Plugins (Optional) ==========
+echo.
+echo [7/8] Building Native Plugins...
 
 if exist "NativePlugins\AudioDecoder\build.bat" (
     echo   - Building Audio Decoder...
@@ -108,9 +124,19 @@ if exist "netease_bridge\build.bat" (
     cd ..
 )
 
-REM ========== Step 6: Copy files to release directory ==========
+if exist "qqmusic_bridge\build.bat" (
+    echo   - Building QQ Music Bridge...
+    cd qqmusic_bridge
+    call build.bat >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo WARNING: QQ Music bridge build failed, using existing if available
+    )
+    cd ..
+)
+
+REM ========== Step 8: Copy files to release directory ==========
 echo.
-echo [6/6] Copying files to release directory...
+echo [8/8] Copying files to release directory...
 
 REM Main Plugin
 echo   - Main Plugin files...
@@ -178,6 +204,29 @@ if exist "bin\native\x64\ChillNetease.dll" (
     copy /y "bin\native\x64\ChillNetease.dll" "%NeteaseModuleDir%\native\x64\" >nul
 )
 
+REM Bilibili 模块 (ID: com.chillpatcher.bilibili)
+echo   - Bilibili Module...
+set "BilibiliModuleDir=%ModulesDir%\com.chillpatcher.bilibili"
+if not exist "%BilibiliModuleDir%" mkdir "%BilibiliModuleDir%"
+copy /y "ChillPatcher.Module.Bilibili\bin\ChillPatcher.Module.Bilibili.dll" "%BilibiliModuleDir%\" >nul
+REM Bilibili 模块的依赖
+copy /y "ChillPatcher.Module.Bilibili\bin\Newtonsoft.Json.dll" "%BilibiliModuleDir%\" >nul
+
+REM QQ Music 模块 (ID: com.chillpatcher.qqmusic)
+echo   - QQ Music Module...
+set "QQMusicModuleDir=%ModulesDir%\com.chillpatcher.qqmusic"
+if not exist "%QQMusicModuleDir%" mkdir "%QQMusicModuleDir%"
+if not exist "%QQMusicModuleDir%\native" mkdir "%QQMusicModuleDir%\native"
+if not exist "%QQMusicModuleDir%\native\x64" mkdir "%QQMusicModuleDir%\native\x64"
+copy /y "ChillPatcher.Module.QQMusic\bin\ChillPatcher.Module.QQMusic.dll" "%QQMusicModuleDir%\" >nul
+REM QQ Music 模块的依赖
+copy /y "ChillPatcher.Module.QQMusic\bin\Newtonsoft.Json.dll" "%QQMusicModuleDir%\" >nul
+if exist "ChillPatcher.Module.QQMusic\bin\QRCoder.dll" copy /y "ChillPatcher.Module.QQMusic\bin\QRCoder.dll" "%QQMusicModuleDir%\" >nul
+REM QQ Music 模块原生库
+if exist "qqmusic_bridge\ChillQQMusic.dll" (
+    copy /y "qqmusic_bridge\ChillQQMusic.dll" "%QQMusicModuleDir%\native\x64\" >nul
+)
+
 REM RIME data directory (rime-data/shared 和 rime-data/user)
 echo   - RIME data...
 set RimeDataDir=%PluginDir%\rime-data
@@ -234,6 +283,8 @@ if not exist "%LicenseDir%" mkdir "%LicenseDir%"
 if exist "LICENSE" copy /y "LICENSE" "%LicenseDir%\ChillPatcher-LICENSE.txt" >nul
 if exist "rime\librime\LICENSE" copy /y "rime\librime\LICENSE" "%LicenseDir%\librime-LICENSE.txt" >nul
 if exist "NativePlugins\dr_libs\LICENSE" copy /y "NativePlugins\dr_libs\LICENSE" "%LicenseDir%\dr_libs-LICENSE.txt" >nul
+if exist "NativePlugins\fdk-aac\NOTICE" copy /y "NativePlugins\fdk-aac\NOTICE" "%LicenseDir%\fdk-aac-NOTICE.txt" >nul
+if exist "NativePlugins\minimp4\LICENSE" copy /y "NativePlugins\minimp4\LICENSE" "%LicenseDir%\minimp4-LICENSE.txt" >nul
 
 echo.
 echo ========================================

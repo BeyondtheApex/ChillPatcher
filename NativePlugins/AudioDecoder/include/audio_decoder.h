@@ -66,7 +66,7 @@ AUDIO_API const char* AudioDecoder_GetLastError(void);
 /**
  * 创建增量流式解码器
  *
- * @param format "mp3" / "flac" / "wav"
+ * @param format "mp3" / "flac" / "aac" / "m4a"
  * @return 解码器句柄, 失败返回 NULL
  */
 AUDIO_API void* AudioDecoder_CreateStreaming(const char* format);

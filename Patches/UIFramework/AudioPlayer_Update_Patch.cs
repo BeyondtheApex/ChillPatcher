@@ -4,6 +4,7 @@ using UnityEngine;
 using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.SDK.Models;
 using Bulbul;
+using Cysharp.Threading.Tasks;
 using NestopiSystem.DIContainers;
 using ChillPatcher.UIFramework.Audio;
 
@@ -39,7 +40,13 @@ namespace ChillPatcher.Patches.UIFramework
         /// 记录已经触发过 EOF 的 stream ID，防止同一个 stream 被多次触发
         /// </summary>
         private static string _lastEofTriggeredStreamId = null;
-        
+
+        /// <summary>
+        /// 单曲循环 Seek(0) 后等待 IsEndOfStream 清除的标志
+        /// 防止 Seek(0) 后 IsEndOfStream 还未清除时重复触发 EOF
+        /// </summary>
+        private static bool _isLoopSeeking = false;
+
         /// <summary>
         /// 超时保护：上次播放位置变化的时间
         /// </summary>
@@ -54,8 +61,46 @@ namespace ChillPatcher.Patches.UIFramework
         {
             _lastEofTriggeredStreamId = null;
             _isSkippingToNext = false;
+            _isLoopSeeking = false;
             _lastProgressChangeTime = Time.time;
             _lastKnownProgress = 0f;
+        }
+
+        /// <summary>
+        /// 处理歌曲播放结束：检查单曲循环，否则跳到下一首
+        /// </summary>
+        private static void HandlePlaybackEnd(MusicService musicService, string reason)
+        {
+            // 检查单曲循环模式
+            if (musicService.IsRepeatOneMusic)
+            {
+                var currentAudio = musicService.PlayingMusic;
+                if (currentAudio != null)
+                {
+                    Plugin.Log.LogInfo($"[AudioPlayer_Patch] Single loop mode: replaying {currentAudio.AudioClipName} ({reason})");
+
+                    // 【重要】不重置 _lastEofTriggeredStreamId，防止 Seek(0) 后
+                    // IsEndOfStream 还没清除时重复触发 EOF
+                    // 改用 _isLoopSeeking 标志，等 IsEndOfStream 清除后再重置
+                    _isSkippingToNext = false;
+                    _isLoopSeeking = true;
+
+                    // 重新播放同一首歌（使用 Seek 到开头）
+                    var reader = MusicService_SetProgress_Patch.ActivePcmReader;
+                    if (reader != null)
+                    {
+                        reader.Seek(0);
+                        // 重置进度追踪，避免超时误触发
+                        _lastKnownProgress = 0f;
+                        _lastProgressChangeTime = Time.time;
+                        return;
+                    }
+                }
+            }
+
+            // 非单曲循环：跳到下一首
+            Plugin.Log.LogInfo($"[AudioPlayer_Patch] {reason}, triggering next song");
+            musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>();
         }
         
         [HarmonyPatch(typeof(AudioPlayer), nameof(AudioPlayer.Update))]
@@ -144,20 +189,18 @@ namespace ChillPatcher.Patches.UIFramework
                     // 超时了！进度卡住超过 10 秒
                     if (!_isSkippingToNext && clipName != _lastEofTriggeredStreamId)
                     {
-                        Plugin.Log.LogWarning($"[AudioPlayer_Patch] Playback stalled for {stallDuration:F1}s at {currentProgress:F1}s (original duration: {originalDuration:F1}s), forcing next song (Go EOF timeout)");
-                        
                         _lastEofTriggeredStreamId = clipName;
                         _isSkippingToNext = true;
-                        
+
                         try
                         {
-                            musicService.SkipCurrentMusic(MusicChangeKind.Auto);
+                            HandlePlaybackEnd(musicService, $"Playback stalled for {stallDuration:F1}s");
                         }
                         catch (System.Exception ex)
                         {
-                            Plugin.Log.LogError($"[AudioPlayer_Patch] Error triggering next song on stall: {ex.Message}");
+                            Plugin.Log.LogError($"[AudioPlayer_Patch] Error handling playback end on stall: {ex.Message}");
                         }
-                        
+
                         return false;
                     }
                 }
@@ -172,6 +215,18 @@ namespace ChillPatcher.Patches.UIFramework
                 if (reader.HasPendingSeek)
                 {
                     return true; // 继续使用原始逻辑
+                }
+
+                // 【单曲循环 Seek 完成检测】
+                // Seek(0) 后等待 IsEndOfStream 清除，然后重置追踪状态
+                // 这样下次到达 EOF 时可以正常触发
+                if (_isLoopSeeking && !reader.IsEndOfStream)
+                {
+                    Plugin.Log.LogInfo("[AudioPlayer_Patch] Loop seek completed, ready for next EOF");
+                    _lastEofTriggeredStreamId = null;
+                    _isLoopSeeking = false;
+                    _lastKnownProgress = 0f;
+                    _lastProgressChangeTime = Time.time;
                 }
 
                 // 检查是否到达 EOF
@@ -191,17 +246,15 @@ namespace ChillPatcher.Patches.UIFramework
                     // 标记防重入
                     _lastEofTriggeredStreamId = clipName;
                     _isSkippingToNext = true;
-                    
-                    Plugin.Log.LogInfo($"[AudioPlayer_Patch] PCM stream EOF confirmed, triggering next song");
-                    
-                    // 主动触发下一首
+
+                    // 处理播放结束（检查单曲循环）
                     try
                     {
-                        musicService.SkipCurrentMusic(MusicChangeKind.Auto);
+                        HandlePlaybackEnd(musicService, "PCM stream EOF");
                     }
                     catch (System.Exception ex)
                     {
-                        Plugin.Log.LogError($"[AudioPlayer_Patch] Error triggering next song: {ex.Message}");
+                        Plugin.Log.LogError($"[AudioPlayer_Patch] Error handling playback end: {ex.Message}");
                     }
                     
                     return false; // 阻止原始逻辑
@@ -218,18 +271,16 @@ namespace ChillPatcher.Patches.UIFramework
                 // 这是最后的兜底，无论 Go 状态如何
                 if (!_isSkippingToNext && clipName != _lastEofTriggeredStreamId)
                 {
-                    Plugin.Log.LogWarning($"[AudioPlayer_Patch] Unity playback finished (30min margin exhausted), forcing next song without waiting for Go EOF");
-                    
                     _lastEofTriggeredStreamId = clipName;
                     _isSkippingToNext = true;
-                    
+
                     try
                     {
-                        musicService.SkipCurrentMusic(MusicChangeKind.Auto);
+                        HandlePlaybackEnd(musicService, "30min margin exhausted");
                     }
                     catch (System.Exception ex)
                     {
-                        Plugin.Log.LogError($"[AudioPlayer_Patch] Error triggering next song on margin exhausted: {ex.Message}");
+                        Plugin.Log.LogError($"[AudioPlayer_Patch] Error handling playback end on margin exhausted: {ex.Message}");
                     }
                     
                     return false;

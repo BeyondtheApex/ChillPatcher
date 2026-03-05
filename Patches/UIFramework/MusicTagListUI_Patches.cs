@@ -60,6 +60,9 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
+                // 缓存实例，供 RefreshCustomTagButtons 使用（FindObjectOfType 找不到 inactive 对象）
+                _cachedTagListUI = __instance;
+                
                 // 检查是否有模块注册了标签
                 bool hasModuleTags = TagRegistry.Instance?.GetAllTags()?.Count > 0;
                 
@@ -97,7 +100,7 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                var tagListUI = UnityEngine.Object.FindObjectOfType<MusicTagListUI>();
+                var tagListUI = UnityEngine.Object.FindObjectOfType<MusicTagListUI>() ?? _cachedTagListUI;
                 if (tagListUI == null)
                 {
                     Plugin.Log.LogWarning("[RefreshCustomTagButtons] Cannot find MusicTagListUI");

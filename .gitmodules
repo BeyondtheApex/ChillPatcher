@@ -19,3 +19,9 @@
 [submodule "NativePlugins/dr_libs"]
 	path = NativePlugins/dr_libs
 	url = https://github.com/mackron/dr_libs.git
+[submodule "NativePlugins/fdk-aac"]
+	path = NativePlugins/fdk-aac
+	url = https://github.com/mstorsjo/fdk-aac.git
+[submodule "NativePlugins/minimp4"]
+	path = NativePlugins/minimp4
+	url = https://github.com/lieff/minimp4.git

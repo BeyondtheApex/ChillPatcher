@@ -34,6 +34,14 @@
     <Compile Remove="ChillPatcher.Module.Netease\**" />
     <EmbeddedResource Remove="ChillPatcher.Module.Netease\**" />
     <None Remove="ChillPatcher.Module.Netease\**" />
+    <!-- Exclude Bilibili module sources (built separately) -->
+    <Compile Remove="ChillPatcher.Module.Bilibili\**" />
+    <EmbeddedResource Remove="ChillPatcher.Module.Bilibili\**" />
+    <None Remove="ChillPatcher.Module.Bilibili\**" />
+    <!-- Exclude QQ Music module sources (built separately) -->
+    <Compile Remove="ChillPatcher.Module.QQMusic\**" />
+    <EmbeddedResource Remove="ChillPatcher.Module.QQMusic\**" />
+    <None Remove="ChillPatcher.Module.QQMusic\**" />
     <!-- Exclude rime sources (librime, rime-schemas, etc.) -->
     <Compile Remove="rime\**" />
     <EmbeddedResource Remove="rime\**" />
@@ -42,6 +50,10 @@
     <Compile Remove="netease_bridge\**" />
     <EmbeddedResource Remove="netease_bridge\**" />
     <None Remove="netease_bridge\**" />
+    <!-- Exclude qqmusic_bridge sources (Go code, built separately) -->
+    <Compile Remove="qqmusic_bridge\**" />
+    <EmbeddedResource Remove="qqmusic_bridge\**" />
+    <None Remove="qqmusic_bridge\**" />
     <!-- Exclude build directory -->
     <Compile Remove="build\**" />
     <EmbeddedResource Remove="build\**" />

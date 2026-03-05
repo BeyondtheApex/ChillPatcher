@@ -31,7 +31,15 @@ namespace ChillPatcher.Patches
         private static RimeEngine rimeEngine = null;
         private static bool useRime = false;
         private static bool _debugFirstKey = true;  // 调试标志
-        
+
+        // 键盘输入模式：true = 游戏模式（拦截输入到游戏），false = 桌面模式（输入到系统）
+        private static bool isGameMode = true;
+
+        /// <summary>
+        /// 当前是否为游戏输入模式
+        /// </summary>
+        public static bool IsGameMode => isGameMode;
+
         // 双缓冲 Context - 线程安全设计
         private static RimeContextInfo cachedRimeContext = null;
         private static readonly object rimeContextCacheLock = new object();
@@ -329,6 +337,15 @@ namespace ChillPatcher.Patches
                 KBDLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
                 uint vkCode = hookStruct.vkCode;
 
+                // F5: 切换键盘输入模式（游戏模式 ↔ 桌面模式）
+                if (vkCode == 0x74) // VK_F5 = 0x74
+                {
+                    isGameMode = !isGameMode;
+                    string modeName = isGameMode ? "游戏模式（输入到游戏）" : "桌面模式（输入到系统）";
+                    Plugin.Logger.LogInfo($"[KeyboardHook] F5切换输入模式: {modeName}");
+                    return (IntPtr)1; // 拦截 F5
+                }
+
                 // F6: 重新部署Rime(热重载配置)
                 if (vkCode == 0x75 && useRime && rimeEngine != null) // VK_F6 = 0x75
                 {
@@ -347,7 +364,13 @@ namespace ChillPatcher.Patches
                 // Shift 键临时切换(按下Shift时切到英文,松开恢复中文)
                 // 这个功能稍后实现,需要处理 WM_KEYUP
 
-                // 检测是否在桌面
+                // 桌面模式：不拦截任何输入，让系统处理
+                if (!isGameMode)
+                {
+                    return CallNextHookEx(hookId, nCode, wParam, lParam);
+                }
+
+                // 游戏模式：检测是否在桌面（只在桌面激活时拦截输入到游戏）
                 bool isDesktop = IsDesktopActive();
                 
                 if (isDesktop)
