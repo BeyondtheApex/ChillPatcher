@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace ChillPatcher.SDK.Interfaces
 {
@@ -51,5 +53,22 @@ namespace ChillPatcher.SDK.Interfaces
         /// 等待读取器就绪
         /// </summary>
         bool WaitForReady(IPcmStreamReader reader, int timeoutMs);
+
+        /// <summary>
+        /// 创建流并异步等待就绪（不阻塞主线程）
+        /// </summary>
+        Task<IPcmStreamReader> CreateStreamAndWaitAsync(
+            string url,
+            string format,
+            float durationSeconds,
+            string cacheKey,
+            int timeoutMs = 20000,
+            Dictionary<string, string> headers = null,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 异步等待读取器就绪（不阻塞主线程）
+        /// </summary>
+        Task<bool> WaitForReadyAsync(IPcmStreamReader reader, int timeoutMs, CancellationToken cancellationToken = default);
     }
 }
