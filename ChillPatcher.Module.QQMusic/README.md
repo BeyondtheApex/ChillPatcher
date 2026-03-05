@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- **二维码登录** - 使用 QQ 音乐 APP 扫码登录
+- **二维码登录** - 使用 QQ 音乐 APP 扫码登录(暂不支持)
 - **收藏同步** - 喜欢的歌曲自动同步到 QQ 音乐
 - **歌单导入** - 支持导入自定义歌单
 - **每日推荐** - 自动加载每日推荐歌曲
@@ -53,21 +53,6 @@ cd ChillPatcher.Module.QQMusic
 dotnet restore
 dotnet build -c Release
 ```
-
-## 安装方法
-
-1. 将编译好的文件复制到 BepInEx 插件目录：
-
-```
-BepInEx/plugins/ChillPatcher/
-├── Modules/
-│   └── ChillPatcher.Module.QQMusic.dll
-└── native/
-    └── x64/
-        └── ChillQQMusic.dll
-```
-
-2. 启动游戏，模块会自动加载
 
 ## 配置说明
 
