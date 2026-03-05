@@ -33,6 +33,23 @@ namespace ChillPatcher.Patches.UIFramework
         // 缓存的原始状态
         private static MusicTagListUI _cachedTagListUI;
         private static bool _isQueueMode = false;
+        
+        // 下拉框滚动支持
+        private static ScrollRect _dropdownScrollRect;
+        private static GameObject _scrollViewport;
+        private const int MAX_VISIBLE_BUTTONS = 6;
+        private const float BUTTON_HEIGHT = 45f;
+        private const float SCROLL_PADDING_TOP = 70f;
+        private const float SCROLL_PADDING_BOTTOM = 15f;
+        
+        // 保存 TagList 原始 RectTransform 状态，以便移出 viewport 时恢复
+        private static bool _originalRectStored;
+        private static Vector2 _originalAnchorMin;
+        private static Vector2 _originalAnchorMax;
+        private static Vector2 _originalPivot;
+        private static Vector2 _originalOffsetMin;
+        private static Vector2 _originalOffsetMax;
+        private static Vector2 _originalAnchoredPosition;
 
         /// <summary>
         /// Setup后处理：隐藏空Tag + 添加自定义Tag按钮
@@ -132,6 +149,8 @@ namespace ChillPatcher.Patches.UIFramework
                 if (pullDownParentRect == null) return;
                 
                 var tagListContainer = pullDownParentRect.Find("TagList");
+                if (tagListContainer == null && _scrollViewport != null)
+                    tagListContainer = _scrollViewport.transform.Find("TagList");
                 if (tagListContainer == null) return;
                 
                 // 强制刷新布局
@@ -484,7 +503,7 @@ namespace ChillPatcher.Patches.UIFramework
         }
 
         /// <summary>
-        /// 更新下拉框高度
+        /// 更新下拉框高度（超过 MAX_VISIBLE_BUTTONS 时启用滚动）
         /// </summary>
         private static void UpdateDropdownHeight(MusicTagListUI tagListUI)
         {
@@ -498,17 +517,19 @@ namespace ChillPatcher.Patches.UIFramework
             // 获取下拉列表的Content
             var pullDownParentRect = Traverse.Create(pulldown)
                 .Field("_pullDownParentRect")
-                .GetValue<UnityEngine.RectTransform>();
+                .GetValue<RectTransform>();
 
             if (pullDownParentRect == null)
                 return;
 
-            // 重新计算打开时的高度（根据内容实际高度）
+            // TagList 可能在 pullDownParentRect 下面或在 viewport 里
             var contentTransform = pullDownParentRect.Find("TagList");
+            if (contentTransform == null && _scrollViewport != null)
+                contentTransform = _scrollViewport.transform.Find("TagList");
             if (contentTransform == null)
                 return;
 
-            // ✅ 统计实际显示的按钮数量（排除被HideEmptyTags隐藏的）
+            // 统计实际显示的按钮数量
             int visibleNativeButtonCount = 0;
             var nativeButtons = Traverse.Create(tagListUI).Field("buttons").GetValue<MusicTagListButton[]>();
             if (nativeButtons != null)
@@ -525,25 +546,162 @@ namespace ChillPatcher.Patches.UIFramework
             
             Plugin.Log.LogInfo($"[UpdateDropdownHeight] Native (visible): {visibleNativeButtonCount}, Custom: {customButtonCount}, Total: {totalVisibleButtonCount}");
 
-            // 强制刷新布局（确保自定义按钮也被计算）
+            // 强制刷新布局
             Canvas.ForceUpdateCanvases();
-            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(pullDownParentRect);
-            UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(contentTransform as UnityEngine.RectTransform);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(pullDownParentRect);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(contentTransform as RectTransform);
 
-            // ✅ 直接根据按钮数量计算内容高度
-            // 实测数据: 按钮高度=45
-            const float buttonHeight = 45f;  // 实测按钮高度
-            
-            // 公式：finalHeight = a × (按钮数 × 高度) + b
-            // a = 系数, b = 用户偏移
             float a = PluginConfig.TagDropdownHeightMultiplier.Value;
             float b = PluginConfig.TagDropdownHeightOffset.Value;
-            float finalHeight = a * (totalVisibleButtonCount * buttonHeight) + b;
 
-            // 更新下拉框打开时的目标高度
+            // 超过 MAX_VISIBLE_BUTTONS 时，限制高度并启用滚动
+            bool needsScroll = totalVisibleButtonCount > MAX_VISIBLE_BUTTONS;
+            float finalHeight;
+
+            if (needsScroll)
+            {
+                // 滚动模式：高度 = 上padding + 可见按钮区 + 下padding
+                finalHeight = SCROLL_PADDING_TOP + (MAX_VISIBLE_BUTTONS * BUTTON_HEIGHT) + SCROLL_PADDING_BOTTOM;
+                
+                EnsureScrollRect(pullDownParentRect, contentTransform as RectTransform);
+                
+                // 设置 TagList 的高度为实际内容高度（让 ScrollRect 知道可滚动范围）
+                var contentRect = contentTransform as RectTransform;
+                if (contentRect != null)
+                {
+                    // 确保 ContentSizeFitter 在垂直方向为 PreferredSize
+                    var fitter = contentRect.GetComponent<ContentSizeFitter>();
+                    if (fitter == null)
+                    {
+                        fitter = contentRect.gameObject.AddComponent<ContentSizeFitter>();
+                    }
+                    fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+                    fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+                }
+                
+                Plugin.Log.LogInfo($"[UpdateDropdownHeight] Scroll enabled: {totalVisibleButtonCount} buttons, showing {MAX_VISIBLE_BUTTONS}");
+            }
+            else
+            {
+                // 不需要滚动：高度 = a × (按钮数 × 按钮高) + b
+                finalHeight = a * (totalVisibleButtonCount * BUTTON_HEIGHT) + b;
+                
+                // 禁用 ScrollRect 并把 TagList 移回原父级
+                if (_dropdownScrollRect != null)
+                    _dropdownScrollRect.enabled = false;
+                
+                var contentRect = contentTransform as RectTransform;
+                if (contentRect != null && _scrollViewport != null && contentRect.parent == _scrollViewport.transform)
+                {
+                    contentRect.SetParent(pullDownParentRect, false);
+                    RestoreContentRectState(contentRect);
+                    Plugin.Log.LogInfo("[UpdateDropdownHeight] Moved TagList back to pulldown parent (no scroll needed)");
+                }
+            }
+
             Traverse.Create(pulldown).Field("_openPullDownSizeDeltaY").SetValue(finalHeight);
-
-            Plugin.Log.LogInfo($"Tag dropdown: {a} × ({totalVisibleButtonCount} × {buttonHeight}) + {b} = {finalHeight:F1}");
+            Plugin.Log.LogInfo($"Tag dropdown height: {finalHeight:F1} (scroll={needsScroll}, buttons={totalVisibleButtonCount})");
+        }
+        
+        /// <summary>
+        /// 确保下拉框有 ScrollRect 和 Viewport 来支持滚动
+        /// 使用 Viewport 对象实现正确的上下 padding 裁剪
+        /// </summary>
+        private static void EnsureScrollRect(RectTransform pullDownParentRect, RectTransform contentRect)
+        {
+            if (pullDownParentRect == null || contentRect == null)
+                return;
+            
+            // 创建 Viewport（如果还没有）
+            if (_scrollViewport == null || _scrollViewport.transform.parent != pullDownParentRect)
+            {
+                // 检查是否已有旧的 viewport
+                var existingViewport = pullDownParentRect.Find("ChillPatcher_ScrollViewport");
+                if (existingViewport != null)
+                {
+                    _scrollViewport = existingViewport.gameObject;
+                }
+                else
+                {
+                    _scrollViewport = new GameObject("ChillPatcher_ScrollViewport");
+                    _scrollViewport.transform.SetParent(pullDownParentRect, false);
+                    
+                    // 添加 RectMask2D 到 viewport（裁剪溢出内容）
+                    _scrollViewport.AddComponent<RectMask2D>();
+                    
+                    Plugin.Log.LogInfo("[EnsureScrollRect] Created scroll viewport with RectMask2D");
+                }
+            }
+            
+            // 设置 Viewport 的 RectTransform，留出上下 padding
+            var viewportRect = _scrollViewport.GetComponent<RectTransform>();
+            if (viewportRect == null)
+                viewportRect = _scrollViewport.AddComponent<RectTransform>();
+            
+            // Viewport 拉伸填满父容器，但留出上下间距
+            viewportRect.anchorMin = new Vector2(0, 0);
+            viewportRect.anchorMax = new Vector2(1, 1);
+            viewportRect.pivot = new Vector2(0.5f, 1);
+            viewportRect.offsetMin = new Vector2(0, SCROLL_PADDING_BOTTOM);  // 底部留 5px
+            viewportRect.offsetMax = new Vector2(0, -SCROLL_PADDING_TOP);     // 顶部留 100px
+            
+            // 将 TagList 移入 Viewport（如果还没有移入）
+            if (contentRect.parent != viewportRect)
+            {
+                contentRect.SetParent(viewportRect, false);
+            }
+            
+            // 保存原始 RectTransform 状态（用于之后恢复）
+            if (!_originalRectStored)
+            {
+                _originalAnchorMin = contentRect.anchorMin;
+                _originalAnchorMax = contentRect.anchorMax;
+                _originalPivot = contentRect.pivot;
+                _originalOffsetMin = contentRect.offsetMin;
+                _originalOffsetMax = contentRect.offsetMax;
+                _originalAnchoredPosition = contentRect.anchoredPosition;
+                _originalRectStored = true;
+                Plugin.Log.LogInfo($"[EnsureScrollRect] Saved original rect: anchors=({_originalAnchorMin},{_originalAnchorMax}), pivot={_originalPivot}, offset=({_originalOffsetMin},{_originalOffsetMax}), pos={_originalAnchoredPosition}");
+            }
+            
+            // 确保内容的锚点和枢轴正确（顶部对齐，ScrollRect 需要）
+            contentRect.anchorMin = new Vector2(0, 1);
+            contentRect.anchorMax = new Vector2(1, 1);
+            contentRect.pivot = new Vector2(0.5f, 1);
+            
+            // 确保 Viewport 顺序在 TagList 的同级或之前（避免渲染层级问题）
+            _scrollViewport.transform.SetAsFirstSibling();
+            
+            // 添加或获取 ScrollRect（放在 _pullDownParentRect 上）
+            _dropdownScrollRect = pullDownParentRect.GetComponent<ScrollRect>();
+            if (_dropdownScrollRect == null)
+            {
+                _dropdownScrollRect = pullDownParentRect.gameObject.AddComponent<ScrollRect>();
+                Plugin.Log.LogInfo("[EnsureScrollRect] Added ScrollRect");
+            }
+            
+            _dropdownScrollRect.content = contentRect;
+            _dropdownScrollRect.viewport = viewportRect;
+            _dropdownScrollRect.horizontal = false;
+            _dropdownScrollRect.vertical = true;
+            _dropdownScrollRect.movementType = ScrollRect.MovementType.Clamped;
+            _dropdownScrollRect.scrollSensitivity = BUTTON_HEIGHT;
+            _dropdownScrollRect.enabled = true;
+        }
+        
+        /// <summary>
+        /// 恢复 TagList 的原始 RectTransform 状态
+        /// </summary>
+        private static void RestoreContentRectState(RectTransform contentRect)
+        {
+            if (contentRect == null || !_originalRectStored) return;
+            
+            contentRect.anchorMin = _originalAnchorMin;
+            contentRect.anchorMax = _originalAnchorMax;
+            contentRect.pivot = _originalPivot;
+            contentRect.offsetMin = _originalOffsetMin;
+            contentRect.offsetMax = _originalOffsetMax;
+            contentRect.anchoredPosition = _originalAnchoredPosition;
         }
         
         #region 队列模式切换
@@ -580,7 +738,19 @@ namespace ChillPatcher.Patches.UIFramework
             if (pullDownParentRect == null) return;
             
             var tagListContainer = pullDownParentRect.Find("TagList");
+            if (tagListContainer == null && _scrollViewport != null)
+                tagListContainer = _scrollViewport.transform.Find("TagList");
             if (tagListContainer == null) return;
+            
+            // 队列模式不需要滚动，把 TagList 移回原父级（如果在 viewport 里）
+            if (_scrollViewport != null && tagListContainer.parent == _scrollViewport.transform)
+            {
+                tagListContainer.SetParent(pullDownParentRect, false);
+                RestoreContentRectState(tagListContainer as RectTransform);
+                Plugin.Log.LogInfo("[SwitchToQueueMode] Moved TagList back to pulldown parent");
+            }
+            if (_dropdownScrollRect != null)
+                _dropdownScrollRect.enabled = false;
             
             // 隐藏 TodoSwitchFinishButton
             HideTodoSwitchFinishButton(tagListContainer);
@@ -876,16 +1046,17 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static void UpdateDropdownHeightForQueueMode(PulldownListUI pulldown, int buttonCount)
         {
-            // 实测数据: 按钮高度=45
-            const float buttonHeight = 45f;
-            
-            // 公式：finalHeight = a × (按钮数 × 高度) + b
             float a = PluginConfig.TagDropdownHeightMultiplier.Value;
             float b = PluginConfig.TagDropdownHeightOffset.Value;
-            float finalHeight = a * (buttonCount * buttonHeight) + b;
+            int displayCount = Math.Min(buttonCount, MAX_VISIBLE_BUTTONS);
+            float finalHeight = a * (displayCount * BUTTON_HEIGHT) + b;
+            
+            // 队列模式按钮数通常很少，不需要滚动，禁用 ScrollRect
+            if (_dropdownScrollRect != null)
+                _dropdownScrollRect.enabled = false;
             
             Traverse.Create(pulldown).Field("_openPullDownSizeDeltaY").SetValue(finalHeight);
-            Plugin.Log.LogInfo($"[QueueMode] Dropdown height: {a} × ({buttonCount} × {buttonHeight}) + {b} = {finalHeight:F1}");
+            Plugin.Log.LogInfo($"[QueueMode] Dropdown height: {a} × ({displayCount} × {BUTTON_HEIGHT}) + {b} = {finalHeight:F1}");
         }
         
         /// <summary>

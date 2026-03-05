@@ -263,8 +263,8 @@ namespace ChillPatcher.Module.Netease
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                // 新路径: 通过 GetSongUrl 获取 URL, 使用主插件 CoreStreamingService 解码
-                var songUrl = _bridge.GetSongUrl(songInfo.Id, bridgeQuality);
+                // 在线程池执行 P/Invoke（GetSongUrl 调用 Go DLL 发 HTTP 请求，会阻塞调用线程）
+                var songUrl = await Task.Run(() => _bridge.GetSongUrl(songInfo.Id, bridgeQuality), cancellationToken);
                 if (songUrl == null || string.IsNullOrEmpty(songUrl.Url))
                 {
                     _context.Logger.LogWarning($"[{DisplayName}] 获取歌曲 URL 失败: {songInfo.Name} (尝试 {attempt}/{maxRetries})");
@@ -291,13 +291,14 @@ namespace ChillPatcher.Module.Netease
                     return null;
                 }
 
-                var reader = _context.StreamingService.CreateStreamAndWait(
+                var reader = await _context.StreamingService.CreateStreamAndWaitAsync(
                     songUrl.Url,
                     format,
                     (float)songInfo.Duration,
                     $"netease_{songInfo.Id}",
                     readyTimeoutMs,
-                    new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" });
+                    new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" },
+                    cancellationToken);
 
                 if (reader == null)
                 {
