@@ -26,6 +26,7 @@ namespace ChillPatcher.ModuleSystem
         private readonly IDefaultCoverProvider _defaultCover;
         private readonly IAudioLoader _audioLoader;
         private readonly IDependencyLoader _dependencyLoader;
+        private readonly IStreamingService _streamingService;
 
         public ModuleContextFactory(
             string pluginPath,
@@ -37,7 +38,8 @@ namespace ChillPatcher.ModuleSystem
             IEventBus eventBus,
             IDefaultCoverProvider defaultCover,
             IAudioLoader audioLoader,
-            IDependencyLoader dependencyLoader)
+            IDependencyLoader dependencyLoader,
+            IStreamingService streamingService)
         {
             _pluginPath = pluginPath;
             _config = config;
@@ -49,6 +51,7 @@ namespace ChillPatcher.ModuleSystem
             _defaultCover = defaultCover;
             _audioLoader = audioLoader;
             _dependencyLoader = dependencyLoader;
+            _streamingService = streamingService;
         }
 
         /// <summary>
@@ -69,7 +72,8 @@ namespace ChillPatcher.ModuleSystem
                 _eventBus,
                 _defaultCover,
                 _audioLoader,
-                _dependencyLoader);
+                _dependencyLoader,
+                _streamingService);
         }
     }
 

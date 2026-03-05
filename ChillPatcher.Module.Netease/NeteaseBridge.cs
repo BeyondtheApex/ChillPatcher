@@ -777,11 +777,10 @@ namespace ChillPatcher.Module.Netease
         #region PCM Stream API
 
         /// <summary>
-        /// 创建 PCM 流
+        /// [已废弃] 创建 PCM 流 (基于 Go DLL)
+        /// 已被主插件的 CoreStreamingService 取代
         /// </summary>
-        /// <param name="songId">歌曲 ID</param>
-        /// <param name="quality">音质</param>
-        /// <returns>流 ID，失败返回 -1</returns>
+        [Obsolete("Use CoreStreamingService instead. Go-bridge PCM streaming will be removed.")]
         public long CreatePcmStream(long songId, Quality quality = Quality.ExHigh)
         {
             if (!_initialized)
@@ -821,8 +820,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 获取 PCM 流信息
+        /// [已废弃] 获取 PCM 流信息
         /// </summary>
+        [Obsolete("Use CoreStreamingService instead.")]
         public PcmStreamInfo GetPcmStreamInfo(long streamId)
         {
             try
@@ -842,12 +842,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 读取 PCM 帧数据
+        /// [已废弃] 读取 PCM 帧数据
         /// </summary>
-        /// <param name="streamId">流 ID</param>
-        /// <param name="buffer">float 数组 (交错格式: L,R,L,R...)</param>
-        /// <param name="framesToRead">要读取的帧数</param>
-        /// <returns>实际读取的帧数，0 表示暂无数据，-1 表示错误，-2 表示 EOF</returns>
+        [Obsolete("Use CoreStreamingService instead.")]
         public int ReadPcmFrames(long streamId, float[] buffer, int framesToRead)
         {
             try
@@ -870,8 +867,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 检查 PCM 流是否准备好
+        /// [已废弃] 检查 PCM 流是否准备好
         /// </summary>
+        [Obsolete("Use CoreStreamingService instead.")]
         public bool IsPcmStreamReady(long streamId)
         {
             try
@@ -885,8 +883,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 关闭 PCM 流
+        /// [已废弃] 关闭 PCM 流
         /// </summary>
+        [Obsolete("Use CoreStreamingService instead.")]
         public void ClosePcmStream(long streamId)
         {
             try
@@ -901,8 +900,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 获取 PCM 流错误信息
+        /// [已废弃] 获取 PCM 流错误信息
         /// </summary>
+        [Obsolete("Use CoreStreamingService instead.")]
         public string GetPcmStreamError(long streamId)
         {
             try
@@ -921,11 +921,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// Seek PCM 流到指定帧
+        /// [已废弃] Seek PCM 流到指定帧
         /// </summary>
-        /// <param name="streamId">流 ID</param>
-        /// <param name="frameIndex">目标帧索引</param>
-        /// <returns>0=成功, -1=错误, -2=不支持 Seek, -3=延迟 Seek 已设置</returns>
+        [Obsolete("Use CoreStreamingService instead.")]
         public int SeekPcmStream(long streamId, long frameIndex)
         {
             try
@@ -953,8 +951,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 检查 PCM 流是否可以 Seek
+        /// [已废弃] 检查 PCM 流是否可以 Seek
         /// </summary>
+        [Obsolete("Use CoreStreamingService instead.")]
         public bool CanSeekPcmStream(long streamId)
         {
             try
@@ -968,9 +967,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 获取缓存下载进度
+        /// [已废弃] 获取缓存下载进度
         /// </summary>
-        /// <returns>0-100 的百分比，-1 表示错误</returns>
+        [Obsolete("Use CoreStreamingService instead.")]
         public double GetCacheProgress(long streamId)
         {
             try
@@ -984,8 +983,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 检查是否有待定的 Seek
+        /// [已废弃] 检查是否有待定的 Seek
         /// </summary>
+        [Obsolete("Use CoreStreamingService instead.")]
         public bool HasPendingSeek(long streamId)
         {
             try
@@ -999,8 +999,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 获取待定 Seek 的目标帧
+        /// [已废弃] 获取待定 Seek 的目标帧
         /// </summary>
+        [Obsolete("Use CoreStreamingService instead.")]
         public long GetPendingSeekFrame(long streamId)
         {
             try
@@ -1014,8 +1015,9 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 取消待定的 Seek
+        /// [已废弃] 取消待定的 Seek
         /// </summary>
+        [Obsolete("Use CoreStreamingService instead.")]
         public void CancelPendingSeek(long streamId)
         {
             try

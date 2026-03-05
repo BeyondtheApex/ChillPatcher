@@ -336,12 +336,11 @@ namespace ChillPatcher.UIFramework.Audio
                 return;
             }
 
-            // 只有非零位置才需要 Seek
-            // 创建 AudioClip 后 Unity 会调用 SetPosition(0)，但流式解码本来就从 0 开始
-            // 避免不必要的 Seek 调用，特别是在缓存未完成时会导致 isPaused
-            if (position == 0)
+            // position == 0 时，仅在 reader 已播放过的情况下才 Seek 回开头
+            // 首次创建 AudioClip 时 Unity 会调用 SetPosition(0)，此时 reader 本来就在 0，无需 Seek
+            // 但重播同一首歌时 reader 不在 0，需要 Seek 回开头
+            if (position == 0 && reader.CurrentFrame == 0)
             {
-                // 流式解码总是从 0 开始，不需要 Seek
                 return;
             }
 

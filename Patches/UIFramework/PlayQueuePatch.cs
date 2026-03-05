@@ -671,8 +671,8 @@ namespace ChillPatcher.Patches.UIFramework
                     return false;  // 跳过原方法
                 }
                 
-                // 普通情况：直接设置指针
-                queueManager.SetPlaylistPositionByAudio(audioInfo, currentPlaylist);
+                // 普通情况：直接设置指针（使用 GetPlaylistForQueue 保证一致性）
+                queueManager.SetPlaylistPositionByAudio(audioInfo, GetPlaylistForQueue(__instance));
             }
             
             // 检查是否需要异步加载
@@ -736,7 +736,7 @@ namespace ChillPatcher.Patches.UIFramework
             else
             {
                 // 加载失败，回到开头
-                queueManager.SetPlaylistPositionByAudio(audioInfo, musicService.CurrentPlayList);
+                queueManager.SetPlaylistPositionByAudio(audioInfo, GetPlaylistForQueue(musicService));
             }
             
             // 继续播放
@@ -905,12 +905,20 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 Plugin.Log.LogInfo($"[PlayQueuePatch] Load cancelled or timeout: {audio.Title}");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                if (musicService.PlayingMusic?.UUID == audio.UUID)
+                {
+                    await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                }
                 return false;
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"[PlayQueuePatch] Failed to load audio clip: {ex.Message}");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                if (musicService.PlayingMusic?.UUID == audio.UUID)
+                {
+                    await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                }
                 return false;
             }
             
@@ -918,6 +926,11 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 Plugin.Log.LogWarning($"[PlayQueuePatch] AudioClip is null for {audio.AudioClipName}");
                 FacilityMusic_UpdateFacility_Patch.IsLoadingMusic = false;
+                // 自动跳到下一首（与 PlayArugumentMusicCoreAsync 保持一致）
+                if (musicService.PlayingMusic?.UUID == audio.UUID)
+                {
+                    await musicService.PlayNextMusic(1, MusicChangeKind.Auto);
+                }
                 return false;
             }
             

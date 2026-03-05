@@ -263,42 +263,54 @@ namespace ChillPatcher.Module.Netease
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                // 创建 PCM 流
-                var streamId = _bridge.CreatePcmStream(songInfo.Id, bridgeQuality);
-                if (streamId < 0)
+                // 新路径: 通过 GetSongUrl 获取 URL, 使用主插件 CoreStreamingService 解码
+                var songUrl = _bridge.GetSongUrl(songInfo.Id, bridgeQuality);
+                if (songUrl == null || string.IsNullOrEmpty(songUrl.Url))
                 {
-                    _context.Logger.LogWarning($"[{DisplayName}] 创建 PCM 流失败: {songInfo.Name} (尝试 {attempt}/{maxRetries})");
+                    _context.Logger.LogWarning($"[{DisplayName}] 获取歌曲 URL 失败: {songInfo.Name} (尝试 {attempt}/{maxRetries})");
                     if (attempt < maxRetries)
                     {
-                        await Task.Delay(1000, cancellationToken); // 等待 1 秒后重试
+                        await Task.Delay(1000, cancellationToken);
                         continue;
                     }
                     return null;
                 }
 
-                // 创建 PCM 读取器，传入歌曲时长用于计算预估总帧数
-                var reader = new NeteasePcmStreamReader(_bridge, streamId, 44100, 2, (float)songInfo.Duration);
-
-                // 等待流准备好
-                var ready = await Task.Run(() => reader.WaitForReady(readyTimeoutMs), cancellationToken);
-                if (!ready)
-                {
-                    _context.Logger.LogWarning($"[{DisplayName}] PCM 流准备超时: {songInfo.Name} (尝试 {attempt}/{maxRetries})");
-                    reader.Dispose();
-                    if (attempt < maxRetries)
-                    {
-                        await Task.Delay(1000, cancellationToken); // 等待 1 秒后重试
-                        continue;
-                    }
-                    return null;
-                }
-
-                _context.Logger.LogInfo($"[{DisplayName}] PCM 流已就绪: {songInfo.Name} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch, {reader.Info.Format ?? "mp3"}]");
-
-                // 根据实际格式返回正确的 AudioFormat
-                var audioFormat = string.Equals(reader.Info.Format, "flac", StringComparison.OrdinalIgnoreCase)
+                // 确定格式
+                var format = !string.IsNullOrEmpty(songUrl.Type) ? songUrl.Type.ToLowerInvariant() : "mp3";
+                var audioFormat = string.Equals(format, "flac", StringComparison.OrdinalIgnoreCase)
                     ? AudioFormat.Flac
                     : AudioFormat.Mp3;
+
+                _context.Logger.LogInfo($"[{DisplayName}] 获取到歌曲 URL: {songInfo.Name} [format={format}, size={songUrl.Size}]");
+
+                // 使用主插件流式服务创建 PCM 流
+                if (!_context.StreamingService.IsAvailable)
+                {
+                    _context.Logger.LogError($"[{DisplayName}] 流式服务不可用 (原生解码器未加载)");
+                    return null;
+                }
+
+                var reader = _context.StreamingService.CreateStreamAndWait(
+                    songUrl.Url,
+                    format,
+                    (float)songInfo.Duration,
+                    $"netease_{songInfo.Id}",
+                    readyTimeoutMs,
+                    new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" });
+
+                if (reader == null)
+                {
+                    _context.Logger.LogWarning($"[{DisplayName}] PCM 流创建/准备失败: {songInfo.Name} (尝试 {attempt}/{maxRetries})");
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(1000, cancellationToken);
+                        continue;
+                    }
+                    return null;
+                }
+
+                _context.Logger.LogInfo($"[{DisplayName}] PCM 流已就绪: {songInfo.Name} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch, {reader.Info.Format ?? format}]");
 
                 // 返回 PCM 流源
                 return PlayableSource.FromPcmStream(uuid, reader, audioFormat);

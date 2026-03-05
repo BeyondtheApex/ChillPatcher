@@ -62,6 +62,12 @@ namespace ChillPatcher.SDK.Interfaces
         IDependencyLoader DependencyLoader { get; }
 
         /// <summary>
+        /// 流式音频服务
+        /// 提供边下边播的 PCM 流式解码能力
+        /// </summary>
+        IStreamingService StreamingService { get; }
+
+        /// <summary>
         /// 模块数据目录
         /// 每个模块独立的数据存储目录
         /// </summary>
