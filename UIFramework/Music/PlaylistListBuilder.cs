@@ -91,14 +91,40 @@ namespace ChillPatcher.UIFramework.Music
 
             Logger.LogInfo($"Grouped: {songsByAlbum.Count} albums, {unknownSongsByTag.Count} tags, {nativeSongsByTag.Count} native");
 
-            // 添加有专辑的歌曲
-            await AddAlbumSongsToResult(result, songsByAlbum, albumRegistry, loadCovers);
+            // 将专辑分为非增长和增长两组
+            var nonGrowableAlbums = new Dictionary<string, List<(GameAudioInfo song, int idx, MusicInfo info)>>();
+            var growableAlbums = new Dictionary<string, List<(GameAudioInfo song, int idx, MusicInfo info)>>();
+            foreach (var kvp in songsByAlbum)
+            {
+                var albumInfo = albumRegistry.GetAlbum(kvp.Key);
+                if (albumInfo != null && albumInfo.IsGrowableAlbum)
+                    growableAlbums[kvp.Key] = kvp.Value;
+                else
+                    nonGrowableAlbums[kvp.Key] = kvp.Value;
+            }
 
-            // 添加未分类的自定义歌曲
-            await AddUnknownSongsToResult(result, unknownSongsByTag, tagRegistry, loadCovers);
+            // 将 Tag 歌曲分为非增长和增长两组
+            var nonGrowableTags = new Dictionary<string, List<(GameAudioInfo song, int idx)>>();
+            var growableTags = new Dictionary<string, List<(GameAudioInfo song, int idx)>>();
+            foreach (var kvp in unknownSongsByTag)
+            {
+                var tagInfo = tagRegistry.GetTag(kvp.Key);
+                if (tagInfo != null && tagInfo.IsGrowableList)
+                    growableTags[kvp.Key] = kvp.Value;
+                else
+                    nonGrowableTags[kvp.Key] = kvp.Value;
+            }
+
+            // 先添加所有非增长项
+            await AddAlbumSongsToResult(result, nonGrowableAlbums, albumRegistry, loadCovers);
+            await AddUnknownSongsToResult(result, nonGrowableTags, tagRegistry, loadCovers);
 
             // 添加原生歌曲
             await AddNativeSongsToResult(result, nativeSongsByTag, loadCovers);
+
+            // 最后添加所有增长项
+            await AddAlbumSongsToResult(result, growableAlbums, albumRegistry, loadCovers);
+            await AddUnknownSongsToResult(result, growableTags, tagRegistry, loadCovers);
 
             return result;
         }
@@ -171,11 +197,11 @@ namespace ChillPatcher.UIFramework.Music
             TagRegistry tagRegistry,
             bool loadCovers)
         {
-            // 按 Tag 排序，增长列表排在最后
+            // 按 Tag 排序（增长/非增长分组已在调用方处理）
             var orderedTags = unknownSongsByTag
                 .Select(kvp => new { TagId = kvp.Key, Songs = kvp.Value, TagInfo = tagRegistry?.GetTag(kvp.Key) })
-                .OrderBy(x => x.TagInfo?.IsGrowableList == true ? 1 : 0)  // 增长列表排最后
-                .ThenBy(x => x.TagId)
+                .OrderBy(x => x.TagInfo?.SortOrder ?? int.MaxValue)
+                .ThenBy(x => x.TagInfo?.DisplayName ?? x.TagId)
                 .ToList();
 
             foreach (var entry in orderedTags)
