@@ -27,7 +27,8 @@ namespace ChillPatcher
                     "msvcp140.dll",
                     "concrt140.dll",
                     "ChillFlacDecoder.dll",
-                    "ChillSmtcBridge.dll"
+                    "ChillSmtcBridge.dll",
+                    "puerts.dll"          // <-- PuerTS V8 引擎 (OneJS)
                 };
 
                 foreach (var lib in libs)

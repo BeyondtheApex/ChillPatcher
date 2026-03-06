@@ -83,6 +83,17 @@ namespace ChillPatcher
                 Logger.LogInfo("Achievement sync manager initialized!");
             }
             
+            // ========== 初始化 OneJS 脚本引擎 ==========
+            try
+            {
+                var uiDir = Path.Combine(PluginPath, "ui");
+                OneJSBridge.Initialize(uiDir, Logger);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to initialize OneJS: {ex}");
+            }
+
             // ========== 初始化模块系统 ==========
             try
             {
@@ -97,6 +108,7 @@ namespace ChillPatcher
             {
                 Logger.LogError($"Failed to initialize module system: {ex}");
             }
+
         }
 
         /// <summary>

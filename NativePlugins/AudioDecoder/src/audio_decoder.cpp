@@ -77,9 +77,11 @@ struct AacFileContext {
     std::vector<unsigned char> file_data;
     HANDLE_AACDECODER aac_decoder;
     int audio_track;              // index of the audio track in MP4
+    uint32_t audio_track_id;      // actual MP4 track_id from tkhd (may differ from index+1)
     unsigned current_sample;      // current sample (frame) index for reading
     int sample_rate;
     int channels;
+    int aac_frame_size;           // PCM frames per AAC sample: 1024 for LC, 2048 for HE-AAC (SBR)
     unsigned long long total_frames;
     // Buffered PCM from decoded AAC frames (float interleaved)
     std::vector<float> pcm_buf;
@@ -88,8 +90,10 @@ struct AacFileContext {
     bool is_fmp4;
     std::vector<FMp4Sample> fmp4_samples;
 
-    AacFileContext() : aac_decoder(nullptr), audio_track(-1), current_sample(0),
-                       sample_rate(0), channels(0), total_frames(0), pcm_buf_pos(0),
+    AacFileContext() : aac_decoder(nullptr), audio_track(-1), audio_track_id(0),
+                       current_sample(0),
+                       sample_rate(0), channels(0), aac_frame_size(1024),
+                       total_frames(0), pcm_buf_pos(0),
                        is_fmp4(false) {
         memset(&mp4, 0, sizeof(mp4));
         memset(&mem_buf, 0, sizeof(mem_buf));
@@ -162,9 +166,14 @@ struct StreamingHandle {
     MP4D_demux_t aac_mp4;
     bool mp4_parsed;
     int aac_audio_track;
+    uint32_t aac_audio_track_id;   // actual track_id from tkhd
+    int aac_frame_size;            // PCM frames per AAC sample: 1024 for LC, 2048 for HE-AAC (SBR)
     unsigned aac_current_sample;
     unsigned aac_total_samples;
     std::vector<unsigned char> aac_file_data_copy; // copy for minimp4 random reads
+    // fMP4 streaming support
+    bool aac_is_fmp4;
+    std::vector<FMp4Sample> aac_fmp4_samples;
 
     // Magic number to distinguish from FileStreamHandle
     static const unsigned int MAGIC = 0x53545245; // "STRE"
@@ -176,7 +185,9 @@ struct StreamingHandle {
           info_detected(false), is_ready(false), is_eof(false),
           decoder_initialized(false), mp3_decoder(nullptr), flac_decoder(nullptr),
           aac_decoder(nullptr), mp4_parsed(false), aac_audio_track(-1),
+          aac_audio_track_id(0), aac_frame_size(1024),
           aac_current_sample(0), aac_total_samples(0),
+          aac_is_fmp4(false),
           magic(MAGIC) {}
 
     ~StreamingHandle() {
@@ -286,10 +297,7 @@ static int aac_find_audio_track(const MP4D_demux_t* mp4) {
     return -1;
 }
 
-// ========== fMP4 (fragmented MP4) parser ==========
-// Bilibili DASH audio uses fMP4 where samples are in MOOF/TRAF/TRUN boxes
-// instead of the regular MOOV sample table. This parser extracts sample offsets
-// and sizes from TRUN boxes paired with MDAT offsets.
+// ========== fMP4 (fragmented MP4) helpers ==========
 
 static inline uint32_t read_be32(const unsigned char* p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
@@ -298,6 +306,76 @@ static inline uint32_t read_be32(const unsigned char* p) {
 static inline uint64_t read_be64(const unsigned char* p) {
     return ((uint64_t)read_be32(p) << 32) | read_be32(p + 4);
 }
+
+// Parse tkhd box to extract real track_id for the given track index.
+// minimp4 doesn't store track_id, but Bilibili DASH audio files may have
+// track_id != index+1 (e.g. audio-only M4S with track_id=2).
+static uint32_t parse_tkhd_track_id(const unsigned char* data, size_t file_size, int track_index) {
+    // Walk top-level boxes to find moov, then iterate trak boxes
+    size_t pos = 0;
+    while (pos + 8 <= file_size) {
+        uint32_t sz = read_be32(data + pos);
+        uint32_t tp = read_be32(data + pos + 4);
+        if (sz < 8) break;
+        uint64_t actual = sz;
+        size_t hdr = 8;
+        if (sz == 1 && pos + 16 <= file_size) { actual = read_be64(data + pos + 8); hdr = 16; }
+        if (pos + actual > file_size) break;
+
+        if (tp == 0x6D6F6F76) { // "moov"
+            size_t moov_end = pos + (size_t)actual;
+            size_t inner = pos + hdr;
+            int trak_idx = 0;
+            while (inner + 8 <= moov_end) {
+                uint32_t isz = read_be32(data + inner);
+                uint32_t ityp = read_be32(data + inner + 4);
+                if (isz < 8) break;
+                uint64_t iact = isz;
+                size_t ihdr = 8;
+                if (isz == 1 && inner + 16 <= moov_end) { iact = read_be64(data + inner + 8); ihdr = 16; }
+
+                if (ityp == 0x7472616B) { // "trak"
+                    if (trak_idx == track_index) {
+                        // Find tkhd inside this trak
+                        size_t trak_end = inner + (size_t)iact;
+                        size_t j = inner + ihdr;
+                        while (j + 8 <= trak_end) {
+                            uint32_t jsz = read_be32(data + j);
+                            uint32_t jtp = read_be32(data + j + 4);
+                            if (jsz < 8) break;
+                            if (jtp == 0x746B6864) { // "tkhd"
+                                uint8_t version = data[j + 8];
+                                size_t tid_off;
+                                if (version == 1) {
+                                    // v1: ver_flags(4) + creation_time(8) + modification_time(8)
+                                    tid_off = j + 8 + 4 + 8 + 8;
+                                } else {
+                                    // v0: ver_flags(4) + creation_time(4) + modification_time(4)
+                                    tid_off = j + 8 + 4 + 4 + 4;
+                                }
+                                if (tid_off + 4 <= j + jsz) {
+                                    return read_be32(data + tid_off);
+                                }
+                            }
+                            j += jsz;
+                        }
+                    }
+                    trak_idx++;
+                }
+                inner += (size_t)iact;
+            }
+            break; // only one moov
+        }
+        pos += (size_t)actual;
+    }
+    // Fallback: assume track_id == index + 1
+    return (uint32_t)(track_index + 1);
+}
+
+// ========== fMP4 (fragmented MP4) parser ==========
+// Bilibili DASH audio uses fMP4 where samples are in MOOF/TRAF/TRUN boxes
+// instead of the regular MOOV sample table. This parser extracts sample offsets
+// and sizes from TRUN boxes paired with MDAT offsets.
 
 // Parse fMP4 and fill ctx->fmp4_samples with absolute file offsets and sizes
 // Returns true if fMP4 samples were found
@@ -378,12 +456,15 @@ static bool aac_parse_fmp4_samples(AacFileContext* ctx) {
                             if (flags & 0x000010) { // default_sample_size
                                 if (off + 4 <= j + jsz)
                                     default_sample_size = read_be32(data + off);
+                                off += 4;
                             }
+                            // 0x000020: default_sample_flags (skip, not needed)
+                            if (flags & 0x000020) off += 4;
                         }
                         else if (jtyp == 0x7472756E && j + 12 <= traf_end) { // "trun"
                             // Filter by track ID: only process the audio track
-                            // MP4 track IDs are 1-based, audio_track is 0-based index
-                            if (traf_track_id != 0 && traf_track_id != (uint32_t)(ctx->audio_track + 1)) {
+                            // Use actual track_id parsed from tkhd (Bilibili DASH may have track_id != index+1)
+                            if (traf_track_id != 0 && traf_track_id != ctx->audio_track_id) {
                                 j += jsz;
                                 continue;
                             }
@@ -475,6 +556,9 @@ static AacFileContext* aac_open_from_memory(const std::vector<unsigned char>& fi
         return nullptr;
     }
 
+    // Get actual track_id from tkhd (may differ from index+1, e.g. Bilibili DASH audio has track_id=2)
+    ctx->audio_track_id = parse_tkhd_track_id(ctx->file_data.data(), ctx->file_data.size(), ctx->audio_track);
+
     auto* tr = &ctx->mp4.track[ctx->audio_track];
     if (!tr->dsi || tr->dsi_bytes == 0) {
         g_last_error = "No AudioSpecificConfig (DSI) in MP4 audio track";
@@ -511,7 +595,9 @@ static AacFileContext* aac_open_from_memory(const std::vector<unsigned char>& fi
             if (si && si->sampleRate > 0) {
                 ctx->sample_rate = si->sampleRate;
                 ctx->channels = si->numChannels;
-                aac_debug_log("Detected: sr=%d, ch=%d", ctx->sample_rate, ctx->channels);
+                if (si->frameSize > 0)
+                    ctx->aac_frame_size = si->frameSize; // 1024 for LC, 2048 for HE-AAC (SBR)
+                aac_debug_log("Detected: sr=%d, ch=%d, frameSize=%d", ctx->sample_rate, ctx->channels, ctx->aac_frame_size);
             }
             // Store first frame PCM
             ctx->pcm_buf = std::move(tmp);
@@ -542,13 +628,15 @@ static AacFileContext* aac_open_from_memory(const std::vector<unsigned char>& fi
                 if (si && si->sampleRate > 0) {
                     ctx->sample_rate = si->sampleRate;
                     ctx->channels = si->numChannels;
-                    aac_debug_log("fMP4 detected: sr=%d, ch=%d", ctx->sample_rate, ctx->channels);
+                    if (si->frameSize > 0)
+                        ctx->aac_frame_size = si->frameSize; // 1024 for LC, 2048 for HE-AAC (SBR)
+                    aac_debug_log("fMP4 detected: sr=%d, ch=%d, frameSize=%d", ctx->sample_rate, ctx->channels, ctx->aac_frame_size);
                 }
                 ctx->pcm_buf = std::move(tmp);
                 ctx->current_sample = 1;
             }
-            // Estimate total frames: sample_count * 1024 (typical AAC frame size)
-            ctx->total_frames = (unsigned long long)ctx->fmp4_samples.size() * 1024;
+            // Estimate total frames using detected frame size (1024 for LC, 2048 for HE-AAC)
+            ctx->total_frames = (unsigned long long)ctx->fmp4_samples.size() * ctx->aac_frame_size;
             // Also try MP4 duration if available
             if (tr->timescale > 0 && ctx->sample_rate > 0) {
                 unsigned long long dur = ((unsigned long long)tr->duration_hi << 32) | tr->duration_lo;
@@ -776,8 +864,9 @@ AUDIO_API int AudioDecoder_Seek(void* handle, unsigned long long frame_index) {
         ctx->pcm_buf.clear();
         ctx->pcm_buf_pos = 0;
         // Find the MP4 sample corresponding to frame_index
-        // Each AAC frame typically has 1024 PCM frames
-        unsigned target_sample = (unsigned)(frame_index / 1024);
+        // Use detected frame size (1024 for LC-AAC, 2048 for HE-AAC with SBR)
+        int fs = ctx->aac_frame_size > 0 ? ctx->aac_frame_size : 1024;
+        unsigned target_sample = (unsigned)(frame_index / fs);
         
         // Clamp target_sample and compute start for decoder priming
         if (ctx->is_fmp4) {
@@ -805,7 +894,7 @@ AUDIO_API int AudioDecoder_Seek(void* handle, unsigned long long frame_index) {
                 }
             }
         }
-        size_t skip_frames = (size_t)(frame_index - (unsigned long long)start * 1024);
+        size_t skip_frames = (size_t)(frame_index - (unsigned long long)start * fs);
         size_t skip_samples = skip_frames * ctx->channels;
         if (skip_samples > ctx->pcm_buf.size()) skip_samples = ctx->pcm_buf.size();
         ctx->pcm_buf_pos = skip_samples;
@@ -980,6 +1069,104 @@ static int streaming_mp4_read_cb(int64_t offset, void* buffer, size_t size, void
     return 0;
 }
 
+// Helper: parse fMP4 samples from streaming input buffer into StreamingHandle
+static bool streaming_parse_fmp4_samples(StreamingHandle* s) {
+    const unsigned char* data = s->aac_file_data_copy.data();
+    size_t file_size = s->aac_file_data_copy.size();
+    size_t pos = 0;
+
+    s->aac_fmp4_samples.clear();
+
+    while (pos + 8 <= file_size) {
+        uint32_t box_size = read_be32(data + pos);
+        uint32_t box_type = read_be32(data + pos + 4);
+        if (box_size < 8) break;
+        uint64_t actual_size = box_size;
+        size_t header_size = 8;
+        if (box_size == 1 && pos + 16 <= file_size) {
+            actual_size = read_be64(data + pos + 8);
+            header_size = 16;
+        }
+        if (pos + actual_size > file_size) break;
+
+        if (box_type == 0x6D6F6F66) { // "moof"
+            size_t moof_end = pos + (size_t)actual_size;
+            size_t moof_start = pos;
+            size_t scan = pos + header_size;
+            while (scan + 8 <= moof_end) {
+                uint32_t isz = read_be32(data + scan);
+                uint32_t ityp = read_be32(data + scan + 4);
+                if (isz < 8) break;
+                uint64_t iactual = isz;
+                size_t ihdr = 8;
+                if (isz == 1 && scan + 16 <= moof_end) { iactual = read_be64(data + scan + 8); ihdr = 16; }
+
+                if (ityp == 0x74726166) { // "traf"
+                    size_t traf_end = scan + (size_t)iactual;
+                    size_t j = scan + ihdr;
+                    uint32_t traf_track_id = 0;
+                    uint32_t default_sample_size = 0;
+                    uint64_t base_data_offset = moof_start;
+
+                    while (j + 8 <= traf_end) {
+                        uint32_t jsz = read_be32(data + j);
+                        uint32_t jtyp = read_be32(data + j + 4);
+                        if (jsz < 8) break;
+
+                        if (jtyp == 0x74666864 && j + 12 <= traf_end) { // "tfhd"
+                            uint32_t flags = read_be32(data + j + 8) & 0x00FFFFFF;
+                            size_t off = j + 12;
+                            if (off + 4 <= j + jsz) { traf_track_id = read_be32(data + off); off += 4; }
+                            if (flags & 0x000001) {
+                                if (off + 8 <= j + jsz) base_data_offset = read_be64(data + off);
+                                off += 8;
+                            }
+                            if (flags & 0x000002) off += 4;
+                            if (flags & 0x000008) off += 4;
+                            if (flags & 0x000010) {
+                                if (off + 4 <= j + jsz) default_sample_size = read_be32(data + off);
+                                off += 4;
+                            }
+                            if (flags & 0x000020) off += 4; // default_sample_flags
+                        }
+                        else if (jtyp == 0x7472756E && j + 12 <= traf_end) { // "trun"
+                            if (traf_track_id != 0 && traf_track_id != s->aac_audio_track_id) {
+                                j += jsz; continue;
+                            }
+                            uint32_t flags = read_be32(data + j + 8) & 0x00FFFFFF;
+                            size_t off = j + 12;
+                            if (off + 4 > j + jsz) { j += jsz; continue; }
+                            uint32_t sample_count = read_be32(data + off); off += 4;
+                            if (sample_count > 1000000) { j += jsz; continue; }
+                            int32_t data_offset = 0;
+                            if (flags & 0x000001) {
+                                if (off + 4 > j + jsz) { j += jsz; continue; }
+                                data_offset = (int32_t)read_be32(data + off); off += 4;
+                            }
+                            if (flags & 0x000004) off += 4;
+                            size_t sample_data_pos = (size_t)base_data_offset + data_offset;
+                            for (uint32_t si = 0; si < sample_count; si++) {
+                                uint32_t size = default_sample_size;
+                                if (flags & 0x000100) { if (off + 4 > j + jsz) break; off += 4; }
+                                if (flags & 0x000200) { if (off + 4 > j + jsz) break; size = read_be32(data + off); off += 4; }
+                                if (flags & 0x000400) { if (off + 4 > j + jsz) break; off += 4; }
+                                if (flags & 0x000800) { if (off + 4 > j + jsz) break; off += 4; }
+                                if (size > 0 && sample_data_pos + size <= file_size)
+                                    s->aac_fmp4_samples.push_back({sample_data_pos, size});
+                                sample_data_pos += size;
+                            }
+                        }
+                        j += jsz;
+                    }
+                }
+                scan += (size_t)iactual;
+            }
+        }
+        pos += (size_t)actual_size;
+    }
+    return !s->aac_fmp4_samples.empty();
+}
+
 // Caller must hold s->mutex
 static void streaming_aac_decode(StreamingHandle* s) {
     // AAC in M4A: we need the full moov atom before we can parse.
@@ -1007,6 +1194,10 @@ static void streaming_aac_decode(StreamingHandle* s) {
             return;
         }
 
+        // Get actual track_id from tkhd
+        s->aac_audio_track_id = parse_tkhd_track_id(
+            s->aac_file_data_copy.data(), s->aac_file_data_copy.size(), s->aac_audio_track);
+
         auto* tr = &s->aac_mp4.track[s->aac_audio_track];
         s->aac_total_samples = tr->sample_count;
 
@@ -1027,40 +1218,104 @@ static void streaming_aac_decode(StreamingHandle* s) {
             unsigned long long dur = ((unsigned long long)tr->duration_hi << 32) | tr->duration_lo;
             s->total_frames = (dur * s->sample_rate) / tr->timescale;
         }
+
+        // Check for fMP4 (sample_count == 0, e.g. Bilibili DASH)
+        if (s->aac_total_samples == 0) {
+            if (streaming_parse_fmp4_samples(s)) {
+                s->aac_is_fmp4 = true;
+                s->aac_total_samples = (unsigned)s->aac_fmp4_samples.size();
+                if (s->total_frames == 0) {
+                    // Use detected frame size; may be updated after first decode
+                    int fs = s->aac_frame_size > 0 ? s->aac_frame_size : 1024;
+                    s->total_frames = (unsigned long long)s->aac_total_samples * fs;
+                }
+            } else if (s->feed_complete) {
+                s->is_eof = true;
+                return;
+            } else {
+                // Not enough data for fMP4 yet, reset and retry later
+                MP4D_close(&s->aac_mp4);
+                s->mp4_parsed = false;
+                if (s->aac_decoder) { aacDecoder_Close(s->aac_decoder); s->aac_decoder = nullptr; }
+                return;
+            }
+        }
+
         s->decoder_initialized = true;
         s->aac_current_sample = 0;
     }
 
     if (!s->aac_decoder || s->aac_audio_track < 0) return;
 
+    // Update data snapshot if more data is available (for progressive download)
+    if (s->input_buffer.size() > s->aac_file_data_copy.size()) {
+        s->aac_file_data_copy = s->input_buffer;
+        // Re-parse fMP4 samples if in fMP4 mode (new moof boxes may have arrived)
+        if (s->aac_is_fmp4) {
+            streaming_parse_fmp4_samples(s);
+            s->aac_total_samples = (unsigned)s->aac_fmp4_samples.size();
+        }
+    }
+
     // Decode more AAC frames
-    auto* tr = &s->aac_mp4.track[s->aac_audio_track];
     int ch = s->channels > 0 ? s->channels : 2;
     int frames_decoded = 0;
-    while (s->aac_current_sample < s->aac_total_samples && frames_decoded < 16) {
-        unsigned frame_bytes = 0, timestamp = 0, duration = 0;
-        MP4D_file_offset_t ofs = MP4D_frame_offset(
-            &s->aac_mp4, s->aac_audio_track, s->aac_current_sample,
-            &frame_bytes, &timestamp, &duration);
-        s->aac_current_sample++;
-        if (frame_bytes == 0) continue;
-        if ((size_t)ofs + frame_bytes > s->aac_file_data_copy.size()) {
-            // Not enough data downloaded yet
-            s->aac_current_sample--;
-            break;
-        }
-        size_t decoded = aac_decode_one_frame(s->aac_decoder,
-            s->aac_file_data_copy.data() + ofs, frame_bytes, ch, s->pcm_buffer);
 
-        if (decoded > 0 && !s->info_detected) {
-            CStreamInfo* si = aacDecoder_GetStreamInfo(s->aac_decoder);
-            if (si && si->sampleRate > 0) {
-                s->sample_rate = si->sampleRate;
-                s->channels = si->numChannels;
+    if (s->aac_is_fmp4) {
+        // fMP4 path: use manually parsed sample table
+        while (s->aac_current_sample < s->aac_total_samples && frames_decoded < 16) {
+            auto& sample = s->aac_fmp4_samples[s->aac_current_sample];
+            if (sample.offset + sample.size > s->aac_file_data_copy.size()) {
+                // Not enough data yet
+                break;
             }
-            s->info_detected = true;
+            s->aac_current_sample++;
+            size_t decoded = aac_decode_one_frame(s->aac_decoder,
+                s->aac_file_data_copy.data() + sample.offset, sample.size, ch, s->pcm_buffer);
+            if (decoded > 0 && !s->info_detected) {
+                CStreamInfo* si = aacDecoder_GetStreamInfo(s->aac_decoder);
+                if (si && si->sampleRate > 0) {
+                    s->sample_rate = si->sampleRate;
+                    s->channels = si->numChannels;
+                    if (si->frameSize > 0 && si->frameSize != s->aac_frame_size) {
+                        s->aac_frame_size = si->frameSize;
+                        // Update total_frames with correct frame size (e.g. 2048 for HE-AAC)
+                        if (s->aac_is_fmp4 && s->total_frames > 0)
+                            s->total_frames = (unsigned long long)s->aac_total_samples * s->aac_frame_size;
+                    }
+                }
+                s->info_detected = true;
+            }
+            frames_decoded++;
         }
-        frames_decoded++;
+    } else {
+        // Regular MP4 path: use minimp4 sample table
+        auto* tr = &s->aac_mp4.track[s->aac_audio_track];
+        while (s->aac_current_sample < s->aac_total_samples && frames_decoded < 16) {
+            unsigned frame_bytes = 0, timestamp = 0, duration = 0;
+            MP4D_file_offset_t ofs = MP4D_frame_offset(
+                &s->aac_mp4, s->aac_audio_track, s->aac_current_sample,
+                &frame_bytes, &timestamp, &duration);
+            s->aac_current_sample++;
+            if (frame_bytes == 0) continue;
+            if ((size_t)ofs + frame_bytes > s->aac_file_data_copy.size()) {
+                s->aac_current_sample--;
+                break;
+            }
+            size_t decoded = aac_decode_one_frame(s->aac_decoder,
+                s->aac_file_data_copy.data() + ofs, frame_bytes, ch, s->pcm_buffer);
+            if (decoded > 0 && !s->info_detected) {
+                CStreamInfo* si = aacDecoder_GetStreamInfo(s->aac_decoder);
+                if (si && si->sampleRate > 0) {
+                    s->sample_rate = si->sampleRate;
+                    s->channels = si->numChannels;
+                    if (si->frameSize > 0)
+                        s->aac_frame_size = si->frameSize;
+                }
+                s->info_detected = true;
+            }
+            frames_decoded++;
+        }
     }
 
     // Check readiness

@@ -1,0 +1,145 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AssemblyName>ChillPatcher.OneJS</AssemblyName>
+    <OutputPath>bin\</OutputPath>
+    <RootNamespace></RootNamespace>
+    <!-- Suppress OneJS upstream warnings (unused fields, obsolete APIs, etc.) -->
+    <NoWarn>CS0168;CS0169;CS0414;CS0618;CS0649</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GamePath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed</GamePath>
+  </PropertyGroup>
+
+  <!-- Define constants: Not IL2CPP, Not Unity Editor, Unity 2022.3 -->
+  <PropertyGroup>
+    <DefineConstants>UNITY_2020_1_OR_NEWER;UNITY_2021_1_OR_NEWER;UNITY_2022_1_OR_NEWER;CSHARP_7_3_OR_NEWER</DefineConstants>
+  </PropertyGroup>
+
+  <!-- 3rd party DLLs (shipped with OneJS) -->
+  <ItemGroup>
+    <Reference Include="ExCSS.Unity">
+      <HintPath>lib\ExCSS.Unity.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="DotNet.Glob">
+      <HintPath>lib\DotNet.Glob.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="NUglify">
+      <HintPath>lib\NUglify.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="ICSharpCode.SharpZipLib">
+      <HintPath>lib\ICSharpCode.SharpZipLib.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Unity Engine DLLs -->
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GamePath)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GamePath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>$(GamePath)\UnityEngine.UIElementsModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GamePath)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GamePath)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GamePath)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreTextEngineModule">
+      <HintPath>$(GamePath)\UnityEngine.TextCoreTextEngineModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreFontEngineModule">
+      <HintPath>$(GamePath)\UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(GamePath)\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>$(GamePath)\UnityEngine.JSONSerializeModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- Burst / Jobs / Mathematics for GradientTextureFillJob -->
+    <Reference Include="Unity.Burst">
+      <HintPath>$(GamePath)\Unity.Burst.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.Mathematics">
+      <HintPath>$(GamePath)\Unity.Mathematics.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Game DLLs -->
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(GamePath)\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- NuGet packages for .NET 4.7.2 compatibility -->
+  <ItemGroup>
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+    <PackageReference Include="IndexRange" Version="1.0.3" />
+  </ItemGroup>
+
+  <!-- Additional Unity modules -->
+  <ItemGroup>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GamePath)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestTextureModule">
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- System references -->
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <!-- Embed PuerTS bootstrap scripts as resources (required for BepInEx since Resources.Load is unavailable) -->
+  <ItemGroup>
+    <EmbeddedResource Include="Puerts\Resources\puerts\*.mjs">
+      <LogicalName>puerts.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Puerts\Resources\puerts\*.cjs">
+      <LogicalName>puerts.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

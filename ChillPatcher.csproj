@@ -15,6 +15,7 @@
   <!-- 引用 SDK 项目 -->
   <ItemGroup>
     <ProjectReference Include="ChillPatcher.SDK\ChillPatcher.SDK.csproj" />
+    <ProjectReference Include="ChillPatcher.OneJS\ChillPatcher.OneJS.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -54,6 +55,14 @@
     <Compile Remove="qqmusic_bridge\**" />
     <EmbeddedResource Remove="qqmusic_bridge\**" />
     <None Remove="qqmusic_bridge\**" />
+    <!-- Exclude OneJS sources (referenced as project) -->
+    <Compile Remove="ChillPatcher.OneJS\**" />
+    <EmbeddedResource Remove="ChillPatcher.OneJS\**" />
+    <None Remove="ChillPatcher.OneJS\**" />
+    <!-- Exclude OneJS extracted sources -->
+    <Compile Remove="OneJS_extracted\**" />
+    <EmbeddedResource Remove="OneJS_extracted\**" />
+    <None Remove="OneJS_extracted\**" />
     <!-- Exclude build directory -->
     <Compile Remove="build\**" />
     <EmbeddedResource Remove="build\**" />
@@ -128,6 +137,10 @@
     </Reference>
     <Reference Include="UnityEngine.UIModule">
       <HintPath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UIElementsModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.AudioModule">

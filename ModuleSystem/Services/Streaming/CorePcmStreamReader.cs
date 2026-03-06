@@ -114,10 +114,10 @@ namespace ChillPatcher.ModuleSystem.Services.Streaming
             _cache = new HttpAudioCache(url, cachePath, headers);
             _cache.OnComplete += OnCacheComplete;
 
-            // MP3 和 FLAC 都支持增量流式解码
+            // MP3, FLAC, AAC 都支持增量流式解码
             _ringBuffer = new RingBuffer(RING_BUFFER_SAMPLES);
 
-            if (_format == "mp3" || _format == "flac")
+            if (_format == "mp3" || _format == "flac" || _format == "aac")
             {
                 _streamingDecoder = new AudioDecoder.StreamingDecoder(_format);
                 _cache.StartDownload();
@@ -136,13 +136,25 @@ namespace ChillPatcher.ModuleSystem.Services.Streaming
             _fileDecoder = new AudioDecoder.FileStreamReader(path);
             _switchedToFile = true;
 
+            // Prefer the file decoder's TotalFrames (parsed from actual file content)
+            // over _durationHint (API-reported duration), since the actual audio content
+            // may differ from the API metadata (e.g. Bilibili DASH serving partial audio).
+            ulong totalFrames = _fileDecoder.TotalFrames > 0
+                ? _fileDecoder.TotalFrames
+                : (_durationHint > 0 ? (ulong)(_fileDecoder.SampleRate * _durationHint) : 0);
+
+            if (_durationHint > 0 && _fileDecoder.TotalFrames > 0)
+            {
+                float decoderDuration = (float)_fileDecoder.TotalFrames / _fileDecoder.SampleRate;
+                if (Math.Abs(decoderDuration - _durationHint) > 2f)
+                    Logger.LogWarning($"Duration mismatch: API={_durationHint:F1}s, file={decoderDuration:F1}s (using file)");
+            }
+
             _info = new PcmStreamInfo
             {
                 SampleRate = _fileDecoder.SampleRate,
                 Channels = _fileDecoder.Channels,
-                TotalFrames = _durationHint > 0
-                    ? (ulong)(_fileDecoder.SampleRate * _durationHint)
-                    : _fileDecoder.TotalFrames,
+                TotalFrames = totalFrames,
                 Format = _fileDecoder.Format,
                 CanSeek = true
             };

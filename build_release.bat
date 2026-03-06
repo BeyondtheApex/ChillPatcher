@@ -73,16 +73,25 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [6/8] Building ChillPatcher.Module.QQMusic...
+echo [6/9] Building ChillPatcher.Module.QQMusic...
 dotnet build ChillPatcher.Module.QQMusic\ChillPatcher.Module.QQMusic.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: QQMusic module build failed!
     exit /b 1
 )
 
+REM ========== Step 7: Build OneJS ==========
+echo.
+echo [7/9] Building ChillPatcher.OneJS...
+dotnet build ChillPatcher.OneJS\ChillPatcher.OneJS.csproj -c %Configuration% --no-restore
+if %errorlevel% neq 0 (
+    echo ERROR: OneJS build failed!
+    exit /b 1
+)
+
 REM ========== Step 7: Build Native Plugins (Optional) ==========
 echo.
-echo [7/8] Building Native Plugins...
+echo [8/9] Building Native Plugins...
 
 if exist "NativePlugins\AudioDecoder\build.bat" (
     echo   - Building Audio Decoder...
@@ -136,7 +145,7 @@ if exist "qqmusic_bridge\build.bat" (
 
 REM ========== Step 8: Copy files to release directory ==========
 echo.
-echo [8/8] Copying files to release directory...
+echo [9/9] Copying files to release directory...
 
 REM Main Plugin
 echo   - Main Plugin files...
@@ -151,12 +160,31 @@ echo   - Dependencies...
 if exist "bin\NAudio.Core.dll" copy /y "bin\NAudio.Core.dll" "%PluginDir%\" >nul
 if exist "bin\NAudio.Wasapi.dll" copy /y "bin\NAudio.Wasapi.dll" "%PluginDir%\" >nul
 
+REM OneJS Runtime (脚本引擎)
+echo   - OneJS Runtime...
+if exist "ChillPatcher.OneJS\bin\ChillPatcher.OneJS.dll" copy /y "ChillPatcher.OneJS\bin\ChillPatcher.OneJS.dll" "%PluginDir%\" >nul
+if exist "ChillPatcher.OneJS\bin\ExCSS.Unity.dll" copy /y "ChillPatcher.OneJS\bin\ExCSS.Unity.dll" "%PluginDir%\" >nul
+if exist "ChillPatcher.OneJS\bin\DotNet.Glob.dll" copy /y "ChillPatcher.OneJS\bin\DotNet.Glob.dll" "%PluginDir%\" >nul
+if exist "ChillPatcher.OneJS\bin\NUglify.dll" copy /y "ChillPatcher.OneJS\bin\NUglify.dll" "%PluginDir%\" >nul
+if exist "ChillPatcher.OneJS\bin\ICSharpCode.SharpZipLib.dll" copy /y "ChillPatcher.OneJS\bin\ICSharpCode.SharpZipLib.dll" "%PluginDir%\" >nul
+if exist "ChillPatcher.OneJS\bin\IndexRange.dll" copy /y "ChillPatcher.OneJS\bin\IndexRange.dll" "%PluginDir%\" >nul
+if exist "ChillPatcher.OneJS\bin\System.Memory.dll" copy /y "ChillPatcher.OneJS\bin\System.Memory.dll" "%PluginDir%\" >nul
+if exist "ChillPatcher.OneJS\bin\System.Buffers.dll" copy /y "ChillPatcher.OneJS\bin\System.Buffers.dll" "%PluginDir%\" >nul
+if exist "ChillPatcher.OneJS\bin\System.Runtime.CompilerServices.Unsafe.dll" copy /y "ChillPatcher.OneJS\bin\System.Runtime.CompilerServices.Unsafe.dll" "%PluginDir%\" >nul
+
+REM OneJS 默认 UI 脚本
+echo   - OneJS UI scripts...
+set "UIDir=%PluginDir%\ui"
+if not exist "%UIDir%" mkdir "%UIDir%"
+if exist "ui\app.js" copy /y "ui\app.js" "%UIDir%\" >nul
+
 REM Native Plugins (只需 x64，放在 native/x64/)
 echo   - Native plugins...
 if exist "bin\native\x64\ChillAudioDecoder.dll" copy /y "bin\native\x64\ChillAudioDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillFlacDecoder.dll" copy /y "bin\native\x64\ChillFlacDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillSmtcBridge.dll" copy /y "bin\native\x64\ChillSmtcBridge.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillNetease.dll" copy /y "bin\native\x64\ChillNetease.dll" "%NativeDir%\x64\" >nul
+if exist "ChillPatcher.OneJS\native\x64\puerts.dll" copy /y "ChillPatcher.OneJS\native\x64\puerts.dll" "%NativeDir%\x64\" >nul
 
 REM VC++ Runtime DLLs (from lib folder)
 echo   - VC++ Runtime DLLs...
