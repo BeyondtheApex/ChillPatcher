@@ -274,6 +274,7 @@ namespace ChillPatcher
                 )
             );
 
+
             CleanInvalidMusicData = config.Bind(
                 "Maintenance",
                 "CleanInvalidMusicData",
@@ -372,7 +373,6 @@ namespace ChillPatcher
             if (!string.IsNullOrEmpty(RimeUserDataPath.Value))
                 Plugin.Logger.LogInfo($"  - Rime用户目录: {RimeUserDataPath.Value}");
             Plugin.Logger.LogInfo($"  - 隐藏空Tag: {HideEmptyTags.Value}");
-            Plugin.Logger.LogInfo($"  - Tag下拉框高度: a={TagDropdownHeightMultiplier.Value}, b={TagDropdownHeightOffset.Value}");
             Plugin.Logger.LogInfo($"  - 自动静音功能: {EnableAutoMuteOnOtherAudio.Value}");
             if (EnableAutoMuteOnOtherAudio.Value)
             {

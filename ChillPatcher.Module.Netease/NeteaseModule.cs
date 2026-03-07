@@ -65,7 +65,7 @@ namespace ChillPatcher.Module.Netease
 
         public ModuleCapabilities Capabilities => new ModuleCapabilities
         {
-            CanDelete = false,
+            CanDelete = true,
             CanFavorite = true,  // 支持收藏操作，同步到网易云
             CanExclude = false,
             SupportsLiveUpdate = false,

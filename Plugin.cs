@@ -5,6 +5,7 @@ using System.Linq;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
+using Bulbul;
 using ChillPatcher.Patches;
 using ChillPatcher.Patches.UIFramework;
 using ChillPatcher.UIFramework;
@@ -16,7 +17,6 @@ using ChillPatcher.ModuleSystem.Services;
 using ChillPatcher.ModuleSystem.Services.Streaming;
 using ChillPatcher.SDK.Interfaces;
 using Cysharp.Threading.Tasks;
-using Bulbul;
 
 namespace ChillPatcher
 {
@@ -82,17 +82,6 @@ namespace ChillPatcher
                 AchievementSyncManager.Initialize();
                 Logger.LogInfo("Achievement sync manager initialized!");
             }
-            
-            // ========== 初始化 OneJS 脚本引擎 ==========
-            try
-            {
-                var uiDir = Path.Combine(PluginPath, "ui");
-                OneJSBridge.Initialize(uiDir, Logger);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"Failed to initialize OneJS: {ex}");
-            }
 
             // ========== 初始化模块系统 ==========
             try
@@ -107,6 +96,28 @@ namespace ChillPatcher
             catch (Exception ex)
             {
                 Logger.LogError($"Failed to initialize module system: {ex}");
+            }
+
+            // ========== 初始化 OneJS 脚本引擎 ==========
+            try
+            {
+                var uiDir = Path.Combine(PluginPath, "ui");
+                OneJSBridge.Initialize(uiDir, Config, Logger);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to initialize OneJS: {ex}");
+            }
+
+            // ========== 注入 PlayerLoop 更新 ==========
+            try
+            {
+                PlayerLoopInjector.Install(Logger);
+                Logger.LogInfo("PlayerLoop injector installed!");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to install PlayerLoop injector: {ex}");
             }
 
         }
@@ -628,6 +639,17 @@ namespace ChillPatcher
             KeyboardHookPatch.Cleanup();
             Logger.LogInfo("Keyboard hook cleanup completed!");
             
+            // 终止 esbuild 进程并清理 OneJS
+            try
+            {
+                OneJSBridge.Shutdown();
+                Logger.LogInfo("OneJS shutdown completed!");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Error during OneJS shutdown: {ex}");
+            }
+
             // 清理UI框架
             try
             {

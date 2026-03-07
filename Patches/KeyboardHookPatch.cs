@@ -500,60 +500,46 @@ namespace ChillPatcher.Patches
         /// <returns>是否拦截该按键</returns>
         private static bool ProcessKeySimple(uint vkCode)
         {
-            char? inputChar = null;
-            
             // 处理特殊按键
             if (vkCode == 0x08) // Backspace
             {
-                inputChar = '\b';
+                lock (queueLock) { inputQueue.Enqueue('\b'); }
+                return true;
             }
             else if (vkCode == 0x0D) // Enter
             {
-                inputChar = '\n';
-            }
-            else if (vkCode >= 0x20 && vkCode <= 0x7E) // 可打印字符范围
-            {
-                // 方向键/Delete: 加入导航键队列
-                if (vkCode >= 0x25 && vkCode <= 0x28) // 方向键: Left, Up, Right, Down
-                {
-                    lock (queueLock)
-                    {
-                        navigationKeyQueue.Enqueue(vkCode);
-                    }
-                    return true; // 拦截,但不加入inputQueue
-                }
-                else if (vkCode == 0x2E) // Delete
-                {
-                    lock (queueLock)
-                    {
-                        navigationKeyQueue.Enqueue(vkCode);
-                    }
-                    return true; // 拦截,但不加入inputQueue
-                }
-                
-                char ch = (char)vkCode;
-                bool isShiftPressed = (GetAsyncKeyState(0x10) & 0x8000) != 0;
-                
-                if (ch >= 'A' && ch <= 'Z')
-                {
-                    if (!isShiftPressed)
-                    {
-                        ch = char.ToLower(ch);
-                    }
-                }
-                
-                inputChar = ch;
+                lock (queueLock) { inputQueue.Enqueue('\n'); }
+                return true;
             }
 
-            if (inputChar.HasValue)
+            // 方向键/Delete: 加入导航键队列
+            if (vkCode >= 0x25 && vkCode <= 0x28) // Left, Up, Right, Down
             {
-                lock (queueLock)
-                {
-                    inputQueue.Enqueue(inputChar.Value);
-                }
-                return true; // 已处理,拦截
+                lock (queueLock) { navigationKeyQueue.Enqueue(vkCode); }
+                return true;
             }
-            
+            if (vkCode == 0x2E) // Delete
+            {
+                lock (queueLock) { navigationKeyQueue.Enqueue(vkCode); }
+                return true;
+            }
+
+            // 复用 KeyEventConverter 转换所有可打印字符（包括 OEM 键如 -_=+;:等）
+            // ConvertKeyEvent 内部使用 ToUnicodeEx，对普通字符 keycode == Unicode 码点
+            if (KeyEventConverter.ConvertKeyEvent(vkCode, 0, out int keycode, out int mask))
+            {
+                // 跳过特殊键（ibus keycode > 0xFF00 表示功能键/修饰键）
+                if (keycode > 0 && keycode < 0xFF00)
+                {
+                    char ch = (char)keycode;
+                    if (!char.IsControl(ch))
+                    {
+                        lock (queueLock) { inputQueue.Enqueue(ch); }
+                        return true;
+                    }
+                }
+            }
+
             return false; // 未处理,不拦截
         }
 
@@ -848,13 +834,17 @@ namespace ChillPatcher.Patches
     }
 
     /// <summary>
-    /// Patch Update - 每帧检测鼠标点击，清空输入队列
+    /// Patch Update - 每帧检测鼠标点击，清空输入队列；
+    /// 在 EventSystem.Update 之前更新 UIToolkitEventBlocker 检测状态。
     /// </summary>
     [HarmonyPatch(typeof(EventSystem), "Update")]
     public class EventSystem_Update_Patch
     {
         static void Prefix()
         {
+            // 更新 UIToolkit 拦截器（检测鼠标是否在 UIToolkit 可交互区域上）
+            UIToolkitEventBlocker.Update();
+
             // 检测鼠标点击（左键按下）
             if (UnityEngine.Input.GetMouseButtonDown(0))
             {
@@ -863,6 +853,26 @@ namespace ChillPatcher.Patches
                 
                 // 通知InputField刷新(鼠标点击可能改变焦点)
                 TMP_InputField_LateUpdate_Patch.RequestRimeUpdate();
+            }
+        }
+    }
+
+    /// <summary>
+    /// UIToolkit 可交互时清空 RaycastAll，防止 UGUI/InputController 响应。
+    /// WE 模式下跳过：WE 有自己的 UIToolkit/UGUI 优先级机制，
+    /// 强制清空 raycast 可能阻断 WE 的事件路由（PanelEventHandler 等）。
+    /// </summary>
+    [HarmonyPatch(typeof(EventSystem), "RaycastAll")]
+    public class EventSystem_RaycastAll_Patch
+    {
+        static void Postfix(System.Collections.Generic.List<UnityEngine.EventSystems.RaycastResult> raycastResults)
+        {
+            if (PluginConfig.EnableWallpaperEngineMode?.Value == true)
+                return;
+
+            if (UIToolkitEventBlocker.IsBlocking && raycastResults != null)
+            {
+                raycastResults.Clear();
             }
         }
     }
@@ -882,6 +892,10 @@ namespace ChillPatcher.Patches
         // 需要更新的InputField ID (由Hook直接设置)
         private static volatile int pendingUpdateInstanceId = -1;
         private static readonly object updateLock = new object();
+
+        // 桌面模式：记录 LateUpdate 之前的文本，用于检测标准输入是否已处理
+        [ThreadStatic] private static string _preText;
+        [ThreadStatic] private static int _preCaret;
 
         class PreeditState
         {
@@ -903,10 +917,21 @@ namespace ChillPatcher.Patches
             }
         }
 
+        static void Prefix(TMP_InputField __instance)
+        {
+            // 记录 LateUpdate 之前的文本状态，用于检测标准 IMGUI 输入是否工作
+            _preText = __instance.text;
+            _preCaret = __instance.caretPosition;
+        }
+
         static void Postfix(TMP_InputField __instance)
         {
             try
             {
+                // UIToolkit TextField 获焦时，队列已被 UIToolkitInputDispatcher 消费，跳过 TMP 注入
+                if (UIToolkitInputDispatcher.IsUIToolkitTextFieldFocused)
+                    return;
+
                 int instanceId = __instance.GetInstanceID();
                 
                 // 只在输入框激活且获得焦点时注入
@@ -1100,6 +1125,38 @@ namespace ChillPatcher.Patches
                                 __instance.ForceLabelUpdate();
                             }
                             break;
+                    }
+                }
+
+                // 5. 桌面模式回退：UIToolkit 可能抢占 IMGUI 键盘事件，
+                // 导致 TMP 的 OnUpdateSelected 读不到字符。
+                // 用 Input.inputString 补偿（仅在标准处理未生效时注入）。
+                if (PluginConfig.EnableWallpaperEngineMode?.Value != true)
+                {
+                    string inputStr = UnityEngine.Input.inputString;
+                    if (!string.IsNullOrEmpty(inputStr) 
+                        && __instance.text == _preText 
+                        && __instance.caretPosition == _preCaret)
+                    {
+                        foreach (char c in inputStr)
+                        {
+                            UnityEngine.Event evt = new UnityEngine.Event();
+                            evt.type = UnityEngine.EventType.KeyDown;
+
+                            if (c == '\b')
+                            {
+                                evt.keyCode = KeyCode.Backspace;
+                                evt.character = '\0';
+                            }
+                            else
+                            {
+                                evt.keyCode = KeyCode.None;
+                                evt.character = c;
+                            }
+
+                            __instance.KeyPressed(evt);
+                        }
+                        __instance.ForceLabelUpdate();
                     }
                 }
             }

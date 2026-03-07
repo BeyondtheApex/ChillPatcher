@@ -60,7 +60,7 @@ namespace ChillPatcher.Module.QQMusic
         {
             CanDelete = false,
             CanFavorite = true,
-            CanExclude = true,
+            CanExclude = false,
             SupportsLiveUpdate = false,
             ProvidesCover = true,
             ProvidesAlbum = true

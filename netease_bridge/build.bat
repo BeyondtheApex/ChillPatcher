@@ -125,4 +125,4 @@ echo.
 :: rmdir /s /q "%BUILD_DIR%"
 
 echo Done!
-pause
+if "%1"=="" pause

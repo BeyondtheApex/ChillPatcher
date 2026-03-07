@@ -1,24 +1,40 @@
 @echo off
 REM ChillPatcher - Complete Build and Release Script
 REM Builds all projects and creates release directory structure
+REM Usage: build_release.bat [full]
+REM   (no args)  - Quick build: compile only, reuse existing licenses/native
+REM   full       - Full build: compile + native plugins + license collection
 
 setlocal EnableDelayedExpansion
 
-echo ========================================
-echo ChillPatcher Complete Build Script
-echo ========================================
+REM 检查 full 参数
+set FULL_BUILD=0
+if /i "%1"=="full" set FULL_BUILD=1
+
+if %FULL_BUILD% equ 1 (
+    echo ========================================
+    echo ChillPatcher FULL Build Script
+    echo ========================================
+) else (
+    echo ========================================
+    echo ChillPatcher Quick Build Script
+    echo   ^(use "build_release.bat full" for full build^)
+    echo ========================================
+)
 
 REM 切换到项目根目录
 cd /d %~dp0
 
 REM 配置
 set Configuration=Release
-if not "%1"=="" set Configuration=%1
 
 set ReleaseDir=%~dp0release
 set PluginDir=%ReleaseDir%\ChillPatcher
 set ModulesDir=%PluginDir%\Modules
 set NativeDir=%PluginDir%\native
+set LicenseDir=%PluginDir%\licenses
+set NugetLicenseDir=%LicenseDir%\nuget
+set NpmLicenseDir=%LicenseDir%\npm
 
 REM 清理旧的发布目录
 echo.
@@ -89,7 +105,30 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM ========== Step 7: Build Native Plugins (Optional) ==========
+REM ========== Step 7.5: Build OneJS UI (esbuild) ==========
+echo.
+echo [7.5/9] Building OneJS UI (Preact + esbuild)...
+cd ui\default
+if not exist "node_modules" (
+    echo   - Installing npm dependencies...
+    call npm install
+    if %errorlevel% neq 0 (
+        echo ERROR: npm install failed!
+        cd ..\..
+        exit /b 1
+    )
+)
+echo   - Bundling UI with esbuild...
+call npm run build
+if %errorlevel% neq 0 (
+    echo ERROR: esbuild build failed!
+    cd ..\..
+    exit /b 1
+)
+cd ..\..
+
+REM ========== Step 7: Build Native Plugins (Only in full mode) ==========
+if %FULL_BUILD% equ 1 (
 echo.
 echo [8/9] Building Native Plugins...
 
@@ -126,7 +165,7 @@ if exist "NativePlugins\SmtcBridge\build.bat" (
 if exist "netease_bridge\build.bat" (
     echo   - Building Netease Bridge...
     cd netease_bridge
-    call build.bat >nul 2>&1
+    call build.bat --no-pause >nul 2>&1
     if %errorlevel% neq 0 (
         echo WARNING: Netease bridge build failed, using existing if available
     )
@@ -136,11 +175,15 @@ if exist "netease_bridge\build.bat" (
 if exist "qqmusic_bridge\build.bat" (
     echo   - Building QQ Music Bridge...
     cd qqmusic_bridge
-    call build.bat >nul 2>&1
+    call build.bat --no-pause >nul 2>&1
     if %errorlevel% neq 0 (
         echo WARNING: QQ Music bridge build failed, using existing if available
     )
     cd ..
+)
+) else (
+echo.
+echo [8/9] Native Plugins: SKIPPED ^(quick build^)
 )
 
 REM ========== Step 8: Copy files to release directory ==========
@@ -172,11 +215,11 @@ if exist "ChillPatcher.OneJS\bin\System.Memory.dll" copy /y "ChillPatcher.OneJS\
 if exist "ChillPatcher.OneJS\bin\System.Buffers.dll" copy /y "ChillPatcher.OneJS\bin\System.Buffers.dll" "%PluginDir%\" >nul
 if exist "ChillPatcher.OneJS\bin\System.Runtime.CompilerServices.Unsafe.dll" copy /y "ChillPatcher.OneJS\bin\System.Runtime.CompilerServices.Unsafe.dll" "%PluginDir%\" >nul
 
-REM OneJS 默认 UI 脚本
-echo   - OneJS UI scripts...
+REM OneJS 默认 UI 脚本 (递归复制完整 ui 源码，排除 node_modules，以便用户自定义)
+echo   - OneJS UI source files...
 set "UIDir=%PluginDir%\ui"
 if not exist "%UIDir%" mkdir "%UIDir%"
-if exist "ui\app.js" copy /y "ui\app.js" "%UIDir%\" >nul
+robocopy "ui" "%UIDir%" /E /XD node_modules /NFL /NDL /NJH /NJS /NP >nul 2>&1
 
 REM Native Plugins (只需 x64，放在 native/x64/)
 echo   - Native plugins...
@@ -304,15 +347,54 @@ if exist "Resources" (
     xcopy /s /q /y "Resources\*" "%PluginDir%\Resources\" >nul 2>&1
 )
 
-REM License files
+REM License files (only in full mode; quick build reuses existing)
+if %FULL_BUILD% equ 1 (
 echo   - License files...
-set LicenseDir=%PluginDir%\licenses
 if not exist "%LicenseDir%" mkdir "%LicenseDir%"
 if exist "LICENSE" copy /y "LICENSE" "%LicenseDir%\ChillPatcher-LICENSE.txt" >nul
 if exist "rime\librime\LICENSE" copy /y "rime\librime\LICENSE" "%LicenseDir%\librime-LICENSE.txt" >nul
 if exist "NativePlugins\dr_libs\LICENSE" copy /y "NativePlugins\dr_libs\LICENSE" "%LicenseDir%\dr_libs-LICENSE.txt" >nul
 if exist "NativePlugins\fdk-aac\NOTICE" copy /y "NativePlugins\fdk-aac\NOTICE" "%LicenseDir%\fdk-aac-NOTICE.txt" >nul
 if exist "NativePlugins\minimp4\LICENSE" copy /y "NativePlugins\minimp4\LICENSE" "%LicenseDir%\minimp4-LICENSE.txt" >nul
+if exist "ChillPatcher.OneJS\LICENSE-OneJS.txt" copy /y "ChillPatcher.OneJS\LICENSE-OneJS.txt" "%LicenseDir%\OneJS-LICENSE.txt" >nul
+if exist "ChillPatcher.OneJS\LICENSE-Puerts.txt" copy /y "ChillPatcher.OneJS\LICENSE-Puerts.txt" "%LicenseDir%\Puerts-LICENSE.txt" >nul
+if exist "ChillPatcher.Module.Netease\LICENSE-go-musicfox.txt" copy /y "ChillPatcher.Module.Netease\LICENSE-go-musicfox.txt" "%LicenseDir%\go-musicfox-LICENSE.txt" >nul
+
+REM NuGet package licenses (via dotnet-project-licenses)
+echo   - NuGet package licenses...
+if not exist "%NugetLicenseDir%" mkdir "%NugetLicenseDir%"
+where dotnet-project-licenses >nul 2>&1
+if %errorlevel% equ 0 (
+    dotnet-project-licenses -i ChillPatcher.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
+    dotnet-project-licenses -i ChillPatcher.Module.LocalFolder\ChillPatcher.Module.LocalFolder.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
+    dotnet-project-licenses -i ChillPatcher.Module.Netease\ChillPatcher.Module.Netease.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
+    dotnet-project-licenses -i ChillPatcher.Module.Bilibili\ChillPatcher.Module.Bilibili.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
+    dotnet-project-licenses -i ChillPatcher.Module.QQMusic\ChillPatcher.Module.QQMusic.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
+    dotnet-project-licenses -i ChillPatcher.OneJS\ChillPatcher.OneJS.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
+    REM Remove JSON summary (only keep license text files)
+    if exist "%NugetLicenseDir%\licenses.json" del /q "%NugetLicenseDir%\licenses.json"
+    echo     NuGet licenses collected.
+) else (
+    echo     WARNING: dotnet-project-licenses not installed, skipping NuGet license collection.
+    echo     Install with: dotnet tool install --global dotnet-project-licenses --version 2.4.0
+)
+
+REM npm package licenses (via license-checker)
+echo   - npm package licenses...
+if not exist "%NpmLicenseDir%" mkdir "%NpmLicenseDir%"
+cd ui\default
+where npx >nul 2>&1
+if %errorlevel% equ 0 (
+    call npx license-checker --production --json --out "%NpmLicenseDir%\licenses.json" >nul 2>&1
+    call npx license-checker --production --csv --out "%NpmLicenseDir%\licenses.csv" >nul 2>&1
+    echo     npm licenses collected.
+) else (
+    echo     WARNING: npx not found, skipping npm license collection.
+)
+cd ..\..
+) else (
+echo   - Licenses: SKIPPED ^(quick build, reusing existing^)
+)
 
 echo.
 echo ========================================
@@ -327,6 +409,8 @@ echo   +-- ChillPatcher.dll            (Main Plugin)
 echo   +-- NAudio.*.dll
 echo   +-- rime.dll                    (RIME library)
 echo   +-- licenses\                   (License files)
+echo   ^|   +-- nuget\                 (NuGet package licenses)
+echo   ^|   +-- npm\                   (npm package licenses)
 echo   +-- native\
 echo   ^|   +-- x64\
 echo   ^|       +-- vcruntime140*.dll   (VC++ Runtime)

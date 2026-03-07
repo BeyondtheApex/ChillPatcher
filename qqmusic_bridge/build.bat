@@ -35,4 +35,4 @@ if %ERRORLEVEL% equ 0 (
     echo Build failed!
 )
 
-pause
+if "%1"=="" pause

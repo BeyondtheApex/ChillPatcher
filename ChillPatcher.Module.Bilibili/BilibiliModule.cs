@@ -25,7 +25,7 @@ namespace ChillPatcher.Module.Bilibili
         public string DisplayName => "Bilibili Music";
         public string Version => "1.0.0";
         public int Priority => 10;
-        public ModuleCapabilities Capabilities => new ModuleCapabilities { CanFavorite = true, ProvidesCover = true };
+        public ModuleCapabilities Capabilities => new ModuleCapabilities { CanDelete = false, CanFavorite = false, CanExclude = false, ProvidesCover = true };
         public MusicSourceType SourceType => MusicSourceType.Stream;
 
         public bool IsReady => true;
