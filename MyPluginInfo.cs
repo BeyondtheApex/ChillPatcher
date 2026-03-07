@@ -4,6 +4,6 @@ namespace ChillPatcher
     {
         public const string PLUGIN_GUID = "com.chillpatcher.plugin";
         public const string PLUGIN_NAME = "ChillPatcher";
-        public const string PLUGIN_VERSION = "1.3.2.2";
+        public const string PLUGIN_VERSION = "1.3.2.3";
     }
 }
