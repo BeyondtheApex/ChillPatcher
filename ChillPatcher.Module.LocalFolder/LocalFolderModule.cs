@@ -61,7 +61,7 @@ namespace ChillPatcher.Module.LocalFolder
 
         public ModuleCapabilities Capabilities => new ModuleCapabilities
         {
-            CanDelete = false,  // 本地文件模块禁用删除
+            CanDelete = true,
             CanFavorite = true,
             CanExclude = true,
             SupportsLiveUpdate = false,
@@ -113,12 +113,12 @@ namespace ChillPatcher.Module.LocalFolder
 
         public void OnEnable()
         {
-            _context.Logger.LogInfo($"[{DisplayName}] 已启用");
+            _context?.Logger.LogInfo($"[{DisplayName}] 已启用");
         }
 
         public void OnDisable()
         {
-            _context.Logger.LogInfo($"[{DisplayName}] 已禁用");
+            _context?.Logger.LogInfo($"[{DisplayName}] 已禁用");
         }
 
         public void OnUnload()
@@ -127,7 +127,7 @@ namespace ChillPatcher.Module.LocalFolder
             _coverLoader?.ClearCache();
             _database?.Dispose();
 
-            _context.Logger.LogInfo($"[{DisplayName}] 已卸载");
+            _context?.Logger.LogInfo($"[{DisplayName}] 已卸载");
         }
 
         #endregion

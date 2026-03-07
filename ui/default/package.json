@@ -1,0 +1,14 @@
+{
+    "scripts": {
+        "build": "node esbuild.mjs --once",
+        "watch": "node esbuild.mjs"
+    },
+    "devDependencies": {
+        "esbuild": "^0.20.0",
+        "license-checker": "^25.0.1"
+    },
+    "dependencies": {
+        "onejs-core": "^2.0.0",
+        "onejs-preact": "^2.0.0"
+    }
+}

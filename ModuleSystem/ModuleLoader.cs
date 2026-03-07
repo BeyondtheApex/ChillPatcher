@@ -90,6 +90,7 @@ namespace ChillPatcher.ModuleSystem
         private readonly ManualLogSource _logger;
         private readonly List<LoadedModule> _loadedModules = new List<LoadedModule>();
         private readonly ModuleContextFactory _contextFactory;
+        private readonly ConfigFile _configFile;
 
         /// <summary>
         /// 已加载的模块列表
@@ -117,14 +118,21 @@ namespace ChillPatcher.ModuleSystem
                 return;
             }
 
-            _instance = new ModuleLoader(modulesPath, contextFactory, logger);
+            // 获取配置文件
+            var pluginInstance = BepInEx.Bootstrap.Chainloader.PluginInfos.Values
+                .FirstOrDefault(p => p.Metadata.GUID == MyPluginInfo.PLUGIN_GUID)?
+                .Instance as BepInEx.BaseUnityPlugin;
+            var configFile = pluginInstance?.Config;
+
+            _instance = new ModuleLoader(modulesPath, contextFactory, logger, configFile);
         }
 
-        private ModuleLoader(string modulesPath, ModuleContextFactory contextFactory, ManualLogSource logger)
+        private ModuleLoader(string modulesPath, ModuleContextFactory contextFactory, ManualLogSource logger, ConfigFile configFile)
         {
             _modulesPath = modulesPath;
             _contextFactory = contextFactory;
             _logger = logger;
+            _configFile = configFile;
 
             // 确保模块目录存在
             if (!Directory.Exists(_modulesPath))
@@ -239,6 +247,22 @@ namespace ChillPatcher.ModuleSystem
         {
             _logger.LogInfo($"初始化模块: {module.DisplayName} ({module.ModuleId})");
 
+            // 检查模块是否在配置中被禁用
+            if (!IsModuleEnabled(module.ModuleId))
+            {
+                _logger.LogInfo($"模块 '{module.DisplayName}' 已在配置中禁用，跳过加载");
+                var skippedModule = new LoadedModule
+                {
+                    Module = module,
+                    Assembly = assembly,
+                    ModuleDirectory = Path.GetDirectoryName(assembly.Location),
+                    LoadedAt = DateTime.Now,
+                    Context = null
+                };
+                _loadedModules.Add(skippedModule);
+                return;
+            }
+
             // 为此模块创建独立的上下文（包含独立的配置管理器）
             var moduleContext = _contextFactory.CreateContext(module.ModuleId);
 
@@ -313,6 +337,19 @@ namespace ChillPatcher.ModuleSystem
             }
 
             _loadedModules.Clear();
+        }
+
+        /// <summary>
+        /// 检查模块是否在配置中启用
+        /// </summary>
+        private bool IsModuleEnabled(string moduleId)
+        {
+            if (_configFile == null) return true;
+            var entry = _configFile.Bind("Modules", $"Enable_{moduleId}", true,
+                $"是否启用模块 {moduleId}（true=启用, false=禁用）");
+            // Bind 会自动创建不存在的条目（默认 true），保存以确保新模块写入配置文件
+            _configFile.Save();
+            return entry.Value;
         }
 
         public void Dispose()

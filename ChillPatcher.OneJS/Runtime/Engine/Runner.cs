@@ -57,8 +57,11 @@ namespace OneJS {
             }
             _lastWriteTime = File.GetLastWriteTime(fullpath); // This needs to be before EvalFile in case EvalFile crashes
             if (runOnStart) {
-                // _engine.EvalFile(entryFile);
-                _evalCoroutine = StartCoroutine(DelayEvalFile());
+                try {
+                    _engine.EvalFile(entryFile);
+                } catch (Exception ex) {
+                    Debug.LogError($"[OneJS Runner] Error evaluating {entryFile}: {ex}");
+                }
             }
         }
 
@@ -83,13 +86,20 @@ namespace OneJS {
             if (_evalCoroutine != null)
                 StopCoroutine(_evalCoroutine);
             _engine.Reload();
-            // _engine.EvalFile(entryFile);
-            _evalCoroutine = StartCoroutine(DelayEvalFile());
+            try {
+                _engine.EvalFile(entryFile);
+            } catch (Exception ex) {
+                Debug.LogError($"[OneJS Runner] Error evaluating {entryFile}: {ex}");
+            }
         }
 
         IEnumerator DelayEvalFile() {
             yield return null;
-            _engine.EvalFile(entryFile);
+            try {
+                _engine.EvalFile(entryFile);
+            } catch (Exception ex) {
+                Debug.LogError($"[OneJS Runner] Error evaluating {entryFile}: {ex}");
+            }
         }
 
         void CheckForChanges() {
