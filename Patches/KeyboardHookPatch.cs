@@ -678,6 +678,87 @@ namespace ChillPatcher.Patches
         }
 
         /// <summary>
+        /// 模拟 Rime 按键（用于 IME 候选词选择等）
+        /// 在调用线程直接操作 Rime，之后更新 context 缓存
+        /// </summary>
+        public static bool SimulateRimeKey(int keycode, int mask)
+        {
+            if (!useRime || rimeEngine == null || !rimeEngine.IsInitialized)
+                return false;
+
+            try
+            {
+                bool processed = rimeEngine.ProcessKey(keycode, mask);
+                if (processed)
+                {
+                    string commit = rimeEngine.GetCommit();
+                    if (!string.IsNullOrEmpty(commit))
+                    {
+                        lock (queueLock)
+                        {
+                            commitQueue.Enqueue(commit);
+                        }
+                    }
+
+                    // 更新 context 缓存
+                    var newContext = rimeEngine.GetContext();
+                    lock (rimeContextCacheLock)
+                    {
+                        cachedRimeContext = newContext;
+                    }
+
+                    // 通知 TMP patch 更新
+                    TMP_InputField_LateUpdate_Patch.RequestRimeUpdate();
+                }
+                return processed;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger.LogError($"[Rime] SimulateRimeKey异常: {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 通过索引选择 Rime 候选词（主线程调用）
+        /// </summary>
+        public static bool SelectRimeCandidate(int index)
+        {
+            if (!useRime || rimeEngine == null || !rimeEngine.IsInitialized)
+                return false;
+
+            try
+            {
+                bool selected = rimeEngine.SelectCandidate(index);
+                if (selected)
+                {
+                    string commit = rimeEngine.GetCommit();
+                    if (!string.IsNullOrEmpty(commit))
+                    {
+                        lock (queueLock)
+                        {
+                            commitQueue.Enqueue(commit);
+                        }
+                    }
+
+                    var newContext = rimeEngine.GetContext();
+                    lock (rimeContextCacheLock)
+                    {
+                        cachedRimeContext = newContext;
+                    }
+
+                    TMP_InputField_LateUpdate_Patch.RequestRimeUpdate();
+                }
+                return selected;
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger.LogError($"[Rime] SelectRimeCandidate异常: {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 清空所有输入（Rime和队列）
         /// </summary>
         public static void ClearAll()
@@ -858,26 +939,6 @@ namespace ChillPatcher.Patches
     }
 
     /// <summary>
-    /// UIToolkit 可交互时清空 RaycastAll，防止 UGUI/InputController 响应。
-    /// WE 模式下跳过：WE 有自己的 UIToolkit/UGUI 优先级机制，
-    /// 强制清空 raycast 可能阻断 WE 的事件路由（PanelEventHandler 等）。
-    /// </summary>
-    [HarmonyPatch(typeof(EventSystem), "RaycastAll")]
-    public class EventSystem_RaycastAll_Patch
-    {
-        static void Postfix(System.Collections.Generic.List<UnityEngine.EventSystems.RaycastResult> raycastResults)
-        {
-            if (PluginConfig.EnableWallpaperEngineMode?.Value == true)
-                return;
-
-            if (UIToolkitEventBlocker.IsBlocking && raycastResults != null)
-            {
-                raycastResults.Clear();
-            }
-        }
-    }
-
-    /// <summary>
     /// Patch TMP_InputField 来注入键盘输入和显示Rime候选词
     /// 
     /// ✅ 使用 Publicizer 直接访问 KeyPressed 方法（消除反射开销）
@@ -892,10 +953,6 @@ namespace ChillPatcher.Patches
         // 需要更新的InputField ID (由Hook直接设置)
         private static volatile int pendingUpdateInstanceId = -1;
         private static readonly object updateLock = new object();
-
-        // 桌面模式：记录 LateUpdate 之前的文本，用于检测标准输入是否已处理
-        [ThreadStatic] private static string _preText;
-        [ThreadStatic] private static int _preCaret;
 
         class PreeditState
         {
@@ -915,13 +972,6 @@ namespace ChillPatcher.Patches
             {
                 pendingUpdateInstanceId = -2; // -2表示全局更新(不限定InputField)
             }
-        }
-
-        static void Prefix(TMP_InputField __instance)
-        {
-            // 记录 LateUpdate 之前的文本状态，用于检测标准 IMGUI 输入是否工作
-            _preText = __instance.text;
-            _preCaret = __instance.caretPosition;
         }
 
         static void Postfix(TMP_InputField __instance)
@@ -945,6 +995,9 @@ namespace ChillPatcher.Patches
                         // 清理Rime composition和队列
                         KeyboardHookPatch.ClearAll();
                         
+                        // 清除 TMP 屏幕坐标缓存
+                        UIToolkitInputDispatcher.ClearFocusedTMPScreenRect();
+                        
                         Plugin.Logger.LogInfo($"[InputField #{instanceId}] 失焦,已清理所有状态和队列");
                     }
                     return;
@@ -956,6 +1009,54 @@ namespace ChillPatcher.Patches
                     state = new PreeditState();
                     preeditStates[instanceId] = state;
                 }
+
+                // 缓存当前获焦 TMP 的光标屏幕坐标供 IME 候选窗定位
+                try
+                {
+                    var textComponent = __instance.textComponent;
+                    int caretPos = __instance.caretPosition;
+                    
+                    if (textComponent != null && textComponent.textInfo != null 
+                        && textComponent.textInfo.characterCount > 0 && caretPos >= 0)
+                    {
+                        // 将 caretPos 限制在有效范围内
+                        int charIndex = Mathf.Min(caretPos, textComponent.textInfo.characterCount - 1);
+                        var charInfo = textComponent.textInfo.characterInfo[charIndex];
+                        
+                        // 光标位置：如果 caret 在文字后面，取字符右边缘；否则取左边缘
+                        float localX = (caretPos > charIndex) ? charInfo.topRight.x : charInfo.bottomLeft.x;
+                        float localY = charInfo.bottomLeft.y;
+                        
+                        // TMP 本地坐标 → 世界坐标 → 屏幕坐标
+                        Vector3 worldPos = textComponent.transform.TransformPoint(new Vector3(localX, localY, 0));
+                        
+                        // 对 ScreenSpaceOverlay Canvas，worldPos 已经是屏幕像素 (Y-up)
+                        // 生成一个小 rect 代表光标位置（宽=1，高=行高）
+                        float lineHeight = charInfo.topRight.y - charInfo.bottomLeft.y;
+                        Vector3 worldTop = textComponent.transform.TransformPoint(
+                            new Vector3(localX, charInfo.topRight.y, 0));
+                        float screenLineHeight = Mathf.Abs(worldTop.y - worldPos.y);
+                        
+                        var caretRect = new Rect(worldPos.x, worldPos.y, 1f, screenLineHeight);
+                        UIToolkitInputDispatcher.SetFocusedTMPScreenRect(caretRect);
+                    }
+                    else
+                    {
+                        // fallback：使用整个输入框 rect
+                        var rt = __instance.GetComponent<RectTransform>();
+                        if (rt != null)
+                        {
+                            Vector3[] corners = new Vector3[4];
+                            rt.GetWorldCorners(corners);
+                            var screenRect = new Rect(
+                                corners[0].x, corners[0].y,
+                                corners[2].x - corners[0].x,
+                                corners[1].y - corners[0].y);
+                            UIToolkitInputDispatcher.SetFocusedTMPScreenRect(screenRect);
+                        }
+                    }
+                }
+                catch { /* 获焦坐标非关键路径 */ }
 
                 // 检查是否有pending的更新请求(由Hook触发)
                 bool shouldUpdateRime = false;
@@ -984,9 +1085,14 @@ namespace ChillPatcher.Patches
                             state.savedBaseText = __instance.text.Substring(0, caret); // 光标前的文本
                             state.savedTextAfterCaret = caret < __instance.text.Length ? __instance.text.Substring(caret) : ""; // 光标后的文本
                             state.inPreeditMode = true;
+                            // 锁定候选窗位置，避免打字时跳动
+                            UIToolkitInputDispatcher.LockPosition();
                             Plugin.Logger.LogInfo($"[Preedit #{instanceId}] 进入模式, caret={caret}, before='{state.savedBaseText}', after='{state.savedTextAfterCaret}'");
                         }
 
+                        // 行内 preedit 预览已禁用，使用图形化 IME 候选面板替代
+                        // 保留代码以备后续可选启用
+                        #if false
                         // 生成新的preedit显示
                         string currentPreeditDisplay = rimeContext.GetPreeditWithCandidates();
                         
@@ -1007,8 +1113,9 @@ namespace ChillPatcher.Patches
                         __instance.selectionAnchorPosition = targetCaret;
                         __instance.selectionFocusPosition = targetCaret;
                         __instance.ForceLabelUpdate();
+                        #endif
                         
-                        return; // preedit显示中，不处理提交
+                        return; // preedit进行中，不处理提交
                     }
                     else
                     {
@@ -1021,6 +1128,8 @@ namespace ChillPatcher.Patches
                             state.savedBaseText = "";
                             state.savedTextAfterCaret = "";
                             state.inPreeditMode = false;
+                            // 解锁候选窗位置，下次 preedit 开始时重新捕获
+                            UIToolkitInputDispatcher.UnlockPosition();
                         }
                     }
                 }
@@ -1128,37 +1237,6 @@ namespace ChillPatcher.Patches
                     }
                 }
 
-                // 5. 桌面模式回退：UIToolkit 可能抢占 IMGUI 键盘事件，
-                // 导致 TMP 的 OnUpdateSelected 读不到字符。
-                // 用 Input.inputString 补偿（仅在标准处理未生效时注入）。
-                if (PluginConfig.EnableWallpaperEngineMode?.Value != true)
-                {
-                    string inputStr = UnityEngine.Input.inputString;
-                    if (!string.IsNullOrEmpty(inputStr) 
-                        && __instance.text == _preText 
-                        && __instance.caretPosition == _preCaret)
-                    {
-                        foreach (char c in inputStr)
-                        {
-                            UnityEngine.Event evt = new UnityEngine.Event();
-                            evt.type = UnityEngine.EventType.KeyDown;
-
-                            if (c == '\b')
-                            {
-                                evt.keyCode = KeyCode.Backspace;
-                                evt.character = '\0';
-                            }
-                            else
-                            {
-                                evt.keyCode = KeyCode.None;
-                                evt.character = c;
-                            }
-
-                            __instance.KeyPressed(evt);
-                        }
-                        __instance.ForceLabelUpdate();
-                    }
-                }
             }
             catch (Exception ex)
             {

@@ -108,9 +108,11 @@ if %errorlevel% neq 0 (
 REM ========== Step 7.5: Build OneJS UI (esbuild) ==========
 echo.
 echo [7.5/9] Building OneJS UI (Preact + esbuild)...
+
+REM -- ui/default --
 cd ui\default
 if not exist "node_modules" (
-    echo   - Installing npm dependencies...
+    echo   - [default] Installing npm dependencies...
     call npm install
     if %errorlevel% neq 0 (
         echo ERROR: npm install failed!
@@ -118,7 +120,27 @@ if not exist "node_modules" (
         exit /b 1
     )
 )
-echo   - Bundling UI with esbuild...
+echo   - [default] Bundling UI with esbuild...
+call npm run build
+if %errorlevel% neq 0 (
+    echo ERROR: esbuild build failed!
+    cd ..\..
+    exit /b 1
+)
+cd ..\..
+
+REM -- ui/window-manager --
+cd ui\window-manager
+if not exist "node_modules" (
+    echo   - [window-manager] Installing npm dependencies...
+    call npm install
+    if %errorlevel% neq 0 (
+        echo ERROR: npm install failed!
+        cd ..\..
+        exit /b 1
+    )
+)
+echo   - [window-manager] Bundling UI with esbuild...
 call npm run build
 if %errorlevel% neq 0 (
     echo ERROR: esbuild build failed!

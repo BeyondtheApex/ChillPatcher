@@ -1371,39 +1371,6 @@ function doRender(props, state, context) {
   return this.constructor(props, context);
 }
 
-// node_modules/onejs-preact/render.js
-var cleanupMap = /* @__PURE__ */ new WeakMap();
-function render(vnode, parentDom, replaceNode) {
-  if (typeof globalThis.ONEJS_WEBGL !== "undefined" && globalThis.ONEJS_WEBGL && vnode !== null) {
-    render(null, parentDom);
-  }
-  if (typeof onejs !== "undefined" && parentDom && !cleanupMap.has(parentDom)) {
-    onejs.add_onDispose(() => render(null, parentDom));
-    cleanupMap.set(parentDom, true);
-  }
-  if (options_default._root)
-    options_default._root(vnode, parentDom);
-  let isHydrating = typeof replaceNode == "function";
-  let oldVNode = isHydrating ? null : replaceNode && replaceNode._children || parentDom._children;
-  vnode = (!isHydrating && replaceNode || parentDom)._children = createElement(Fragment, null, [vnode]);
-  let commitQueue = [], refQueue = [];
-  diff(
-    parentDom,
-    // Determine the new vnode tree and store it on the DOM element on
-    // our custom `_children` property.
-    vnode,
-    oldVNode || EMPTY_OBJ,
-    EMPTY_OBJ,
-    parentDom.namespaceURI,
-    !isHydrating && replaceNode ? [replaceNode] : oldVNode ? null : parentDom.firstChild ? slice.call(parentDom.childNodes) : null,
-    commitQueue,
-    !isHydrating && replaceNode ? replaceNode : oldVNode ? oldVNode._dom : parentDom.firstChild,
-    isHydrating,
-    refQueue
-  );
-  commitRoot(commitQueue, vnode, refQueue);
-}
-
 // node_modules/onejs-preact/hooks/index.js
 var currentIndex;
 var currentComponent;
@@ -1607,10 +1574,6 @@ function useMemo(factory, args) {
   }
   return state._value;
 }
-function useCallback(callback, args) {
-  currentHook = 8;
-  return useMemo(() => callback, args);
-}
 function flushAfterPaintEffects() {
   let component;
   while (component = afterPaintEffects.shift()) {
@@ -1667,1257 +1630,340 @@ function invokeOrReturn(arg, f) {
   return typeof f == "function" ? f(arg) : f;
 }
 
-// components/theme.ts
-var theme = {
-  bg: "#1a1a2eee",
-  bgPanel: "#16213e",
-  bgCard: "#0f3460",
-  bgHover: "#1a4080",
-  accent: "#4FC3F7",
-  accentDark: "#0288D1",
-  text: "#E0E0E0",
-  textMuted: "#9E9E9E",
-  textBright: "#FFFFFF",
-  success: "#66BB6A",
-  danger: "#EF5350",
-  warning: "#FFA726",
-  border: "#2a2a4a",
-  radius: 8,
-  radiusLg: 12
+// plugins/weather/index.tsx
+var weatherLat = chill.config.appGetOrCreate("Weather.Latitude", 39.9, "\u5929\u6C14\u67E5\u8BE2\u7EAC\u5EA6 (\u4F8B: 39.9 = \u5317\u4EAC)");
+var weatherLon = chill.config.appGetOrCreate("Weather.Longitude", 116.4, "\u5929\u6C14\u67E5\u8BE2\u7ECF\u5EA6 (\u4F8B: 116.4 = \u5317\u4EAC)");
+var weatherLocation = chill.config.appGetOrCreate("Weather.LocationName", "\u5317\u4EAC", "\u663E\u793A\u7684\u5730\u70B9\u540D\u79F0");
+var WEATHER_API = `https://api.open-meteo.com/v1/forecast?latitude=${weatherLat}&longitude=${weatherLon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`;
+var getWeatherInfo = (code) => {
+  switch (true) {
+    case code === 0:
+      return { text: "\u6674\u6717", icon: "\u{F0599}", bg: "#2563eb" };
+    case code === 1:
+      return { text: "\u6674\u95F4\u591A\u4E91", icon: "\u{F0595}", bg: "#3b82f6" };
+    case code === 2:
+      return { text: "\u591A\u4E91", icon: "\u{F0590}", bg: "#475569" };
+    case code === 3:
+      return { text: "\u9634\u5929", icon: "\u{F015F}", bg: "#334155" };
+    case (code === 45 || code === 48):
+      return { text: "\u96FE", icon: "\u{F0591}", bg: "#64748b" };
+    case [51, 53, 55, 56, 57].includes(code):
+      return { text: "\u6BDB\u6BDB\u96E8", icon: "\u{F0597}", bg: "#2c4a6b" };
+    case (code === 61 || code === 63):
+      return { text: "\u5C0F\u5230\u4E2D\u96E8", icon: "\u{F0597}", bg: "#1e3a5f" };
+    case (code === 65 || code === 66 || code === 67):
+      return { text: "\u5927\u96E8/\u66B4\u96E8", icon: "\u{F0596}", bg: "#152a45" };
+    case [80, 81, 82].includes(code):
+      return { text: "\u9635\u96E8", icon: "\u{F0597}", bg: "#224166" };
+    case (code === 71 || code === 73):
+      return { text: "\u5C0F\u5230\u4E2D\u96EA", icon: "\u{F0598}", bg: "#4a6078" };
+    case (code === 75 || code === 77 || code === 85 || code === 86):
+      return { text: "\u5927\u96EA/\u66B4\u96EA", icon: "\u{F0F36}", bg: "#3a4c61" };
+    case code === 95:
+      return { text: "\u96F7\u66B4", icon: "\u{F0593}", bg: "#1e293b" };
+    case (code === 96 || code === 99):
+      return { text: "\u96F7\u9635\u96E8/\u51B0\u96F9", icon: "\u{F0592}", bg: "#0f172a" };
+    default:
+      return { text: "\u672A\u77E5", icon: "\u{F0A39}", bg: "#6b7280" };
+  }
 };
-
-// components/TabContainer.tsx
-var TabContainer = ({ tabs, defaultTab }) => {
-  const [activeTab, setActiveTab] = useState(defaultTab || tabs[0]?.id);
-  const current = tabs.find((t) => t.id === activeTab);
-  return /* @__PURE__ */ createElement("div", { style: { flexGrow: 1, flexDirection: "Column", display: "Flex" } }, /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    marginBottom: 12,
-    paddingLeft: 4,
-    paddingRight: 4
-  } }, tabs.map((tab) => /* @__PURE__ */ createElement(
-    "div",
-    {
-      key: tab.id,
-      style: {
-        paddingTop: 8,
-        paddingBottom: 8,
-        paddingLeft: 16,
-        paddingRight: 16,
-        marginRight: 4,
-        fontSize: 14,
-        color: activeTab === tab.id ? theme.accent : theme.textMuted,
-        borderBottomWidth: activeTab === tab.id ? 2 : 0,
-        borderBottomColor: theme.accent
-      },
-      onClick: () => setActiveTab(tab.id)
-    },
-    tab.label
-  ))), /* @__PURE__ */ createElement("div", { style: {
-    flexGrow: 1,
-    paddingLeft: 4,
-    paddingRight: 4
-  } }, current?.content()));
+var getDayName = (dateStr, index) => {
+  if (index === 0)
+    return "\u4ECA\u5929";
+  const date = new Date(dateStr);
+  const days = ["\u5468\u65E5", "\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D"];
+  return days[date.getDay()];
 };
-
-// components/utils.ts
-function parse(json) {
-  if (json === "null" || json == null)
-    return null;
-  return JSON.parse(json);
-}
-
-// components/Pagination.tsx
-var Pagination = ({ page, totalPages, onPageChange }) => {
-  if (totalPages <= 1)
-    return null;
-  return /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    justifyContent: "Center",
-    alignItems: "Center",
-    marginTop: 8
-  } }, /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        fontSize: 13,
-        color: page > 0 ? theme.accent : theme.textMuted,
-        paddingLeft: 12,
-        paddingRight: 12,
-        paddingTop: 6,
-        paddingBottom: 6
-      },
-      onClick: () => {
-        if (page > 0)
-          onPageChange(page - 1);
-      }
-    },
-    `\u2039 \u4E0A\u4E00\u9875`
-  ), /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: theme.textMuted, paddingLeft: 8, paddingRight: 8 } }, `${page + 1} / ${totalPages}`), /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        fontSize: 13,
-        color: page < totalPages - 1 ? theme.accent : theme.textMuted,
-        paddingLeft: 12,
-        paddingRight: 12,
-        paddingTop: 6,
-        paddingBottom: 6
-      },
-      onClick: () => {
-        if (page < totalPages - 1)
-          onPageChange(page + 1);
-      }
-    },
-    `\u4E0B\u4E00\u9875 \u203A`
-  ));
-};
-
-// components/SettingsPanel.tsx
-var SETTINGS_PER_PAGE = 6;
-var POLL_INTERVAL = 3e3;
-var SettingsPanel = () => {
-  const [sections, setSections] = useState([]);
-  const [activeSection, setActiveSection] = useState("");
-  const [entries, setEntries] = useState([]);
-  const [page, setPage] = useState(0);
-  const lastJson = useRef("");
+function useAnimationFrame(callback) {
+  const phaseRef = useRef(0);
   useEffect(() => {
-    try {
-      const secs = parse(chill.config.getSections()) || [];
-      setSections(secs);
-      if (secs.length > 0) {
-        setActiveSection(secs[0]);
-      }
-    } catch (e) {
-      console.error("SettingsPanel init error:", e);
-    }
-  }, []);
-  const refreshEntries = (section) => {
-    if (!section)
-      return;
-    try {
-      const json = chill.config.getAll(section);
-      if (json === lastJson.current)
+    let mounted = true;
+    let frameId;
+    const loop = () => {
+      if (!mounted)
         return;
-      lastJson.current = json;
-      setEntries(parse(json) || []);
-    } catch (e) {
-      console.error("SettingsPanel entries error:", e);
-    }
-  };
-  useEffect(() => {
-    if (!activeSection)
-      return;
-    lastJson.current = "";
-    refreshEntries(activeSection);
-    setPage(0);
-    const timer = setInterval(() => refreshEntries(activeSection), POLL_INTERVAL);
-    return () => clearInterval(timer);
-  }, [activeSection]);
-  const handleChange = (entry, newValue) => {
-    try {
-      chill.config.set(entry.section, entry.key, newValue);
-      chill.config.save();
-      lastJson.current = "";
-      refreshEntries(activeSection);
-    } catch (e) {
-      console.error("SettingsPanel change error:", e);
-    }
-  };
-  const totalPages = Math.max(1, Math.ceil(entries.length / SETTINGS_PER_PAGE));
-  const pageEntries = entries.slice(page * SETTINGS_PER_PAGE, (page + 1) * SETTINGS_PER_PAGE);
-  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    flexWrap: "Wrap",
-    marginBottom: 12
-  } }, sections.map((sec) => /* @__PURE__ */ createElement(
-    "div",
-    {
-      key: sec,
-      style: {
-        paddingTop: 4,
-        paddingBottom: 4,
-        paddingLeft: 12,
-        paddingRight: 12,
-        marginRight: 6,
-        marginBottom: 4,
-        fontSize: 12,
-        borderRadius: theme.radius,
-        backgroundColor: activeSection === sec ? theme.accent : theme.bgCard,
-        color: activeSection === sec ? theme.textBright : theme.textMuted
-      },
-      onClick: () => setActiveSection(sec)
-    },
-    sec
-  ))), /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, pageEntries.map((entry) => /* @__PURE__ */ createElement(
-    ConfigItem,
-    {
-      key: `${entry.section}::${entry.key}`,
-      entry,
-      onChange: handleChange
-    }
-  ))), /* @__PURE__ */ createElement(Pagination, { page, totalPages, onPageChange: setPage }));
-};
-var ConfigItem = ({ entry, onChange }) => {
-  return /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Column",
-    display: "Flex",
-    backgroundColor: theme.bgCard,
-    borderRadius: theme.radius,
-    paddingTop: 10,
-    paddingBottom: 10,
-    paddingLeft: 14,
-    paddingRight: 14,
-    marginBottom: 6
-  } }, /* @__PURE__ */ createElement("div", { style: { flexDirection: "Row", display: "Flex", justifyContent: "SpaceBetween", alignItems: "Center" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: theme.text } }, entry.key), /* @__PURE__ */ createElement(ConfigValueEditor, { entry, onChange })), entry.description ? /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted, marginTop: 4 } }, entry.description.split("\n")[0]) : null);
-};
-var ConfigValueEditor = ({ entry, onChange }) => {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  if (entry.type === "bool") {
-    return /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          paddingTop: 3,
-          paddingBottom: 3,
-          paddingLeft: 10,
-          paddingRight: 10,
-          borderRadius: 4,
-          fontSize: 12,
-          backgroundColor: entry.value ? theme.success : theme.danger,
-          color: theme.textBright
-        },
-        onClick: () => onChange(entry, !entry.value)
-      },
-      entry.value ? "ON" : "OFF"
-    );
-  }
-  if (editing) {
-    const confirm = () => {
-      const val = entry.type === "int" || entry.type === "float" || entry.type === "double" ? Number(draft) : draft;
-      if (entry.type === "int" || entry.type === "float" || entry.type === "double") {
-        if (isNaN(val)) {
-          setEditing(false);
-          return;
-        }
-      }
-      onChange(entry, val);
-      setEditing(false);
+      phaseRef.current += 1;
+      callback(phaseRef.current);
+      frameId = requestAnimationFrame(loop);
     };
-    return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Row", display: "Flex", alignItems: "Center" } }, /* @__PURE__ */ createElement(
-      "textfield",
-      {
-        value: draft,
-        onValueChanged: (e) => setDraft(e.newValue ?? e.target?.value ?? draft),
-        onKeyDown: (e) => {
-          if (e.keyCode === 13)
-            confirm();
-        },
-        style: {
-          fontSize: 12,
-          color: theme.text,
-          backgroundColor: theme.bg,
-          borderRadius: 4,
-          paddingLeft: 6,
-          paddingRight: 6,
-          paddingTop: 2,
-          paddingBottom: 2,
-          minWidth: 80
-        }
-      }
-    ), /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          fontSize: 11,
-          color: theme.success,
-          paddingLeft: 6
-        },
-        onClick: confirm
-      },
-      `\u2713`
-    ), /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          fontSize: 11,
-          color: theme.danger,
-          paddingLeft: 4
-        },
-        onClick: () => setEditing(false)
-      },
-      `\u2715`
-    ));
-  }
+    frameId = requestAnimationFrame(loop);
+    return () => {
+      mounted = false;
+      cancelAnimationFrame(frameId);
+    };
+  }, []);
+}
+var FloatingIcon = ({ icon, size = 52 }) => {
+  const [offsetY, setOffsetY] = useState(0);
+  useAnimationFrame((frame) => {
+    setOffsetY(Math.sin(frame * 0.03) * 4);
+  });
   return /* @__PURE__ */ createElement(
     "div",
     {
       style: {
-        fontSize: 12,
-        color: theme.accent,
-        paddingLeft: 8
-      },
-      onClick: () => {
-        setDraft(String(entry.value));
-        setEditing(true);
+        fontSize: size,
+        color: "rgba(255,255,255,0.9)",
+        translate: `0 ${Math.round(offsetY)}px`
       }
     },
-    String(entry.value)
+    icon
   );
 };
-
-// components/AboutPanel.tsx
-var AboutPanel = () => {
-  let version = "unknown";
-  let pluginPathVal = "N/A";
-  try {
-    version = String(chill.version || "unknown").trim();
-    pluginPathVal = String(chill.pluginPath || "N/A").trim();
-  } catch (e) {
-    console.error("AboutPanel init error:", e);
-  }
-  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", alignItems: "Center", paddingTop: 40 } }, /* @__PURE__ */ createElement("div", { style: {
-    fontSize: 28,
-    color: theme.accent,
-    marginBottom: 8
-  } }, "ChillPatcher"), /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: theme.textMuted, marginBottom: 24 } }, `v${version}`), /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Column",
-    display: "Flex",
-    backgroundColor: theme.bgCard,
-    borderRadius: theme.radiusLg,
-    paddingTop: 20,
-    paddingBottom: 20,
-    paddingLeft: 24,
-    paddingRight: 24,
-    maxWidth: 400,
-    width: "100%"
-  } }, /* @__PURE__ */ createElement(InfoRow, { label: "Plugin GUID", value: "com.chillpatcher.core" }), /* @__PURE__ */ createElement(InfoRow, { label: "Runtime", value: ".NET Framework 4.7.2" }), /* @__PURE__ */ createElement(InfoRow, { label: "UI Engine", value: "OneJS + Preact" }), /* @__PURE__ */ createElement(InfoRow, { label: "Framework", value: "BepInEx 5" }), /* @__PURE__ */ createElement(InfoRow, { label: "Plugin Path", value: pluginPathVal })), /* @__PURE__ */ createElement("div", { style: {
-    fontSize: 12,
-    color: theme.textMuted,
-    marginTop: 24
-  } }, 'A modding framework for "Chill With You"'));
-};
-var InfoRow = ({ label, value }) => /* @__PURE__ */ createElement("div", { style: {
-  flexDirection: "Row",
-  display: "Flex",
-  justifyContent: "SpaceBetween",
-  paddingTop: 6,
-  paddingBottom: 6,
-  borderBottomWidth: 1,
-  borderBottomColor: theme.border
-} }, /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: theme.textMuted } }, label), /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: theme.text, maxWidth: 240 } }, value));
-
-// components/LicensesPanel.tsx
-var ITEMS_PER_PAGE = 8;
-var LicensesPanel = () => {
-  const [currentPath, setCurrentPath] = useState("licenses");
-  const [items, setItems] = useState([]);
-  const [page, setPage] = useState(0);
-  const [selected, setSelected] = useState(null);
-  const [content, setContent] = useState("");
-  useEffect(() => {
-    loadDirectory(currentPath);
-    setPage(0);
-  }, [currentPath]);
-  const loadDirectory = (dirPath) => {
-    try {
-      const dirs = parse(chill.io.listDirs(dirPath)) || [];
-      const files = parse(chill.io.listFiles(dirPath)) || [];
-      const combined = [
-        ...dirs.map((d) => ({ type: "dir", name: d, displayName: d })),
-        ...files.map((f) => ({ type: "file", name: f.name, displayName: f.nameWithoutExt, size: f.size }))
-      ];
-      setItems(combined);
-    } catch (e) {
-      console.error("LicensesPanel load error:", e);
-      setItems([]);
-    }
-  };
-  const enterDir = (dirName) => {
-    setCurrentPath(`${currentPath}/${dirName}`);
-  };
-  const goUp = () => {
-    const idx = currentPath.lastIndexOf("/");
-    if (idx > 0)
-      setCurrentPath(currentPath.substring(0, idx));
-  };
-  const selectFile = (fileName) => {
-    setSelected(fileName);
-    try {
-      const text = chill.io.readText(`${currentPath}/${fileName}`);
-      setContent(text || "\u65E0\u6CD5\u8BFB\u53D6\u6587\u4EF6\u5185\u5BB9");
-    } catch (e) {
-      console.error("LicensesPanel read error:", e);
-      setContent("\u8BFB\u53D6\u5931\u8D25");
-    }
-  };
-  if (selected) {
-    return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, /* @__PURE__ */ createElement(
-      LicenseDetail,
-      {
-        fileName: selected,
-        content,
-        onBack: () => setSelected(null)
-      }
-    ));
-  }
-  const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
-  const pageItems = items.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE);
-  const isSubDir = currentPath !== "licenses";
-  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, isSubDir && /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: { fontSize: 13, color: theme.accent, marginBottom: 6 },
-      onClick: goUp
-    },
-    `\u2190 ${currentPath.substring(currentPath.lastIndexOf("/") + 1)}`
-  ), /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, pageItems.length === 0 ? /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: theme.textMuted, paddingTop: 20 } }, `\u8BE5\u76EE\u5F55\u4E0B\u672A\u627E\u5230\u8BB8\u53EF\u8BC1\u6587\u4EF6`) : pageItems.map((item) => /* @__PURE__ */ createElement(
-    "div",
-    {
-      key: `${item.type}-${item.name}`,
-      style: {
-        flexDirection: "Row",
-        display: "Flex",
-        justifyContent: "SpaceBetween",
-        alignItems: "Center",
-        backgroundColor: theme.bgCard,
-        borderRadius: theme.radius,
-        paddingTop: 10,
-        paddingBottom: 10,
-        paddingLeft: 14,
-        paddingRight: 14,
-        marginBottom: 4
-      },
-      onClick: () => item.type === "dir" ? enterDir(item.name) : selectFile(item.name)
-    },
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: item.type === "dir" ? theme.accent : theme.text } }, item.type === "dir" ? `\uF07B ${item.displayName}` : item.displayName),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted } }, item.type === "dir" ? "" : formatSize(item.size))
-  ))), /* @__PURE__ */ createElement(Pagination, { page, totalPages, onPageChange: setPage }));
-};
-var LINES_PER_PAGE = 20;
-var LicenseDetail = ({ fileName, content, onBack }) => {
-  const [page, setPage] = useState(0);
-  const lines = content.split("\n");
-  const totalPages = Math.max(1, Math.ceil(lines.length / LINES_PER_PAGE));
-  const pageLines = lines.slice(page * LINES_PER_PAGE, (page + 1) * LINES_PER_PAGE);
-  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    justifyContent: "SpaceBetween",
-    alignItems: "Center",
-    marginBottom: 8
-  } }, /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: { fontSize: 13, color: theme.accent },
-      onClick: onBack
-    },
-    `\u2190 \u8FD4\u56DE\u5217\u8868`
-  ), /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: theme.textMuted } }, fileName)), /* @__PURE__ */ createElement("div", { style: {
-    flexGrow: 1,
-    backgroundColor: theme.bgCard,
-    borderRadius: theme.radius,
-    paddingTop: 12,
-    paddingBottom: 12,
-    paddingLeft: 14,
-    paddingRight: 14,
-    flexDirection: "Column",
-    display: "Flex"
-  } }, pageLines.map((line, i) => /* @__PURE__ */ createElement("div", { key: i, style: { fontSize: 11, color: theme.textMuted, minHeight: 14 } }, line || " "))), /* @__PURE__ */ createElement(Pagination, { page, totalPages, onPageChange: setPage }));
-};
-function formatSize(bytes) {
-  if (bytes < 1024)
-    return `${bytes} B`;
-  if (bytes < 1024 * 1024)
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-// components/ModulesPanel.tsx
-var MODULES_PER_PAGE = 4;
-var POLL_INTERVAL2 = 3e3;
-var ModulesPanel = () => {
-  const [modules, setModules] = useState([]);
-  const [page, setPage] = useState(0);
-  const lastJson = useRef("");
-  const refresh = () => {
-    try {
-      const json = chill.modules.getAll();
-      if (json === lastJson.current)
-        return;
-      lastJson.current = json;
-      setModules(parse(json) || []);
-    } catch (e) {
-      console.error("ModulesPanel refresh error:", e);
-    }
-  };
-  useEffect(() => {
-    refresh();
-    const timer = setInterval(refresh, POLL_INTERVAL2);
-    return () => clearInterval(timer);
-  }, []);
-  const toggle = (mod) => {
-    try {
-      if (mod.enabled) {
-        chill.modules.disable(mod.moduleId);
-      } else {
-        chill.modules.enable(mod.moduleId);
-      }
-      refresh();
-    } catch (e) {
-      console.error("ModulesPanel toggle error:", e);
-    }
-  };
-  const totalPages = Math.max(1, Math.ceil(modules.length / MODULES_PER_PAGE));
-  const pageModules = modules.slice(page * MODULES_PER_PAGE, (page + 1) * MODULES_PER_PAGE);
-  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: theme.textMuted, marginBottom: 8 } }, `\u5DF2\u6CE8\u518C ${modules.length} \u4E2A\u6A21\u5757\uFF08\u7981\u7528/\u542F\u7528\u540E\u9700\u91CD\u542F\u6E38\u620F\u751F\u6548\uFF09`), pageModules.map((mod) => /* @__PURE__ */ createElement(ModuleCard, { key: mod.moduleId, module: mod, onToggle: () => toggle(mod) })), /* @__PURE__ */ createElement(Pagination, { page, totalPages, onPageChange: setPage }));
-};
-var ModuleCard = ({ module: module2, onToggle }) => /* @__PURE__ */ createElement("div", { style: {
-  flexDirection: "Column",
-  display: "Flex",
-  backgroundColor: theme.bgCard,
-  borderRadius: theme.radius,
-  paddingTop: 12,
-  paddingBottom: 12,
-  paddingLeft: 14,
-  paddingRight: 14,
-  marginBottom: 6
-} }, /* @__PURE__ */ createElement("div", { style: {
-  flexDirection: "Row",
-  display: "Flex",
-  justifyContent: "SpaceBetween",
-  alignItems: "Center",
-  marginBottom: 6
-} }, /* @__PURE__ */ createElement("div", { style: { flexDirection: "Row", display: "Flex", alignItems: "Center" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: theme.text, marginRight: 8 } }, module2.displayName), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted } }, `v${module2.version}`)), /* @__PURE__ */ createElement(
-  "div",
-  {
-    style: {
-      paddingTop: 3,
-      paddingBottom: 3,
-      paddingLeft: 10,
-      paddingRight: 10,
-      borderRadius: 4,
-      fontSize: 11,
-      backgroundColor: module2.enabled ? theme.success : theme.danger,
-      color: theme.textBright
-    },
-    onClick: onToggle
-  },
-  module2.enabled ? "\u542F\u7528" : "\u7981\u7528"
-)), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted, marginBottom: 4 } }, module2.moduleId), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted } }, `\u4F18\u5148\u7EA7: ${module2.priority} \xB7 \u52A0\u8F7D\u4E8E ${module2.loadedAt}`), module2.capabilities ? /* @__PURE__ */ createElement("div", { style: {
-  flexDirection: "Row",
-  display: "Flex",
-  flexWrap: "Wrap",
-  marginTop: 6
-} }, module2.capabilities.canDelete && /* @__PURE__ */ createElement(CapBadge, { label: "\u5220\u9664" }), module2.capabilities.canFavorite && /* @__PURE__ */ createElement(CapBadge, { label: "\u6536\u85CF" }), module2.capabilities.canExclude && /* @__PURE__ */ createElement(CapBadge, { label: "\u6392\u9664" }), module2.capabilities.supportsLiveUpdate && /* @__PURE__ */ createElement(CapBadge, { label: "\u70ED\u66F4\u65B0" }), module2.capabilities.providesCover && /* @__PURE__ */ createElement(CapBadge, { label: "\u5C01\u9762" }), module2.capabilities.providesAlbum && /* @__PURE__ */ createElement(CapBadge, { label: "\u4E13\u8F91" })) : null);
-var CapBadge = ({ label }) => /* @__PURE__ */ createElement("div", { style: {
-  fontSize: 10,
-  color: theme.accent,
-  backgroundColor: theme.bg,
-  borderRadius: 3,
-  paddingTop: 2,
-  paddingBottom: 2,
-  paddingLeft: 6,
-  paddingRight: 6,
-  marginRight: 4,
-  marginBottom: 2
-} }, label);
-
-// components/UIExplorerPanel.tsx
-var ITEMS_PER_PAGE2 = 8;
-var UIExplorerPanel = () => {
-  const [currentPath, setCurrentPath] = useState(null);
-  const [children, setChildren] = useState([]);
-  const [page, setPage] = useState(0);
-  const [error, setError] = useState(null);
-  const refresh = useCallback(() => {
-    try {
-      setError(null);
-      if (currentPath === null) {
-        const json = chill.ui.getRoots();
-        const roots = parse(json) || [];
-        setChildren(roots.map((r) => ({ ...r, path: r.name })));
-      } else {
-        const json = chill.ui.getTree(currentPath, 1);
-        const node = parse(json);
-        if (!node) {
-          setError(`\u8DEF\u5F84\u4E0D\u5B58\u5728: ${currentPath}`);
-          setChildren([]);
-          return;
-        }
-        const kids = (node.children || []).map((c) => ({
-          name: c.name,
-          path: c.path,
-          active: c.active,
-          activeInHierarchy: c.activeInHierarchy,
-          childCount: c.childCount || 0,
-          alpha: c.alpha,
-          interactables: c.interactables
-        }));
-        setChildren(kids);
-      }
-    } catch (e) {
-      setError(String(e));
-      setChildren([]);
-    }
-  }, [currentPath]);
-  useEffect(() => {
-    refresh();
-    setPage(0);
-  }, [currentPath]);
-  const navigateTo = (path) => {
-    setCurrentPath(path);
-  };
-  const navigateUp = () => {
-    if (currentPath === null)
-      return;
-    const idx = currentPath.lastIndexOf("/");
-    if (idx <= 0) {
-      setCurrentPath(null);
-    } else {
-      setCurrentPath(currentPath.substring(0, idx));
-    }
-  };
-  const toggleNode = (node) => {
-    try {
-      const path = node.path || node.name;
-      chill.ui.setActive(path, !node.active);
-      refresh();
-    } catch (e) {
-      console.error("Toggle error:", e);
-    }
-  };
-  const pathSegments = currentPath ? currentPath.split("/") : [];
-  const totalPages = Math.max(1, Math.ceil(children.length / ITEMS_PER_PAGE2));
-  const pageItems = children.slice(page * ITEMS_PER_PAGE2, (page + 1) * ITEMS_PER_PAGE2);
-  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    flexWrap: "Wrap",
-    alignItems: "Center",
-    marginBottom: 8,
-    paddingTop: 4,
-    paddingBottom: 4,
-    paddingLeft: 8,
-    paddingRight: 8,
-    backgroundColor: theme.bgPanel,
-    borderRadius: theme.radius,
-    minHeight: 28
-  } }, /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        fontSize: 12,
-        color: currentPath === null ? theme.text : theme.accent,
-        paddingRight: 4
-      },
-      onClick: () => setCurrentPath(null)
-    },
-    "\uEE47 Scene"
-  ), pathSegments.map((seg, i) => {
-    const segPath = pathSegments.slice(0, i + 1).join("/");
-    const isLast = i === pathSegments.length - 1;
-    return /* @__PURE__ */ createElement("div", { key: i, style: { flexDirection: "Row", display: "Flex", alignItems: "Center" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: theme.textMuted, paddingLeft: 2, paddingRight: 2 } }, "/"), /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          fontSize: 12,
-          color: isLast ? theme.text : theme.accent,
-          paddingLeft: 2,
-          paddingRight: 2
-        },
-        onClick: () => {
-          if (!isLast)
-            navigateTo(segPath);
-        }
-      },
-      seg
-    ));
-  })), /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    marginBottom: 6,
-    alignItems: "Center"
-  } }, /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        fontSize: 12,
-        color: theme.accent,
-        paddingTop: 4,
-        paddingBottom: 4,
-        paddingLeft: 8,
-        paddingRight: 8,
-        backgroundColor: theme.bgCard,
-        borderRadius: 4,
-        marginRight: 8,
-        display: currentPath !== null ? "Flex" : "None"
-      },
-      onClick: navigateUp
-    },
-    "\uEA9B \u8FD4\u56DE\u4E0A\u7EA7"
-  ), /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        fontSize: 12,
-        color: theme.accent,
-        paddingTop: 4,
-        paddingBottom: 4,
-        paddingLeft: 8,
-        paddingRight: 8,
-        backgroundColor: theme.bgCard,
-        borderRadius: 4
-      },
-      onClick: refresh
-    },
-    "\u{F0453} \u5237\u65B0"
-  ), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted, marginLeft: 8 } }, `\u5171 ${children.length} \u9879`)), /* @__PURE__ */ createElement("div", { style: {
-    fontSize: 11,
-    color: theme.danger,
-    padding: 8,
-    backgroundColor: "#2a0000",
-    borderRadius: 4,
-    marginBottom: 6,
-    display: error ? "Flex" : "None"
-  } }, error || ""), Array.from({ length: ITEMS_PER_PAGE2 }).map((_, i) => {
-    const node = pageItems[i];
-    return /* @__PURE__ */ createElement("div", { key: `slot-${i}`, style: {
-      height: NODE_ROW_HEIGHT,
-      marginBottom: 3
-    } }, node && /* @__PURE__ */ createElement(
-      NodeRow,
-      {
-        node,
-        onNavigate: () => navigateTo(node.path || node.name),
-        onToggle: () => toggleNode(node)
-      }
-    ));
-  }), /* @__PURE__ */ createElement("div", { style: {
-    fontSize: 12,
-    color: theme.textMuted,
-    padding: 12,
-    textAlign: "Center",
-    display: children.length === 0 && !error ? "Flex" : "None"
-  } }, "\uFF08\u7A7A\uFF09"), /* @__PURE__ */ createElement(Pagination, { page, totalPages, onPageChange: setPage }));
-};
-var NODE_ROW_HEIGHT = 48;
-var NodeRow = ({ node, onNavigate, onToggle }) => {
-  const isActive = node.active !== false;
-  const hasChildren = node.childCount > 0;
-  return /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    alignItems: "Center",
-    backgroundColor: theme.bgCard,
-    borderRadius: 4,
-    paddingLeft: 10,
-    paddingRight: 10,
-    marginBottom: 3,
-    height: NODE_ROW_HEIGHT
-  } }, /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        width: 20,
-        height: 20,
-        borderWidth: 2,
-        borderColor: isActive ? theme.accent : theme.textMuted,
-        borderRadius: 4,
-        marginRight: 8,
-        justifyContent: "Center",
-        alignItems: "Center",
-        display: "Flex",
-        backgroundColor: isActive ? theme.accentDark : "transparent",
-        flexShrink: 0
-      },
-      onClick: onToggle
-    },
-    isActive && /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: theme.textBright } }, "\u2713")
-  ), /* @__PURE__ */ createElement(
+var LoadingView = () => {
+  const [rotation, setRotation] = useState(0);
+  const [pulse, setPulse] = useState(0.3);
+  useAnimationFrame((frame) => {
+    setRotation(frame * 5 % 360);
+    setPulse(0.3 + Math.sin(frame * 0.04) * 0.35);
+  });
+  return /* @__PURE__ */ createElement(
     "div",
     {
       style: {
         flexGrow: 1,
-        flexDirection: "Column",
+        justifyContent: "Center",
+        alignItems: "Center",
         display: "Flex",
-        overflow: "Hidden"
-      },
-      onClick: hasChildren ? onNavigate : void 0
+        flexDirection: "Column",
+        backgroundColor: "#1e293b"
+      }
     },
-    /* @__PURE__ */ createElement("div", { style: {
-      fontSize: 13,
-      color: hasChildren ? theme.accent : theme.text,
-      overflow: "Hidden"
-    } }, (hasChildren ? "\uF114 " : "\uEA7B ") + node.name),
-    /* @__PURE__ */ createElement("div", { style: {
-      flexDirection: "Row",
+    /* @__PURE__ */ createElement(
+      "div",
+      {
+        style: {
+          fontSize: 36,
+          color: "#89b4fa",
+          rotate: rotation,
+          marginBottom: 16
+        }
+      },
+      "\u{F0453}"
+    ),
+    /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: "#ffffff", opacity: pulse } }, "\u52A0\u8F7D\u4E2D...")
+  );
+};
+var ErrorView = ({
+  message,
+  onRetry
+}) => /* @__PURE__ */ createElement(
+  "div",
+  {
+    style: {
+      flexGrow: 1,
+      justifyContent: "Center",
+      alignItems: "Center",
       display: "Flex",
-      marginTop: 2
-    } }, hasChildren && /* @__PURE__ */ createElement("div", { style: { fontSize: 10, color: theme.textMuted, marginRight: 8 } }, `${node.childCount} \u5B50\u8282\u70B9`), node.alpha !== void 0 && node.alpha < 1 && /* @__PURE__ */ createElement("div", { style: { fontSize: 10, color: theme.warning, marginRight: 8 } }, `\u03B1=${node.alpha.toFixed(2)}`), node.interactables && node.interactables.length > 0 && /* @__PURE__ */ createElement("div", { style: { fontSize: 10, color: theme.success } }, node.interactables.join(", ")))
-  ), hasChildren && /* @__PURE__ */ createElement(
+      flexDirection: "Column",
+      backgroundColor: "#1e293b",
+      paddingLeft: 20,
+      paddingRight: 20
+    }
+  },
+  /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#f87171", marginBottom: 8 } }, "\u51FA\u9519\u4E86"),
+  /* @__PURE__ */ createElement(
     "div",
     {
       style: {
-        fontSize: 14,
-        color: theme.accent,
-        paddingLeft: 8,
-        paddingRight: 4,
-        flexShrink: 0
-      },
-      onClick: onNavigate
-    },
-    "\u203A"
-  ));
-};
-
-// components/IMECandidatePanel.tsx
-var defaults = {
-  blurEnabled: true,
-  blurDownsample: 1,
-  blurIterations: 4,
-  blurInterval: 1,
-  blurTint: "#ffffff1a",
-  bgColor: "#1e1e2eF0",
-  candidateCount: 5
-};
-try {
-  chill.config.appGetOrCreate("IME.BlurEnabled", defaults.blurEnabled, "\u662F\u5426\u542F\u7528\u5019\u9009\u8BCD\u9762\u677F\u6BDB\u73BB\u7483\u6A21\u7CCA\u6548\u679C");
-  chill.config.appGetOrCreate("IME.BlurDownsample", defaults.blurDownsample, "\u6A21\u7CCA\u5206\u8FA8\u7387\u7F29\u653E (1-8)");
-  chill.config.appGetOrCreate("IME.BlurIterations", defaults.blurIterations, "\u6A21\u7CCA\u8FED\u4EE3\u6B21\u6570 (1-8)");
-  chill.config.appGetOrCreate("IME.BlurInterval", defaults.blurInterval, "\u6A21\u7CCA\u5E27\u95F4\u9694 (\u6BCFN\u5E27\u66F4\u65B0)");
-  chill.config.appGetOrCreate("IME.BlurTint", defaults.blurTint, "\u6A21\u7CCA\u53E0\u52A0\u989C\u8272 (hex)");
-  chill.config.appGetOrCreate("IME.BackgroundColor", defaults.bgColor, "\u9762\u677F\u80CC\u666F\u8272 (hex)");
-  chill.config.appGetOrCreate("IME.CandidateCount", defaults.candidateCount, "\u5019\u9009\u8BCD\u663E\u793A\u6570\u91CF");
-} catch (e) {
-  console.error("[IME] Config init error:", e);
-}
-function getIMEConfig() {
-  try {
-    return {
-      blurEnabled: chill.config.appGet("IME.BlurEnabled") ?? defaults.blurEnabled,
-      blurDownsample: chill.config.appGet("IME.BlurDownsample") ?? defaults.blurDownsample,
-      blurIterations: chill.config.appGet("IME.BlurIterations") ?? defaults.blurIterations,
-      blurInterval: chill.config.appGet("IME.BlurInterval") ?? defaults.blurInterval,
-      blurTint: chill.config.appGet("IME.BlurTint") ?? defaults.blurTint,
-      bgColor: chill.config.appGet("IME.BackgroundColor") ?? defaults.bgColor,
-      candidateCount: chill.config.appGet("IME.CandidateCount") ?? defaults.candidateCount
-    };
-  } catch (e) {
-    return { ...defaults };
-  }
-}
-var IMECandidatePanel = () => {
-  const [context, setContext] = useState(null);
-  const [inputRect, setInputRect] = useState(null);
-  const [cfg, setCfg] = useState(getIMEConfig);
-  useEffect(() => {
-    const poll = () => {
-      try {
-        const ctxJson = chill.ime.getContext();
-        const ctx = parse(ctxJson);
-        setContext(ctx);
-        if (ctx) {
-          const rectJson = chill.ime.getInputRect();
-          setInputRect(parse(rectJson));
-        }
-      } catch (e) {
-      }
-    };
-    const timer = setInterval(poll, 50);
-    poll();
-    const cfgTimer = setInterval(() => {
-      try {
-        setCfg(getIMEConfig());
-      } catch (e) {
-      }
-    }, 2e3);
-    return () => {
-      clearInterval(timer);
-      clearInterval(cfgTimer);
-    };
-  }, []);
-  if (!context || !context.preedit) {
-    return null;
-  }
-  const candidates = context.candidates || [];
-  const visibleCandidates = candidates.slice(0, cfg.candidateCount);
-  const panelPosition = {
-    position: "Absolute",
-    minWidth: 200,
-    maxWidth: 400
-  };
-  if (inputRect) {
-    panelPosition.left = inputRect.x;
-    panelPosition.top = inputRect.y + inputRect.height + 4;
-  } else {
-    panelPosition.left = "30%";
-    panelPosition.bottom = "10%";
-  }
-  const innerStyle = {
-    flexDirection: "Column",
-    display: "Flex",
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#3a3a5a",
-    paddingTop: 6,
-    paddingBottom: 4,
-    paddingLeft: 8,
-    paddingRight: 8,
-    backgroundColor: cfg.bgColor,
-    overflow: "hidden"
-  };
-  const panelContent = /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex" } }, /* @__PURE__ */ createElement("div", { style: {
-    fontSize: 13,
-    color: theme.accent,
-    marginBottom: 4,
-    paddingBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2a2a4a",
-    flexDirection: "Row",
-    display: "Flex",
-    alignItems: "Center"
-  } }, /* @__PURE__ */ createElement("div", { style: { color: theme.accent } }, context.preedit.slice(0, context.cursorPos)), /* @__PURE__ */ createElement("div", { style: {
-    width: 1.5,
-    height: 15,
-    backgroundColor: theme.textBright,
-    marginLeft: 0.5,
-    marginRight: 0.5
-  } }), /* @__PURE__ */ createElement("div", { style: { color: theme.textMuted } }, context.preedit.slice(context.cursorPos))), /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex" } }, visibleCandidates.map((candidate, i) => {
-    const isHighlighted = i === context.highlightedIndex;
-    return /* @__PURE__ */ createElement(
-      "div",
-      {
-        key: i,
-        style: {
-          flexDirection: "Row",
-          display: "Flex",
-          alignItems: "Center",
-          paddingTop: 3,
-          paddingBottom: 3,
-          paddingLeft: 6,
-          paddingRight: 6,
-          borderRadius: 4,
-          backgroundColor: isHighlighted ? theme.accentDark : "transparent"
-        },
-        onClick: () => {
-          try {
-            chill.ime.selectCandidate(i);
-          } catch (e) {
-          }
-        }
-      },
-      /* @__PURE__ */ createElement("div", { style: {
         fontSize: 11,
-        color: isHighlighted ? theme.textBright : theme.textMuted,
-        width: 18,
-        flexShrink: 0
-      } }, `${i + 1}.`),
-      /* @__PURE__ */ createElement("div", { style: {
-        fontSize: 14,
-        color: isHighlighted ? theme.textBright : theme.text,
-        marginRight: 6
-      } }, candidate.text),
-      candidate.comment && /* @__PURE__ */ createElement("div", { style: {
-        fontSize: 10,
-        color: theme.textMuted
-      } }, candidate.comment)
-    );
-  })));
-  if (cfg.blurEnabled) {
-    return /* @__PURE__ */ createElement("div", { style: panelPosition }, /* @__PURE__ */ createElement(
-      "blur-panel",
-      {
-        downsample: Number(cfg.blurDownsample),
-        "blur-iterations": Number(cfg.blurIterations),
-        interval: Number(cfg.blurInterval),
-        tint: cfg.blurTint,
-        style: innerStyle
+        color: "rgba(255,255,255,0.5)",
+        marginBottom: 16,
+        unityTextAlign: "MiddleCenter"
+      }
+    },
+    message
+  ),
+  /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: {
+        fontSize: 12,
+        color: "#89b4fa",
+        paddingTop: 6,
+        paddingBottom: 6,
+        paddingLeft: 16,
+        paddingRight: 16,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: "#89b4fa"
       },
-      panelContent
-    ));
-  }
-  return /* @__PURE__ */ createElement("div", { style: { ...panelPosition, ...innerStyle } }, panelContent);
-};
-
-// components/IMESettingsPanel.tsx
-var fields = [
-  { key: "IME.BlurEnabled", label: "\u542F\u7528\u6A21\u7CCA", desc: "\u5019\u9009\u8BCD\u9762\u677F\u6BDB\u73BB\u7483\u6A21\u7CCA\u6548\u679C", type: "bool" },
-  { key: "IME.BlurDownsample", label: "\u5206\u8FA8\u7387\u7F29\u653E", desc: "1=\u539F\u56FE, 2=1/2, 4=1/4 (\u8D8A\u5927\u8D8A\u7701\u6027\u80FD)", type: "int" },
-  { key: "IME.BlurIterations", label: "\u6A21\u7CCA\u8FED\u4EE3\u6B21\u6570", desc: "1-8, \u8D8A\u5927\u8D8A\u6A21\u7CCA (\u5EFA\u8BAE 4-5)", type: "int" },
-  { key: "IME.BlurInterval", label: "\u5E27\u95F4\u9694", desc: "\u6BCFN\u4E2A\u6E38\u620F\u5E27\u66F4\u65B0\u4E00\u6B21\u6A21\u7CCA (1=\u6BCF\u5E27)", type: "int" },
-  { key: "IME.BlurTint", label: "\u6A21\u7CCA\u53E0\u52A0\u8272", desc: "\u53E0\u52A0\u5728\u6A21\u7CCA\u6548\u679C\u4E0A\u7684\u989C\u8272 (hex, \u5982 #ffffff1a)", type: "string" },
-  { key: "IME.BackgroundColor", label: "\u9762\u677F\u80CC\u666F\u8272", desc: "\u5019\u9009\u8BCD\u9762\u677F\u80CC\u666F\u8272 (hex, \u5982 #1e1e2eF0)", type: "string" },
-  { key: "IME.CandidateCount", label: "\u5019\u9009\u8BCD\u6570\u91CF", desc: "\u663E\u793A\u7684\u5019\u9009\u8BCD\u4E2A\u6570", type: "int" }
-];
-var IMESettingsPanel = () => {
-  const [values, setValues] = useState({});
-  const [editingKey, setEditingKey] = useState(null);
-  const [draft, setDraft] = useState("");
-  const refresh = () => {
-    const cfg = getIMEConfig();
-    const map = {
-      "IME.BlurEnabled": cfg.blurEnabled,
-      "IME.BlurDownsample": cfg.blurDownsample,
-      "IME.BlurIterations": cfg.blurIterations,
-      "IME.BlurInterval": cfg.blurInterval,
-      "IME.BlurTint": cfg.blurTint,
-      "IME.BackgroundColor": cfg.bgColor,
-      "IME.CandidateCount": cfg.candidateCount
-    };
-    setValues(map);
+      onPointerDown: onRetry
+    },
+    "\u91CD\u8BD5"
+  )
+);
+function fetchWeather(callback) {
+  chill.net.get(WEATHER_API, (resultJson) => {
+    try {
+      const res = JSON.parse(resultJson);
+      if (res.ok && res.body) {
+        const api = JSON.parse(res.body);
+        const dailyData = [];
+        if (api.daily && api.daily.time) {
+          for (let i = 0; i < 7 && i < api.daily.time.length; i++) {
+            dailyData.push({
+              date: api.daily.time[i],
+              code: api.daily.weather_code[i],
+              maxTemp: api.daily.temperature_2m_max[i],
+              minTemp: api.daily.temperature_2m_min[i]
+            });
+          }
+        }
+        callback(
+          {
+            temperature: api.current.temperature_2m,
+            humidity: api.current.relative_humidity_2m,
+            windSpeed: api.current.wind_speed_10m,
+            weatherCode: api.current.weather_code,
+            location: weatherLocation,
+            daily: dailyData
+          },
+          null
+        );
+      } else {
+        callback(null, res.error || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      callback(null, e.message || "\u89E3\u6790\u5931\u8D25");
+    }
+  });
+}
+var WeatherCompact = () => {
+  const [loading, setLoading] = useState(true);
+  const [weather, setWeather] = useState(null);
+  const [error, setError] = useState(null);
+  const doFetch = () => {
+    setLoading(true);
+    setError(null);
+    fetchWeather((data, err) => {
+      setLoading(false);
+      if (data)
+        setWeather(data);
+      else
+        setError(err);
+    });
   };
   useEffect(() => {
-    refresh();
-    const timer = setInterval(refresh, 2e3);
-    return () => clearInterval(timer);
+    doFetch();
   }, []);
-  const save = (key, value) => {
-    try {
-      chill.config.appSet(key, value);
-      chill.config.save();
-      refresh();
-    } catch (e) {
-      console.error("IMESettings save error:", e);
-    }
-  };
-  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: theme.textMuted, marginBottom: 10 } }, "\u8C03\u6574\u8F93\u5165\u6CD5\u5019\u9009\u8BCD\u9762\u677F\u7684\u5916\u89C2\u548C\u6A21\u7CCA\u6548\u679C\uFF0C\u4FEE\u6539\u540E\u5B9E\u65F6\u751F\u6548\u3002"), fields.map((f) => {
-    const val = values[f.key];
-    const isEditing = editingKey === f.key;
+  if (loading || error || !weather) {
     return /* @__PURE__ */ createElement(
       "div",
       {
-        key: f.key,
         style: {
-          flexDirection: "Column",
-          display: "Flex",
-          backgroundColor: theme.bgCard,
-          borderRadius: theme.radius,
-          paddingTop: 10,
-          paddingBottom: 10,
-          paddingLeft: 14,
-          paddingRight: 14,
-          marginBottom: 6
-        }
-      },
-      /* @__PURE__ */ createElement("div", { style: {
-        flexDirection: "Row",
-        display: "Flex",
-        justifyContent: "SpaceBetween",
-        alignItems: "Center"
-      } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: theme.text } }, f.label), f.type === "bool" ? /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            paddingTop: 3,
-            paddingBottom: 3,
-            paddingLeft: 10,
-            paddingRight: 10,
-            borderRadius: 4,
-            fontSize: 12,
-            backgroundColor: val ? theme.success : theme.danger,
-            color: theme.textBright
-          },
-          onClick: () => save(f.key, !val)
-        },
-        val ? "ON" : "OFF"
-      ) : isEditing ? /* @__PURE__ */ createElement("div", { style: { flexDirection: "Row", display: "Flex", alignItems: "Center" } }, /* @__PURE__ */ createElement(
-        "textfield",
-        {
-          value: draft,
-          onValueChanged: (e) => setDraft(e.newValue ?? e.target?.value ?? draft),
-          onKeyDown: (e) => {
-            if (e.keyCode === 13) {
-              const v = f.type === "int" ? parseInt(draft, 10) : draft;
-              if (f.type === "int" && isNaN(v)) {
-                setEditingKey(null);
-                return;
-              }
-              save(f.key, v);
-              setEditingKey(null);
-            }
-          },
-          style: {
-            fontSize: 12,
-            color: theme.text,
-            backgroundColor: theme.bg,
-            borderRadius: 4,
-            paddingLeft: 6,
-            paddingRight: 6,
-            paddingTop: 2,
-            paddingBottom: 2,
-            width: 100
-          }
-        }
-      ), /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            marginLeft: 6,
-            fontSize: 12,
-            color: theme.success,
-            paddingLeft: 6,
-            paddingRight: 6
-          },
-          onClick: () => {
-            const v = f.type === "int" ? parseInt(draft, 10) : draft;
-            if (f.type === "int" && isNaN(v)) {
-              setEditingKey(null);
-              return;
-            }
-            save(f.key, v);
-            setEditingKey(null);
-          }
-        },
-        "\u2713"
-      ), /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            marginLeft: 4,
-            fontSize: 12,
-            color: theme.danger,
-            paddingLeft: 6,
-            paddingRight: 6
-          },
-          onClick: () => setEditingKey(null)
-        },
-        "\u2715"
-      )) : /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            paddingTop: 3,
-            paddingBottom: 3,
-            paddingLeft: 10,
-            paddingRight: 10,
-            borderRadius: 4,
-            fontSize: 12,
-            backgroundColor: theme.bgPanel,
-            color: theme.accent
-          },
-          onClick: () => {
-            setEditingKey(f.key);
-            setDraft(String(val ?? ""));
-          }
-        },
-        String(val ?? "")
-      )),
-      /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted, marginTop: 4 } }, f.desc)
-    );
-  }));
-};
-
-// index.tsx
-var ErrorBoundary = class extends BaseComponent {
-  constructor(props) {
-    super(props);
-    this.state = { error: null };
-  }
-  componentDidCatch(error) {
-    this.setState({ error: String(error) });
-  }
-  render() {
-    if (this.state.error) {
-      return /* @__PURE__ */ createElement("div", { style: { color: "#ff5555", fontSize: 11, padding: 8, backgroundColor: "#2a0000", borderRadius: 4, marginBottom: 4 } }, /* @__PURE__ */ createElement("div", { style: { color: "#ff8888", fontSize: 12, marginBottom: 4 } }, "[", this.props.name, "] Error:"), /* @__PURE__ */ createElement("div", { style: { color: "#ffaaaa", fontSize: 10, whiteSpace: "Normal" } }, this.state.error));
-    }
-    return this.props.children;
-  }
-};
-var App = () => {
-  const [visible, setVisible] = useState(true);
-  if (!visible) {
-    return /* @__PURE__ */ createElement(
-      "div",
-      {
-        key: "collapsed",
-        style: {
-          position: "Absolute",
-          top: 0,
-          right: 0,
-          width: 52,
-          height: 52,
-          backgroundColor: theme.bg,
-          borderTopLeftRadius: 0,
-          borderTopRightRadius: 0,
-          borderBottomRightRadius: 0,
-          borderBottomLeftRadius: 52,
+          flexGrow: 1,
           justifyContent: "Center",
           alignItems: "Center",
           display: "Flex",
-          paddingLeft: 8,
-          paddingBottom: 8
-        },
-        onClick: () => setVisible(true)
+          backgroundColor: "#1e293b"
+        }
       },
-      /* @__PURE__ */ createElement("div", { style: { fontSize: 18, color: theme.accent } }, "\uEB51")
+      /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "rgba(255,255,255,0.5)" } }, loading ? "\u83B7\u53D6\u5929\u6C14\u4E2D..." : "\u4FE1\u606F\u9519\u8BEF")
     );
   }
-  return /* @__PURE__ */ createElement("div", { key: "panel", style: {
-    position: "Absolute",
-    top: "20%",
-    bottom: "20%",
-    left: "15%",
-    right: "15%",
-    backgroundColor: theme.bg,
-    borderRadius: theme.radiusLg,
-    flexDirection: "Column",
-    display: "Flex",
-    overflow: "Hidden"
-  } }, /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    justifyContent: "SpaceBetween",
-    alignItems: "Center",
-    paddingTop: 12,
-    paddingBottom: 8,
-    paddingLeft: 20,
-    paddingRight: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border
-  } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: theme.accent } }, "ChillPatcher"), /* @__PURE__ */ createElement(
+  const info = getWeatherInfo(weather.weatherCode);
+  return /* @__PURE__ */ createElement(
     "div",
     {
       style: {
-        fontSize: 14,
-        color: theme.textMuted,
-        paddingLeft: 8,
-        paddingRight: 4
-      },
-      onClick: () => setVisible(false)
+        flexGrow: 1,
+        display: "Flex",
+        flexDirection: "Row",
+        alignItems: "Center",
+        justifyContent: "SpaceBetween",
+        backgroundColor: info.bg,
+        paddingLeft: 20,
+        paddingRight: 20
+      }
     },
-    "\u2715"
-  )), /* @__PURE__ */ createElement("scrollview", { style: { flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Column",
-    display: "Flex",
-    paddingTop: 8,
-    paddingBottom: 12,
-    paddingLeft: 16,
-    paddingRight: 16
-  } }, /* @__PURE__ */ createElement(
-    TabContainer,
-    {
-      defaultTab: "modules",
-      tabs: [
-        { id: "modules", label: "\u6A21\u5757", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "ModulesPanel" }, /* @__PURE__ */ createElement(ModulesPanel, null)) },
-        { id: "explorer", label: "\u573A\u666F\u6811", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "UIExplorerPanel" }, /* @__PURE__ */ createElement(UIExplorerPanel, null)) },
-        { id: "ime", label: "\u8F93\u5165\u6CD5", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "IMESettingsPanel" }, /* @__PURE__ */ createElement(IMESettingsPanel, null)) },
-        { id: "settings", label: "\u8BBE\u7F6E", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "SettingsPanel" }, /* @__PURE__ */ createElement(SettingsPanel, null)) },
-        { id: "licenses", label: "\u8BB8\u53EF\u8BC1", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "LicensesPanel" }, /* @__PURE__ */ createElement(LicensesPanel, null)) },
-        { id: "about", label: "\u5173\u4E8E", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "AboutPanel" }, /* @__PURE__ */ createElement(AboutPanel, null)) }
-      ]
-    }
-  ))));
+    /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", alignItems: "Center" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 38, color: "rgba(255,255,255,0.9)", marginRight: 12 } }, info.icon), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Column", justifyContent: "Center" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 32, color: "#ffffff", unityFontStyleAndWeight: "Bold", marginBottom: -4 } }, `${Math.round(weather.temperature)}\xB0`), /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: "rgba(255,255,255,0.8)" } }, info.text))),
+    /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Column", alignItems: "FlexEnd" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: "#ffffff", unityFontStyleAndWeight: "Bold", marginBottom: 6, letterSpacing: 1 } }, weather.location), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: "rgba(255,255,255,0.7)", marginBottom: 2 } }, `\u98CE\u901F ${weather.windSpeed} km/h`), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: "rgba(255,255,255,0.7)" } }, `\u6E7F\u5EA6 ${weather.humidity}%`))
+  );
 };
-render(
-  /* @__PURE__ */ createElement("div", { style: { position: "Absolute", top: 0, left: 0, right: 0, bottom: 0 }, "picking-mode": 1 }, /* @__PURE__ */ createElement(App, null), /* @__PURE__ */ createElement(ErrorBoundary, { name: "IMECandidatePanel" }, /* @__PURE__ */ createElement(IMECandidatePanel, null))),
-  document.body
-);
+var WeatherContent = ({ data }) => {
+  const info = getWeatherInfo(data.weatherCode);
+  return /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: {
+        flexGrow: 1,
+        display: "Flex",
+        flexDirection: "Column",
+        backgroundColor: info.bg,
+        paddingTop: 16,
+        paddingBottom: 16,
+        paddingLeft: 20,
+        paddingRight: 20,
+        transitionProperty: "background-color",
+        transitionDuration: "0.8s",
+        transitionTimingFunction: "ease-in-out"
+      }
+    },
+    /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", alignItems: "Center", marginBottom: 16 } }, /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Column", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", alignItems: "Center", marginBottom: 8 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 10, color: "rgba(255,255,255,0.6)", marginRight: 4 } }, "\u25C9"), /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "rgba(255,255,255,0.85)", letterSpacing: 1 } }, data.location)), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", alignItems: "FlexEnd" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 42, color: "#ffffff", unityFontStyleAndWeight: "Bold", whiteSpace: "NoWrap" } }, `${Math.round(data.temperature)}\xB0`), /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: "rgba(255,255,255,0.9)", marginLeft: 8, marginBottom: 4, whiteSpace: "NoWrap" } }, info.text))), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Column", alignItems: "Center", flexShrink: 0, width: 100 } }, /* @__PURE__ */ createElement(FloatingIcon, { icon: info.icon, size: 42 }), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 6, whiteSpace: "NoWrap" } }, `\u98CE\u901F ${data.windSpeed}km/h`), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2, whiteSpace: "NoWrap" } }, `\u6E7F\u5EA6 ${data.humidity}%`))),
+    /* @__PURE__ */ createElement("div", { style: { height: 1, backgroundColor: "rgba(255,255,255,0.15)", marginBottom: 12 } }),
+    /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Column", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: "rgba(255,255,255,0.6)", marginBottom: 8, letterSpacing: 1 } }, "7 \u5929\u5929\u6C14\u9884\u62A5"), data.daily.map((day, index) => {
+      const dayInfo = getWeatherInfo(day.code);
+      return /* @__PURE__ */ createElement(
+        "div",
+        {
+          key: index,
+          style: {
+            display: "Flex",
+            flexDirection: "Row",
+            justifyContent: "SpaceBetween",
+            alignItems: "Center",
+            paddingTop: 6,
+            paddingBottom: 6,
+            borderBottomWidth: index === 6 ? 0 : 1,
+            borderBottomColor: "rgba(255,255,255,0.08)"
+          }
+        },
+        /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: index === 0 ? "#ffffff" : "rgba(255,255,255,0.8)", width: 60, flexShrink: 0, whiteSpace: "NoWrap" } }, getDayName(day.date, index)),
+        /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", alignItems: "Center", width: 80, flexShrink: 0 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: "rgba(255,255,255,0.9)", marginRight: 6 } }, dayInfo.icon), /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: "rgba(255,255,255,0.7)", whiteSpace: "NoWrap" } }, dayInfo.text)),
+        /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", justifyContent: "FlexEnd", alignItems: "Center", width: 90, flexShrink: 0 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#ffffff", whiteSpace: "NoWrap" } }, `${Math.round(day.minTemp)}\xB0 /`), /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "rgba(255,255,255,0.6)", marginLeft: 4, whiteSpace: "NoWrap" } }, `${Math.round(day.maxTemp)}\xB0`))
+      );
+    }))
+  );
+};
+var WeatherCard = () => {
+  const [loading, setLoading] = useState(true);
+  const [weather, setWeather] = useState(null);
+  const [error, setError] = useState(null);
+  const doFetch = () => {
+    setLoading(true);
+    setError(null);
+    fetchWeather((data, err) => {
+      setLoading(false);
+      if (data)
+        setWeather(data);
+      else
+        setError(err);
+    });
+  };
+  useEffect(() => {
+    doFetch();
+  }, []);
+  if (loading)
+    return /* @__PURE__ */ createElement(LoadingView, null);
+  if (error)
+    return /* @__PURE__ */ createElement(ErrorView, { message: error, onRetry: doFetch });
+  if (weather)
+    return /* @__PURE__ */ createElement(WeatherContent, { data: weather });
+  return null;
+};
+__registerPlugin({
+  id: "weather",
+  title: "Weather",
+  width: 300,
+  height: 420,
+  initialX: 200,
+  initialY: 100,
+  compact: {
+    width: 280,
+    height: 100,
+    component: WeatherCompact
+  },
+  component: WeatherCard
+});
 //# sourceMappingURL=app.js.map

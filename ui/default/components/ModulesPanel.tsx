@@ -1,5 +1,5 @@
 import { h } from "preact"
-import { useState, useEffect } from "preact/hooks"
+import { useState, useEffect, useRef } from "preact/hooks"
 import { theme } from "./theme"
 import { parse } from "./utils"
 import { Pagination } from "./Pagination"
@@ -25,15 +25,19 @@ interface ModuleInfo {
 }
 
 const MODULES_PER_PAGE = 4
+const POLL_INTERVAL = 3000
 
 export const ModulesPanel = () => {
     const [modules, setModules] = useState<ModuleInfo[]>([])
     const [page, setPage] = useState(0)
+    const lastJson = useRef("")
 
     const refresh = () => {
         try {
-            const list = parse<ModuleInfo[]>(chill.modules.getAll())
-            setModules(list || [])
+            const json = chill.modules.getAll() as string
+            if (json === lastJson.current) return
+            lastJson.current = json
+            setModules(parse<ModuleInfo[]>(json) || [])
         } catch (e) {
             console.error("ModulesPanel refresh error:", e)
         }
@@ -41,17 +45,7 @@ export const ModulesPanel = () => {
 
     useEffect(() => {
         refresh()
-        const timer = setInterval(() => {
-            try {
-                const count = chill.modules.getCount() as number
-                if (count > 0) {
-                    refresh()
-                    clearInterval(timer)
-                }
-            } catch (e) {
-                console.error("ModulesPanel poll error:", e)
-            }
-        }, 2000)
+        const timer = setInterval(refresh, POLL_INTERVAL)
         return () => clearInterval(timer)
     }, [])
 

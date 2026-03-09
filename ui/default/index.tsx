@@ -6,6 +6,9 @@ import { SettingsPanel } from "./components/SettingsPanel"
 import { AboutPanel } from "./components/AboutPanel"
 import { LicensesPanel } from "./components/LicensesPanel"
 import { ModulesPanel } from "./components/ModulesPanel"
+import { UIExplorerPanel } from "./components/UIExplorerPanel"
+import { IMESettingsPanel } from "./components/IMESettingsPanel"
+import { IMECandidatePanel } from "./components/IMECandidatePanel"
 
 // Error boundary to catch render errors and display them visually
 class ErrorBoundary extends Component<{name: string}, {error: string | null}> {
@@ -116,6 +119,8 @@ const App = () => {
                         defaultTab="modules"
                         tabs={[
                             { id: "modules", label: "模块", content: () => <ErrorBoundary name="ModulesPanel"><ModulesPanel /></ErrorBoundary> },
+                            { id: "explorer", label: "场景树", content: () => <ErrorBoundary name="UIExplorerPanel"><UIExplorerPanel /></ErrorBoundary> },
+                            { id: "ime", label: "输入法", content: () => <ErrorBoundary name="IMESettingsPanel"><IMESettingsPanel /></ErrorBoundary> },
                             { id: "settings", label: "设置", content: () => <ErrorBoundary name="SettingsPanel"><SettingsPanel /></ErrorBoundary> },
                             { id: "licenses", label: "许可证", content: () => <ErrorBoundary name="LicensesPanel"><LicensesPanel /></ErrorBoundary> },
                             { id: "about", label: "关于", content: () => <ErrorBoundary name="AboutPanel"><AboutPanel /></ErrorBoundary> },
@@ -127,4 +132,12 @@ const App = () => {
     )
 }
 
-render(<App />, document.body)
+render(
+    <div style={{ position: "Absolute", top: 0, left: 0, right: 0, bottom: 0 }} picking-mode={1}>
+        <App />
+        <ErrorBoundary name="IMECandidatePanel">
+            <IMECandidatePanel />
+        </ErrorBoundary>
+    </div>,
+    document.body
+)

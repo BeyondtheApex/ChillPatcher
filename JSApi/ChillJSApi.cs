@@ -65,6 +65,11 @@ namespace ChillPatcher.JSApi
         public ChillModuleApi modules { get; }
 
         /// <summary>
+        /// 输入法（IME）状态 API
+        /// </summary>
+        public ChillIMEApi ime { get; }
+
+        /// <summary>
         /// 网络请求 API
         /// </summary>
         public ChillNetApi net { get; }
@@ -94,9 +99,41 @@ namespace ChillPatcher.JSApi
         /// </summary>
         public string pluginPath => Plugin.PluginPath;
 
+        /// <summary>
+        /// 当前 UI 实例的工作目录
+        /// </summary>
+        public string workingDir { get; private set; }
+
+        /// <summary>
+        /// ScriptEngine 引用（由 UIInstance 注入，用于 evalFile）
+        /// </summary>
+        private OneJS.ScriptEngine _scriptEngine;
+
+        /// <summary>
+        /// 执行指定路径的 JS 文件（相对于 WorkingDir）
+        /// </summary>
+        public void evalFile(string path)
+        {
+            if (_scriptEngine == null)
+            {
+                _logger.LogWarning("[JSApi] evalFile called but engine not set");
+                return;
+            }
+            _scriptEngine.EvalFile(path);
+        }
+
+        /// <summary>
+        /// 设置 ScriptEngine 引用
+        /// </summary>
+        internal void SetEngine(OneJS.ScriptEngine engine)
+        {
+            _scriptEngine = engine;
+        }
+
         public ChillJSApi(ManualLogSource logger, string uiDir)
         {
             _logger = logger;
+            workingDir = uiDir;
 
             audio = new ChillAudioApi(logger);
             stream = new ChillStreamApi(logger);
@@ -106,6 +143,7 @@ namespace ChillPatcher.JSApi
             ui = new ChillUIApi(logger);
             config = new ChillConfigApi(logger);
             modules = new ChillModuleApi(logger);
+            ime = new ChillIMEApi(logger);
             net = new ChillNetApi(logger);
             io = new ChillIOApi(logger);
             instances = new ChillInstanceApi(logger);

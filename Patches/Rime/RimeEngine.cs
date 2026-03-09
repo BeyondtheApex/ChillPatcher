@@ -17,6 +17,144 @@ namespace ChillPatcher.Rime
         public ulong SessionId => _sessionId;
         public bool IsInitialized => _initialized;
 
+        /// <summary>
+        /// 检查 build 目录是否有被锁定的文件
+        /// </summary>
+        private bool IsBuildDirectoryLocked(string userDataDir)
+        {
+            string buildDir = Path.Combine(userDataDir, "build");
+            if (!Directory.Exists(buildDir))
+                return false;
+
+            try
+            {
+                foreach (string file in Directory.GetFiles(buildDir))
+                {
+                    try
+                    {
+                        // 尝试以独占方式打开，检测文件是否被锁定
+                        using (new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                        { }
+                    }
+                    catch
+                    {
+                        // 尝试移除只读属性后再删除
+                        try
+                        {
+                            var attrs = File.GetAttributes(file);
+                            if ((attrs & FileAttributes.ReadOnly) != 0)
+                                File.SetAttributes(file, attrs & ~FileAttributes.ReadOnly);
+                            File.Delete(file);
+                        }
+                        catch
+                        {
+                            Plugin.Logger.LogWarning($"[Rime] 文件被锁定: {Path.GetFileName(file)}");
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 寻找一个 build 目录未被锁定的可用 userDataDir。
+        /// 如果原始目录被锁，顺延到 user_1, user_2, ...，并把配置文件拷贝过去。
+        /// 同时尽力清理以前残留的旧目录。
+        /// </summary>
+        private string ResolveAvailableUserDataDir(string userDataDir)
+        {
+            // 先尝试清理旧的顺延目录（重启后锁释放了就可以删掉）
+            CleanupOldUserDirs(userDataDir);
+
+            // 检查原始目录
+            if (!IsBuildDirectoryLocked(userDataDir))
+                return userDataDir;
+
+            Plugin.Logger.LogWarning($"[Rime] {userDataDir} 的 build 目录被锁定，寻找可用目录...");
+
+            string baseDir = Path.GetDirectoryName(userDataDir);
+            string baseName = Path.GetFileName(userDataDir);
+
+            for (int i = 1; i <= 100; i++)
+            {
+                string candidate = Path.Combine(baseDir, $"{baseName}_{i}");
+                if (!IsBuildDirectoryLocked(candidate))
+                {
+                    Directory.CreateDirectory(candidate);
+                    // 拷贝配置文件（yaml、txt等，不拷贝 build 和 userdb 子目录）
+                    CopyUserConfigs(userDataDir, candidate);
+                    Plugin.Logger.LogInfo($"[Rime] 使用替代目录: {candidate}");
+                    return candidate;
+                }
+            }
+
+            // 不太可能到这里，但保底
+            Plugin.Logger.LogError("[Rime] 无法找到可用的 user 目录，尝试使用原始目录");
+            return userDataDir;
+        }
+
+        /// <summary>
+        /// 将原始 user 目录的配置文件拷贝到新目录（仅拷贝根目录下的文件）
+        /// </summary>
+        private void CopyUserConfigs(string srcDir, string dstDir)
+        {
+            try
+            {
+                foreach (string file in Directory.GetFiles(srcDir))
+                {
+                    string destFile = Path.Combine(dstDir, Path.GetFileName(file));
+                    if (!File.Exists(destFile))
+                    {
+                        try
+                        {
+                            File.Copy(file, destFile, false);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Logger.LogWarning($"[Rime] 拷贝配置文件失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 尝试清理之前顺延产生的旧 user_N 目录（重启后文件锁释放即可删除）
+        /// </summary>
+        private void CleanupOldUserDirs(string userDataDir)
+        {
+            string baseDir = Path.GetDirectoryName(userDataDir);
+            string baseName = Path.GetFileName(userDataDir);
+
+            try
+            {
+                foreach (string dir in Directory.GetDirectories(baseDir, $"{baseName}_*"))
+                {
+                    // 确保是我们生成的数字后缀目录
+                    string suffix = Path.GetFileName(dir).Substring(baseName.Length + 1);
+                    if (!int.TryParse(suffix, out _))
+                        continue;
+
+                    try
+                    {
+                        Directory.Delete(dir, true);
+                        Plugin.Logger.LogInfo($"[Rime] 已清理旧目录: {Path.GetFileName(dir)}");
+                    }
+                    catch
+                    {
+                        // 删不掉就算了，可能还在被占用
+                    }
+                }
+            }
+            catch { }
+        }
+
         public void Initialize(string sharedDataDir, string userDataDir, string appName = "rime.chill")
         {
             if (_initialized)
@@ -24,6 +162,9 @@ namespace ChillPatcher.Rime
 
             Directory.CreateDirectory(sharedDataDir);
             Directory.CreateDirectory(userDataDir);
+
+            // 检测 build 目录锁定，必要时切换到可用的 user 目录
+            userDataDir = ResolveAvailableUserDataDir(userDataDir);
 
             // 创建日志目录
             string logDir = Path.Combine(userDataDir, "logs");

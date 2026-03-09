@@ -18,9 +18,99 @@ namespace ChillPatcher
         /// <summary>当前帧是否有 UIToolkit TextField 获焦</summary>
         public static bool IsUIToolkitTextFieldFocused { get; private set; }
 
+        /// <summary>当前获焦的 TextField（供 IME API 读取位置）</summary>
+        private static TextField _currentFocusedTextField;
+
+        /// <summary>最后一次获焦 UIToolkit TextField 的面板坐标（跨帧缓存）</summary>
+        private static UnityEngine.Rect? _lastTextFieldRect;
+
+        /// <summary>UGUI TMP_InputField 屏幕坐标（Y-up 像素坐标），持久缓存直到失焦清除</summary>
+        private static UnityEngine.Rect? _lastTMPScreenRect;
+
+        /// <summary>preedit 期间锁定位置，避免候选窗跟随光标跳动</summary>
+        private static bool _positionLocked;
+
         public static void Initialize(ManualLogSource log)
         {
             _log = log;
+        }
+
+        /// <summary>
+        /// 由 TMP_InputField_LateUpdate_Patch 调用，设置当前获焦 TMP 的屏幕坐标（Y-up 像素）。
+        /// 如果位置已锁定（preedit 进行中）则不更新。
+        /// </summary>
+        public static void SetFocusedTMPScreenRect(UnityEngine.Rect screenRect)
+        {
+            if (_positionLocked) return;
+            _lastTMPScreenRect = screenRect;
+        }
+
+        /// <summary>
+        /// 由 TMP_InputField_LateUpdate_Patch 在 TMP 失焦时调用，清除缓存的坐标
+        /// </summary>
+        public static void ClearFocusedTMPScreenRect()
+        {
+            _lastTMPScreenRect = null;
+            _positionLocked = false;
+        }
+
+        /// <summary>
+        /// 锁定当前位置，preedit 开始时调用。
+        /// 锁定后 SetFocusedTMPScreenRect 和 UIToolkit rect 不再更新，直到 UnlockPosition。
+        /// </summary>
+        public static void LockPosition()
+        {
+            _positionLocked = true;
+        }
+
+        /// <summary>
+        /// 解锁位置，preedit 结束（提交/清空）时调用。
+        /// 下次 preedit 开始时会重新捕获位置。
+        /// </summary>
+        public static void UnlockPosition()
+        {
+            _positionLocked = false;
+        }
+
+        /// <summary>
+        /// 获取当前获焦输入框的面板坐标（UIToolkit 坐标系，Y-down）。
+        /// 优先返回 UIToolkit TextField rect，其次返回 TMP rect（经坐标转换）。
+        /// </summary>
+        public static UnityEngine.Rect? GetFocusedTextFieldRect()
+        {
+            // 优先 UIToolkit TextField
+            if (_lastTextFieldRect.HasValue)
+                return _lastTextFieldRect;
+
+            // 其次 UGUI TMP（持久缓存，失焦时由 ClearFocusedTMPScreenRect 清除）
+            if (_lastTMPScreenRect.HasValue)
+            {
+                var r = _lastTMPScreenRect.Value;
+                float scaleFactor = ComputePanelScaleFactor();
+                // 屏幕像素 (Y-up) → 面板坐标 (Y-down, 按 referenceResolution 缩放)
+                return new UnityEngine.Rect(
+                    r.x / scaleFactor,
+                    (Screen.height - r.y - r.height) / scaleFactor,
+                    r.width / scaleFactor,
+                    r.height / scaleFactor
+                );
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 计算 PanelSettings ScaleWithScreenSize(MatchWidthOrHeight, match=0.5) 的缩放因子
+        /// </summary>
+        private static float ComputePanelScaleFactor()
+        {
+            const float refWidth = 1920f;
+            const float refHeight = 1080f;
+            const float match = 0.5f;
+
+            float logWidth = Mathf.Log(Screen.width / refWidth, 2f);
+            float logHeight = Mathf.Log(Screen.height / refHeight, 2f);
+            return Mathf.Pow(2f, Mathf.Lerp(logWidth, logHeight, match));
         }
 
         /// <summary>
@@ -30,17 +120,9 @@ namespace ChillPatcher
         public static void Tick()
         {
             IsUIToolkitTextFieldFocused = false;
+            _currentFocusedTextField = null;
 
             if (!OneJSBridge.IsInitialized) return;
-
-            // 桌面模式：点击 UIToolkit 外部时，清除所有 UIToolkit 焦点
-            // 否则 focusedElement 持续指向 TextField → TMP 被跳过
-            // WE 模式不需要：WE 自行管理焦点，且强制 Blur 可能破坏 WE 事件分发
-            if (PluginConfig.EnableWallpaperEngineMode?.Value != true
-                && UnityEngine.Input.GetMouseButtonDown(0) && !UIToolkitEventBlocker.IsBlocking)
-            {
-                BlurAllPanels();
-            }
 
             foreach (var kvp in OneJSBridge.Instances)
             {
@@ -56,10 +138,23 @@ namespace ChillPatcher
                 if (tf != null)
                 {
                     IsUIToolkitTextFieldFocused = true;
+                    _currentFocusedTextField = tf;
+
+                    // 缓存 TextField 的面板坐标（preedit 锁定期间不更新）
+                    if (!_positionLocked)
+                    {
+                        var ve = tf as VisualElement;
+                        if (ve?.panel != null)
+                            _lastTextFieldRect = ve.worldBound;
+                    }
+
                     DispatchInput(tf);
                     return;
                 }
             }
+
+            // 无 TextField 获焦时清除缓存
+            _lastTextFieldRect = null;
         }
 
         /// <summary>
@@ -103,11 +198,25 @@ namespace ChillPatcher
         {
             try
             {
+                // 检查 Rime preedit 状态，管理位置锁定
+                var rimeCtx = KeyboardHookPatch.GetRimeContext();
+                bool hasPreedit = rimeCtx != null && !string.IsNullOrEmpty(rimeCtx.Preedit);
+                if (hasPreedit && !_positionLocked)
+                {
+                    LockPosition();
+                }
+                else if (!hasPreedit && _positionLocked)
+                {
+                    UnlockPosition();
+                }
+
                 // 1. Rime 提交文本
                 string commit = KeyboardHookPatch.GetCommittedText();
                 if (!string.IsNullOrEmpty(commit))
                 {
                     InsertTextAtCursor(tf, commit);
+                    // 提交后解锁位置，下次 preedit 重新捕获
+                    UnlockPosition();
                     return;
                 }
 

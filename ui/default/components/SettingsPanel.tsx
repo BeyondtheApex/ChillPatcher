@@ -1,5 +1,5 @@
 import { h } from "preact"
-import { useState, useEffect } from "preact/hooks"
+import { useState, useEffect, useRef } from "preact/hooks"
 import { theme } from "./theme"
 import { parse } from "./utils"
 import { Pagination } from "./Pagination"
@@ -17,12 +17,14 @@ interface ConfigEntry {
 }
 
 const SETTINGS_PER_PAGE = 6
+const POLL_INTERVAL = 3000
 
 export const SettingsPanel = () => {
     const [sections, setSections] = useState<string[]>([])
     const [activeSection, setActiveSection] = useState("")
     const [entries, setEntries] = useState<ConfigEntry[]>([])
     const [page, setPage] = useState(0)
+    const lastJson = useRef("")
 
     useEffect(() => {
         try {
@@ -36,22 +38,33 @@ export const SettingsPanel = () => {
         }
     }, [])
 
-    useEffect(() => {
-        if (!activeSection) return
+    const refreshEntries = (section: string) => {
+        if (!section) return
         try {
-            const items = parse<ConfigEntry[]>(chill.config.getAll(activeSection)) || []
-            setEntries(items)
-            setPage(0)
+            const json = chill.config.getAll(section) as string
+            if (json === lastJson.current) return
+            lastJson.current = json
+            setEntries(parse<ConfigEntry[]>(json) || [])
         } catch (e) {
             console.error("SettingsPanel entries error:", e)
         }
+    }
+
+    useEffect(() => {
+        if (!activeSection) return
+        lastJson.current = ""
+        refreshEntries(activeSection)
+        setPage(0)
+        const timer = setInterval(() => refreshEntries(activeSection), POLL_INTERVAL)
+        return () => clearInterval(timer)
     }, [activeSection])
 
     const handleChange = (entry: ConfigEntry, newValue: any) => {
         try {
             chill.config.set(entry.section, entry.key, newValue)
             chill.config.save()
-            setEntries(parse<ConfigEntry[]>(chill.config.getAll(activeSection)) || [])
+            lastJson.current = ""
+            refreshEntries(activeSection)
         } catch (e) {
             console.error("SettingsPanel change error:", e)
         }

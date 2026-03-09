@@ -11,20 +11,137 @@ namespace ChillPatcher.JSApi
     /// Mod 配置系统 API
     /// 
     /// JS 端用法：
+    ///   // 全局配置（所有 BepInEx 配置）
     ///   chill.config.getSections()
     ///   chill.config.getAll("Audio")
     ///   chill.config.get("Audio", "EnableAutoMuteOnOtherAudio")
     ///   chill.config.set("Audio", "EnableAutoMuteOnOtherAudio", true)
     ///   chill.config.save()
+    ///
+    ///   // App 专属配置（getOrCreate 模式，配置与实例设置同 section）
+    ///   const city = chill.config.appGetOrCreate("city", "Tokyo", "城市名称")
+    ///   chill.config.appSet("city", "Shanghai")
+    ///   chill.config.appGet("city")
+    ///   chill.config.appGetAll()
+    ///   chill.config.appSection   // "UIInstance.{id}"
     /// </summary>
     public class ChillConfigApi
     {
         private readonly ManualLogSource _logger;
+        private string _appSection;
+        private string _instanceId;
+
+        /// <summary>当前实例的配置分区名（UIInstance.{id}）</summary>
+        public string appSection => _appSection;
 
         public ChillConfigApi(ManualLogSource logger)
         {
             _logger = logger;
         }
+
+        /// <summary>
+        /// 由 UIInstance 初始化时调用，设置实例的配置分区
+        /// </summary>
+        internal void SetInstanceId(string instanceId)
+        {
+            _instanceId = instanceId;
+            _appSection = $"UIInstance.{instanceId}";
+        }
+
+        #region App 配置（getOrCreate 模式）
+
+        /// <summary>
+        /// 获取或创建配置项。
+        /// 如果配置文件中已有该项，返回已保存的值；否则以 defaultValue 创建并返回。
+        /// 类型自动检测：bool / int（整数 number）/ float（小数 number）/ string
+        /// </summary>
+        public object appGetOrCreate(string key, object defaultValue, string description = "")
+        {
+            var config = GetConfigFile();
+            if (config == null || _appSection == null) return defaultValue;
+
+            var desc = new ConfigDescription(description ?? "");
+            var forceDefault = _instanceId != null && UIInstanceConfig.ShouldResetAppConfig(_instanceId);
+
+            if (defaultValue is bool bDef)
+            {
+                var e = config.Bind(_appSection, key, bDef, desc);
+                if (forceDefault) e.Value = bDef;
+                return e.Value;
+            }
+
+            if (defaultValue is double dDef)
+            {
+                // JS number 为 double；整数值 → int，小数值 → float
+                if (dDef == Math.Floor(dDef) && dDef >= int.MinValue && dDef <= int.MaxValue)
+                {
+                    var e = config.Bind(_appSection, key, (int)dDef, desc);
+                    if (forceDefault) e.Value = (int)dDef;
+                    return e.Value;
+                }
+                var ef = config.Bind(_appSection, key, (float)dDef, desc);
+                if (forceDefault) ef.Value = (float)dDef;
+                return ef.Value;
+            }
+
+            if (defaultValue is int iDef)
+            {
+                var e = config.Bind(_appSection, key, iDef, desc);
+                if (forceDefault) e.Value = iDef;
+                return e.Value;
+            }
+
+            if (defaultValue is float fDef)
+            {
+                var e = config.Bind(_appSection, key, fDef, desc);
+                if (forceDefault) e.Value = fDef;
+                return e.Value;
+            }
+
+            // 其余一律 string
+            var str = defaultValue?.ToString() ?? "";
+            var es = config.Bind(_appSection, key, str, desc);
+            if (forceDefault) es.Value = str;
+            return es.Value;
+        }
+
+        /// <summary>
+        /// 获取当前 App 的配置值
+        /// </summary>
+        public object appGet(string key)
+        {
+            if (_appSection == null) return null;
+            return getValue(_appSection, key);
+        }
+
+        /// <summary>
+        /// 设置当前 App 的配置值
+        /// </summary>
+        public bool appSet(string key, object value)
+        {
+            if (_appSection == null) return false;
+            return set(_appSection, key, value);
+        }
+
+        /// <summary>
+        /// 获取当前 App 的所有配置项
+        /// </summary>
+        public string appGetAll()
+        {
+            if (_appSection == null) return "[]";
+            return getAll(_appSection);
+        }
+
+        /// <summary>
+        /// 重置当前 App 的所有配置为默认值
+        /// </summary>
+        public int appReset()
+        {
+            if (_appSection == null) return 0;
+            return resetSection(_appSection);
+        }
+
+        #endregion
 
         #region 配置读取
 

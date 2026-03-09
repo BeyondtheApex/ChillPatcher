@@ -1681,51 +1681,498 @@ function invokeOrReturn(arg, f) {
   return typeof f == "function" ? f(arg) : f;
 }
 
+// components/Window.tsx
+var GRAB_ZONE_HEIGHT = 30;
+var GRAB_PILL_WIDTH = 40;
+var GRAB_PILL_HEIGHT = 4;
+var DRAG_BAR_HEIGHT = GRAB_ZONE_HEIGHT;
+var COLLAPSED_RADIUS = GRAB_PILL_HEIGHT / 2;
+var EXPANDED_RADIUS = (DRAG_BAR_HEIGHT + DRAG_BAR_HEIGHT) / 2;
+var ARC_RADIUS = 14;
+var ARC_THICKNESS = 3;
+var ARC_CAP_R = ARC_THICKNESS / 2;
+var ARC_HANDLE_PAD = Math.ceil(ARC_CAP_R);
+var ARC_HANDLE_SIZE = ARC_RADIUS + ARC_HANDLE_PAD;
+var RESIZE_MARGIN = 6;
+var MIN_WIDTH = 120;
+var MIN_HEIGHT = 80;
+var EDGE_THRESHOLD = 60;
+var PICKING_IGNORE = 1;
+var WINDOW_RADIUS = 20;
+var Window = ({
+  title,
+  width = 300,
+  height = 400,
+  initialX = 200,
+  initialY = 100,
+  resizable = false,
+  compact,
+  hoverEnabled: hoverEnabled2 = true,
+  hoverScale: hoverScale2 = 1.03,
+  hoverDuration: hoverDuration2 = 0.4,
+  onFocus,
+  onGeometryChange,
+  children
+}) => {
+  const [pos, setPos] = useState({ x: initialX, y: initialY });
+  const [normalSize, setNormalSize] = useState({
+    w: Math.max(MIN_WIDTH, width),
+    h: Math.max(MIN_HEIGHT, height)
+  });
+  const [isCompact, setIsCompact] = useState(false);
+  const [dockedEdge, setDockedEdge] = useState(null);
+  const drag = useRef({ active: false, ox: 0, oy: 0 });
+  const resize = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 });
+  const [hovered, setHovered] = useState(false);
+  const [interacting, setInteracting] = useState(false);
+  const [grabHovered, setGrabHovered] = useState(false);
+  const [snapping, setSnapping] = useState(false);
+  const containerRef = useRef(null);
+  const snapTimer = useRef(null);
+  const skipDrag = useRef(false);
+  const arcRef = useRef(null);
+  useEffect(() => {
+    const el = arcRef.current;
+    if (!el?.ve || !canResize)
+      return;
+    const ve = el.ve;
+    const cx = ARC_THICKNESS / 2;
+    const cy = ARC_THICKNESS / 2;
+    const R = ARC_HANDLE_SIZE - ARC_THICKNESS;
+    ve.ClearCommands();
+    ve.SetStrokeColor("rgb(255, 255, 255)");
+    ve.SetLineWidth(ARC_THICKNESS);
+    ve.SetLineCap(1);
+    ve.BeginPath();
+    ve.Arc(cx, cy, R, 0, 90);
+    ve.Stroke();
+    ve.Commit();
+  });
+  const displaySize = isCompact && compact ? { w: compact.width, h: compact.height } : normalSize;
+  const canResize = resizable && !isCompact;
+  const showDragBar = grabHovered || drag.current.active;
+  const isActive = () => drag.current.active || resize.current.active;
+  const getCanvasSize = () => {
+    try {
+      const layout = containerRef.current?.ve?.layout;
+      return { w: layout.width, h: layout.height };
+    } catch (_) {
+      return { w: 1920, h: 1080 };
+    }
+  };
+  const bringToFront = () => {
+    try {
+      containerRef.current?.ve?.BringToFront();
+    } catch (_) {
+    }
+  };
+  const focus = () => {
+    bringToFront();
+    onFocus?.();
+  };
+  const toggleCompact = () => {
+    if (!compact)
+      return;
+    if (isCompact) {
+      setIsCompact(false);
+      setDockedEdge(null);
+    } else {
+      setIsCompact(true);
+    }
+  };
+  const handleMove = (e) => {
+    if (drag.current.active) {
+      const mx = e.position.x;
+      const my = e.position.y;
+      if (compact) {
+        const canvas = getCanvasSize();
+        const nearLeft = mx < EDGE_THRESHOLD;
+        const nearRight = mx > canvas.w - EDGE_THRESHOLD;
+        const nearTop = my < EDGE_THRESHOLD;
+        const nearBottom = my > canvas.h - EDGE_THRESHOLD;
+        if (nearLeft || nearRight || nearTop || nearBottom) {
+          const edges = [];
+          if (nearLeft)
+            edges.push({ edge: "left", dist: mx });
+          if (nearRight)
+            edges.push({ edge: "right", dist: canvas.w - mx });
+          if (nearTop)
+            edges.push({ edge: "top", dist: my });
+          if (nearBottom)
+            edges.push({ edge: "bottom", dist: canvas.h - my });
+          const nearest = edges.sort((a, b) => a.dist - b.dist)[0];
+          const cw = compact.width;
+          const ch = compact.height;
+          let sx = 0, sy = 0;
+          switch (nearest.edge) {
+            case "left":
+              sx = 0;
+              sy = Math.max(
+                0,
+                Math.min(my - ch / 2, canvas.h - ch)
+              );
+              break;
+            case "right":
+              sx = canvas.w - cw;
+              sy = Math.max(
+                0,
+                Math.min(my - ch / 2, canvas.h - ch)
+              );
+              break;
+            case "top":
+              sx = Math.max(
+                0,
+                Math.min(mx - cw / 2, canvas.w - cw)
+              );
+              sy = 0;
+              break;
+            case "bottom":
+              sx = Math.max(
+                0,
+                Math.min(mx - cw / 2, canvas.w - cw)
+              );
+              sy = canvas.h - ch;
+              break;
+          }
+          setPos({ x: sx, y: sy });
+          if (!isCompact)
+            setIsCompact(true);
+          if (dockedEdge !== nearest.edge)
+            setDockedEdge(nearest.edge);
+          return;
+        }
+      }
+      setPos({
+        x: mx - drag.current.ox,
+        y: my - drag.current.oy
+      });
+      if (isCompact && dockedEdge) {
+        setIsCompact(false);
+        setDockedEdge(null);
+        drag.current.ox = normalSize.w / 2;
+        drag.current.oy = DRAG_BAR_HEIGHT / 2;
+      }
+    } else if (resize.current.active) {
+      const dx = e.position.x - resize.current.ox;
+      const dy = e.position.y - resize.current.oy;
+      setNormalSize({
+        w: Math.max(MIN_WIDTH, resize.current.ow + dx),
+        h: Math.max(MIN_HEIGHT, resize.current.oh + dy)
+      });
+    }
+  };
+  const handleUp = () => {
+    drag.current.active = false;
+    resize.current.active = false;
+    setInteracting(false);
+    if (!dockedEdge) {
+      const canvas = getCanvasSize();
+      const cx = Math.max(
+        0,
+        Math.min(pos.x, canvas.w - displaySize.w)
+      );
+      const cy = Math.max(
+        0,
+        Math.min(pos.y, canvas.h - displaySize.h)
+      );
+      if (cx !== pos.x || cy !== pos.y) {
+        setSnapping(true);
+        setPos({ x: cx, y: cy });
+        if (snapTimer.current)
+          clearTimeout(snapTimer.current);
+        snapTimer.current = setTimeout(() => setSnapping(false), 350);
+      }
+    }
+    onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h);
+  };
+  const r = WINDOW_RADIUS;
+  const borderRadii = !dockedEdge ? {
+    borderTopLeftRadius: r,
+    borderTopRightRadius: r,
+    borderBottomRightRadius: r,
+    borderBottomLeftRadius: r
+  } : dockedEdge === "left" ? {
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: r,
+    borderBottomRightRadius: r,
+    borderBottomLeftRadius: 0
+  } : dockedEdge === "right" ? {
+    borderTopLeftRadius: r,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomLeftRadius: r
+  } : dockedEdge === "top" ? {
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: r,
+    borderBottomLeftRadius: r
+  } : {
+    borderTopLeftRadius: r,
+    borderTopRightRadius: r,
+    borderBottomRightRadius: 0,
+    borderBottomLeftRadius: 0
+  };
+  const borderWidths = !dockedEdge ? { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1 } : dockedEdge === "left" ? { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 0 } : dockedEdge === "right" ? { borderTopWidth: 1, borderRightWidth: 0, borderBottomWidth: 1, borderLeftWidth: 1 } : dockedEdge === "top" ? { borderTopWidth: 0, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1 } : { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 0, borderLeftWidth: 1 };
+  return /* @__PURE__ */ createElement(
+    "div",
+    {
+      ref: containerRef,
+      "picking-mode": PICKING_IGNORE,
+      style: {
+        position: "Absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0
+      }
+    },
+    interacting && /* @__PURE__ */ createElement(
+      "div",
+      {
+        style: {
+          position: "Absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0
+        },
+        onPointerMove: handleMove,
+        onPointerUp: handleUp
+      }
+    ),
+    /* @__PURE__ */ createElement(
+      "div",
+      {
+        style: {
+          position: "Absolute",
+          left: pos.x,
+          top: pos.y,
+          width: displaySize.w,
+          height: displaySize.h,
+          ...borderRadii,
+          ...borderWidths,
+          borderColor: "rgba(255,255,255,0.1)",
+          flexDirection: "Column",
+          display: "Flex",
+          overflow: "Hidden",
+          scale: hoverEnabled2 && hovered ? hoverScale2 : 1,
+          transitionProperty: snapping ? "scale, left, top" : "scale",
+          transitionDuration: snapping ? `${hoverDuration2}s, 0.3s, 0.3s` : `${hoverDuration2}s`,
+          transitionTimingFunction: "ease-out"
+        },
+        onPointerEnter: () => setHovered(true),
+        onPointerLeave: () => {
+          if (!isActive())
+            setHovered(false);
+        },
+        onPointerDown: () => focus(),
+        onPointerMove: handleMove,
+        onPointerUp: handleUp
+      },
+      /* @__PURE__ */ createElement(
+        "div",
+        {
+          style: {
+            flexGrow: 1,
+            display: "Flex",
+            flexDirection: "Column",
+            overflow: "Hidden"
+          }
+        },
+        isCompact && compact ? /* @__PURE__ */ createElement(compact.component, null) : children
+      ),
+      /* @__PURE__ */ createElement(
+        "div",
+        {
+          style: {
+            position: "Absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: DRAG_BAR_HEIGHT,
+            overflow: "Hidden"
+          },
+          "picking-mode": PICKING_IGNORE
+        },
+        /* @__PURE__ */ createElement(
+          "div",
+          {
+            style: {
+              position: "Absolute",
+              top: showDragBar ? 0 : (DRAG_BAR_HEIGHT - GRAB_PILL_HEIGHT) / 2,
+              left: showDragBar ? -EXPANDED_RADIUS : (displaySize.w - GRAB_PILL_WIDTH) / 2,
+              width: showDragBar ? displaySize.w + EXPANDED_RADIUS * 2 : GRAB_PILL_WIDTH,
+              height: showDragBar ? DRAG_BAR_HEIGHT + EXPANDED_RADIUS : GRAB_PILL_HEIGHT,
+              borderRadius: showDragBar ? EXPANDED_RADIUS : COLLAPSED_RADIUS,
+              backgroundColor: showDragBar ? "rgba(20,20,34,0.85)" : "rgba(255,255,255,0.25)",
+              overflow: "Hidden",
+              transitionProperty: "top, left, width, height, border-radius, background-color",
+              transitionDuration: "0.25s",
+              transitionTimingFunction: "ease-out"
+            },
+            onPointerEnter: () => setGrabHovered(true),
+            onPointerLeave: () => {
+              if (!isActive())
+                setGrabHovered(false);
+            },
+            onPointerDown: (e) => {
+              if (skipDrag.current) {
+                skipDrag.current = false;
+                return;
+              }
+              if (snapTimer.current) {
+                clearTimeout(snapTimer.current);
+                snapTimer.current = null;
+                setSnapping(false);
+              }
+              drag.current = {
+                active: true,
+                ox: e.position.x - pos.x,
+                oy: e.position.y - pos.y
+              };
+              setInteracting(true);
+              focus();
+            }
+          },
+          /* @__PURE__ */ createElement(
+            "div",
+            {
+              style: {
+                position: "Absolute",
+                top: 0,
+                left: showDragBar ? 14 + EXPANDED_RADIUS : 0,
+                right: showDragBar ? 14 + EXPANDED_RADIUS : 0,
+                height: DRAG_BAR_HEIGHT,
+                flexDirection: "Row",
+                display: "Flex",
+                alignItems: "Center",
+                justifyContent: "SpaceBetween",
+                opacity: showDragBar ? 1 : 0,
+                transitionProperty: "opacity, left, right",
+                transitionDuration: "0.15s"
+              }
+            },
+            /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: "#89b4fa" } }, title),
+            compact ? /* @__PURE__ */ createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 13,
+                  color: isCompact ? "#a6e3a1" : "#6c7086",
+                  paddingLeft: 6,
+                  paddingRight: 2,
+                  paddingTop: 2,
+                  paddingBottom: 2
+                },
+                onPointerDown: () => {
+                  skipDrag.current = true;
+                  toggleCompact();
+                }
+              },
+              isCompact ? "\uF065" : "\uF066"
+            ) : /* @__PURE__ */ createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 11,
+                  color: "#6c7086"
+                }
+              },
+              "\u283F"
+            )
+          )
+        )
+      ),
+      canResize && /* @__PURE__ */ createElement(
+        "div",
+        {
+          style: {
+            position: "Absolute",
+            right: RESIZE_MARGIN - ARC_HANDLE_PAD,
+            bottom: RESIZE_MARGIN - ARC_HANDLE_PAD,
+            width: ARC_HANDLE_SIZE,
+            height: ARC_HANDLE_SIZE
+          },
+          onPointerDown: (e) => {
+            resize.current = {
+              active: true,
+              ox: e.position.x,
+              oy: e.position.y,
+              ow: normalSize.w,
+              oh: normalSize.h
+            };
+            setInteracting(true);
+            focus();
+          }
+        },
+        /* @__PURE__ */ createElement(
+          "canvas-2d",
+          {
+            ref: arcRef,
+            style: {
+              position: "Absolute",
+              top: 0,
+              left: 0,
+              width: ARC_HANDLE_SIZE,
+              height: ARC_HANDLE_SIZE,
+              overflow: "Hidden"
+            },
+            "picking-mode": PICKING_IGNORE
+          }
+        )
+      )
+    )
+  );
+};
+
 // index.tsx
 if (typeof globalThis.requestAnimationFrame === "undefined") {
   ;
-  globalThis.requestAnimationFrame = (cb) => setTimeout(() => cb(typeof CS !== "undefined" ? CS.UnityEngine.Time.realtimeSinceStartupAsDouble * 1e3 : Date.now()), 1);
+  globalThis.requestAnimationFrame = (cb) => setTimeout(
+    () => cb(
+      typeof CS !== "undefined" ? CS.UnityEngine.Time.realtimeSinceStartupAsDouble * 1e3 : Date.now()
+    ),
+    1
+  );
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 }
-var TITLE_HEIGHT = 30;
-var CARD_W = 300;
-var CARD_H = 420;
-var WEATHER_API = "https://api.open-meteo.com/v1/forecast?latitude=-90&longitude=0&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto";
-var getWeatherInfo = (code) => {
-  if (code === 0)
-    return { text: "\u6674\u6717", icon: "\u{F0599}", bg: "#2563eb" };
-  if (code >= 1 && code <= 3)
-    return { text: "\u591A\u4E91", icon: "\u{F0590}", bg: "#475569" };
-  if (code >= 51 && code <= 67)
-    return { text: "\u964D\u96E8", icon: "\u{F0596}", bg: "#1e3a5f" };
-  if (code >= 71 && code <= 86)
-    return { text: "\u964D\u96EA", icon: "\u{F0598}", bg: "#4a6078" };
-  if (code >= 95)
-    return { text: "\u96F7\u66B4", icon: "\u{F0593}", bg: "#1e293b" };
-  return { text: "\u672A\u77E5", icon: "?", bg: "#6b7280" };
+var pluginRegistry = [];
+var _refreshPlugins = null;
+globalThis.__registerPlugin = (def) => {
+  pluginRegistry.push(def);
+  console.log(`[WindowManager] Plugin registered: ${def.id}`);
 };
-function useAnimationFrame(callback) {
-  const phaseRef = useRef(0);
-  useEffect(() => {
-    let mounted = true;
-    let frameId;
-    const loop = () => {
-      if (!mounted)
-        return;
-      phaseRef.current += 1;
-      callback(phaseRef.current);
-      frameId = requestAnimationFrame(loop);
-    };
-    frameId = requestAnimationFrame(loop);
-    return () => {
-      mounted = false;
-      cancelAnimationFrame(frameId);
-    };
-  }, []);
+globalThis.__unregisterPlugin = (id) => {
+  const idx = pluginRegistry.findIndex((p) => p.id === id);
+  if (idx >= 0)
+    pluginRegistry.splice(idx, 1);
+};
+globalThis.__refreshPlugins = () => {
+  _refreshPlugins?.();
+};
+function loadPlugins() {
+  try {
+    const base = String(chill.io.basePath).replace(/\\/g, "/").replace(/\/$/, "");
+    const wd = String(chill.workingDir).replace(/\\/g, "/").replace(/\/$/, "");
+    const relPrefix = wd.startsWith(base) ? wd.substring(base.length + 1) : wd;
+    const pluginsRel = relPrefix + "/@outputs/plugins";
+    if (!chill.io.exists(pluginsRel))
+      return;
+    const dirs = JSON.parse(chill.io.listDirs(pluginsRel));
+    for (const dirName of dirs) {
+      try {
+        chill.evalFile(`@outputs/plugins/${dirName}/app.js`);
+      } catch (e) {
+        console.error(`[WM] Failed to load plugin '${dirName}':`, e);
+      }
+    }
+  } catch (e) {
+    console.error("[WM] Plugin discovery failed:", e);
+  }
 }
 var ErrorBoundary = ({ children }) => {
   const [error, resetError] = useErrorBoundary((err) => {
-    console.error("[WeatherCard] Error caught by boundary:", err);
+    console.error("[WindowManager] Error boundary caught:", err);
   });
   if (error) {
     return /* @__PURE__ */ createElement(
@@ -1742,7 +2189,7 @@ var ErrorBoundary = ({ children }) => {
           paddingRight: 20
         }
       },
-      /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#f87171", marginBottom: 8 } }, "\u6E32\u67D3\u51FA\u9519"),
+      /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#f87171", marginBottom: 8 } }, "\u63D2\u4EF6\u6E32\u67D3\u51FA\u9519"),
       /* @__PURE__ */ createElement(
         "div",
         {
@@ -1777,384 +2224,38 @@ var ErrorBoundary = ({ children }) => {
   }
   return children;
 };
-var LoadingView = () => {
-  const [rotation, setRotation] = useState(0);
-  const [pulse, setPulse] = useState(0.3);
-  useAnimationFrame((frame) => {
-    setRotation(frame * 5 % 360);
-    setPulse(0.3 + Math.sin(frame * 0.04) * 0.35);
-  });
-  return /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        flexGrow: 1,
-        justifyContent: "Center",
-        alignItems: "Center",
-        display: "Flex",
-        flexDirection: "Column",
-        backgroundColor: "#1e293b"
-      }
-    },
-    /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          fontSize: 36,
-          color: "#89b4fa",
-          rotate: rotation,
-          marginBottom: 16
-        }
-      },
-      "\u2726"
-    ),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: "#ffffff", opacity: pulse } }, "\u52A0\u8F7D\u4E2D...")
-  );
-};
-var ErrorView = ({
-  message,
-  onRetry
-}) => /* @__PURE__ */ createElement(
-  "div",
-  {
-    style: {
-      flexGrow: 1,
-      justifyContent: "Center",
-      alignItems: "Center",
-      display: "Flex",
-      flexDirection: "Column",
-      backgroundColor: "#1e293b",
-      paddingLeft: 20,
-      paddingRight: 20
-    }
-  },
-  /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#f87171", marginBottom: 8 } }, "\u51FA\u9519\u4E86"),
-  /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        fontSize: 11,
-        color: "rgba(255,255,255,0.5)",
-        marginBottom: 16,
-        unityTextAlign: "MiddleCenter"
-      }
-    },
-    message
-  ),
-  /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        fontSize: 12,
-        color: "#89b4fa",
-        paddingTop: 6,
-        paddingBottom: 6,
-        paddingLeft: 16,
-        paddingRight: 16,
-        borderRadius: 6,
-        borderWidth: 1,
-        borderColor: "#89b4fa"
-      },
-      onPointerDown: onRetry
-    },
-    "\u91CD\u8BD5"
-  )
-);
-var FloatingIcon = ({ icon }) => {
-  const [offsetY, setOffsetY] = useState(0);
-  useAnimationFrame((frame) => {
-    setOffsetY(Math.sin(frame * 0.03) * 6);
-  });
-  return /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        fontSize: 52,
-        color: "rgba(255,255,255,0.25)",
-        translate: `0 ${Math.round(offsetY)}px`,
-        marginBottom: 12
-      }
-    },
-    icon
-  );
-};
-var InfoItem = ({ label, value }) => {
-  const [hovered, setHovered] = useState(false);
-  return /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        display: "Flex",
-        flexDirection: "Column",
-        alignItems: "Center",
-        flexGrow: 1,
-        paddingTop: 8,
-        paddingBottom: 8,
-        borderRadius: 8,
-        translate: hovered ? "0 -3px" : "0 0",
-        transitionProperty: "translate",
-        transitionDuration: "0.2s",
-        transitionTimingFunction: "ease-out"
-      },
-      onPointerEnter: () => setHovered(true),
-      onPointerLeave: () => setHovered(false)
-    },
-    /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          fontSize: 10,
-          color: "rgba(255,255,255,0.45)",
-          marginBottom: 4,
-          letterSpacing: 1.5
-        }
-      },
-      label
-    ),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#ffffff" } }, value)
-  );
-};
-var WeatherContent = ({ data }) => {
-  const info = getWeatherInfo(data.weatherCode);
-  return /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: {
-        flexGrow: 1,
-        display: "Flex",
-        flexDirection: "Column",
-        backgroundColor: info.bg,
-        paddingTop: 20,
-        paddingBottom: 20,
-        paddingLeft: 24,
-        paddingRight: 24,
-        justifyContent: "SpaceBetween",
-        transitionProperty: "background-color",
-        transitionDuration: "0.8s",
-        transitionTimingFunction: "ease-in-out"
-      }
-    },
-    /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          display: "Flex",
-          flexDirection: "Row",
-          alignItems: "Center"
-        }
-      },
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            fontSize: 11,
-            color: "rgba(255,255,255,0.5)",
-            marginRight: 6
-          }
-        },
-        "\u25C9"
-      ),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            fontSize: 15,
-            color: "rgba(255,255,255,0.85)",
-            letterSpacing: 2
-          }
-        },
-        data.location
-      )
-    ),
-    /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          display: "Flex",
-          flexDirection: "Column",
-          alignItems: "Center",
-          justifyContent: "Center",
-          flexGrow: 1
-        }
-      },
-      /* @__PURE__ */ createElement(FloatingIcon, { icon: info.icon }),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            display: "Flex",
-            flexDirection: "Row",
-            alignItems: "Flex-Start"
-          }
-        },
-        /* @__PURE__ */ createElement(
-          "div",
-          {
-            style: {
-              fontSize: 52,
-              color: "#ffffff",
-              unityFontStyleAndWeight: "Bold"
-            }
-          },
-          Math.round(data.temperature)
-        ),
-        /* @__PURE__ */ createElement(
-          "div",
-          {
-            style: {
-              fontSize: 18,
-              color: "rgba(255,255,255,0.7)",
-              marginTop: 8,
-              marginLeft: 2
-            }
-          },
-          "\xB0C"
-        )
-      ),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            fontSize: 15,
-            color: "rgba(255,255,255,0.65)",
-            marginTop: 6
-          }
-        },
-        info.text
-      )
-    ),
-    /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          display: "Flex",
-          flexDirection: "Row",
-          justifyContent: "SpaceBetween",
-          borderTopWidth: 1,
-          borderTopColor: "rgba(255,255,255,0.12)",
-          paddingTop: 14
-        }
-      },
-      /* @__PURE__ */ createElement(InfoItem, { label: "WIND", value: `${data.windSpeed} km/h` }),
-      /* @__PURE__ */ createElement(InfoItem, { label: "HUMIDITY", value: `${data.humidity}%` })
-    )
-  );
-};
-function fetchWeather(callback) {
-  chill.net.get(WEATHER_API, (resultJson) => {
-    try {
-      const res = JSON.parse(resultJson);
-      if (res.ok && res.body) {
-        const api = JSON.parse(res.body);
-        const data = {
-          temperature: api.current.temperature_2m,
-          humidity: api.current.relative_humidity_2m,
-          windSpeed: api.current.wind_speed_10m,
-          weatherCode: api.current.weather_code,
-          location: "\u5357\u6781\u70B9"
-        };
-        callback(data, null);
-      } else {
-        callback(null, res.error || `HTTP ${res.status}`);
-      }
-    } catch (e) {
-      callback(null, e.message || "\u89E3\u6790\u5931\u8D25");
-    }
-  });
-}
-var DraggableWeatherCard = () => {
-  const [pos, setPos] = useState({ x: 200, y: 100 });
-  const drag = useRef({ active: false, ox: 0, oy: 0 });
-  const [loading, setLoading] = useState(true);
-  const [weather, setWeather] = useState(null);
-  const [error, setError] = useState(null);
-  const [hovered, setHovered] = useState(false);
-  const doFetch = () => {
-    setLoading(true);
-    setError(null);
-    fetchWeather((data, err) => {
-      setLoading(false);
-      if (data)
-        setWeather(data);
-      else
-        setError(err);
-    });
-  };
+var hoverEnabled = chill.config.appGetOrCreate("HoverEffect.Enabled", true, "\u662F\u5426\u542F\u7528\u7A97\u53E3 hover \u653E\u5927\u6548\u679C");
+var hoverScale = chill.config.appGetOrCreate("HoverEffect.Scale", 1.03, "hover \u653E\u5927\u500D\u6570 (1.0 = \u65E0\u653E\u5927)");
+var hoverDuration = chill.config.appGetOrCreate("HoverEffect.Duration", 0.4, "hover \u52A8\u753B\u65F6\u957F (\u79D2)");
+var App = () => {
+  const [plugins, setPlugins] = useState([]);
   useEffect(() => {
-    doFetch();
+    loadPlugins();
+    setPlugins([...pluginRegistry]);
+    _refreshPlugins = () => setPlugins([...pluginRegistry]);
+    console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s)`);
+    return () => {
+      _refreshPlugins = null;
+    };
   }, []);
-  return /* @__PURE__ */ createElement(
-    "div",
+  return /* @__PURE__ */ createElement(Fragment, null, plugins.map((p) => /* @__PURE__ */ createElement(
+    Window,
     {
-      style: {
-        position: "Absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0
-      },
-      onPointerMove: (e) => {
-        if (!drag.current.active)
-          return;
-        setPos({
-          x: e.position.x - drag.current.ox,
-          y: e.position.y - drag.current.oy
-        });
-      },
-      onPointerUp: () => {
-        drag.current.active = false;
-      }
+      key: p.id,
+      title: p.title,
+      width: p.width,
+      height: p.height,
+      initialX: p.initialX,
+      initialY: p.initialY,
+      resizable: p.resizable,
+      compact: p.compact,
+      hoverEnabled,
+      hoverScale,
+      hoverDuration,
+      onGeometryChange: p.onGeometryChange
     },
-    /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          position: "Absolute",
-          left: pos.x,
-          top: pos.y,
-          width: CARD_W,
-          height: CARD_H,
-          borderRadius: 20,
-          borderWidth: 1,
-          borderColor: "rgba(255,255,255,0.1)",
-          flexDirection: "Column",
-          display: "Flex",
-          overflow: "Hidden",
-          scale: hovered ? 1.03 : 1,
-          transitionProperty: "scale",
-          transitionDuration: "0.4s",
-          transitionTimingFunction: "ease-out"
-        },
-        onPointerEnter: () => setHovered(true),
-        onPointerLeave: () => setHovered(false)
-      },
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            height: TITLE_HEIGHT,
-            backgroundColor: "#141422",
-            flexDirection: "Row",
-            display: "Flex",
-            alignItems: "Center",
-            justifyContent: "SpaceBetween",
-            paddingLeft: 14,
-            paddingRight: 14
-          },
-          onPointerDown: (e) => {
-            drag.current = {
-              active: true,
-              ox: e.position.x - pos.x,
-              oy: e.position.y - pos.y
-            };
-          }
-        },
-        /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: "#89b4fa" } }, "Weather"),
-        /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: "#6c7086" } }, "\u283F")
-      ),
-      /* @__PURE__ */ createElement(ErrorBoundary, null, loading ? /* @__PURE__ */ createElement(LoadingView, null) : error ? /* @__PURE__ */ createElement(ErrorView, { message: error, onRetry: doFetch }) : weather && /* @__PURE__ */ createElement(WeatherContent, { data: weather }))
-    )
-  );
+    /* @__PURE__ */ createElement(ErrorBoundary, null, /* @__PURE__ */ createElement(p.component, null))
+  )));
 };
-render(/* @__PURE__ */ createElement(DraggableWeatherCard, null), document.body);
+render(/* @__PURE__ */ createElement(App, null), document.body);
 //# sourceMappingURL=app.js.map

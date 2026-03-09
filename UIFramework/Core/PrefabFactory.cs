@@ -44,6 +44,11 @@ namespace ChillPatcher.UIFramework.Core
         public static GameObject XCloseButtonPrefab { get; private set; }
         
         /// <summary>
+        /// 滚动条 Prefab (来自 MusicUI 播放列表的 Scrollbar)
+        /// </summary>
+        public static GameObject ScrollbarPrefab { get; private set; }
+        
+        /// <summary>
         /// Prefab 是否已缓存
         /// </summary>
         public static bool IsInitialized => SimpleRectButtonPrefab != null || SimpleCapsuleButtonPrefab != null;
@@ -119,6 +124,9 @@ namespace ChillPatcher.UIFramework.Core
                 Plugin.Log.LogError($"Failed to cache PlayListButtonsPrefab: {ex}");
             }
             
+            // 缓存 Scrollbar Prefab
+            CacheScrollbarFromMusicUI(musicUI);
+            
             // 同时尝试缓存 LocalMusicImportButton (胶囊按钮)
             CacheCapsuleButtonFromScene();
             
@@ -165,6 +173,32 @@ namespace ChillPatcher.UIFramework.Core
             catch (System.Exception ex)
             {
                 Plugin.Log.LogError($"Failed to cache SimpleCapsuleButtonPrefab: {ex}");
+            }
+        }
+        
+        /// <summary>
+        /// 从 MusicUI 缓存 Scrollbar Prefab
+        /// </summary>
+        private static void CacheScrollbarFromMusicUI(MusicUI musicUI)
+        {
+            if (ScrollbarPrefab != null)
+                return;
+                
+            try
+            {
+                var scrollbar = Traverse.Create(musicUI)
+                    .Field("scrollbar")
+                    .GetValue<Scrollbar>();
+                    
+                if (scrollbar != null && scrollbar.gameObject != null)
+                {
+                    ScrollbarPrefab = CreateGenericButtonPrefab(scrollbar.gameObject, "Scrollbar_Prefab");
+                    Plugin.Log.LogInfo("Cached ScrollbarPrefab from MusicUI");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogError($"Failed to cache ScrollbarPrefab: {ex}");
             }
         }
         

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using BepInEx.Logging;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
@@ -29,6 +30,25 @@ namespace ChillPatcher.JSApi
         #region UI 树查询
 
         /// <summary>
+        /// 获取当前场景的所有根 GameObject 名称列表
+        /// </summary>
+        public string getRoots()
+        {
+            var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+            var result = new List<Dictionary<string, object>>();
+            foreach (var root in roots)
+            {
+                result.Add(new Dictionary<string, object>
+                {
+                    ["name"] = root.name,
+                    ["active"] = root.activeSelf,
+                    ["childCount"] = root.transform.childCount
+                });
+            }
+            return JSApiHelper.ToJson(result);
+        }
+
+        /// <summary>
         /// 获取指定路径下的 UI 树结构
         /// </summary>
         /// <param name="path">GameObject 路径（如 "Paremt/Canvas/UI"）</param>
@@ -36,7 +56,8 @@ namespace ChillPatcher.JSApi
         /// <returns>树节点信息字典</returns>
         public string getTree(string path, int depth = 1)
         {
-            var go = GameObject.Find(path);
+            // 使用 FindByPath 支持查找未激活的对象
+            var go = FindByPath(path) ?? GameObject.Find(path);
             if (go == null)
             {
                 _logger.LogWarning($"[UIApi] getTree: 路径不存在: {path}");
@@ -157,7 +178,8 @@ namespace ChillPatcher.JSApi
         /// </summary>
         public bool setActive(string path, bool active)
         {
-            var go = GameObject.Find(path);
+            // 使用 FindByPath 支持查找未激活的对象
+            var go = FindByPath(path);
             if (go == null) return false;
 
             go.SetActive(active);
@@ -396,6 +418,39 @@ namespace ChillPatcher.JSApi
                 dict["interactables"] = interactables.ToArray();
 
             return dict;
+        }
+
+        /// <summary>
+        /// 通过路径查找 GameObject，支持未激活的对象
+        /// 通过场景根 + Transform 层级遍历实现
+        /// </summary>
+        private GameObject FindByPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+
+            var segments = path.Split('/');
+            
+            // 先找根对象（Scene.GetRootGameObjects 包含未激活的）
+            Transform current = null;
+            var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+            foreach (var root in roots)
+            {
+                if (root.name == segments[0])
+                {
+                    current = root.transform;
+                    break;
+                }
+            }
+            if (current == null) return null;
+
+            // 逐级用 Transform.Find（可访问未激活子对象）
+            for (int i = 1; i < segments.Length; i++)
+            {
+                current = current.Find(segments[i]);
+                if (current == null) return null;
+            }
+
+            return current.gameObject;
         }
 
         private Transform FindChildRecursive(Transform parent, string childName)

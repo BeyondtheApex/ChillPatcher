@@ -54,6 +54,29 @@ namespace ChillPatcher
         private static ManualLogSource _log;
         private static UIInstanceConfigData _data;
 
+        // UI 实例配置版本号 — 当默认值发生变化时递增，旧配置会被重置
+        private const int CurrentVersion = 2;
+
+        // 需要重置默认值的实例 ID 集合
+        private static readonly HashSet<string> _resetSections = new HashSet<string>();
+
+        /// <summary>
+        /// 检查指定实例的 App 配置是否需要重置为默认值。
+        /// 由 JS 端 appGetOrCreate 调用，重置后自动清除标记。
+        /// </summary>
+        public static bool ShouldResetAppConfig(string instanceId)
+        {
+            return _resetSections.Contains(instanceId);
+        }
+
+        /// <summary>
+        /// 清除指定实例的重置标记（在所有 App 配置绑定完成后调用）。
+        /// </summary>
+        public static void ClearResetFlag(string instanceId)
+        {
+            _resetSections.Remove(instanceId);
+        }
+
         /// <summary>当前已加载的配置数据</summary>
         public static UIInstanceConfigData Data => _data;
 
@@ -66,6 +89,11 @@ namespace ChillPatcher
             _log = log;
             _config = config;
             _data = new UIInstanceConfigData();
+            _resetSections.Clear();
+
+            // 检查版本，标记需要重置的实例
+            CheckAndResetInstanceVersion(config, "default");
+            CheckAndResetInstanceVersion(config, "window-manager");
 
             // 扫描 uiBaseDir 下的子目录
             if (Directory.Exists(uiBaseDir))
@@ -84,7 +112,7 @@ namespace ChillPatcher
                     var entry = BindInstance(dirName, dir,
                         defaultSortingOrder: isDefault ? 1000 : nextOrder,
                         defaultEnabled: true,
-                        defaultInteractive: isDefault);
+                        defaultInteractive: true);
                     _data.Instances.Add(entry);
 
                     if (!isDefault) nextOrder += 100;
@@ -103,6 +131,23 @@ namespace ChillPatcher
             _config.Save();
         }
 
+        /// <summary>
+        /// 检查指定 UI 实例的配置版本，若过期则标记为需要重置。
+        /// </summary>
+        private static void CheckAndResetInstanceVersion(ConfigFile config, string instanceId)
+        {
+            // 绑定版本号（默认值 1 表示未初始化/旧配置）
+            var versionEntry = config.Bind("_Version", $"UIInstance.{instanceId}",
+                1, "UI实例配置版本号（请勿手动修改）");
+
+            if (versionEntry.Value < CurrentVersion)
+            {
+                _resetSections.Add(instanceId);
+                _log.LogInfo($"[UIInstanceConfig] 配置版本升级: UIInstance.{instanceId} (v{versionEntry.Value} → v{CurrentVersion})");
+                versionEntry.Value = CurrentVersion;
+            }
+        }
+
         private static UIInstanceEntry BindInstance(string id, string workingDir,
             int defaultSortingOrder, bool defaultEnabled, bool defaultInteractive)
         {
@@ -119,6 +164,17 @@ namespace ChillPatcher
                 "是否允许交互（true = 接收鼠标事件并可遮挡下层 UI）");
             entry.CfgEntryFile = _config.Bind(section, "EntryFile", "@outputs/esbuild/app.js",
                 "入口脚本文件（相对于上方 WorkingDir 目录）");
+
+            // 版本重置：Bind 会消费 orphaned entries 中的旧值，此处强制覆盖为默认值
+            if (_resetSections.Contains(id))
+            {
+                entry.CfgWorkingDir.Value = workingDir;
+                entry.CfgEnabled.Value = defaultEnabled;
+                entry.CfgSortingOrder.Value = defaultSortingOrder;
+                entry.CfgInteractive.Value = defaultInteractive;
+                entry.CfgEntryFile.Value = "@outputs/esbuild/app.js";
+                _log.LogInfo($"[UIInstanceConfig] 已覆盖默认值: UIInstance.{id} (sortOrder={defaultSortingOrder}, interactive={defaultInteractive})");
+            }
 
             // 从 config 读取实际值
             entry.WorkingDir = entry.CfgWorkingDir.Value;

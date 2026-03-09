@@ -292,25 +292,17 @@ namespace ChillPatcher
         private static readonly string PidFileName = ".esbuild.pid";
 
         /// <summary>
-        /// 使用 taskkill /T /F 终止进程树（包括所有子进程）。
+        /// 终止进程及其子进程树。
         /// </summary>
         private static void KillProcessTree(int pid)
         {
             try
             {
-                var taskkill = new Process();
-                taskkill.StartInfo = new ProcessStartInfo
-                {
-                    FileName = "taskkill",
-                    Arguments = $"/T /F /PID {pid}",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                taskkill.Start();
-                taskkill.WaitForExit(5000);
+                var proc = Process.GetProcessById(pid);
+                proc.Kill();
+                proc.WaitForExit(5000);
             }
+            catch (ArgumentException) { } // 进程已退出
             catch { }
         }
 

@@ -4,6 +4,7 @@ using System.Linq;
 using Bulbul;
 using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.SDK.Models;
+using ChillPatcher.UIFramework.Core;
 using ChillPatcher.UIFramework.Music;
 using Cysharp.Threading.Tasks;
 using HarmonyLib;
@@ -37,10 +38,14 @@ namespace ChillPatcher.Patches.UIFramework
         // 下拉框滚动支持
         private static ScrollRect _dropdownScrollRect;
         private static GameObject _scrollViewport;
+        private static GameObject _scrollbarObj;
+        private static Scrollbar _scrollbar;
         private const int MAX_VISIBLE_BUTTONS = 6;
         private const float BUTTON_HEIGHT = 45f;
         private const float SCROLL_PADDING_TOP = 70f;
         private const float SCROLL_PADDING_BOTTOM = 15f;
+        private const float SCROLLBAR_WIDTH = 14f;
+        private const float SCROLLBAR_RIGHT_OFFSET = 50f;
         
         // 保存 TagList 原始 RectTransform 状态，以便移出 viewport 时恢复
         private static bool _originalRectStored;
@@ -592,6 +597,8 @@ namespace ChillPatcher.Patches.UIFramework
                 // 禁用 ScrollRect 并把 TagList 移回原父级
                 if (_dropdownScrollRect != null)
                     _dropdownScrollRect.enabled = false;
+                if (_scrollbarObj != null)
+                    _scrollbarObj.SetActive(false);
                 
                 var contentRect = contentTransform as RectTransform;
                 if (contentRect != null && _scrollViewport != null && contentRect.parent == _scrollViewport.transform)
@@ -641,12 +648,12 @@ namespace ChillPatcher.Patches.UIFramework
             if (viewportRect == null)
                 viewportRect = _scrollViewport.AddComponent<RectTransform>();
             
-            // Viewport 拉伸填满父容器，但留出上下间距
+            // Viewport 拉伸填满父容器，但留出上下间距和右侧滚动条空间
             viewportRect.anchorMin = new Vector2(0, 0);
             viewportRect.anchorMax = new Vector2(1, 1);
             viewportRect.pivot = new Vector2(0.5f, 1);
             viewportRect.offsetMin = new Vector2(0, SCROLL_PADDING_BOTTOM);  // 底部留 5px
-            viewportRect.offsetMax = new Vector2(0, -SCROLL_PADDING_TOP);     // 顶部留 100px
+            viewportRect.offsetMax = new Vector2(-SCROLLBAR_WIDTH - 2, -SCROLL_PADDING_TOP);     // 顶部留 100px，右侧留滚动条宽度
             
             // 将 TagList 移入 Viewport（如果还没有移入）
             if (contentRect.parent != viewportRect)
@@ -690,6 +697,88 @@ namespace ChillPatcher.Patches.UIFramework
             _dropdownScrollRect.movementType = ScrollRect.MovementType.Clamped;
             _dropdownScrollRect.scrollSensitivity = BUTTON_HEIGHT;
             _dropdownScrollRect.enabled = true;
+            
+            // 创建可见的垂直滚动条
+            EnsureScrollbar(pullDownParentRect, viewportRect);
+            _dropdownScrollRect.verticalScrollbar = _scrollbar;
+            _dropdownScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+        }
+        
+        /// <summary>
+        /// 创建或获取可见的垂直滚动条，从 PrefabFactory 克隆游戏原生风格
+        /// </summary>
+        private static void EnsureScrollbar(RectTransform pullDownParentRect, RectTransform viewportRect)
+        {
+            if (_scrollbarObj == null || _scrollbarObj.transform.parent != pullDownParentRect)
+            {
+                var existing = pullDownParentRect.Find("ChillPatcher_Scrollbar");
+                if (existing != null)
+                {
+                    _scrollbarObj = existing.gameObject;
+                    _scrollbar = _scrollbarObj.GetComponent<Scrollbar>();
+                }
+                else if (PrefabFactory.ScrollbarPrefab != null)
+                {
+                    _scrollbarObj = UnityEngine.Object.Instantiate(PrefabFactory.ScrollbarPrefab, pullDownParentRect);
+                    _scrollbarObj.name = "ChillPatcher_Scrollbar";
+                    _scrollbarObj.SetActive(true);
+                    _scrollbar = _scrollbarObj.GetComponent<Scrollbar>();
+                    if (_scrollbar != null)
+                        _scrollbar.direction = Scrollbar.Direction.BottomToTop;
+                    Plugin.Log.LogInfo("[EnsureScrollbar] Created scrollbar from PrefabFactory");
+                }
+                else
+                {
+                    CreateFallbackScrollbar(pullDownParentRect);
+                }
+            }
+            
+            // 定位：右侧，与 viewport 垂直对齐
+            var sbRect = _scrollbarObj.GetComponent<RectTransform>();
+            sbRect.anchorMin = new Vector2(1, 0);
+            sbRect.anchorMax = new Vector2(1, 1);
+            sbRect.pivot = new Vector2(1, 1);
+            sbRect.offsetMin = new Vector2(-SCROLLBAR_WIDTH - SCROLLBAR_RIGHT_OFFSET, SCROLL_PADDING_BOTTOM);
+            sbRect.offsetMax = new Vector2(-SCROLLBAR_RIGHT_OFFSET, -SCROLL_PADDING_TOP);
+            
+            _scrollbarObj.SetActive(true);
+        }
+        
+        /// <summary>
+        /// 手动创建简单滚动条（MusicUI 不可用时的回退方案）
+        /// </summary>
+        private static void CreateFallbackScrollbar(RectTransform pullDownParentRect)
+        {
+            _scrollbarObj = new GameObject("ChillPatcher_Scrollbar");
+            _scrollbarObj.transform.SetParent(pullDownParentRect, false);
+            
+            var trackImage = _scrollbarObj.AddComponent<Image>();
+            trackImage.color = new Color(0.15f, 0.15f, 0.18f, 0.6f);
+            
+            var slidingArea = new GameObject("Sliding Area");
+            slidingArea.transform.SetParent(_scrollbarObj.transform, false);
+            var slidingRect = slidingArea.AddComponent<RectTransform>();
+            slidingRect.anchorMin = Vector2.zero;
+            slidingRect.anchorMax = Vector2.one;
+            slidingRect.offsetMin = Vector2.zero;
+            slidingRect.offsetMax = Vector2.zero;
+            
+            var handle = new GameObject("Handle");
+            handle.transform.SetParent(slidingArea.transform, false);
+            var handleRect = handle.AddComponent<RectTransform>();
+            handleRect.anchorMin = Vector2.zero;
+            handleRect.anchorMax = Vector2.one;
+            handleRect.offsetMin = Vector2.zero;
+            handleRect.offsetMax = Vector2.zero;
+            var handleImage = handle.AddComponent<Image>();
+            handleImage.color = new Color(0.6f, 0.6f, 0.65f, 0.8f);
+            
+            _scrollbar = _scrollbarObj.AddComponent<Scrollbar>();
+            _scrollbar.handleRect = handleRect;
+            _scrollbar.targetGraphic = handleImage;
+            _scrollbar.direction = Scrollbar.Direction.BottomToTop;
+            
+            Plugin.Log.LogInfo("[EnsureScrollbar] Created fallback scrollbar (MusicUI not available)");
         }
         
         /// <summary>
@@ -754,6 +843,8 @@ namespace ChillPatcher.Patches.UIFramework
             }
             if (_dropdownScrollRect != null)
                 _dropdownScrollRect.enabled = false;
+            if (_scrollbarObj != null)
+                _scrollbarObj.SetActive(false);
             
             // 隐藏 TodoSwitchFinishButton
             HideTodoSwitchFinishButton(tagListContainer);
@@ -1057,6 +1148,8 @@ namespace ChillPatcher.Patches.UIFramework
             // 队列模式按钮数通常很少，不需要滚动，禁用 ScrollRect
             if (_dropdownScrollRect != null)
                 _dropdownScrollRect.enabled = false;
+            if (_scrollbarObj != null)
+                _scrollbarObj.SetActive(false);
             
             Traverse.Create(pulldown).Field("_openPullDownSizeDeltaY").SetValue(finalHeight);
             Plugin.Log.LogInfo($"[QueueMode] Dropdown height: {a} × ({displayCount} × {BUTTON_HEIGHT}) + {b} = {finalHeight:F1}");

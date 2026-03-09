@@ -36,15 +36,26 @@ echo.
 echo Deploying to: %PluginDir%
 echo.
 
-REM 清理旧文件
+REM 清理旧文件（保留用户数据目录）
 if exist "%PluginDir%" (
     echo Cleaning old installation...
+    REM 备份用户数据
+    if exist "%PluginDir%\cameras" (
+        echo Preserving cameras folder...
+        move /y "%PluginDir%\cameras" "%TEMP%\ChillPatcher_cameras_backup" >nul 2>&1
+    )
     rmdir /s /q "%PluginDir%"
 )
 
 REM 复制新文件
 echo Copying files...
 xcopy /s /i /q /y "release\ChillPatcher" "%PluginDir%"
+
+REM 恢复用户数据
+if exist "%TEMP%\ChillPatcher_cameras_backup" (
+    echo Restoring cameras folder...
+    move /y "%TEMP%\ChillPatcher_cameras_backup" "%PluginDir%\cameras" >nul 2>&1
+)
 
 if %errorlevel% neq 0 (
     echo ERROR: Failed to copy files!

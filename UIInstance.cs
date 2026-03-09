@@ -23,7 +23,6 @@ namespace ChillPatcher
         private DateTime _lastWriteTime;
         private float _lastCheckTime;
         private bool _enabled;
-        private bool _isWallpaperEngineMode;
 
         private static readonly float HotReloadInterval = 0.3f;
 
@@ -144,6 +143,32 @@ namespace ChillPatcher
 
                     _engine.AddToGlobal("chill", _jsApi);
                     _engine.AddToGlobal("__instanceId", Id);
+
+                    // 设置 App 配置的实例分区
+                    _jsApi.config.SetInstanceId(Id);
+
+                    // 设置 ScriptEngine 引用（供 chill.evalFile 使用）
+                    _jsApi.SetEngine(_engine);
+
+                    // 重定向 console.log/warn/error/info/debug 到 oneJS.log
+                    jsEnv.Eval(@"
+(function() {
+    var _log = console.log, _warn = console.warn, _err = console.error,
+        _info = console.info, _dbg = console.debug;
+    function s(a) {
+        var r = [];
+        for (var i = 0; i < a.length; i++)
+            r.push(typeof a[i] === 'object' ? JSON.stringify(a[i]) : String(a[i]));
+        return r.join(' ');
+    }
+    console.log   = function() { _log.apply(console, arguments);  chill.log.log(s(arguments)); };
+    console.warn  = function() { _warn.apply(console, arguments); chill.log.warn(s(arguments)); };
+    console.error = function() { _err.apply(console, arguments);  chill.log.error(s(arguments)); };
+    console.info  = function() { _info.apply(console, arguments); chill.log.info(s(arguments)); };
+    console.debug = function() { _dbg.apply(console, arguments);  chill.log.debug(s(arguments)); };
+})();
+");
+
                     _log.LogInfo($"[UIInstance:{Id}] chill API injected");
                 }
                 catch (Exception ex)
@@ -193,8 +218,8 @@ namespace ChillPatcher
                 _log.LogError($"[UIInstance:{Id}] JsEnv.Tick error: {ex}");
             }
 
-            // WE 模式 + 非交互：JsEnv.Tick() 后立即刷新（Preact 在 Tick 中创建新元素）
-            if (_isWallpaperEngineMode && !Interactive)
+            // 非交互实例：JsEnv.Tick() 后立即刷新（Preact 在 Tick 中创建新元素）
+            if (!Interactive)
             {
                 var rootVE = _engine.GetComponent<UIDocument>()?.rootVisualElement;
                 if (rootVE != null)
@@ -279,7 +304,7 @@ namespace ChillPatcher
 
         /// <summary>
         /// 递归设所有 VisualElement 为 PickingMode.Ignore，
-        /// 使 WE 模式下整个 panel 对输入完全透明。
+        /// 使整个 panel 对输入完全透明。
         /// 必须使用 hierarchy（包含内部元素如滚动条），而非 contentContainer。
         /// </summary>
         private static void SetAllPickingModeIgnore(VisualElement ve)
@@ -298,26 +323,14 @@ namespace ChillPatcher
             rootVE.style.width = new StyleLength(Length.Percent(100));
             rootVE.style.height = new StyleLength(Length.Percent(100));
 
-            _isWallpaperEngineMode = PluginConfig.EnableWallpaperEngineMode?.Value == true;
+            // root=Ignore → 内置 UIToolkit/UGUI 优先级正确工作
+            rootVE.pickingMode = PickingMode.Ignore;
 
-            if (_isWallpaperEngineMode)
+            if (!Interactive)
             {
-                // WE 模式：root=Ignore → WE 内置的 UIToolkit/UGUI 优先级正确工作
-                // WE 会独立向子元素投递事件，不依赖 root pickingMode
-                rootVE.pickingMode = PickingMode.Ignore;
-
-                if (!Interactive)
-                {
-                    // WE 模式下 root=Ignore 不足以阻止子元素交互，
-                    // 需要递归设所有子元素为 Ignore
-                    SetAllPickingModeIgnore(rootVE);
-                }
-            }
-            else
-            {
-                // 桌面模式：root=Position 才能让 RuntimeEventSystem 处理 UIToolkit 事件
-                // Interactive=false 时 root=Ignore → panel 被跳过，UIToolkit 不接收事件
-                rootVE.pickingMode = Interactive ? PickingMode.Position : PickingMode.Ignore;
+                // root=Ignore 不足以阻止子元素交互，
+                // 需要递归设所有子元素为 Ignore
+                SetAllPickingModeIgnore(rootVE);
             }
 
             // 加载字体：优先使用实例本地字体，其次全局配置
