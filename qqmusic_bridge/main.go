@@ -335,6 +335,26 @@ func QQMusicSearchSongs(keyword *C.char, page, pageSize C.int) *C.char {
 	return C.CString(toJSON(result))
 }
 
+//export QQMusicGetSongLyric
+func QQMusicGetSongLyric(songMid *C.char) *C.char {
+	mu.RLock()
+	c := client
+	mu.RUnlock()
+
+	if c == nil {
+		setError(fmt.Errorf("not initialized"))
+		return nil
+	}
+
+	lyric, err := c.GetSongLyric(C.GoString(songMid))
+	if err != nil {
+		setError(err)
+		return nil
+	}
+
+	return C.CString(lyric)
+}
+
 //export QQMusicGetRecommendSongs
 func QQMusicGetRecommendSongs() *C.char {
 	mu.RLock()
