@@ -107,6 +107,9 @@ namespace ChillPatcher.Module.QQMusic
             _coverLoader = new QQMusicCoverLoader(_logger, _songInfoMap);
             _favoriteManager = new QQMusicFavoriteManager(_bridge, _logger, _songInfoMap);
 
+            // Register lyric API for JS frontend
+            RegisterLyricApi();
+
             // Check login status
             _isLoggedIn = _bridge.IsLoggedIn;
 
@@ -381,6 +384,99 @@ namespace ChillPatcher.Module.QQMusic
         #endregion
 
         #region Private Methods
+
+        private void RegisterLyricApi()
+        {
+            // UI instances initialize after modules, so retry until they become available.
+            // Register on ALL instances (default + window-manager) so chill.custom.get("lyric") works everywhere.
+            Task.Run(async () =>
+            {
+                const int maxRetries = 30;
+                for (int attempt = 0; attempt < maxRetries; attempt++)
+                {
+                    try
+                    {
+                        // Get OneJSBridge.Instances (Dictionary<string, UIInstance>)
+                        var bridgeType = Type.GetType("ChillPatcher.OneJSBridge, ChillPatcher");
+                        if (bridgeType == null)
+                        {
+                            _logger?.LogWarning("OneJSBridge type not found, skipping lyric API registration");
+                            return;
+                        }
+
+                        var instancesProp = bridgeType.GetProperty("Instances",
+                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                        var instances = instancesProp?.GetValue(null) as System.Collections.IEnumerable;
+                        if (instances == null)
+                        {
+                            await Task.Delay(1000);
+                            continue;
+                        }
+
+                        var lyricApiType = Type.GetType("ChillPatcher.JSApi.ChillLyricApi, ChillPatcher");
+                        if (lyricApiType == null)
+                        {
+                            _logger?.LogWarning("ChillLyricApi type not found, skipping lyric API registration");
+                            return;
+                        }
+
+                        // Count total instances and how many have JSApi ready
+                        int total = 0;
+                        int withJsApi = 0;
+                        var registeredIds = new System.Collections.Generic.List<string>();
+
+                        foreach (var kv in instances)
+                        {
+                            total++;
+                            var kvType = kv.GetType();
+                            var valueProp = kvType.GetProperty("Value");
+                            var uiInstance = valueProp?.GetValue(kv);
+                            if (uiInstance == null) continue;
+
+                            var jsApiProp = uiInstance.GetType().GetProperty("JSApi");
+                            var jsApi = jsApiProp?.GetValue(uiInstance);
+                            if (jsApi == null) continue;
+                            withJsApi++;
+
+                            // Check if already registered on this instance
+                            var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
+                            var existing = getMethod?.Invoke(jsApi, new object[] { "lyric" });
+                            if (existing != null) {
+                                registeredIds.Add(kvType.GetProperty("Key")?.GetValue(kv) as string ?? "?");
+                                continue;
+                            }
+
+                            var lyricApi = Activator.CreateInstance(lyricApiType, new object[] { _bridge, _logger });
+                            var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
+                            registerMethod?.Invoke(jsApi, new object[] { "lyric", lyricApi });
+
+                            var keyProp = kvType.GetProperty("Key");
+                            var instanceId = keyProp?.GetValue(kv) as string ?? "?";
+                            _logger?.LogInfo($"Lyric API registered on instance: {instanceId}");
+                            registeredIds.Add(instanceId);
+                        }
+
+                        _logger?.LogInfo($"Lyric API: {registeredIds.Count}/{total} instances (jsApi ready: {withJsApi}), attempt {attempt + 1}");
+
+                        // Keep retrying for at least 15 attempts to catch late-initializing instances
+                        // Only stop early after minimum attempts AND all found instances are registered
+                        if (attempt >= 14 && registeredIds.Count > 0)
+                        {
+                            _logger?.LogInfo($"Lyric API registration complete: {registeredIds.Count} instance(s)");
+                            return;
+                        }
+
+                        await Task.Delay(1000);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogError($"Failed to register lyric API (attempt {attempt + 1}): {ex.Message}");
+                        await Task.Delay(1000);
+                    }
+                }
+                _logger?.LogError("Lyric API registration failed after all retries");
+            });
+        }
 
         private void RegisterConfig()
         {

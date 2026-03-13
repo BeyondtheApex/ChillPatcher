@@ -58,6 +58,9 @@ namespace ChillPatcher.Module.QQMusic
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         private static extern IntPtr QQMusicSearchSongs(string keyword, int page, int pageSize);
 
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private static extern IntPtr QQMusicGetSongLyric(string songMid);
+
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr QQMusicGetRecommendSongs();
 
@@ -340,6 +343,11 @@ namespace ChillPatcher.Module.QQMusic
         public SearchResult SearchSongs(string keyword, int page = 1, int pageSize = 30)
         {
             return ParseJson<SearchResult>(QQMusicSearchSongs(keyword, page, pageSize));
+        }
+
+        public string GetSongLyric(string songMid)
+        {
+            return ReadAndFreeString(QQMusicGetSongLyric(songMid));
         }
 
         public List<SongInfo> GetRecommendSongs()
