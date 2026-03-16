@@ -85,6 +85,12 @@ copy /Y "%SCRIPT_DIR%.gitignore" "go-musicfox\netease_bridge\" 2>nul
 :: 进入 go-musicfox 目录
 cd go-musicfox
 
+:: 添加 netease_bridge 需要但 go-musicfox 未包含的依赖到 vendor
+echo.
+echo Adding extra dependencies to vendor...
+go get github.com/telanflow/cookiejar@latest >nul 2>&1
+go mod vendor >nul 2>&1
+
 :: 构建 DLL
 echo.
 echo [5/5] Building DLL...

@@ -21,7 +21,7 @@ import (
 	"github.com/go-musicfox/go-musicfox/internal/netease"
 	"github.com/go-musicfox/netease-music/service"
 	"github.com/go-musicfox/netease-music/util"
-	cookiejar "github.com/juju/persistent-cookiejar"
+	"github.com/telanflow/cookiejar"
 )
 
 var (
@@ -89,7 +89,7 @@ func NeteaseInit(dataDirC *C.char) C.int {
 
 	// 加载 Cookie
 	cookiePath := filepath.Join(dataDir, "cookie")
-	jar, err := cookiejar.New(&cookiejar.Options{Filename: cookiePath})
+	jar, err := cookiejar.NewFileJar(cookiePath, nil)
 	if err != nil {
 		lastError = "Failed to load cookie jar: " + err.Error()
 		return 0
