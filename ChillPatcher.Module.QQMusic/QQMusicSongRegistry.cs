@@ -278,7 +278,7 @@ namespace ChillPatcher.Module.QQMusic
         public void UnregisterLoginSong()
         {
             _context.MusicRegistry.UnregisterMusic("qqmusic_login_song");
-            _context.MusicRegistry.UnregisterMusic("qqmusic_wx_login_song");
+            _context.MusicRegistry.UnregisterMusic("qqmusic_login_song_wx");
         }
 
         #endregion
