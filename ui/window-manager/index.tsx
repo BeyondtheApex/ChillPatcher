@@ -135,7 +135,6 @@ const ErrorBoundary = ({ children }: { children?: any }) => {
 }
 
 // ---- Plugin enable config ----
-// 每个插件单独的开关，在图形化设置中可见
 const pluginEnabledCache: Record<string, boolean> = {}
 
 function isPluginEnabled(id: string): boolean {
@@ -145,6 +144,37 @@ function isPluginEnabled(id: string): boolean {
             `是否启用 ${id} 小组件 (重启生效)`)
     }
     return pluginEnabledCache[id]
+}
+
+// ---- Window state persistence (via chill.config) ----
+interface WindowState {
+    x: number
+    y: number
+    w: number
+    h: number
+    compact: boolean
+}
+
+function getWindowState(id: string, defaults: { x: number, y: number, w: number, h: number }): WindowState {
+    return {
+        x: chill.config.appGetOrCreate(`Window.${id}.X`, defaults.x, `${id} 窗口 X 坐标`),
+        y: chill.config.appGetOrCreate(`Window.${id}.Y`, defaults.y, `${id} 窗口 Y 坐标`),
+        w: chill.config.appGetOrCreate(`Window.${id}.W`, defaults.w, `${id} 窗口宽度`),
+        h: chill.config.appGetOrCreate(`Window.${id}.H`, defaults.h, `${id} 窗口高度`),
+        compact: chill.config.appGetOrCreate(`Window.${id}.Compact`, false, `${id} 窗口是否为紧凑模式`),
+    }
+}
+
+function updateWindowState(id: string, x: number, y: number, w: number, h: number, compact: boolean) {
+    try {
+        chill.config.appSet(`Window.${id}.X`, Math.round(x))
+        chill.config.appSet(`Window.${id}.Y`, Math.round(y))
+        chill.config.appSet(`Window.${id}.W`, Math.round(w))
+        chill.config.appSet(`Window.${id}.H`, Math.round(h))
+        chill.config.appSet(`Window.${id}.Compact`, compact)
+    } catch (e) {
+        console.error(`[WM] Failed to save state for ${id}:`, e)
+    }
 }
 
 // ---- Hover effect config ----
@@ -158,7 +188,6 @@ const App = () => {
 
     useEffect(() => {
         loadPlugins()
-        // 过滤掉被禁用的插件
         const enabled = pluginRegistry.filter(p => isPluginEnabled(p.id))
         setPlugins(enabled)
         _refreshPlugins = () => setPlugins(pluginRegistry.filter(p => isPluginEnabled(p.id)))
@@ -168,26 +197,38 @@ const App = () => {
 
     return (
         <>
-            {plugins.map((p) => (
-                <Window
-                    key={p.id}
-                    title={p.title}
-                    width={p.width}
-                    height={p.height}
-                    initialX={p.initialX}
-                    initialY={p.initialY}
-                    resizable={p.resizable}
-                    compact={p.compact}
-                    hoverEnabled={hoverEnabled}
-                    hoverScale={hoverScale}
-                    hoverDuration={hoverDuration}
-                    onGeometryChange={p.onGeometryChange}
-                >
-                    <ErrorBoundary>
-                        <p.component />
-                    </ErrorBoundary>
-                </Window>
-            ))}
+            {plugins.map((p) => {
+                const saved = getWindowState(p.id, {
+                    x: p.initialX ?? 200,
+                    y: p.initialY ?? 100,
+                    w: p.width ?? 300,
+                    h: p.height ?? 400,
+                })
+                return (
+                    <Window
+                        key={p.id}
+                        title={p.title}
+                        width={saved.w}
+                        height={saved.h}
+                        initialX={saved.x}
+                        initialY={saved.y}
+                        initialCompact={saved.compact}
+                        resizable={p.resizable}
+                        compact={p.compact}
+                        hoverEnabled={hoverEnabled}
+                        hoverScale={hoverScale}
+                        hoverDuration={hoverDuration}
+                        onGeometryChange={(x, y, w, h, isCompact) => {
+                            updateWindowState(p.id, x, y, w, h, isCompact)
+                            p.onGeometryChange?.(x, y, w, h)
+                        }}
+                    >
+                        <ErrorBoundary>
+                            <p.component />
+                        </ErrorBoundary>
+                    </Window>
+                )
+            })}
         </>
     )
 }

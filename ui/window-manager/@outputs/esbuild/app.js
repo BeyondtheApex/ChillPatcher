@@ -1705,6 +1705,7 @@ var Window = ({
   height = 400,
   initialX = 200,
   initialY = 100,
+  initialCompact = false,
   resizable = false,
   compact,
   hoverEnabled: hoverEnabled2 = true,
@@ -1719,7 +1720,7 @@ var Window = ({
     w: Math.max(MIN_WIDTH, width),
     h: Math.max(MIN_HEIGHT, height)
   });
-  const [isCompact, setIsCompact] = useState(false);
+  const [isCompact, setIsCompact] = useState(initialCompact && !!compact);
   const [dockedEdge, setDockedEdge] = useState(null);
   const drag = useRef({ active: false, ox: 0, oy: 0 });
   const resize = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 });
@@ -1773,12 +1774,14 @@ var Window = ({
   const toggleCompact = () => {
     if (!compact)
       return;
-    if (isCompact) {
+    const next = !isCompact;
+    if (next) {
+      setIsCompact(true);
+    } else {
       setIsCompact(false);
       setDockedEdge(null);
-    } else {
-      setIsCompact(true);
     }
+    setTimeout(() => onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h, next), 50);
   };
   const handleMove = (e) => {
     if (drag.current.active) {
@@ -1883,7 +1886,7 @@ var Window = ({
         snapTimer.current = setTimeout(() => setSnapping(false), 350);
       }
     }
-    onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h);
+    onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h, isCompact);
   };
   const r = WINDOW_RADIUS;
   const borderRadii = !dockedEdge ? {
@@ -2235,6 +2238,26 @@ function isPluginEnabled(id) {
   }
   return pluginEnabledCache[id];
 }
+function getWindowState(id, defaults) {
+  return {
+    x: chill.config.appGetOrCreate(`Window.${id}.X`, defaults.x, `${id} \u7A97\u53E3 X \u5750\u6807`),
+    y: chill.config.appGetOrCreate(`Window.${id}.Y`, defaults.y, `${id} \u7A97\u53E3 Y \u5750\u6807`),
+    w: chill.config.appGetOrCreate(`Window.${id}.W`, defaults.w, `${id} \u7A97\u53E3\u5BBD\u5EA6`),
+    h: chill.config.appGetOrCreate(`Window.${id}.H`, defaults.h, `${id} \u7A97\u53E3\u9AD8\u5EA6`),
+    compact: chill.config.appGetOrCreate(`Window.${id}.Compact`, false, `${id} \u7A97\u53E3\u662F\u5426\u4E3A\u7D27\u51D1\u6A21\u5F0F`)
+  };
+}
+function updateWindowState(id, x, y, w, h2, compact) {
+  try {
+    chill.config.appSet(`Window.${id}.X`, Math.round(x));
+    chill.config.appSet(`Window.${id}.Y`, Math.round(y));
+    chill.config.appSet(`Window.${id}.W`, Math.round(w));
+    chill.config.appSet(`Window.${id}.H`, Math.round(h2));
+    chill.config.appSet(`Window.${id}.Compact`, compact);
+  } catch (e) {
+    console.error(`[WM] Failed to save state for ${id}:`, e);
+  }
+}
 var hoverEnabled = chill.config.appGetOrCreate("HoverEffect.Enabled", true, "\u662F\u5426\u542F\u7528\u7A97\u53E3 hover \u653E\u5927\u6548\u679C");
 var hoverScale = chill.config.appGetOrCreate("HoverEffect.Scale", 1.03, "hover \u653E\u5927\u500D\u6570 (1.0 = \u65E0\u653E\u5927)");
 var hoverDuration = chill.config.appGetOrCreate("HoverEffect.Duration", 0.4, "hover \u52A8\u753B\u65F6\u957F (\u79D2)");
@@ -2250,24 +2273,36 @@ var App = () => {
       _refreshPlugins = null;
     };
   }, []);
-  return /* @__PURE__ */ createElement(Fragment, null, plugins.map((p) => /* @__PURE__ */ createElement(
-    Window,
-    {
-      key: p.id,
-      title: p.title,
-      width: p.width,
-      height: p.height,
-      initialX: p.initialX,
-      initialY: p.initialY,
-      resizable: p.resizable,
-      compact: p.compact,
-      hoverEnabled,
-      hoverScale,
-      hoverDuration,
-      onGeometryChange: p.onGeometryChange
-    },
-    /* @__PURE__ */ createElement(ErrorBoundary, null, /* @__PURE__ */ createElement(p.component, null))
-  )));
+  return /* @__PURE__ */ createElement(Fragment, null, plugins.map((p) => {
+    const saved = getWindowState(p.id, {
+      x: p.initialX ?? 200,
+      y: p.initialY ?? 100,
+      w: p.width ?? 300,
+      h: p.height ?? 400
+    });
+    return /* @__PURE__ */ createElement(
+      Window,
+      {
+        key: p.id,
+        title: p.title,
+        width: saved.w,
+        height: saved.h,
+        initialX: saved.x,
+        initialY: saved.y,
+        initialCompact: saved.compact,
+        resizable: p.resizable,
+        compact: p.compact,
+        hoverEnabled,
+        hoverScale,
+        hoverDuration,
+        onGeometryChange: (x, y, w, h2, isCompact) => {
+          updateWindowState(p.id, x, y, w, h2, isCompact);
+          p.onGeometryChange?.(x, y, w, h2);
+        }
+      },
+      /* @__PURE__ */ createElement(ErrorBoundary, null, /* @__PURE__ */ createElement(p.component, null))
+    );
+  }));
 };
 render(/* @__PURE__ */ createElement(App, null), document.body);
 //# sourceMappingURL=app.js.map

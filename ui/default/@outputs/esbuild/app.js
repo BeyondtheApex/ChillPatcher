@@ -2832,7 +2832,7 @@ var ErrorBoundary = class extends BaseComponent {
   }
 };
 var App = () => {
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(false);
   if (!visible) {
     return /* @__PURE__ */ createElement(
       "div",
