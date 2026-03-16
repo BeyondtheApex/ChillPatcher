@@ -24,14 +24,14 @@
 
 ### 如何关闭小组件
 
-每个小组件窗口都可以拖拽移动，通过窗口上方的药丸按钮切换大/小窗口模式。关闭窗口后重启游戏会重新出现。
+每个小组件窗口都可以拖拽移动，通过窗口上方的药丸按钮切换大/小窗口模式。
 
-如需永久移除某个小组件，直接删除对应的输出文件夹即可（重启游戏生效）：
+如需关闭某个小组件：
 
 ```
-ui/window-manager/@outputs/plugins/lyrics/   ← 歌词
-ui/window-manager/@outputs/plugins/weather/   ← 天气
-ui/window-manager/@outputs/plugins/camera/    ← 相机
+设置 → UIInstace.window-manager → Plugins.lyrics.Enable → OFF   ← 歌词
+设置 → UIInstace.window-manager → Plugins.weather.Enable → OFF  ← 天气
+设置 → UIInstace.window-manager → Plugins.camera.Enable → OFF   ← 相机
 ```
 
 ---
