@@ -21,7 +21,7 @@ import (
 	"github.com/go-musicfox/go-musicfox/internal/netease"
 	"github.com/go-musicfox/netease-music/service"
 	"github.com/go-musicfox/netease-music/util"
-	"github.com/telanflow/cookiejar"
+	cookiejar "github.com/juju/persistent-cookiejar"
 )
 
 var (
@@ -89,7 +89,7 @@ func NeteaseInit(dataDirC *C.char) C.int {
 
 	// 加载 Cookie
 	cookiePath := filepath.Join(dataDir, "cookie")
-	jar, err := cookiejar.NewFileJar(cookiePath, nil)
+	jar, err := cookiejar.New(&cookiejar.Options{Filename: cookiePath})
 	if err != nil {
 		lastError = "Failed to load cookie jar: " + err.Error()
 		return 0
@@ -588,6 +588,36 @@ func NeteaseFMTrash(songId C.longlong) C.int {
 	}
 
 	return 1
+}
+
+//export NeteaseGetSongLyric
+// NeteaseGetSongLyric 获取歌曲歌词
+// songId: 歌曲 ID
+// 返回: LRC 格式歌词文本（原始文本，非 base64），失败返回 nil
+func NeteaseGetSongLyric(songId C.longlong) *C.char {
+	if !initialized {
+		lastError = "Not initialized"
+		return nil
+	}
+
+	lyricService := service.LyricService{
+		ID: strconv.FormatInt(int64(songId), 10),
+	}
+
+	code, resp := lyricService.Lyric()
+	if code != 200 {
+		lastError = "SongLyric API returned code: " + strconv.FormatFloat(code, 'f', 0, 64)
+		return nil
+	}
+
+	// 解析 lrc.lyric 字段
+	lyric, err := jsonparser.GetString(resp, "lrc", "lyric")
+	if err != nil || lyric == "" {
+		lastError = "No lyric found in response"
+		return nil
+	}
+
+	return C.CString(lyric)
 }
 
 func main() {

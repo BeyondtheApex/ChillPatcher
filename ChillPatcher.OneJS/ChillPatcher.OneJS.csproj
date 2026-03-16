@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <GamePath>F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed</GamePath>
+    <GamePath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed</GamePath>
   </PropertyGroup>
 
   <!-- Define constants: Not IL2CPP, Not Unity Editor, Unity 2022.3 -->
