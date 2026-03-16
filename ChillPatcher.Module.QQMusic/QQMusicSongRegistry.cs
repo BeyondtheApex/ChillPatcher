@@ -255,14 +255,13 @@ namespace ChillPatcher.Module.QQMusic
             return musicList;
         }
 
-        public MusicInfo RegisterLoginSong(string message)
+        public MusicInfo RegisterLoginSong(string message, string uuid = "qqmusic_login_song", string artist = "请使用 QQ 扫码登录")
         {
-            var uuid = "qqmusic_login_song";
             var music = new MusicInfo
             {
                 UUID = uuid,
                 Title = message,
-                Artist = "请使用QQ音乐APP扫码登录",
+                Artist = artist,
                 AlbumId = LOGIN_ALBUM_ID,
                 TagIds = new List<string> { TAG_FAVORITES },
                 SourceType = MusicSourceType.Stream,
@@ -279,6 +278,7 @@ namespace ChillPatcher.Module.QQMusic
         public void UnregisterLoginSong()
         {
             _context.MusicRegistry.UnregisterMusic("qqmusic_login_song");
+            _context.MusicRegistry.UnregisterMusic("qqmusic_wx_login_song");
         }
 
         #endregion

@@ -38,6 +38,8 @@ namespace ChillPatcher.Module.QQMusic
         private bool _isReady;
         private bool _isLoggedIn;
         private string _currentLoginSongUuid;
+        private string _wxLoginSongUuid;
+        private QRLoginManager _qrLoginManager;
 
         // Subscriptions
         private IDisposable _favoriteChangedSubscription;
@@ -47,7 +49,6 @@ namespace ChillPatcher.Module.QQMusic
         private ConfigEntry<int> _audioQuality;
         private ConfigEntry<string> _customPlaylistIds;
         private ConfigEntry<int> _streamReadyTimeoutMs;
-        private ConfigEntry<string> _manualCookie;
 
         #region IMusicModule Implementation
 
@@ -113,23 +114,6 @@ namespace ChillPatcher.Module.QQMusic
             // Check login status
             _isLoggedIn = _bridge.IsLoggedIn;
 
-            // Always try to set manual cookie if configured (to update cached cookie)
-            if (!string.IsNullOrWhiteSpace(_manualCookie?.Value))
-            {
-                _logger?.LogInfo("Setting manual cookie from config...");
-                if (_bridge.SetCookie(_manualCookie.Value))
-                {
-                    _isLoggedIn = _bridge.IsLoggedIn;
-                    _logger?.LogInfo($"Manual cookie set successfully, login status: {_isLoggedIn}");
-                }
-                else
-                {
-                    _logger?.LogWarning($"Failed to set manual cookie: {_bridge.GetLastError()}");
-                }
-            }
-
-            // Tags will be registered when songs are found (in ScanAndRegisterAsync)
-
             if (!_isLoggedIn)
             {
                 // Not logged in - show login prompt
@@ -160,6 +144,7 @@ namespace ChillPatcher.Module.QQMusic
 
         public void OnUnload()
         {
+            _qrLoginManager?.CancelLogin();
             _coverLoader?.ClearCache();
             _favoriteChangedSubscription?.Dispose();
         }
@@ -220,9 +205,21 @@ namespace ChillPatcher.Module.QQMusic
             AudioQuality quality = AudioQuality.ExHigh,
             CancellationToken cancellationToken = default)
         {
-            // Handle login song
+            // Handle login song - 触发二维码登录
             if (uuid == _currentLoginSongUuid || uuid == "qqmusic_login_song")
             {
+                if (_qrLoginManager != null && !_qrLoginManager.IsWaitingForLogin)
+                {
+                    _ = _qrLoginManager.StartLoginAsync("qq");
+                }
+                return CreateSilentSource(uuid);
+            }
+            if (uuid == _wxLoginSongUuid || uuid == "qqmusic_wx_login_song")
+            {
+                if (_qrLoginManager != null && !_qrLoginManager.IsWaitingForLogin)
+                {
+                    _ = _qrLoginManager.StartLoginAsync("wx");
+                }
                 return CreateSilentSource(uuid);
             }
 
@@ -305,6 +302,11 @@ namespace ChillPatcher.Module.QQMusic
 
         public Task<Sprite> GetMusicCoverAsync(string uuid)
         {
+            // 登录歌曲返回二维码封面
+            if ((uuid == _currentLoginSongUuid || uuid == _wxLoginSongUuid) && _qrLoginManager?.QRCodeSprite != null)
+            {
+                return Task.FromResult(_qrLoginManager.QRCodeSprite);
+            }
             return _coverLoader.GetMusicCoverAsync(uuid);
         }
 
@@ -315,6 +317,10 @@ namespace ChillPatcher.Module.QQMusic
 
         public Task<(byte[] data, string mimeType)> GetMusicCoverBytesAsync(string uuid)
         {
+            if ((uuid == _currentLoginSongUuid || uuid == _wxLoginSongUuid) && _qrLoginManager?.QRCodeBytes != null)
+            {
+                return Task.FromResult((_qrLoginManager.QRCodeBytes, "image/png"));
+            }
             return _coverLoader.GetMusicCoverBytesAsync(uuid);
         }
 
@@ -506,53 +512,31 @@ namespace ChillPatcher.Module.QQMusic
                 20000,
                 "PCM stream ready timeout (milliseconds)");
 
-            _manualCookie = configManager.Bind(
-                "",
-                "ManualCookie",
-                "",
-                "手动输入cookie (从浏览器复制y.qq.com的cookie，包含qqmusic_key等)");
-
-            // Watch for manual cookie changes
-            _manualCookie.SettingChanged += OnManualCookieChanged;
-        }
-
-        private void OnManualCookieChanged(object sender, EventArgs e)
-        {
-            var cookie = _manualCookie?.Value;
-            if (string.IsNullOrWhiteSpace(cookie)) return;
-
-            _logger?.LogInfo("Manual cookie detected, attempting login...");
-
-            try
-            {
-                if (_bridge.SetCookie(cookie))
-                {
-                    _logger?.LogInfo("Manual cookie set successfully");
-                    _isLoggedIn = true;
-
-                    // Trigger login success flow
-                    OnLoginSuccess();
-                }
-                else
-                {
-                    _logger?.LogError($"Failed to set manual cookie: {_bridge.GetLastError()}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError($"Manual cookie error: {ex.Message}");
-            }
         }
 
         private Task HandleNotLoggedInAsync()
         {
-            // Register login UI - show message to configure cookie manually
-            _songRegistry.RegisterLoginSongAlbum();
-            var loginSong = _songRegistry.RegisterLoginSong("请在配置文件中填入QQ音乐Cookie");
-            _currentLoginSongUuid = loginSong.UUID;
-            _musicList.Add(loginSong);
+            // 初始化 QR 登录管理器
+            _qrLoginManager = new QRLoginManager(_bridge, _logger);
+            _qrLoginManager.OnLoginSuccess += OnQRLoginSuccess;
+            _qrLoginManager.OnStatusChanged += OnQRLoginStatusChanged;
+            _qrLoginManager.OnQRCodeUpdated += OnQRCodeUpdated;
 
-            _logger?.LogWarning("QQ音乐未登录，请在配置文件中填入ManualCookie");
+            // 必须先注册 Tag，否则登录歌曲找不到 Tag
+            _songRegistry.RegisterFavoritesTag();
+            _songRegistry.RegisterLoginSongAlbum();
+
+            // QQ 登录歌曲
+            var qqLoginSong = _songRegistry.RegisterLoginSong("QQ 扫码登录", "qqmusic_login_song", "请使用 QQ 扫码登录");
+            _currentLoginSongUuid = qqLoginSong.UUID;
+            _musicList.Add(qqLoginSong);
+
+            // 微信登录歌曲
+            var wxLoginSong = _songRegistry.RegisterLoginSong("微信扫码登录", "qqmusic_wx_login_song", "请使用微信扫码登录");
+            _wxLoginSongUuid = wxLoginSong.UUID;
+            _musicList.Add(wxLoginSong);
+
+            _logger?.LogInfo("QQ音乐未登录，等待扫码登录");
             return Task.CompletedTask;
         }
 
@@ -560,20 +544,26 @@ namespace ChillPatcher.Module.QQMusic
         {
             try
             {
-                _logger?.LogInfo("Cookie login successful, loading music...");
+                _logger?.LogInfo("[QQ音乐] 登录成功，开始加载音乐...");
 
-                // Clean up login UI
+                // 清理登录歌曲
                 _songRegistry.UnregisterLoginSong();
-                _songRegistry.UnregisterLoginSongAlbum();
                 _musicList.Clear();
                 _currentLoginSongUuid = null;
+                _wxLoginSongUuid = null;
+                _qrLoginManager = null;
+
+                // 注销旧的所有专辑（包括登录专辑），重新注册
+                _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
 
                 _isLoggedIn = true;
 
-                // Load music
+                // 加载音乐
                 await ScanAndRegisterAsync();
 
-                // Notify UI
+                _logger?.LogInfo($"[QQ音乐] ✅ 登录后初始化完成，收藏 {_musicList.Count} 首");
+
+                // 通知 UI 刷新（触发跳转到歌曲列表）
                 _context.EventBus.Publish(new PlaylistUpdatedEvent
                 {
                     TagId = QQMusicSongRegistry.TAG_FAVORITES,
@@ -588,6 +578,42 @@ namespace ChillPatcher.Module.QQMusic
             catch (Exception ex)
             {
                 _logger?.LogError($"OnLoginSuccess error: {ex}");
+            }
+        }
+
+        private void OnQRLoginSuccess()
+        {
+            _logger?.LogInfo("[QQ音乐] QR扫码登录成功！");
+            OnLoginSuccess();
+        }
+
+        private void OnQRLoginStatusChanged(string status)
+        {
+            _logger?.LogInfo($"[QQ音乐] QR状态: {status}");
+
+            // 更新登录歌曲的 Artist 字段显示状态
+            if (_currentLoginSongUuid != null)
+            {
+                var loginSong = _musicList.FirstOrDefault(m => m.UUID == _currentLoginSongUuid);
+                if (loginSong != null)
+                {
+                    loginSong.Artist = status;
+                    _context.MusicRegistry.UpdateMusic(loginSong);
+                }
+            }
+        }
+
+        private void OnQRCodeUpdated(Sprite newQRCode)
+        {
+            // 清除封面缓存，让 UI 重新加载新的二维码
+            if (!string.IsNullOrEmpty(_currentLoginSongUuid))
+            {
+                _coverLoader?.RemoveMusicCoverCache(_currentLoginSongUuid);
+                _context.EventBus.Publish(new CoverInvalidatedEvent
+                {
+                    MusicUuid = _currentLoginSongUuid,
+                    Reason = "QR code updated"
+                });
             }
         }
 
@@ -611,25 +637,6 @@ namespace ChillPatcher.Module.QQMusic
                     _songRegistry.RegisterFavoritesAlbum(likeSongs.Count);
                     _musicList = _songRegistry.RegisterFavoritesSongs(likeSongs, _songInfoMap);
                     _logger?.LogInfo($"Registered {_musicList.Count} favorite songs");
-                }
-
-                // Load recommended songs
-                _logger?.LogInfo("ScanAndRegisterAsync: Getting recommend songs...");
-                var recommendSongs = await Task.Run(() => _bridge.GetRecommendSongs());
-                _logger?.LogInfo($"ScanAndRegisterAsync: Got {recommendSongs?.Count ?? 0} recommend songs, error: {_bridge.GetLastError()}");
-
-                if (recommendSongs != null && recommendSongs.Count > 0)
-                {
-                    // Only register recommend tag if there are songs
-                    _songRegistry.RegisterRecommendTag();
-                    _songRegistry.RegisterRecommendAlbum(recommendSongs.Count);
-                    _recommendMusicList = _songRegistry.RegisterRecommendSongs(recommendSongs, _songInfoMap, _musicList);
-                    _logger?.LogInfo($"Registered {_recommendMusicList.Count} recommend songs");
-
-                    // Set up load more callback
-                    _context.TagRegistry.SetLoadMoreCallback(
-                        QQMusicSongRegistry.TAG_RECOMMEND,
-                        LoadMoreRecommendSongsAsync);
                 }
 
                 // Import custom playlists

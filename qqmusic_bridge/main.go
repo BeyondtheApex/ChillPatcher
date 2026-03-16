@@ -663,3 +663,34 @@ func QQMusicGetCacheDir() *C.char {
 
 	return C.CString(cm.GetCacheDir())
 }
+
+// ==================== QR Login ====================
+
+//export QQMusicQRGetImage
+func QQMusicQRGetImage(loginType *C.char) *C.char {
+	lt := "qq"
+	if loginType != nil {
+		lt = C.GoString(loginType)
+	}
+	b64, err := GetQRImageBase64(lt)
+	if err != nil {
+		setError(err)
+		return nil
+	}
+	return C.CString(b64)
+}
+
+//export QQMusicQRCheckStatus
+func QQMusicQRCheckStatus() *C.char {
+	status, err := CheckQRLoginStatus()
+	if err != nil {
+		setError(err)
+		return nil
+	}
+	return C.CString(toJSON(status))
+}
+
+//export QQMusicQRCancelLogin
+func QQMusicQRCancelLogin() {
+	CancelQRLogin()
+}

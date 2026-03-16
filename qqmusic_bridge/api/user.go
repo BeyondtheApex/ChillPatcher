@@ -77,47 +77,64 @@ func (c *Client) GetUserVipInfo() (int, error) {
 }
 
 // GetLikeSongs gets the user's favorite songs (like list)
+// 使用 CgiGetDiss API (dirid=201 为收藏夹)
 func (c *Client) GetLikeSongs(getAll bool) ([]models.SongInfo, error) {
 	uin := c.GetUIN()
 	if uin == 0 {
 		return nil, fmt.Errorf("not logged in")
 	}
 
-	// Try the old FCG API first which might work with QQ cookies
-	songs, err := c.getLikeSongsFCG(uin, getAll)
-	if err == nil && len(songs) > 0 {
-		return songs, nil
+	// 从 cookie 中提取 euin（加密的 UIN）
+	euin := c.GetEuin()
+	if euin == "" {
+		// 如果没有 euin，尝试旧 API
+		songs, err := c.getLikeSongsFCG(uin, getAll)
+		if err == nil && len(songs) > 0 {
+			return songs, nil
+		}
+		return nil, fmt.Errorf("euin not available and old API failed")
 	}
 
-	// Fall back to CGI API
 	var allSongs []models.SongInfo
 	pageSize := 100
 	pageNum := 0
 
 	for {
 		params := map[string]interface{}{
-			"uin":       uin,
-			"num":       pageSize,
-			"start":     pageNum * pageSize,
-			"order":     0, // 0: newest first
-			"type":      1, // 1: songs
+			"disstid":      0,
+			"dirid":        201, // 201 = 我喜欢（收藏夹）
+			"tag":          true,
+			"song_begin":   pageNum * pageSize,
+			"song_num":     pageSize,
+			"userinfo":     true,
+			"orderlist":    true,
+			"enc_host_uin": euin,
 		}
 
-		data, err := c.RequestCGI("music.musicBox.PlayList", "GetPlayListDetail", params)
+		data, err := c.RequestCGI("music.srfDissInfo.DissInfo", "CgiGetDiss", params)
 		if err != nil {
+			// 回退到旧 API
+			if len(allSongs) == 0 {
+				songs, err2 := c.getLikeSongsFCG(uin, getAll)
+				if err2 == nil && len(songs) > 0 {
+					return songs, nil
+				}
+			}
 			if len(allSongs) > 0 {
-				return allSongs, nil // Return what we have
+				return allSongs, nil
 			}
 			return nil, fmt.Errorf("failed to get like songs: %w", err)
 		}
 
 		var result struct {
-			Total    int `json:"total"`
+			Dirinfo struct {
+				SongNum int `json:"songnum"`
+			} `json:"dirinfo"`
 			SongList []struct {
-				SongMid  string `json:"mid"`
-				SongId   int64  `json:"id"`
-				SongName string `json:"name"`
-				Interval int    `json:"interval"` // duration in seconds
+				Mid      string `json:"mid"`
+				Id       int64  `json:"id"`
+				Name     string `json:"name"`
+				Interval int    `json:"interval"`
 				Singer   []struct {
 					Name string `json:"name"`
 					Mid  string `json:"mid"`
@@ -147,9 +164,9 @@ func (c *Client) GetLikeSongs(getAll bool) ([]models.SongInfo, error) {
 			}
 
 			songInfo := models.SongInfo{
-				Mid:      song.SongMid,
-				ID:       song.SongId,
-				Name:     song.SongName,
+				Mid:      song.Mid,
+				ID:       song.Id,
+				Name:     song.Name,
 				Duration: float64(song.Interval),
 				Artists:  artists,
 				Album:    song.Album.Name,
@@ -166,11 +183,10 @@ func (c *Client) GetLikeSongs(getAll bool) ([]models.SongInfo, error) {
 			allSongs = append(allSongs, songInfo)
 		}
 
-		// Check if we have all songs
-		if !getAll || len(result.SongList) < pageSize || len(allSongs) >= result.Total {
+		total := result.Dirinfo.SongNum
+		if !getAll || len(result.SongList) < pageSize || len(allSongs) >= total {
 			break
 		}
-
 		pageNum++
 	}
 

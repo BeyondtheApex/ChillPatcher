@@ -101,6 +101,16 @@ namespace ChillPatcher.Module.QQMusic
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern int QQMusicIsCacheComplete(long streamId);
 
+        // QR Login
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        private static extern IntPtr QQMusicQRGetImage(string loginType);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr QQMusicQRCheckStatus();
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void QQMusicQRCancelLogin();
+
         // Utility
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern void QQMusicFreeString(IntPtr ptr);
@@ -127,6 +137,18 @@ namespace ChillPatcher.Module.QQMusic
             [JsonProperty("nickname")] public string Nickname { get; set; }
             [JsonProperty("avatarUrl")] public string AvatarUrl { get; set; }
             [JsonProperty("vipType")] public int VipType { get; set; }
+        }
+
+        public class QRLoginState
+        {
+            [JsonProperty("code")] public int Code { get; set; }
+            [JsonProperty("msg")] public string Msg { get; set; }
+            [JsonProperty("nickname")] public string Nickname { get; set; }
+
+            public bool IsWaitingScan => Code == 66;
+            public bool IsWaitingConfirm => Code == 67;
+            public bool IsSuccess => Code == 0;
+            public bool IsExpired => Code == 65;
         }
 
         public class SongInfo
@@ -262,6 +284,64 @@ namespace ChillPatcher.Module.QQMusic
         public string GetLastError()
         {
             return ReadAndFreeString(QQMusicGetLastError());
+        }
+
+        #endregion
+
+        #region QR Login API
+
+        /// <summary>
+        /// 获取QR码图片（base64编码的PNG）
+        /// </summary>
+        /// <param name="loginType">登录类型: "qq" 或 "wx"</param>
+        public string GetQRImage(string loginType = "qq")
+        {
+            try
+            {
+                return ReadAndFreeString(QQMusicQRGetImage(loginType));
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"GetQRImage error: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 检查QR扫码状态
+        /// </summary>
+        public QRLoginState CheckQRStatus()
+        {
+            try
+            {
+                var json = ReadAndFreeString(QQMusicQRCheckStatus());
+                if (string.IsNullOrEmpty(json))
+                {
+                    _logger?.LogWarning($"CheckQRStatus returned null, lastError: {GetLastError()}");
+                    return null;
+                }
+                return JsonConvert.DeserializeObject<QRLoginState>(json);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"CheckQRStatus error: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 取消QR登录
+        /// </summary>
+        public void CancelQRLogin()
+        {
+            try
+            {
+                QQMusicQRCancelLogin();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"CancelQRLogin error: {ex.Message}");
+            }
         }
 
         #endregion
