@@ -22,16 +22,17 @@
 | **Weather** | 天气小组件 |
 | **Camera** | 相机控制器 |
 
-### 如何关闭/开启小组件
+### 如何关闭小组件
 
-在游戏内右上角找到窗口管理器按钮，点击后可以看到所有小组件的列表。点击对应小组件即可切换显示/隐藏。
+每个小组件窗口都可以拖拽移动，通过窗口上方的药丸按钮切换大/小窗口模式。关闭窗口后重启游戏会重新出现。
 
-也可以通过修改小组件源码文件来永久禁用：
-- 歌词：`ui/window-manager/plugins/lyrics/index.tsx`
-- 天气：`ui/window-manager/plugins/weather/index.tsx`
-- 相机：`ui/window-manager/plugins/camera/index.tsx`
+如需永久移除某个小组件，直接删除对应的输出文件夹即可（重启游戏生效）：
 
-删除对应插件文件夹后重新构建 UI（`cd ui/window-manager && npm run build`）即可永久移除。
+```
+ui/window-manager/@outputs/plugins/lyrics/   ← 歌词
+ui/window-manager/@outputs/plugins/weather/   ← 天气
+ui/window-manager/@outputs/plugins/camera/    ← 相机
+```
 
 ---
 
