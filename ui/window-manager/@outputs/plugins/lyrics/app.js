@@ -1710,11 +1710,16 @@ function getCurrentLineIndex(lyrics, currentTime) {
   }
   return -1;
 }
-function extractSongMid(uuid) {
-  if (!uuid)
+function extractSongInfo(song) {
+  if (!song?.uuid)
     return null;
-  const match = uuid.match(/^qqmusic_(?:pl\d+_)?(.+)$/);
-  return match ? match[1] : null;
+  const qqMatch = song.uuid.match(/^qqmusic_(?:pl\d+_)?(.+)$/);
+  if (qqMatch)
+    return { source: "qq", id: qqMatch[1], cacheKey: "qq:" + qqMatch[1] };
+  if (song.moduleId && song.moduleId.indexOf("netease") >= 0) {
+    return { source: "netease", id: song.uuid, cacheKey: "ne:" + song.uuid };
+  }
+  return null;
 }
 function log(msg) {
   try {
@@ -1725,6 +1730,8 @@ function log(msg) {
 var BG = "#1e1e2e";
 var TEXT_DIM = "rgba(205, 214, 244, 0.3)";
 var TEXT_SUB = "rgba(205, 214, 244, 0.6)";
+var COMPACT_SIZES = { S: 240, M: 360, L: 480 };
+var _currentCompactWidth = 480;
 var TEXT_NEARBY = "rgba(205, 214, 244, 0.45)";
 var ACCENT = "#89b4fa";
 var lyricsCache = {};
@@ -1747,44 +1754,58 @@ var useLyricsPoller = () => {
         if (!songJson || songJson === "null")
           return;
         const song = JSON.parse(songJson);
-        const mid = extractSongMid(song.uuid);
-        if (!mid)
+        const info = extractSongInfo(song);
+        if (!info)
           return;
-        if (mid !== currentSongRef.current) {
-          currentSongRef.current = mid;
+        if (info.cacheKey !== currentSongRef.current) {
+          currentSongRef.current = info.cacheKey;
           if (song.title)
             setTitle(song.title);
           if (song.artist)
             setArtist(song.artist);
           lastIdxRef.current = -1;
           setCurrentIdx(-1);
-          if (lyricsCache[mid]) {
-            log("cache hit: " + mid + " (" + lyricsCache[mid].length + " lines)");
-            lyricsRef.current = lyricsCache[mid];
-            setLyrics(lyricsCache[mid]);
-            setStatusText(lyricsCache[mid].length > 0 ? "\u266A" : "\u6682\u65E0\u6B4C\u8BCD");
+          if (lyricsCache[info.cacheKey]) {
+            log("cache hit: " + info.cacheKey + " (" + lyricsCache[info.cacheKey].length + " lines)");
+            lyricsRef.current = lyricsCache[info.cacheKey];
+            setLyrics(lyricsCache[info.cacheKey]);
+            setStatusText(lyricsCache[info.cacheKey].length > 0 ? "\u266A" : "\u6682\u65E0\u6B4C\u8BCD");
             return;
           }
           lyricsRef.current = [];
           setLyrics([]);
           setStatusText("\u52A0\u8F7D\u6B4C\u8BCD\u4E2D...");
-          log("new song: " + song.title + " mid=" + mid);
-          const lyricApi = chill.custom.get("lyric");
-          if (!lyricApi) {
-            currentSongRef.current = "";
-            return;
+          log("new song: " + song.title + " source=" + info.source + " id=" + info.id);
+          let lrcText = null;
+          if (info.source === "qq") {
+            const lyricApi = chill.custom.get("lyric");
+            if (!lyricApi) {
+              currentSongRef.current = "";
+              return;
+            }
+            loadingRef.current = true;
+            const b64 = lyricApi.getSongLyric(info.id);
+            loadingRef.current = false;
+            if (b64)
+              lrcText = base64Decode(b64);
+          } else if (info.source === "netease") {
+            const neteaseApi = chill.custom.get("lyric_netease");
+            if (!neteaseApi) {
+              currentSongRef.current = "";
+              return;
+            }
+            loadingRef.current = true;
+            lrcText = neteaseApi.getSongLyric(info.id);
+            loadingRef.current = false;
           }
-          loadingRef.current = true;
-          const b64 = lyricApi.getSongLyric(mid);
-          loadingRef.current = false;
-          if (!b64) {
-            lyricsCache[mid] = [];
+          if (!lrcText) {
+            lyricsCache[info.cacheKey] = [];
             setStatusText("\u6682\u65E0\u6B4C\u8BCD");
             return;
           }
-          const parsed = parseLRC(base64Decode(b64));
+          const parsed = parseLRC(lrcText);
           log("parsed lines: " + parsed.length);
-          lyricsCache[mid] = parsed;
+          lyricsCache[info.cacheKey] = parsed;
           lyricsRef.current = parsed;
           setLyrics(parsed);
           if (parsed.length === 0) {
@@ -1818,35 +1839,117 @@ var useLyricsPoller = () => {
 };
 var LyricsCompact = () => {
   const { statusText, title } = useLyricsPoller();
+  const [sizeMode, setSizeMode] = useState("L");
+  const rootRef = useRef(null);
+  const resizeWindow = (w) => {
+    try {
+      const el = rootRef.current;
+      if (!el)
+        return;
+      const contentWrapper = el.parentNode;
+      const windowContainer = contentWrapper?.parentNode;
+      if (!windowContainer)
+        return;
+      windowContainer.style.width = w;
+      const dragClip = windowContainer.childNodes?.[1];
+      const pill = dragClip?.childNodes?.[0];
+      if (pill?.style) {
+        pill.style.left = (w - 40) / 2;
+      }
+    } catch (e) {
+      log("resize error: " + (e?.message || e));
+    }
+  };
+  const handleSize = (mode) => {
+    _currentCompactWidth = COMPACT_SIZES[mode];
+    setSizeMode(mode);
+    resizeWindow(COMPACT_SIZES[mode]);
+  };
+  const SizeBtn = ({ mode }) => /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: {
+        fontSize: 9,
+        color: sizeMode === mode ? ACCENT : TEXT_DIM,
+        backgroundColor: sizeMode === mode ? "rgba(137,180,250,0.15)" : "rgba(205,214,244,0.08)",
+        paddingLeft: 5,
+        paddingRight: 5,
+        paddingTop: 2,
+        paddingBottom: 2,
+        borderRadius: 3,
+        marginLeft: 3,
+        unityFontStyleAndWeight: "Bold"
+      },
+      onClick: () => handleSize(mode)
+    },
+    mode
+  );
   return /* @__PURE__ */ createElement(
     "div",
     {
+      ref: rootRef,
       style: {
         flexGrow: 1,
         display: "Flex",
         flexDirection: "Column",
         justifyContent: "Center",
         backgroundColor: BG,
-        paddingLeft: 16,
-        paddingRight: 16,
+        paddingLeft: 12,
+        paddingRight: 12,
         overflow: "Hidden"
       }
     },
-    title && /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: TEXT_SUB, marginBottom: 4, overflow: "Hidden", whiteSpace: "NoWrap", unityFontStyleAndWeight: "Bold" } }, title),
+    /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", alignItems: "Center", marginBottom: 4 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: TEXT_SUB, overflow: "Hidden", whiteSpace: "NoWrap", unityFontStyleAndWeight: "Bold", flexGrow: 1, flexShrink: 1 } }, title || ""), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", alignItems: "Center", flexShrink: 0 } }, /* @__PURE__ */ createElement(SizeBtn, { mode: "S" }), /* @__PURE__ */ createElement(SizeBtn, { mode: "M" }), /* @__PURE__ */ createElement(SizeBtn, { mode: "L" }))),
     /* @__PURE__ */ createElement("div", { style: { fontSize: 15, color: ACCENT, overflow: "Hidden", whiteSpace: "NoWrap", unityFontStyleAndWeight: "Bold" } }, statusText)
   );
 };
+var CURRENT_LINE_H = 26;
+var OTHER_LINE_H = 20;
+var HEADER_H = 90;
+function getLineStyle(distance) {
+  if (distance === 0)
+    return { fontSize: 20, color: ACCENT, unityFontStyleAndWeight: "Bold" };
+  const abs = Math.abs(distance);
+  if (abs === 1)
+    return { fontSize: 14, color: TEXT_NEARBY };
+  return { fontSize: 13, color: TEXT_DIM };
+}
 var LyricsCard = () => {
   const { currentIdx, lyrics, statusText, title, artist } = useLyricsPoller();
+  const cardRef = useRef(null);
+  const [visibleLines, setVisibleLines] = useState(5);
   const currText = currentIdx >= 0 ? lyrics[currentIdx].text : statusText;
   const hasLyrics = lyrics.length > 0 && currentIdx >= 0;
   const getLine = (offset) => {
     const i = currentIdx + offset;
     return hasLyrics && i >= 0 && i < lyrics.length ? lyrics[i].text : "";
   };
+  useEffect(() => {
+    const check = () => {
+      try {
+        const h2 = cardRef.current?.ve?.resolvedStyle?.height;
+        if (h2 && h2 > 0) {
+          const available = h2 - HEADER_H;
+          const sideLines = Math.max(0, Math.floor((available - CURRENT_LINE_H) / (2 * OTHER_LINE_H)));
+          const total = 1 + sideLines * 2;
+          setVisibleLines(Math.max(1, total));
+        }
+      } catch {
+      }
+    };
+    const timer = setInterval(check, 500);
+    check();
+    return () => clearInterval(timer);
+  }, []);
+  const sideCount = Math.floor((visibleLines - 1) / 2);
+  const lineOffsets = [];
+  for (let i = -sideCount; i <= sideCount; i++) {
+    lineOffsets.push(i);
+  }
   return /* @__PURE__ */ createElement(
     "div",
     {
+      ref: cardRef,
       style: {
         flexGrow: 1,
         display: "Flex",
@@ -1859,13 +1962,25 @@ var LyricsCard = () => {
       }
     },
     /* @__PURE__ */ createElement("div", { style: { fontSize: 15, color: TEXT_SUB, unityTextAlign: "MiddleCenter", whiteSpace: "NoWrap", unityFontStyleAndWeight: "Bold", marginBottom: 2 } }, title || ""),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: TEXT_DIM, unityTextAlign: "MiddleCenter", whiteSpace: "NoWrap", marginBottom: 4 } }, artist || ""),
+    /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: TEXT_DIM, unityTextAlign: "MiddleCenter", whiteSpace: "NoWrap", marginBottom: 6 } }, artist || ""),
+    /* @__PURE__ */ createElement("div", { style: { height: 1, backgroundColor: "rgba(205, 214, 244, 0.15)", marginBottom: 8 } }),
     /* @__PURE__ */ createElement("div", { style: { flexGrow: 1 } }),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: TEXT_DIM, unityTextAlign: "MiddleCenter", whiteSpace: "NoWrap", marginBottom: 4 } }, getLine(-2)),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: TEXT_NEARBY, unityTextAlign: "MiddleCenter", whiteSpace: "NoWrap", marginBottom: 4 } }, getLine(-1)),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 20, color: ACCENT, unityFontStyleAndWeight: "Bold", unityTextAlign: "MiddleCenter", whiteSpace: "NoWrap", marginBottom: 4 } }, currText),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: TEXT_NEARBY, unityTextAlign: "MiddleCenter", whiteSpace: "NoWrap", marginBottom: 4 } }, getLine(1)),
-    /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: TEXT_DIM, unityTextAlign: "MiddleCenter", whiteSpace: "NoWrap" } }, getLine(2)),
+    lineOffsets.map((offset) => {
+      const style = getLineStyle(offset);
+      return /* @__PURE__ */ createElement(
+        "div",
+        {
+          key: offset,
+          style: {
+            ...style,
+            unityTextAlign: "MiddleCenter",
+            whiteSpace: "NoWrap",
+            marginBottom: offset < sideCount ? 4 : 0
+          }
+        },
+        offset === 0 ? currText : getLine(offset)
+      );
+    }),
     /* @__PURE__ */ createElement("div", { style: { flexGrow: 1 } })
   );
 };
@@ -1879,7 +1994,9 @@ __registerPlugin({
   resizable: true,
   component: LyricsCard,
   compact: {
-    width: 480,
+    get width() {
+      return _currentCompactWidth;
+    },
     height: 60,
     component: LyricsCompact
   }
