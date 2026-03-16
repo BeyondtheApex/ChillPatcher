@@ -214,7 +214,7 @@ namespace ChillPatcher.Module.QQMusic
                 }
                 return CreateSilentSource(uuid);
             }
-            if (uuid == _wxLoginSongUuid || uuid == "qqmusic_wx_login_song")
+            if (uuid == _wxLoginSongUuid || uuid == "qqmusic_login_song_wx")
             {
                 if (_qrLoginManager != null && !_qrLoginManager.IsWaitingForLogin)
                 {
@@ -532,7 +532,7 @@ namespace ChillPatcher.Module.QQMusic
             _musicList.Add(qqLoginSong);
 
             // 微信登录歌曲
-            var wxLoginSong = _songRegistry.RegisterLoginSong("微信扫码登录", "qqmusic_wx_login_song", "请使用微信扫码登录");
+            var wxLoginSong = _songRegistry.RegisterLoginSong("微信扫码登录", "qqmusic_login_song_wx", "请使用微信扫码登录");
             _wxLoginSongUuid = wxLoginSong.UUID;
             _musicList.Add(wxLoginSong);
 
@@ -759,7 +759,7 @@ namespace ChillPatcher.Module.QQMusic
         {
             // Return a silent PCM stream for login song
             var reader = new SilentPcmReader(30f);
-            return PlayableSource.FromPcmStream(uuid, reader, AudioFormat.Unknown);
+            return PlayableSource.FromPcmStream(uuid, reader, AudioFormat.Mp3);
         }
 
         #endregion
