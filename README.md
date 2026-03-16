@@ -1,5 +1,40 @@
 # ChillPatcher
 
+## 🗂️ 登录数据保存位置
+
+各模块的登录信息保存在以下位置：
+
+| 模块 | 保存位置 |
+|------|---------|
+| QQ 音乐 | `<游戏目录>\BepInEx\plugins\ChillPatcher\Modules\com.chillpatcher.qqmusic\data\qqmusic_cookie.json` |
+| 网易云音乐 | `C:\Users\<用户名>\AppData\Local\go-musicfox\cookie` |
+| Bilibili | `C:\Users\<用户名>\AppData\LocalLow\nestopi\Chill With You\ChillPatcher\com.chillpatcher.bilibili\bilibili_session.json` |
+
+如需重新登录，删除对应文件后重启游戏即可。
+
+## 🧩 窗口小组件管理
+
+窗口管理器内置了以下小组件插件：
+
+| 插件 | 说明 |
+|------|------|
+| **Lyrics** | 实时歌词显示（支持 QQ 音乐和网易云） |
+| **Weather** | 天气小组件 |
+| **Camera** | 相机控制器 |
+
+### 如何关闭/开启小组件
+
+在游戏内右上角找到窗口管理器按钮，点击后可以看到所有小组件的列表。点击对应小组件即可切换显示/隐藏。
+
+也可以通过修改小组件源码文件来永久禁用：
+- 歌词：`ui/window-manager/plugins/lyrics/index.tsx`
+- 天气：`ui/window-manager/plugins/weather/index.tsx`
+- 相机：`ui/window-manager/plugins/camera/index.tsx`
+
+删除对应插件文件夹后重新构建 UI（`cd ui/window-manager && npm run build`）即可永久移除。
+
+---
+
 这是一个 BepInEx 插件，包括多种新的功能改进
 - 为游戏真正的flac支持.
 - 为游戏提供歌曲批量导入和歌单管理.
@@ -771,39 +806,6 @@ dotnet build
 # 输出目录
 bin/Debug/ChillPatcher.dll
 ```
-
-## 🗂️ 登录数据保存位置
-
-各模块的登录信息保存在以下位置：
-
-| 模块 | 保存位置 |
-|------|---------|
-| QQ 音乐 | `<游戏目录>\BepInEx\plugins\ChillPatcher\Modules\com.chillpatcher.qqmusic\data\qqmusic_cookie.json` |
-| 网易云音乐 | `C:\Users\<用户名>\AppData\Local\go-musicfox\cookie` |
-| Bilibili | `C:\Users\<用户名>\AppData\LocalLow\nestopi\Chill With You\ChillPatcher\com.chillpatcher.bilibili\bilibili_session.json` |
-
-如需重新登录，删除对应文件后重启游戏即可。
-
-## 🧩 窗口小组件管理
-
-窗口管理器内置了以下小组件插件：
-
-| 插件 | 说明 |
-|------|------|
-| **Lyrics** | 实时歌词显示（支持 QQ 音乐和网易云） |
-| **Weather** | 天气小组件 |
-| **Camera** | 相机控制器 |
-
-### 如何关闭/开启小组件
-
-在游戏内右上角找到窗口管理器按钮，点击后可以看到所有小组件的列表。点击对应小组件即可切换显示/隐藏。
-
-也可以通过修改小组件源码文件来永久禁用：
-- 歌词：`ui/window-manager/plugins/lyrics/index.tsx`
-- 天气：`ui/window-manager/plugins/weather/index.tsx`
-- 相机：`ui/window-manager/plugins/camera/index.tsx`
-
-删除对应插件文件夹后重新构建 UI（`cd ui/window-manager && npm run build`）即可永久移除。
 
 ## ❓ 常见问题
 
