@@ -2224,6 +2224,17 @@ var ErrorBoundary = ({ children }) => {
   }
   return children;
 };
+var pluginEnabledCache = {};
+function isPluginEnabled(id) {
+  if (!(id in pluginEnabledCache)) {
+    pluginEnabledCache[id] = chill.config.appGetOrCreate(
+      `Plugin.${id}.Enabled`,
+      true,
+      `\u662F\u5426\u542F\u7528 ${id} \u5C0F\u7EC4\u4EF6 (\u91CD\u542F\u751F\u6548)`
+    );
+  }
+  return pluginEnabledCache[id];
+}
 var hoverEnabled = chill.config.appGetOrCreate("HoverEffect.Enabled", true, "\u662F\u5426\u542F\u7528\u7A97\u53E3 hover \u653E\u5927\u6548\u679C");
 var hoverScale = chill.config.appGetOrCreate("HoverEffect.Scale", 1.03, "hover \u653E\u5927\u500D\u6570 (1.0 = \u65E0\u653E\u5927)");
 var hoverDuration = chill.config.appGetOrCreate("HoverEffect.Duration", 0.4, "hover \u52A8\u753B\u65F6\u957F (\u79D2)");
@@ -2231,9 +2242,10 @@ var App = () => {
   const [plugins, setPlugins] = useState([]);
   useEffect(() => {
     loadPlugins();
-    setPlugins([...pluginRegistry]);
-    _refreshPlugins = () => setPlugins([...pluginRegistry]);
-    console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s)`);
+    const enabled = pluginRegistry.filter((p) => isPluginEnabled(p.id));
+    setPlugins(enabled);
+    _refreshPlugins = () => setPlugins(pluginRegistry.filter((p) => isPluginEnabled(p.id)));
+    console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s), enabled ${enabled.length}`);
     return () => {
       _refreshPlugins = null;
     };

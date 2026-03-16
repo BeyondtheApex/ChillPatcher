@@ -134,6 +134,19 @@ const ErrorBoundary = ({ children }: { children?: any }) => {
     return children
 }
 
+// ---- Plugin enable config ----
+// 每个插件单独的开关，在图形化设置中可见
+const pluginEnabledCache: Record<string, boolean> = {}
+
+function isPluginEnabled(id: string): boolean {
+    if (!(id in pluginEnabledCache)) {
+        pluginEnabledCache[id] = chill.config.appGetOrCreate(
+            `Plugin.${id}.Enabled`, true,
+            `是否启用 ${id} 小组件 (重启生效)`)
+    }
+    return pluginEnabledCache[id]
+}
+
 // ---- Hover effect config ----
 const hoverEnabled = chill.config.appGetOrCreate("HoverEffect.Enabled", true, "是否启用窗口 hover 放大效果")
 const hoverScale = chill.config.appGetOrCreate("HoverEffect.Scale", 1.03, "hover 放大倍数 (1.0 = 无放大)")
@@ -145,9 +158,11 @@ const App = () => {
 
     useEffect(() => {
         loadPlugins()
-        setPlugins([...pluginRegistry])
-        _refreshPlugins = () => setPlugins([...pluginRegistry])
-        console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s)`)
+        // 过滤掉被禁用的插件
+        const enabled = pluginRegistry.filter(p => isPluginEnabled(p.id))
+        setPlugins(enabled)
+        _refreshPlugins = () => setPlugins(pluginRegistry.filter(p => isPluginEnabled(p.id)))
+        console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s), enabled ${enabled.length}`)
         return () => { _refreshPlugins = null }
     }, [])
 
