@@ -1706,6 +1706,7 @@ var Window = ({
   initialX = 200,
   initialY = 100,
   initialCompact = false,
+  initialDockedEdge = null,
   resizable = false,
   compact,
   hoverEnabled: hoverEnabled2 = true,
@@ -1721,7 +1722,7 @@ var Window = ({
     h: Math.max(MIN_HEIGHT, height)
   });
   const [isCompact, setIsCompact] = useState(initialCompact && !!compact);
-  const [dockedEdge, setDockedEdge] = useState(null);
+  const [dockedEdge, setDockedEdge] = useState(initialDockedEdge);
   const drag = useRef({ active: false, ox: 0, oy: 0 });
   const resize = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 });
   const [hovered, setHovered] = useState(false);
@@ -1781,7 +1782,7 @@ var Window = ({
       setIsCompact(false);
       setDockedEdge(null);
     }
-    setTimeout(() => onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h, next), 50);
+    setTimeout(() => onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h, next, next ? dockedEdge : null), 50);
   };
   const handleMove = (e) => {
     if (drag.current.active) {
@@ -1886,7 +1887,7 @@ var Window = ({
         snapTimer.current = setTimeout(() => setSnapping(false), 350);
       }
     }
-    onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h, isCompact);
+    onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h, isCompact, dockedEdge);
   };
   const r = WINDOW_RADIUS;
   const borderRadii = !dockedEdge ? {
@@ -2244,16 +2245,18 @@ function getWindowState(id, defaults) {
     y: chill.config.appGetOrCreate(`Window.${id}.Y`, defaults.y, `${id} \u7A97\u53E3 Y \u5750\u6807`),
     w: chill.config.appGetOrCreate(`Window.${id}.W`, defaults.w, `${id} \u7A97\u53E3\u5BBD\u5EA6`),
     h: chill.config.appGetOrCreate(`Window.${id}.H`, defaults.h, `${id} \u7A97\u53E3\u9AD8\u5EA6`),
-    compact: chill.config.appGetOrCreate(`Window.${id}.Compact`, false, `${id} \u7A97\u53E3\u662F\u5426\u4E3A\u7D27\u51D1\u6A21\u5F0F`)
+    compact: chill.config.appGetOrCreate(`Window.${id}.Compact`, false, `${id} \u7A97\u53E3\u662F\u5426\u4E3A\u7D27\u51D1\u6A21\u5F0F`),
+    dockedEdge: chill.config.appGetOrCreate(`Window.${id}.DockedEdge`, "", `${id} \u7A97\u53E3\u5438\u9644\u8FB9\u7F18 (left/right/top/bottom/\u7A7A)`)
   };
 }
-function updateWindowState(id, x, y, w, h2, compact) {
+function updateWindowState(id, x, y, w, h2, compact, dockedEdge) {
   try {
     chill.config.appSet(`Window.${id}.X`, Math.round(x));
     chill.config.appSet(`Window.${id}.Y`, Math.round(y));
     chill.config.appSet(`Window.${id}.W`, Math.round(w));
     chill.config.appSet(`Window.${id}.H`, Math.round(h2));
     chill.config.appSet(`Window.${id}.Compact`, compact);
+    chill.config.appSet(`Window.${id}.DockedEdge`, dockedEdge || "");
   } catch (e) {
     console.error(`[WM] Failed to save state for ${id}:`, e);
   }
@@ -2290,13 +2293,14 @@ var App = () => {
         initialX: saved.x,
         initialY: saved.y,
         initialCompact: saved.compact,
+        initialDockedEdge: saved.dockedEdge || null,
         resizable: p.resizable,
         compact: p.compact,
         hoverEnabled,
         hoverScale,
         hoverDuration,
-        onGeometryChange: (x, y, w, h2, isCompact) => {
-          updateWindowState(p.id, x, y, w, h2, isCompact);
+        onGeometryChange: (x, y, w, h2, isCompact, dockedEdge) => {
+          updateWindowState(p.id, x, y, w, h2, isCompact, dockedEdge);
           p.onGeometryChange?.(x, y, w, h2);
         }
       },
