@@ -153,6 +153,7 @@ interface WindowState {
     w: number
     h: number
     compact: boolean
+    dockedEdge: string
 }
 
 function getWindowState(id: string, defaults: { x: number, y: number, w: number, h: number }): WindowState {
@@ -162,16 +163,18 @@ function getWindowState(id: string, defaults: { x: number, y: number, w: number,
         w: chill.config.appGetOrCreate(`Window.${id}.W`, defaults.w, `${id} 窗口宽度`),
         h: chill.config.appGetOrCreate(`Window.${id}.H`, defaults.h, `${id} 窗口高度`),
         compact: chill.config.appGetOrCreate(`Window.${id}.Compact`, false, `${id} 窗口是否为紧凑模式`),
+        dockedEdge: chill.config.appGetOrCreate(`Window.${id}.DockedEdge`, "", `${id} 窗口吸附边缘 (left/right/top/bottom/空)`),
     }
 }
 
-function updateWindowState(id: string, x: number, y: number, w: number, h: number, compact: boolean) {
+function updateWindowState(id: string, x: number, y: number, w: number, h: number, compact: boolean, dockedEdge: string | null) {
     try {
         chill.config.appSet(`Window.${id}.X`, Math.round(x))
         chill.config.appSet(`Window.${id}.Y`, Math.round(y))
         chill.config.appSet(`Window.${id}.W`, Math.round(w))
         chill.config.appSet(`Window.${id}.H`, Math.round(h))
         chill.config.appSet(`Window.${id}.Compact`, compact)
+        chill.config.appSet(`Window.${id}.DockedEdge`, dockedEdge || "")
     } catch (e) {
         console.error(`[WM] Failed to save state for ${id}:`, e)
     }
@@ -213,13 +216,14 @@ const App = () => {
                         initialX={saved.x}
                         initialY={saved.y}
                         initialCompact={saved.compact}
+                        initialDockedEdge={saved.dockedEdge || null}
                         resizable={p.resizable}
                         compact={p.compact}
                         hoverEnabled={hoverEnabled}
                         hoverScale={hoverScale}
                         hoverDuration={hoverDuration}
-                        onGeometryChange={(x, y, w, h, isCompact) => {
-                            updateWindowState(p.id, x, y, w, h, isCompact)
+                        onGeometryChange={(x, y, w, h, isCompact, dockedEdge) => {
+                            updateWindowState(p.id, x, y, w, h, isCompact, dockedEdge)
                             p.onGeometryChange?.(x, y, w, h)
                         }}
                     >
