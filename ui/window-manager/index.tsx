@@ -134,6 +134,52 @@ const ErrorBoundary = ({ children }: { children?: any }) => {
     return children
 }
 
+// ---- Plugin enable config ----
+const pluginEnabledCache: Record<string, boolean> = {}
+
+function isPluginEnabled(id: string): boolean {
+    if (!(id in pluginEnabledCache)) {
+        pluginEnabledCache[id] = chill.config.appGetOrCreate(
+            `Plugin.${id}.Enabled`, true,
+            `是否启用 ${id} 小组件 (重启生效)`)
+    }
+    return pluginEnabledCache[id]
+}
+
+// ---- Window state persistence (via chill.config) ----
+interface WindowState {
+    x: number
+    y: number
+    w: number
+    h: number
+    compact: boolean
+    dockedEdge: string
+}
+
+function getWindowState(id: string, defaults: { x: number, y: number, w: number, h: number }): WindowState {
+    return {
+        x: chill.config.appGetOrCreate(`Window.${id}.X`, defaults.x, `${id} 窗口 X 坐标`),
+        y: chill.config.appGetOrCreate(`Window.${id}.Y`, defaults.y, `${id} 窗口 Y 坐标`),
+        w: chill.config.appGetOrCreate(`Window.${id}.W`, defaults.w, `${id} 窗口宽度`),
+        h: chill.config.appGetOrCreate(`Window.${id}.H`, defaults.h, `${id} 窗口高度`),
+        compact: chill.config.appGetOrCreate(`Window.${id}.Compact`, false, `${id} 窗口是否为紧凑模式`),
+        dockedEdge: chill.config.appGetOrCreate(`Window.${id}.DockedEdge`, "", `${id} 窗口吸附边缘 (left/right/top/bottom/空)`),
+    }
+}
+
+function updateWindowState(id: string, x: number, y: number, w: number, h: number, compact: boolean, dockedEdge: string | null) {
+    try {
+        chill.config.appSet(`Window.${id}.X`, Math.round(x))
+        chill.config.appSet(`Window.${id}.Y`, Math.round(y))
+        chill.config.appSet(`Window.${id}.W`, Math.round(w))
+        chill.config.appSet(`Window.${id}.H`, Math.round(h))
+        chill.config.appSet(`Window.${id}.Compact`, compact)
+        chill.config.appSet(`Window.${id}.DockedEdge`, dockedEdge || "")
+    } catch (e) {
+        console.error(`[WM] Failed to save state for ${id}:`, e)
+    }
+}
+
 // ---- Hover effect config ----
 const hoverEnabled = chill.config.appGetOrCreate("HoverEffect.Enabled", true, "是否启用窗口 hover 放大效果")
 const hoverScale = chill.config.appGetOrCreate("HoverEffect.Scale", 1.03, "hover 放大倍数 (1.0 = 无放大)")
@@ -145,34 +191,48 @@ const App = () => {
 
     useEffect(() => {
         loadPlugins()
-        setPlugins([...pluginRegistry])
-        _refreshPlugins = () => setPlugins([...pluginRegistry])
-        console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s)`)
+        const enabled = pluginRegistry.filter(p => isPluginEnabled(p.id))
+        setPlugins(enabled)
+        _refreshPlugins = () => setPlugins(pluginRegistry.filter(p => isPluginEnabled(p.id)))
+        console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s), enabled ${enabled.length}`)
         return () => { _refreshPlugins = null }
     }, [])
 
     return (
         <>
-            {plugins.map((p) => (
-                <Window
-                    key={p.id}
-                    title={p.title}
-                    width={p.width}
-                    height={p.height}
-                    initialX={p.initialX}
-                    initialY={p.initialY}
-                    resizable={p.resizable}
-                    compact={p.compact}
-                    hoverEnabled={hoverEnabled}
-                    hoverScale={hoverScale}
-                    hoverDuration={hoverDuration}
-                    onGeometryChange={p.onGeometryChange}
-                >
-                    <ErrorBoundary>
-                        <p.component />
-                    </ErrorBoundary>
-                </Window>
-            ))}
+            {plugins.map((p) => {
+                const saved = getWindowState(p.id, {
+                    x: p.initialX ?? 200,
+                    y: p.initialY ?? 100,
+                    w: p.width ?? 300,
+                    h: p.height ?? 400,
+                })
+                return (
+                    <Window
+                        key={p.id}
+                        title={p.title}
+                        width={saved.w}
+                        height={saved.h}
+                        initialX={saved.x}
+                        initialY={saved.y}
+                        initialCompact={saved.compact}
+                        initialDockedEdge={saved.dockedEdge || null}
+                        resizable={p.resizable}
+                        compact={p.compact}
+                        hoverEnabled={hoverEnabled}
+                        hoverScale={hoverScale}
+                        hoverDuration={hoverDuration}
+                        onGeometryChange={(x, y, w, h, isCompact, dockedEdge) => {
+                            updateWindowState(p.id, x, y, w, h, isCompact, dockedEdge)
+                            p.onGeometryChange?.(x, y, w, h)
+                        }}
+                    >
+                        <ErrorBoundary>
+                            <p.component />
+                        </ErrorBoundary>
+                    </Window>
+                )
+            })}
         </>
     )
 }

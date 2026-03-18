@@ -2,9 +2,13 @@ package crypto
 
 import (
 	"crypto/md5"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -141,6 +145,57 @@ func GenerateCommData(uin int64) map[string]interface{} {
 		"fp_platform":      "yqq.json",
 		"fp_needNewCode":   0,
 	}
+}
+
+// SignRequestPayload 计算 QQ Music API 请求签名（参照 QQMusicApi 参考项目的 sign.py）
+// 对整个 JSON payload 做 SHA1 摘要，然后通过位操作和 Base64 编码生成签名
+func SignRequestPayload(payload interface{}) string {
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+
+	// SHA1 摘要
+	h := sha1.New()
+	h.Write(jsonData)
+	digest := strings.ToUpper(hex.EncodeToString(h.Sum(nil)))
+
+	// Part 1: 从摘要中按索引提取字符
+	part1Indexes := []int{23, 14, 6, 36, 16, 7, 19} // 只取 < 40 的
+	var part1 strings.Builder
+	for _, i := range part1Indexes {
+		if i < len(digest) {
+			part1.WriteByte(digest[i])
+		}
+	}
+
+	// Part 2: 从摘要中按索引提取字符
+	part2Indexes := []int{16, 1, 32, 12, 19, 27, 8, 5}
+	var part2 strings.Builder
+	for _, i := range part2Indexes {
+		if i < len(digest) {
+			part2.WriteByte(digest[i])
+		}
+	}
+
+	// Part 3: XOR 混淆
+	scrambleValues := []int{89, 39, 179, 150, 218, 82, 58, 252, 177, 52, 186, 123, 120, 64, 242, 133, 143, 161, 121, 179}
+	part3 := make([]byte, 20)
+	for i, value := range scrambleValues {
+		if i*2+2 <= len(digest) {
+			hexByte := digest[i*2 : i*2+2]
+			var b int
+			fmt.Sscanf(hexByte, "%X", &b)
+			part3[i] = byte(value ^ b)
+		}
+	}
+
+	// Base64 编码并去掉特殊字符
+	b64Part := base64.StdEncoding.EncodeToString(part3)
+	re := regexp.MustCompile(`[\\/+=]`)
+	b64Part = re.ReplaceAllString(b64Part, "")
+
+	return strings.ToLower("zzc" + part1.String() + b64Part + part2.String())
 }
 
 // GtkHash calculates the g_tk hash from skey

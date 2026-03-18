@@ -172,6 +172,23 @@ func (c *Client) GetGUID() string {
 	return c.guid
 }
 
+// GetEuin returns the encrypted UIN from cookies
+func (c *Client) GetEuin() string {
+	c.mu.RLock()
+	cookies := c.cookies
+	c.mu.RUnlock()
+
+	for _, part := range strings.Split(cookies, ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "euin=") {
+			if idx := strings.Index(part, "="); idx >= 0 {
+				return part[idx+1:]
+			}
+		}
+	}
+	return ""
+}
+
 // saveCookies saves cookies to file
 func (c *Client) saveCookies() error {
 	if c.dataDir == "" {
@@ -312,40 +329,19 @@ func (c *Client) RequestCGI(module, method string, params map[string]interface{}
 
 	debugLog("[RequestCGI] module=%s, method=%s, uin=%d, gtk=%d, cookies_len=%d", module, method, uin, gtk, len(cookies))
 
-	// Extract authst (qqmusic_key) from cookies for authentication
-	authst := ""
-	tmeLoginType := 0
-	for _, part := range strings.Split(cookies, ";") {
-		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, "qqmusic_key=") || strings.HasPrefix(part, "qm_keyst=") {
-			if idx := strings.Index(part, "="); idx >= 0 {
-				authst = part[idx+1:]
-			}
-		}
-		if strings.HasPrefix(part, "tmeLoginType=") {
-			if idx := strings.Index(part, "="); idx >= 0 {
-				fmt.Sscanf(part[idx+1:], "%d", &tmeLoginType)
-			}
-		}
-	}
+	// authst 和 tmeLoginType 不再在 comm 中使用（Web 平台通过 cookie 鉴权）
+	_ = strings.Split(cookies, ";") // cookies 通过 Header 发送
 
-	// Use yqq.json platform with QQ login credentials
+	// Web 平台 comm 参数（参照 QQMusicApi 参考项目的 versioning.py）
 	reqData := map[string]interface{}{
 		"comm": map[string]interface{}{
-			"g_tk":         gtk,
-			"uin":          uin,
-			"loginUin":     uin,
-			"format":       "json",
-			"inCharset":    "utf-8",
-			"outCharset":   "utf-8",
-			"notice":       0,
-			"platform":     "yqq.json",
-			"needNewCode":  0,
-			"ct":           20,
-			"cv":           4747474,
-			"authst":       authst,
-			"tmeLoginType": tmeLoginType,
-			"tmeAppID":     "qqmusic",
+			"ct":                24,
+			"cv":                4747474,
+			"platform":          "yqq.json",
+			"chid":              "0",
+			"uin":               uin,
+			"g_tk":              gtk,
+			"g_tk_new_20200303": gtk,
 		},
 		"req_0": map[string]interface{}{
 			"module": module,
@@ -361,12 +357,17 @@ func (c *Client) RequestCGI(module, method string, params map[string]interface{}
 
 	debugLog("[RequestCGI] Request body: %s", string(jsonData))
 
-	reqURL := BaseURL + "/cgi-bin/musics.fcg"
+	// 计算请求签名
+	sign := crypto.SignRequestPayload(reqData)
+
+	reqURL := BaseURL + "/cgi-bin/musicu.fcg"
 	req := c.httpClient.R().
 		SetHeader("Content-Type", "application/json").
-		SetQueryParam("_", fmt.Sprintf("%d", time.Now().UnixMilli())).
-		SetQueryParam("g_tk", fmt.Sprintf("%d", gtk)).
 		SetBody(jsonData)
+
+	if sign != "" {
+		req.SetQueryParam("sign", sign)
+	}
 
 	if cookies != "" {
 		req.SetHeader("Cookie", cookies)
@@ -443,7 +444,7 @@ func (c *Client) RequestMultiCGI(requests map[string]struct {
 		return nil, err
 	}
 
-	reqURL := BaseURL + "/cgi-bin/musics.fcg"
+	reqURL := BaseURL + "/cgi-bin/musicu.fcg"
 	req := c.httpClient.R().
 		SetHeader("Content-Type", "application/json").
 		SetQueryParam("_", fmt.Sprintf("%d", time.Now().UnixMilli())).

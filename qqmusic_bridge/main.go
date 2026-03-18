@@ -335,6 +335,26 @@ func QQMusicSearchSongs(keyword *C.char, page, pageSize C.int) *C.char {
 	return C.CString(toJSON(result))
 }
 
+//export QQMusicGetSongLyric
+func QQMusicGetSongLyric(songMid *C.char) *C.char {
+	mu.RLock()
+	c := client
+	mu.RUnlock()
+
+	if c == nil {
+		setError(fmt.Errorf("not initialized"))
+		return nil
+	}
+
+	lyric, err := c.GetSongLyric(C.GoString(songMid))
+	if err != nil {
+		setError(err)
+		return nil
+	}
+
+	return C.CString(lyric)
+}
+
 //export QQMusicGetRecommendSongs
 func QQMusicGetRecommendSongs() *C.char {
 	mu.RLock()
@@ -642,4 +662,35 @@ func QQMusicGetCacheDir() *C.char {
 	}
 
 	return C.CString(cm.GetCacheDir())
+}
+
+// ==================== QR Login ====================
+
+//export QQMusicQRGetImage
+func QQMusicQRGetImage(loginType *C.char) *C.char {
+	lt := "qq"
+	if loginType != nil {
+		lt = C.GoString(loginType)
+	}
+	b64, err := GetQRImageBase64(lt)
+	if err != nil {
+		setError(err)
+		return nil
+	}
+	return C.CString(b64)
+}
+
+//export QQMusicQRCheckStatus
+func QQMusicQRCheckStatus() *C.char {
+	status, err := CheckQRLoginStatus()
+	if err != nil {
+		setError(err)
+		return nil
+	}
+	return C.CString(toJSON(status))
+}
+
+//export QQMusicQRCancelLogin
+func QQMusicQRCancelLogin() {
+	CancelQRLogin()
 }

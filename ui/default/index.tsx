@@ -33,7 +33,7 @@ class ErrorBoundary extends Component<{name: string}, {error: string | null}> {
 }
 
 const App = () => {
-    const [visible, setVisible] = useState(true)
+    const [visible, setVisible] = useState(false)
 
     if (!visible) {
         return (

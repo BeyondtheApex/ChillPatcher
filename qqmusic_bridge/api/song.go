@@ -694,22 +694,58 @@ func (c *Client) SearchSongs(keyword string, page, pageSize int) ([]models.SongI
 
 // GetSongLyric gets the lyrics for a song
 func (c *Client) GetSongLyric(songMid string) (string, error) {
-	params := map[string]interface{}{
-		"songMid": songMid,
-	}
+	c.mu.RLock()
+	cookies := c.cookies
+	c.mu.RUnlock()
 
-	data, err := c.RequestCGI("music.musichallSong.PlayLyricInfo", "GetPlayLyricInfo", params)
+	debugLog("[GetSongLyric] songMid=%s", songMid)
+
+	// Use the traditional lyrics endpoint which is more reliable
+	reqURL := "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg"
+
+	resp, err := c.httpClient.R().
+		SetHeader("Referer", "https://y.qq.com/portal/player.html").
+		SetHeader("Cookie", cookies).
+		SetQueryParam("songmid", songMid).
+		SetQueryParam("format", "json").
+		SetQueryParam("nobase64", "0").
+		Get(reqURL)
+
 	if err != nil {
 		return "", fmt.Errorf("failed to get lyrics: %w", err)
 	}
 
+	debugLog("[GetSongLyric] Response: %s", string(resp.Body()[:min(300, len(resp.Body()))]))
+
 	var result struct {
-		Lyric string `json:"lyric"`
-		Trans string `json:"trans"` // translated lyrics
+		RetCode int    `json:"retcode"`
+		Code    int    `json:"code"`
+		Lyric   string `json:"lyric"`
+		Trans   string `json:"trans"`
 	}
 
-	if err := json.Unmarshal(data, &result); err != nil {
-		return "", fmt.Errorf("failed to parse lyrics: %w", err)
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return "", fmt.Errorf("failed to parse lyrics response: %w", err)
+	}
+
+	if result.RetCode != 0 && result.Code != 0 {
+		// Fallback: try CGI method with corrected params
+		debugLog("[GetSongLyric] Traditional endpoint failed (retcode=%d), trying CGI fallback", result.RetCode)
+		params := map[string]interface{}{
+			"songMID": songMid,
+			"songID":  0,
+		}
+		data, err := c.RequestCGI("music.musichallSong.PlayLyricInfo", "GetPlayLyricInfo", params)
+		if err != nil {
+			return "", fmt.Errorf("failed to get lyrics (both methods): %w", err)
+		}
+		var cgiResult struct {
+			Lyric string `json:"lyric"`
+		}
+		if err := json.Unmarshal(data, &cgiResult); err != nil {
+			return "", fmt.Errorf("failed to parse CGI lyrics: %w", err)
+		}
+		return cgiResult.Lyric, nil
 	}
 
 	return result.Lyric, nil
@@ -718,38 +754,42 @@ func (c *Client) GetSongLyric(songMid string) (string, error) {
 // GetRecommendSongs gets daily recommended songs (similar to personal FM)
 func (c *Client) GetRecommendSongs() ([]models.SongInfo, error) {
 	params := map[string]interface{}{
-		"id": 0,
+		"id":                99,
+		"num":               30,
+		"from":              0,
+		"scene":             0,
+		"song_ids":          []int{},
+		"ext":               map[string]string{"bluetooth": ""},
+		"should_count_down": 1,
 	}
 
-	data, err := c.RequestCGI("music.recommend.RecommendSongList", "get_daily_recommend_song", params)
+	data, err := c.RequestCGI("music.radioProxy.MbTrackRadioSvr", "get_radio_track", params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get recommend songs: %w", err)
 	}
 
 	var result struct {
-		Data struct {
-			SongList []struct {
-				Mid      string `json:"mid"`
-				Id       int64  `json:"id"`
-				Name     string `json:"name"`
-				Interval int    `json:"interval"`
-				Singer   []struct {
-					Name string `json:"name"`
-					Mid  string `json:"mid"`
-				} `json:"singer"`
-				Album struct {
-					Name string `json:"name"`
-					Mid  string `json:"mid"`
-				} `json:"album"`
-				File struct {
-					MediaMid  string `json:"media_mid"`
-					Size128   int64  `json:"size_128"`
-					Size320   int64  `json:"size_320"`
-					SizeFlac  int64  `json:"size_flac"`
-					SizeHires int64  `json:"size_hires"`
-				} `json:"file"`
-			} `json:"songlist"`
-		} `json:"data"`
+		Tracks []struct {
+			Mid      string `json:"mid"`
+			Id       int64  `json:"id"`
+			Name     string `json:"name"`
+			Interval int    `json:"interval"`
+			Singer   []struct {
+				Name string `json:"name"`
+				Mid  string `json:"mid"`
+			} `json:"singer"`
+			Album struct {
+				Name string `json:"name"`
+				Mid  string `json:"mid"`
+			} `json:"album"`
+			File struct {
+				MediaMid  string `json:"media_mid"`
+				Size128   int64  `json:"size_128"`
+				Size320   int64  `json:"size_320"`
+				SizeFlac  int64  `json:"size_flac"`
+				SizeHires int64  `json:"size_hires"`
+			} `json:"file"`
+		} `json:"tracks"`
 	}
 
 	if err := json.Unmarshal(data, &result); err != nil {
@@ -757,7 +797,7 @@ func (c *Client) GetRecommendSongs() ([]models.SongInfo, error) {
 	}
 
 	var songs []models.SongInfo
-	for _, track := range result.Data.SongList {
+	for _, track := range result.Tracks {
 		artists := make([]string, len(track.Singer))
 		for i, singer := range track.Singer {
 			artists[i] = singer.Name

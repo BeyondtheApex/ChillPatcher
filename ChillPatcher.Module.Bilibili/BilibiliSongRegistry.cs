@@ -24,8 +24,8 @@ namespace ChillPatcher.Module.Bilibili
             var music = new MusicInfo
             {
                 UUID = UUID_LOGIN,
-                Title = "点击此处扫码登录",
-                Artist = statusText,
+                Title = "B站扫码登录",
+                Artist = "请使用哔哩哔哩 APP 扫码",
                 AlbumId = ALBUM_LOGIN,
                 TagId = TAG_LOGIN,
                 SourceType = MusicSourceType.Stream,
@@ -39,7 +39,7 @@ namespace ChillPatcher.Module.Bilibili
             _context.AlbumRegistry.RegisterAlbum(new AlbumInfo
             {
                 AlbumId = ALBUM_LOGIN,
-                DisplayName = "登录入口",
+                DisplayName = "Bilibili 登录",
                 TagIds = new List<string> { TAG_LOGIN },
                 ModuleId = _moduleId
             }, _moduleId);

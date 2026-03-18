@@ -1,5 +1,41 @@
 # ChillPatcher
 
+## 🗂️ 登录数据保存位置
+
+各模块的登录信息保存在以下位置：
+
+| 模块 | 保存位置 |
+|------|---------|
+| QQ 音乐 | `<游戏目录>\BepInEx\plugins\ChillPatcher\Modules\com.chillpatcher.qqmusic\data\qqmusic_cookie.json` |
+| 网易云音乐 | `C:\Users\<用户名>\AppData\Local\go-musicfox\cookie` |
+| Bilibili | `C:\Users\<用户名>\AppData\LocalLow\nestopi\Chill With You\ChillPatcher\com.chillpatcher.bilibili\bilibili_session.json` |
+
+如需重新登录，删除对应文件后重启游戏即可。
+
+## 🧩 窗口小组件管理
+
+窗口管理器内置了以下小组件插件：
+
+| 插件 | 说明 |
+|------|------|
+| **Lyrics** | 实时歌词显示（支持 QQ 音乐和网易云） |
+| **Weather** | 天气小组件 |
+| **Camera** | 相机控制器 |
+
+### 如何关闭小组件
+
+每个小组件窗口都可以拖拽移动，通过窗口上方的药丸按钮切换大/小窗口模式。
+
+如需关闭某个小组件：
+
+```
+设置 → UIInstace.window-manager → Plugins.lyrics.Enable → OFF   ← 歌词
+设置 → UIInstace.window-manager → Plugins.weather.Enable → OFF  ← 天气
+设置 → UIInstace.window-manager → Plugins.camera.Enable → OFF   ← 相机
+```
+
+---
+
 这是一个 BepInEx 插件，包括多种新的功能改进
 - 为游戏真正的flac支持.
 - 为游戏提供歌曲批量导入和歌单管理.
@@ -92,13 +128,20 @@ C:\Users\<你的用户名>\AppData\LocalLow\Nestopi\Chill With You\Player.log
 - 详细文档: [Bilibili 模块 README](ChillPatcher.Module.Bilibili/README.md)
 
 #### QQ 音乐模块 — 作者: [@JinCao-0721](https://github.com/JinCao-0721)
+- **🔓 二维码登录**：支持 QQ 扫码和微信扫码两种登录方式
 - **🎵 多音质支持**：标准(128k)、HQ(320k)、无损(FLAC)、Hi-Res 四档可选
 - **🎧 流式播放**：边下边播，支持 MP3 和 FLAC 格式
 - **❤️ 收藏同步**：收藏/取消收藏实时同步到 QQ 音乐服务器
-- **📋 歌单管理**：自动加载"我喜欢的音乐"和"每日推荐"，支持导入自定义歌单
-- **🔑 Cookie 登录**：需从浏览器 `y.qq.com` 复制 Cookie 到配置文件
+- **📋 歌单管理**：自动加载"我喜欢的音乐"，支持导入自定义歌单
 - **API**: 通过原生 Go 桥接 DLL 调用 QQ 音乐官方接口
 - 详细文档: [QQ 音乐模块 README](ChillPatcher.Module.QQMusic/README.md)
+
+#### 网易云音乐模块 — 作者: [@JinCao-0721](https://github.com/JinCao-0721)
+- **🔓 二维码登录**：内置网易云二维码扫码登录
+- **🎵 收藏同步**：自动加载收藏歌曲和自定义歌单
+- **📻 个人 FM**：支持网易云个人 FM 推荐
+- **🎤 歌词支持**：实时显示 LRC 歌词
+- **API**: 通过原生 Go 桥接 DLL（基于 go-musicfox）调用网易云官方接口
 
 ---
 

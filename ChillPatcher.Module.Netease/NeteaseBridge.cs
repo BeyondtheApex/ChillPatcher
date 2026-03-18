@@ -37,6 +37,9 @@ namespace ChillPatcher.Module.Netease
         private static extern IntPtr NeteaseGetSongURL(long songId, string quality);
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr NeteaseGetSongLyric(long songId);
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr NeteaseGetLastError();
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
@@ -530,6 +533,34 @@ namespace ChillPatcher.Module.Netease
             catch (Exception ex)
             {
                 _logger.LogError($"[NeteaseBridge] GetSongUrl exception: {ex}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 获取歌曲歌词（返回 LRC 格式文本）
+        /// </summary>
+        public string GetSongLyric(long songId)
+        {
+            if (!_initialized) return null;
+
+            try
+            {
+                var ptr = NeteaseGetSongLyric(songId);
+                if (ptr == IntPtr.Zero)
+                {
+                    _logger.LogWarning($"[NeteaseBridge] GetSongLyric failed for {songId}: {GetLastErrorMessage()}");
+                    return null;
+                }
+
+                var result = Marshal.PtrToStringAnsi(ptr);
+                NeteaseFreeString(ptr);
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[NeteaseBridge] GetSongLyric exception: {ex}");
                 return null;
             }
         }

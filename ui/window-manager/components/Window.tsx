@@ -35,13 +35,15 @@ export interface WindowProps {
     height?: number
     initialX?: number
     initialY?: number
+    initialCompact?: boolean
+    initialDockedEdge?: string | null
     resizable?: boolean
     compact?: CompactDef
     hoverEnabled?: boolean
     hoverScale?: number
     hoverDuration?: number
     onFocus?: () => void
-    onGeometryChange?: (x: number, y: number, w: number, h: number) => void
+    onGeometryChange?: (x: number, y: number, w: number, h: number, isCompact: boolean, dockedEdge: string | null) => void
     children?: any
 }
 
@@ -52,6 +54,8 @@ export const Window = ({
     height = 400,
     initialX = 200,
     initialY = 100,
+    initialCompact = false,
+    initialDockedEdge = null,
     resizable = false,
     compact,
     hoverEnabled = true,
@@ -66,8 +70,8 @@ export const Window = ({
         w: Math.max(MIN_WIDTH, width),
         h: Math.max(MIN_HEIGHT, height),
     })
-    const [isCompact, setIsCompact] = useState(false)
-    const [dockedEdge, setDockedEdge] = useState<string | null>(null)
+    const [isCompact, setIsCompact] = useState(initialCompact && !!compact)
+    const [dockedEdge, setDockedEdge] = useState<string | null>(initialDockedEdge)
     const drag = useRef({ active: false, ox: 0, oy: 0 })
     const resize = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 })
     const [hovered, setHovered] = useState(false)
@@ -139,12 +143,15 @@ export const Window = ({
     // ---- Compact toggle ----
     const toggleCompact = () => {
         if (!compact) return
-        if (isCompact) {
+        const next = !isCompact
+        if (next) {
+            setIsCompact(true)
+        } else {
             setIsCompact(false)
             setDockedEdge(null)
-        } else {
-            setIsCompact(true)
         }
+        // 延迟通知，等状态更新
+        setTimeout(() => onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h, next, next ? dockedEdge : null), 50)
     }
 
     // ---- Event handlers ----
@@ -259,7 +266,7 @@ export const Window = ({
                 snapTimer.current = setTimeout(() => setSnapping(false), 350)
             }
         }
-        onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h)
+        onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h, isCompact, dockedEdge)
     }
     const r = WINDOW_RADIUS
     const borderRadii = !dockedEdge

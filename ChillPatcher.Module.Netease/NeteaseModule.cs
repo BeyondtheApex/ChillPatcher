@@ -39,7 +39,7 @@ namespace ChillPatcher.Module.Netease
 
         // 登录歌曲常量
         private const string LOGIN_SONG_UUID_PREFIX = "netease_qr_login_";
-        private const string LOGIN_SONG_TITLE = "二维码登录";
+        private const string LOGIN_SONG_TITLE = "网易云扫码登录";
         private const float LOGIN_SONG_DURATION = 60f; // 1 分钟
         
         // 当前登录歌曲的 UUID（每次登录生成新的）
@@ -120,7 +120,7 @@ namespace ChillPatcher.Module.Netease
                 RegisterLoginSongAlbum();
                 
                 // 注册登录歌曲
-                RegisterLoginSong("请点击播放扫码登录");
+                RegisterLoginSong("请使用网易云 APP 扫码");
                 
                 _isReady = true;
                 OnReadyStateChanged?.Invoke(_isReady);
@@ -139,20 +139,14 @@ namespace ChillPatcher.Module.Netease
             // 初始化辅助管理器
             _favoriteManager = new NeteaseFavoriteManager(_bridge, context.Logger, _songInfoMap);
             _songRegistry = new NeteaseSongRegistry(context, ModuleId, _songInfoMap, _favoriteManager, context.Logger);
-            _fmManager = new PersonalFMManager(_bridge);
-
-            // 登录后注册所有 Tags（收藏 + FM）
+            // 登录后注册 Tags
             RegisterFavoritesTag();
-            RegisterFMTag();
 
             // 获取并缓存收藏歌曲 ID 列表
             await _favoriteManager.LoadLikeListAsync();
 
             // 扫描并注册收藏歌曲
             await ScanAndRegisterAsync();
-
-            // 初始化个人 FM 并注册初始歌曲
-            await InitializePersonalFMAsync();
 
             // 搜索并注册自定义歌单（如"献给聪音"）
             await SearchAndRegisterCustomPlaylistsAsync();
@@ -163,12 +157,15 @@ namespace ChillPatcher.Module.Netease
             // 订阅收藏变化事件
             SubscribeToFavoriteEvents();
 
+            // 注册歌词 API
+            RegisterLyricApi();
+
             _isReady = true;
             OnReadyStateChanged?.Invoke(_isReady);
 
             // 统计自定义歌单歌曲数
             var customSongCount = _customPlaylistMusicLists.Values.Sum(list => list.Count);
-            context.Logger.LogInfo($"[{DisplayName}] ✅ 初始化完成，收藏 {_musicList.Count} 首，FM {_fmMusicList.Count} 首，自定义歌单 {customSongCount} 首");
+            context.Logger.LogInfo($"[{DisplayName}] ✅ 初始化完成，收藏 {_musicList.Count} 首，自定义歌单 {customSongCount} 首");
         }
 
         public void OnEnable()
@@ -558,7 +555,7 @@ namespace ChillPatcher.Module.Netease
             var album = new AlbumInfo
             {
                 AlbumId = NeteaseSongRegistry.FAVORITES_ALBUM_ID,
-                DisplayName = "网易云音乐登录",
+                DisplayName = "网易云登录",
                 Artist = "请扫码登录",
                 TagIds = new List<string> { NeteaseSongRegistry.TAG_FAVORITES },
                 ModuleId = ModuleId,
@@ -657,22 +654,15 @@ namespace ChillPatcher.Module.Netease
             // 注销旧的专辑
             _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
 
-            // 登录成功后注册 FM Tag
-            RegisterFMTag();
-
             // 初始化辅助管理器
             _favoriteManager = new NeteaseFavoriteManager(_bridge, _context.Logger, _songInfoMap);
             _songRegistry = new NeteaseSongRegistry(_context, ModuleId, _songInfoMap, _favoriteManager, _context.Logger);
-            _fmManager = new PersonalFMManager(_bridge);
 
             // 获取并缓存收藏歌曲 ID 列表
             await _favoriteManager.LoadLikeListAsync();
 
             // 扫描并注册收藏歌曲
             await ScanAndRegisterAsync();
-
-            // 初始化个人 FM 并注册初始歌曲
-            await InitializePersonalFMAsync();
 
             // 搜索并注册自定义歌单（如"献给聪音"）
             await SearchAndRegisterCustomPlaylistsAsync();
@@ -683,9 +673,12 @@ namespace ChillPatcher.Module.Netease
             // 订阅收藏变化事件
             SubscribeToFavoriteEvents();
 
+            // 注册歌词 API
+            RegisterLyricApi();
+
             // 统计自定义歌单歌曲数
             var customSongCount = _customPlaylistMusicLists.Values.Sum(list => list.Count);
-            _context.Logger.LogInfo($"[{DisplayName}] ✅ 登录后初始化完成，收藏 {_musicList.Count} 首，FM {_fmMusicList.Count} 首，自定义歌单 {customSongCount} 首");
+            _context.Logger.LogInfo($"[{DisplayName}] ✅ 登录后初始化完成，收藏 {_musicList.Count} 首，自定义歌单 {customSongCount} 首");
 
             // 发布刷新事件
             _context.EventBus.Publish(new SDK.Events.PlaylistUpdatedEvent
@@ -724,6 +717,96 @@ namespace ChillPatcher.Module.Netease
         }
 
         #endregion
+
+        private void RegisterLyricApi()
+        {
+            // UI instances initialize after modules, so retry until they become available.
+            // Register on ALL instances so chill.custom.get("lyric_netease") works everywhere.
+            Task.Run(async () =>
+            {
+                const int maxRetries = 30;
+                for (int attempt = 0; attempt < maxRetries; attempt++)
+                {
+                    try
+                    {
+                        var bridgeType = Type.GetType("ChillPatcher.OneJSBridge, ChillPatcher");
+                        if (bridgeType == null)
+                        {
+                            _context.Logger.LogWarning($"[{DisplayName}] OneJSBridge type not found, skipping lyric API registration");
+                            return;
+                        }
+
+                        var instancesProp = bridgeType.GetProperty("Instances",
+                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                        var instances = instancesProp?.GetValue(null) as System.Collections.IEnumerable;
+                        if (instances == null)
+                        {
+                            await Task.Delay(1000);
+                            continue;
+                        }
+
+                        var lyricApiType = Type.GetType("ChillPatcher.JSApi.ChillLyricNeteaseApi, ChillPatcher");
+                        if (lyricApiType == null)
+                        {
+                            _context.Logger.LogWarning($"[{DisplayName}] ChillLyricNeteaseApi type not found, skipping lyric API registration");
+                            return;
+                        }
+
+                        int total = 0;
+                        int withJsApi = 0;
+                        var registeredIds = new List<string>();
+
+                        foreach (var kv in instances)
+                        {
+                            total++;
+                            var kvType = kv.GetType();
+                            var valueProp = kvType.GetProperty("Value");
+                            var uiInstance = valueProp?.GetValue(kv);
+                            if (uiInstance == null) continue;
+
+                            var jsApiProp = uiInstance.GetType().GetProperty("JSApi");
+                            var jsApi = jsApiProp?.GetValue(uiInstance);
+                            if (jsApi == null) continue;
+                            withJsApi++;
+
+                            // Check if already registered
+                            var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
+                            var existing = getMethod?.Invoke(jsApi, new object[] { "lyric_netease" });
+                            if (existing != null)
+                            {
+                                registeredIds.Add(kvType.GetProperty("Key")?.GetValue(kv) as string ?? "?");
+                                continue;
+                            }
+
+                            // Create ChillLyricNeteaseApi(bridge, songInfoMap, logger)
+                            var lyricApi = Activator.CreateInstance(lyricApiType, new object[] { _bridge, _songInfoMap, _context.Logger });
+                            var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
+                            registerMethod?.Invoke(jsApi, new object[] { "lyric_netease", lyricApi });
+
+                            var instanceId = kvType.GetProperty("Key")?.GetValue(kv) as string ?? "?";
+                            _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease) registered on instance: {instanceId}");
+                            registeredIds.Add(instanceId);
+                        }
+
+                        _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease): {registeredIds.Count}/{total} instances (jsApi ready: {withJsApi}), attempt {attempt + 1}");
+
+                        if (attempt >= 14 && registeredIds.Count > 0)
+                        {
+                            _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease) registration complete: {registeredIds.Count} instance(s)");
+                            return;
+                        }
+
+                        await Task.Delay(1000);
+                    }
+                    catch (Exception ex)
+                    {
+                        _context.Logger.LogError($"[{DisplayName}] Failed to register lyric API (attempt {attempt + 1}): {ex.Message}");
+                        await Task.Delay(1000);
+                    }
+                }
+                _context.Logger.LogError($"[{DisplayName}] Lyric API (netease) registration failed after all retries");
+            });
+        }
 
         private void SubscribeToFavoriteEvents()
         {
