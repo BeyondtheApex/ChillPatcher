@@ -22,18 +22,6 @@
 | **Weather** | 天气小组件 |
 | **Camera** | 相机控制器 |
 
-### 如何关闭小组件
-
-每个小组件窗口都可以拖拽移动，通过窗口上方的药丸按钮切换大/小窗口模式。
-
-如需关闭某个小组件：
-
-```
-设置 → UIInstace.window-manager → Plugins.lyrics.Enable → OFF   ← 歌词
-设置 → UIInstace.window-manager → Plugins.weather.Enable → OFF  ← 天气
-设置 → UIInstace.window-manager → Plugins.camera.Enable → OFF   ← 相机
-```
-
 ---
 
 这是一个 BepInEx 插件，包括多种新的功能改进
