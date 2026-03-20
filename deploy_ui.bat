@@ -4,8 +4,8 @@ REM 排除 node_modules 和 @outputs 目录
 
 setlocal
 
-set SRC=%~dp0ui\default
-set DEST=F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\plugins\ChillPatcher\ui\default
+set SRC=%~dp0ui\window-manager
+set DEST=F:\SteamLibrary\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\plugins\ChillPatcher\ui\window-manager
 
 if not exist "%SRC%" (
     echo ERROR: Source directory not found: %SRC%

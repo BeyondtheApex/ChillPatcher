@@ -1,9 +1,9 @@
 import { h } from "preact"
-import { useState, useRef, useEffect } from "preact/hooks"
+import { useState, useRef, useEffect, useCallback } from "preact/hooks"
 
 declare const __registerPlugin: any
 declare const __unregisterPlugin: any
-declare const __refreshPlugins: any
+declare const __wmPluginControl: any
 declare const chill: any
 declare const CS: any
 
@@ -93,6 +93,8 @@ function registerCameraWindow(cfg: CamConfig) {
             cfg.windowH = Math.round(h)
             saveConfig(cfg)
         },
+        // 根据enabled状态设置窗口的visibility
+        visible: cfg.enabled,
     })
     dynamicWindowIds.add(wid)
 }
@@ -112,9 +114,9 @@ for (const cfg of initialConfigs) {
 
 // ---- Btn component ----
 const hold = (input: any, key: string, val: number) => ({
-    onPointerDown: () => { input.current[key] = val },
-    onPointerUp: () => { input.current[key] = 0 },
-    onPointerLeave: () => { input.current[key] = 0 },
+    onPointerDown: useCallback(() => { input.current[key] = val }, [input, key, val]),
+    onPointerUp: useCallback(() => { input.current[key] = 0 }, [input, key]),
+    onPointerLeave: useCallback(() => { input.current[key] = 0 }, [input, key]),
 })
 
 const Btn = ({ label, input, k, v }: { label: string; input: any; k: string; v: number }) => (
@@ -212,7 +214,6 @@ const CameraEditor = () => {
         }
         saveConfig(cfg)
         registerCameraWindow(cfg)
-        __refreshPlugins()
         reloadConfigs()
         setNewName("")
     }
@@ -220,15 +221,16 @@ const CameraEditor = () => {
     const handleToggle = (cfg: CamConfig) => {
         cfg.enabled = !cfg.enabled
         saveConfig(cfg)
-        if (cfg.enabled) { registerCameraWindow(cfg); } else { unregisterCameraWindow(cfg.name); }
-        __refreshPlugins()
+        // 通过visibility状态控制显示/隐藏
+        // 这样launchpad仍然能看到所有摄像机
+        const wid = `cam-${cfg.name}`
+        __wmPluginControl?.togglePluginVisible?.(wid)
         reloadConfigs()
     }
 
     const handleDelete = (cfg: CamConfig) => {
         if (cfg.enabled) { unregisterCameraWindow(cfg.name) }
         deleteConfig(cfg)
-        __refreshPlugins()
         reloadConfigs()
     }
 
@@ -366,6 +368,10 @@ __registerPlugin({
     initialX: 50,
     initialY: 50,
     resizable: true,
+    launcher: {
+        text: "",
+        background: "#c9860b",
+    },
     component: CameraEditor,
 })
 

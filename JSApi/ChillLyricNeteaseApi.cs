@@ -33,7 +33,7 @@ namespace ChillPatcher.JSApi
             _getSongLyricMethod = bridgeType.GetMethod("GetSongLyric");
 
             // Cache the Id property from SongInfo type
-            // Find it from the first value in the dictionary, or from the dictionary's generic type argument
+            // Always get from generic type argument to ensure it works even when dictionary is empty
             if (_songInfoMap != null)
             {
                 var dictType = songInfoMap.GetType();
@@ -59,7 +59,7 @@ namespace ChillPatcher.JSApi
 
             if (_songInfoMap == null || _songIdProperty == null)
             {
-                _logger?.LogWarning("[LyricNeteaseApi] SongInfoMap not available");
+                _logger?.LogWarning($"[LyricNeteaseApi] SongInfoMap not available (map={_songInfoMap != null}, prop={_songIdProperty != null})");
                 return null;
             }
 
@@ -68,21 +68,34 @@ namespace ChillPatcher.JSApi
                 // Look up UUID in songInfoMap to get SongInfo
                 if (!_songInfoMap.Contains(uuid))
                 {
-                    _logger?.LogDebug($"[LyricNeteaseApi] UUID not found in songInfoMap: {uuid}");
+                    _logger?.LogWarning($"[LyricNeteaseApi] UUID not found in songInfoMap: {uuid} (map size={_songInfoMap.Count})");
                     return null;
                 }
 
                 var songInfo = _songInfoMap[uuid];
-                var songId = (long)_songIdProperty.GetValue(songInfo);
+                if (songInfo == null)
+                {
+                    _logger?.LogWarning($"[LyricNeteaseApi] SongInfo is null for uuid: {uuid}");
+                    return null;
+                }
 
-                _logger?.LogDebug($"[LyricNeteaseApi] Getting lyric for songId={songId} (uuid={uuid})");
+                var songId = (long)_songIdProperty.GetValue(songInfo);
+                _logger?.LogInfo($"[LyricNeteaseApi] Getting lyric for songId={songId} (uuid={uuid})");
 
                 var result = _getSongLyricMethod.Invoke(_bridge, new object[] { songId });
+                
+                if (result == null)
+                {
+                    _logger?.LogWarning($"[LyricNeteaseApi] GetSongLyric returned null for songId={songId}");
+                    return null;
+                }
+
+                _logger?.LogInfo($"[LyricNeteaseApi] Got lyric for songId={songId}, length={((string)result).Length}");
                 return result as string;
             }
             catch (System.Exception ex)
             {
-                _logger?.LogError($"[LyricNeteaseApi] getSongLyric error: {ex.Message}");
+                _logger?.LogError($"[LyricNeteaseApi] getSongLyric error: {ex.Message}\n{ex.StackTrace}");
                 return null;
             }
         }

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -104,19 +104,21 @@
   <ItemGroup>
     <Reference Include="System.Net.Http" />
   </ItemGroup>
-
   <PropertyGroup>
-    <GamePath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed</GamePath>
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">$(CHILL_STEAM_LIBRARY)</SteamLibraryRoot>
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">F:\SteamLibrary</SteamLibraryRoot>
+    <GamePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed</GamePath>
+    <BepInExCorePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core</BepInExCorePath>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- BepInEx and Harmony from local references -->
     <Reference Include="0Harmony">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core\0Harmony.dll</HintPath>
+      <HintPath>$(BepInExCorePath)\0Harmony.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="BepInEx">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core\BepInEx.dll</HintPath>
+      <HintPath>$(BepInExCorePath)\BepInEx.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -124,63 +126,63 @@
   <ItemGroup>
     <!-- Unity Engine -->
     <Reference Include="UnityEngine">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.UI">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UI.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.UI.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.UIModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.UIModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.UIElementsModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UIElementsModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.UIElementsModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.AudioModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.AudioModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Unity.TextMeshPro" Publicize="true">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+      <HintPath>$(GamePath)\Unity.TextMeshPro.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.AssetBundleModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.UnityWebRequestModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.UnityWebRequestAudioModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.UnityWebRequestTextureModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -188,52 +190,52 @@
   <ItemGroup>
     <!-- Game DLLs -->
     <Reference Include="Assembly-CSharp" Publicize="true">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(GamePath)\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="com.rlabrecque.steamworks.net">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\com.rlabrecque.steamworks.net.dll</HintPath>
+      <HintPath>$(GamePath)\com.rlabrecque.steamworks.net.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <!-- UI Framework Dependencies -->
     <Reference Include="Newtonsoft.Json">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(GamePath)\Newtonsoft.Json.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UniTask">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UniTask.dll</HintPath>
+      <HintPath>$(GamePath)\UniTask.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="ObservableCollections">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\ObservableCollections.dll</HintPath>
+      <HintPath>$(GamePath)\ObservableCollections.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="ObservableCollections.R3">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\ObservableCollections.R3.dll</HintPath>
+      <HintPath>$(GamePath)\ObservableCollections.R3.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="R3">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\R3.dll</HintPath>
+      <HintPath>$(GamePath)\R3.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="R3.Unity">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\R3.Unity.dll</HintPath>
+      <HintPath>$(GamePath)\R3.Unity.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="DOTween">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\DOTween.dll</HintPath>
+      <HintPath>$(GamePath)\DOTween.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="VContainer">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\VContainer.dll</HintPath>
+      <HintPath>$(GamePath)\VContainer.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="FastEnum">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\FastEnum.dll</HintPath>
+      <HintPath>$(GamePath)\FastEnum.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="AudioManager">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\AudioManager.dll</HintPath>
+      <HintPath>$(GamePath)\AudioManager.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -244,3 +246,4 @@
   -->
 
 </Project>
+

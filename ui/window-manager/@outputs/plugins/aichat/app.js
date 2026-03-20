@@ -1371,39 +1371,6 @@ function doRender(props, state, context) {
   return this.constructor(props, context);
 }
 
-// node_modules/onejs-preact/render.js
-var cleanupMap = /* @__PURE__ */ new WeakMap();
-function render(vnode, parentDom, replaceNode) {
-  if (typeof globalThis.ONEJS_WEBGL !== "undefined" && globalThis.ONEJS_WEBGL && vnode !== null) {
-    render(null, parentDom);
-  }
-  if (typeof onejs !== "undefined" && parentDom && !cleanupMap.has(parentDom)) {
-    onejs.add_onDispose(() => render(null, parentDom));
-    cleanupMap.set(parentDom, true);
-  }
-  if (options_default._root)
-    options_default._root(vnode, parentDom);
-  let isHydrating = typeof replaceNode == "function";
-  let oldVNode = isHydrating ? null : replaceNode && replaceNode._children || parentDom._children;
-  vnode = (!isHydrating && replaceNode || parentDom)._children = createElement(Fragment, null, [vnode]);
-  let commitQueue = [], refQueue = [];
-  diff(
-    parentDom,
-    // Determine the new vnode tree and store it on the DOM element on
-    // our custom `_children` property.
-    vnode,
-    oldVNode || EMPTY_OBJ,
-    EMPTY_OBJ,
-    parentDom.namespaceURI,
-    !isHydrating && replaceNode ? [replaceNode] : oldVNode ? null : parentDom.firstChild ? slice.call(parentDom.childNodes) : null,
-    commitQueue,
-    !isHydrating && replaceNode ? replaceNode : oldVNode ? oldVNode._dom : parentDom.firstChild,
-    isHydrating,
-    refQueue
-  );
-  commitRoot(commitQueue, vnode, refQueue);
-}
-
 // node_modules/onejs-preact/hooks/index.js
 var currentIndex;
 var currentComponent;
@@ -1594,10 +1561,6 @@ function useEffect(callback, args) {
     currentComponent.__hooks._pendingEffects.push(state);
   }
 }
-function useRef(initialValue) {
-  currentHook = 5;
-  return useMemo(() => ({ current: initialValue }), []);
-}
 function useMemo(factory, args) {
   const state = getHookState(currentIndex++, 7);
   if (argsChanged(state._args, args)) {
@@ -1606,24 +1569,6 @@ function useMemo(factory, args) {
     state._factory = factory;
   }
   return state._value;
-}
-function useErrorBoundary(cb) {
-  const state = getHookState(currentIndex++, 10);
-  const errState = useState();
-  state._value = cb;
-  if (!currentComponent.componentDidCatch) {
-    currentComponent.componentDidCatch = (err, errorInfo) => {
-      if (state._value)
-        state._value(err, errorInfo);
-      errState[1](err);
-    };
-  }
-  return [
-    errState[0],
-    () => {
-      errState[1](void 0);
-    }
-  ];
 }
 function flushAfterPaintEffects() {
   let component;
@@ -1681,828 +1626,204 @@ function invokeOrReturn(arg, f) {
   return typeof f == "function" ? f(arg) : f;
 }
 
-// components/Window.tsx
-var GRAB_ZONE_HEIGHT = 30;
-var GRAB_PILL_WIDTH = 40;
-var GRAB_PILL_HEIGHT = 4;
-var DRAG_BAR_HEIGHT = GRAB_ZONE_HEIGHT;
-var COLLAPSED_RADIUS = GRAB_PILL_HEIGHT / 2;
-var EXPANDED_RADIUS = (DRAG_BAR_HEIGHT + DRAG_BAR_HEIGHT) / 2;
-var ARC_RADIUS = 14;
-var ARC_THICKNESS = 3;
-var ARC_CAP_R = ARC_THICKNESS / 2;
-var ARC_HANDLE_PAD = Math.ceil(ARC_CAP_R);
-var ARC_HANDLE_SIZE = ARC_RADIUS + ARC_HANDLE_PAD;
-var RESIZE_MARGIN = 6;
-var MIN_WIDTH = 120;
-var MIN_HEIGHT = 80;
-var EDGE_THRESHOLD = 60;
-var HYSTERESIS = 20;
-var PICKING_IGNORE = 1;
-var WINDOW_RADIUS = 20;
-var PERSISTENCE_INTERVAL = 5e3;
-var Window = ({
-  title,
-  width = 300,
-  height = 400,
-  initialX = 200,
-  initialY = 100,
-  resizable = false,
-  canClose = true,
-  compact,
-  hoverEnabled: hoverEnabled2 = true,
-  hoverScale: hoverScale2 = 1.03,
-  hoverDuration: hoverDuration2 = 0.4,
-  onFocus,
-  onGeometryChange,
-  visible = true,
-  onClose,
-  children
-}) => {
-  const [pos, setPos] = useState({ x: initialX, y: initialY });
-  const [normalSize, setNormalSize] = useState({
-    w: Math.max(MIN_WIDTH, width),
-    h: Math.max(MIN_HEIGHT, height)
-  });
-  const [isCompact, setIsCompact] = useState(false);
-  const [dockedEdge, setDockedEdge] = useState(null);
-  const drag = useRef({ active: false, ox: 0, oy: 0 });
-  const resize = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 });
-  const lockedCanvasSize = useRef(null);
-  const lockedWindowSize = useRef(null);
-  const [hovered, setHovered] = useState(false);
-  const [interacting, setInteracting] = useState(false);
-  const [grabHovered, setGrabHovered] = useState(false);
-  const [snapping, setSnapping] = useState(false);
-  const containerRef = useRef(null);
-  const snapTimer = useRef(null);
-  const skipDrag = useRef(false);
-  const arcRef = useRef(null);
-  const persistenceTimer = useRef(null);
-  const lastPersistedState = useRef("");
-  const isStateDirty = useRef(false);
+// plugins/aichat/index.tsx
+var groups = {
+  "1. LLM": ["Use_Ollama_API", "ThinkMode", "API_URL", "API_Key", "ModelName", "LogApiRequestBody", "FixApiPathForThinkMode"],
+  "2. TTS": ["TTS_Service_URL", "TTS_Service_Script_Path", "LaunchTTSService", "QuitTTSServiceOnQuit", "Audio_File_Path", "AudioPathCheck", "Audio_File_Text", "PromptLang", "TargetLang", "JapaneseCheck", "VoiceVolume"],
+  "3. UI": ["WindowWidth", "WindowHeightBase", "ReverseEnterBehavior", "BackgroundOpacity", "ShowWindowTitle"],
+  "4. Persona": ["ExperimentalMemory", "SystemPrompt"]
+};
+var multilineKeys = /* @__PURE__ */ new Set(["Audio_File_Text", "SystemPrompt"]);
+var call = (name, ...args) => JSON.parse(chill.aichat[name](...args));
+var loadCfg = () => JSON.parse(chill.aichat.getAllConfig() || "{}");
+var loadDefaults = () => JSON.parse(chill.aichat.getAllConfigDefaults() || "{}");
+var fieldEstimatedHeight = (k) => !multilineKeys.has(k) ? 52 : k === "SystemPrompt" ? 320 : 210;
+var paginateFields = (fields, maxHeight) => {
+  const pages = [];
+  let current = [];
+  let used = 0;
+  const limit = Math.max(120, Math.floor(maxHeight));
+  for (const k of fields) {
+    const h2 = fieldEstimatedHeight(k);
+    if (current.length > 0 && used + h2 > limit) {
+      pages.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(k);
+    used += h2;
+  }
+  if (current.length > 0)
+    pages.push(current);
+  return pages.length > 0 ? pages : [[]];
+};
+var SavePanel = ({ draft, defaults, setDraft, onCancel, onOk }) => {
+  const pages = Object.keys(groups);
+  const [page, setPage] = useState(0);
+  const [contentPage, setContentPage] = useState(0);
+  const [contentHeight, setContentHeight] = useState(220);
+  const currentGroup = pages[page];
+  const fields = groups[currentGroup] || [];
+  const fieldPages = paginateFields(fields, contentHeight - (currentGroup === "4. Persona" ? 40 : 24));
+  const maxContentPage = Math.max(0, fieldPages.length - 1);
+  const displayFields = fieldPages[Math.min(contentPage, maxContentPage)] || [];
   useEffect(() => {
-    const el = arcRef.current;
-    if (!el?.ve || !canResize)
-      return;
-    const ve = el.ve;
-    const cx = ARC_THICKNESS / 2;
-    const cy = ARC_THICKNESS / 2;
-    const R = ARC_HANDLE_SIZE - ARC_THICKNESS;
-    ve.ClearCommands();
-    ve.SetStrokeColor("rgb(255, 255, 255)");
-    ve.SetLineWidth(ARC_THICKNESS);
-    ve.SetLineCap(1);
-    ve.BeginPath();
-    ve.Arc(cx, cy, R, 0, 90);
-    ve.Stroke();
-    ve.Commit();
-  });
-  const getWindowStateId = () => `window-${title.replace(/\s+/g, "-")}`;
-  const getWindowState = () => ({
-    id: getWindowStateId(),
-    x: pos.x,
-    y: pos.y,
-    width: normalSize.w,
-    height: normalSize.h,
-    isCompact,
-    dockedEdge,
-    timestamp: Date.now()
-  });
-  const persistWindowState = () => {
-    try {
-      const state = getWindowState();
-      const stateJson = JSON.stringify(state);
-      if (stateJson === lastPersistedState.current)
-        return;
-      const stateDir = "window-states";
-      const stateFile = `${stateDir}/${getWindowStateId()}.json`;
-      if (!chill.io.exists(stateDir)) {
-        chill.io.writeText(`${stateDir}/.keep`, "");
-      }
-      chill.io.writeText(stateFile, stateJson);
-      lastPersistedState.current = stateJson;
-      isStateDirty.current = false;
-      console.log(`[Window] \u72B6\u6001\u5DF2\u6301\u4E45\u5316: ${title}`);
-    } catch (e) {
-      console.error(`[Window] \u72B6\u6001\u6301\u4E45\u5316\u5931\u8D25: ${title}`, e);
-    }
-  };
-  const loadWindowState = () => {
-    try {
-      const stateFile = `window-states/${getWindowStateId()}.json`;
-      if (!chill.io.exists(stateFile))
-        return false;
-      const stateJson = chill.io.readText(stateFile);
-      if (!stateJson)
-        return false;
-      const state = JSON.parse(stateJson);
-      if (typeof state.x === "number" && typeof state.y === "number") {
-        setPos({ x: state.x, y: state.y });
-      }
-      if (typeof state.width === "number" && typeof state.height === "number") {
-        setNormalSize({
-          w: Math.max(MIN_WIDTH, state.width),
-          h: Math.max(MIN_HEIGHT, state.height)
-        });
-      }
-      if (typeof state.isCompact === "boolean") {
-        setIsCompact(state.isCompact);
-      }
-      if (state.dockedEdge) {
-        setDockedEdge(state.dockedEdge);
-      }
-      console.log(`[Window] \u72B6\u6001\u5DF2\u52A0\u8F7D: ${title}`);
-      return true;
-    } catch (e) {
-      console.error(`[Window] \u72B6\u6001\u52A0\u8F7D\u5931\u8D25: ${title}`, e);
-      return false;
-    }
-  };
-  const markStateDirty = () => {
-    isStateDirty.current = true;
-  };
-  useEffect(() => {
-    persistenceTimer.current = setInterval(() => {
-      if (isStateDirty.current) {
-        persistWindowState();
-      }
-    }, PERSISTENCE_INTERVAL);
-    return () => {
-      if (persistenceTimer.current) {
-        clearInterval(persistenceTimer.current);
-      }
-    };
-  }, []);
-  useEffect(() => {
-    loadWindowState();
-  }, []);
-  const displaySize = isCompact && compact ? { w: compact.width, h: compact.height } : normalSize;
-  const canResize = resizable && !isCompact;
-  const showDragBar = grabHovered || drag.current.active;
-  const isActive = () => drag.current.active || resize.current.active;
-  const getCanvasSize = () => {
-    if (lockedCanvasSize.current) {
-      return lockedCanvasSize.current;
-    }
-    try {
-      if (typeof chill !== "undefined" && chill.screen) {
-        return { w: chill.screen.width || 1920, h: chill.screen.height || 1080 };
-      }
-      return { w: 1920, h: 1080 };
-    } catch (_) {
-      return { w: 1920, h: 1080 };
-    }
-  };
-  const lockCanvasSize = () => {
-    try {
-      if (typeof chill !== "undefined" && chill.screen) {
-        lockedCanvasSize.current = {
-          w: chill.screen.width || 1920,
-          h: chill.screen.height || 1080
-        };
-      } else {
-        lockedCanvasSize.current = { w: 1920, h: 1080 };
-      }
-    } catch (_) {
-      lockedCanvasSize.current = { w: 1920, h: 1080 };
-    }
-  };
-  const unlockCanvasSize = () => {
-    lockedCanvasSize.current = null;
-  };
-  const bringToFront = () => {
-    try {
-      containerRef.current?.ve?.BringToFront();
-    } catch (_) {
-    }
-  };
-  const focus = () => {
-    bringToFront();
-    onFocus?.();
-  };
-  const toggleCompact = () => {
-    if (!compact)
-      return;
-    if (isCompact) {
-      setIsCompact(false);
-      setDockedEdge(null);
-    } else {
-      setIsCompact(true);
-    }
-    markStateDirty();
-  };
-  const handleMove = (e) => {
-    if (drag.current.active) {
-      const mx = e.position.x;
-      const my = e.position.y;
-      if (compact) {
-        const canvas = getCanvasSize();
-        const nearLeft = mx < EDGE_THRESHOLD;
-        const nearRight = mx > canvas.w - EDGE_THRESHOLD;
-        const nearTop = my < EDGE_THRESHOLD;
-        const nearBottom = my > canvas.h - EDGE_THRESHOLD;
-        const detachThreshold = EDGE_THRESHOLD + HYSTERESIS;
-        const shouldDetach = dockedEdge === "left" && mx > detachThreshold || dockedEdge === "right" && mx < canvas.w - detachThreshold || dockedEdge === "top" && my > detachThreshold || dockedEdge === "bottom" && my < canvas.h - detachThreshold;
-        if (shouldDetach && dockedEdge) {
-          const cw = compact.width;
-          const ch = compact.height;
-          const handleOffsetX = cw / 2;
-          const handleOffsetY = GRAB_ZONE_HEIGHT / 2;
-          const newX = Math.max(0, Math.min(mx - handleOffsetX, canvas.w - cw));
-          const newY = Math.max(0, Math.min(my - handleOffsetY, canvas.h - ch));
-          setPos({ x: newX, y: newY });
-          drag.current.ox = mx - newX;
-          drag.current.oy = my - newY;
-          setDockedEdge(null);
-          return;
-        }
-        if (nearLeft || nearRight || nearTop || nearBottom) {
-          const edges = [];
-          if (nearLeft)
-            edges.push({ edge: "left", dist: mx });
-          if (nearRight)
-            edges.push({ edge: "right", dist: canvas.w - mx });
-          if (nearTop)
-            edges.push({ edge: "top", dist: my });
-          if (nearBottom)
-            edges.push({ edge: "bottom", dist: canvas.h - my });
-          const nearest = edges.sort((a, b) => a.dist - b.dist)[0];
-          const cw = compact.width;
-          const ch = compact.height;
-          const handleOffsetX = cw / 2;
-          const handleOffsetY = GRAB_ZONE_HEIGHT / 2;
-          let sx = 0, sy = 0;
-          switch (nearest.edge) {
-            case "left":
-              sx = 0;
-              sy = Math.max(
-                0,
-                Math.min(my - handleOffsetY, canvas.h - ch)
-              );
-              break;
-            case "right":
-              sx = canvas.w - cw;
-              sy = Math.max(
-                0,
-                Math.min(my - handleOffsetY, canvas.h - ch)
-              );
-              break;
-            case "top":
-              sx = Math.max(
-                0,
-                Math.min(mx - handleOffsetX, canvas.w - cw)
-              );
-              sy = 0;
-              break;
-            case "bottom":
-              sx = Math.max(
-                0,
-                Math.min(mx - handleOffsetX, canvas.w - cw)
-              );
-              sy = canvas.h - ch;
-              break;
-          }
-          setPos({ x: sx, y: sy });
-          if (!isCompact)
-            setIsCompact(true);
-          if (dockedEdge !== nearest.edge)
-            setDockedEdge(nearest.edge);
-          return;
-        }
-      }
-      setPos({
-        x: mx - drag.current.ox,
-        y: my - drag.current.oy
-      });
-      markStateDirty();
-      if (isCompact && dockedEdge) {
-        setDockedEdge(null);
-      }
-    } else if (resize.current.active) {
-      const dx = e.position.x - resize.current.ox;
-      const dy = e.position.y - resize.current.oy;
-      setNormalSize({
-        w: Math.max(MIN_WIDTH, resize.current.ow + dx),
-        h: Math.max(MIN_HEIGHT, resize.current.oh + dy)
-      });
-      markStateDirty();
-    }
-  };
-  const handleUp = (e) => {
-    if (e?.target?.releasePointerCapture && e.pointerId !== void 0) {
-      try {
-        e.target.releasePointerCapture(e.pointerId);
-      } catch (_) {
-      }
-    }
-    drag.current.active = false;
-    resize.current.active = false;
-    setInteracting(false);
-    unlockCanvasSize();
-    lockedWindowSize.current = null;
-    if (!dockedEdge) {
-      const canvas = getCanvasSize();
-      const cx = Math.max(
-        0,
-        Math.min(pos.x, canvas.w - displaySize.w)
-      );
-      const cy = Math.max(
-        0,
-        Math.min(pos.y, canvas.h - displaySize.h)
-      );
-      if (cx !== pos.x || cy !== pos.y) {
-        setSnapping(true);
-        setPos({ x: cx, y: cy });
-        if (snapTimer.current)
-          clearTimeout(snapTimer.current);
-        snapTimer.current = setTimeout(() => setSnapping(false), 350);
-      }
-    }
-    onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h);
-    markStateDirty();
-    persistWindowState();
-  };
-  const r = WINDOW_RADIUS;
-  const borderRadii = !dockedEdge ? {
-    borderTopLeftRadius: r,
-    borderTopRightRadius: r,
-    borderBottomRightRadius: r,
-    borderBottomLeftRadius: r
-  } : dockedEdge === "left" ? {
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: r,
-    borderBottomRightRadius: r,
-    borderBottomLeftRadius: 0
-  } : dockedEdge === "right" ? {
-    borderTopLeftRadius: r,
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
-    borderBottomLeftRadius: r
-  } : dockedEdge === "top" ? {
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: r,
-    borderBottomLeftRadius: r
-  } : {
-    borderTopLeftRadius: r,
-    borderTopRightRadius: r,
-    borderBottomRightRadius: 0,
-    borderBottomLeftRadius: 0
-  };
-  const borderWidths = !dockedEdge ? { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1 } : dockedEdge === "left" ? { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 0 } : dockedEdge === "right" ? { borderTopWidth: 1, borderRightWidth: 0, borderBottomWidth: 1, borderLeftWidth: 1 } : dockedEdge === "top" ? { borderTopWidth: 0, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1 } : { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 0, borderLeftWidth: 1 };
-  if (!visible)
-    return null;
-  return /* @__PURE__ */ createElement(
+    setContentPage((p) => Math.min(p, maxContentPage));
+  }, [maxContentPage, page]);
+  const row = (k) => multilineKeys.has(k) ? /* @__PURE__ */ createElement("div", { key: k, style: { display: "Flex", flexDirection: "Column", marginBottom: 6, backgroundColor: "#111827", paddingTop: 4, paddingBottom: 4, paddingLeft: 6, paddingRight: 6, borderWidth: 1, borderColor: "#1f2937", borderRadius: 6, flexShrink: 0 } }, /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", alignItems: "Center", marginBottom: 4 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 10, color: "#94a3b8" } }, k), /* @__PURE__ */ createElement(
     "div",
     {
-      ref: containerRef,
-      "picking-mode": PICKING_IGNORE,
-      style: {
-        position: "Absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0
-      }
+      onPointerDown: () => setDraft({ ...draft, [k]: String(defaults[k] ?? "") }),
+      style: { fontSize: 9, color: "#93c5fd", paddingLeft: 4, paddingRight: 4, paddingTop: 3, paddingBottom: 3, borderWidth: 1, borderColor: "#334155", borderRadius: 4 }
     },
-    interacting && /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          position: "Absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0
-        },
-        onPointerMove: handleMove,
-        onPointerUp: handleUp
-      }
-    ),
-    /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          position: "Absolute",
-          left: pos.x,
-          top: pos.y,
-          width: displaySize.w,
-          height: displaySize.h,
-          ...borderRadii,
-          ...borderWidths,
-          borderColor: "rgba(255,255,255,0.1)",
-          flexDirection: "Column",
-          display: "Flex",
-          overflow: "Hidden",
-          scale: hoverEnabled2 && hovered ? hoverScale2 : 1,
-          transitionProperty: snapping ? "scale, left, top" : "scale",
-          transitionDuration: snapping ? `${hoverDuration2}s, 0.3s, 0.3s` : `${hoverDuration2}s`,
-          transitionTimingFunction: "ease-out"
-        },
-        onPointerEnter: () => setHovered(true),
-        onPointerLeave: () => {
-          if (!isActive())
-            setHovered(false);
-        },
-        onPointerDown: () => focus(),
-        onPointerMove: handleMove,
-        onPointerUp: handleUp
-      },
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            flexGrow: 1,
-            display: "Flex",
-            flexDirection: "Column",
-            overflow: "Hidden"
-          }
-        },
-        isCompact && compact ? /* @__PURE__ */ createElement(compact.component, null) : children
-      ),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            position: "Absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: DRAG_BAR_HEIGHT,
-            overflow: "Hidden"
-          },
-          "picking-mode": PICKING_IGNORE
-        },
-        /* @__PURE__ */ createElement(
-          "div",
-          {
-            style: {
-              position: "Absolute",
-              top: showDragBar ? 0 : (DRAG_BAR_HEIGHT - GRAB_PILL_HEIGHT) / 2,
-              left: showDragBar ? -EXPANDED_RADIUS : (displaySize.w - GRAB_PILL_WIDTH) / 2,
-              width: showDragBar ? displaySize.w + EXPANDED_RADIUS * 2 : GRAB_PILL_WIDTH,
-              height: showDragBar ? DRAG_BAR_HEIGHT + EXPANDED_RADIUS : GRAB_PILL_HEIGHT,
-              borderRadius: showDragBar ? EXPANDED_RADIUS : COLLAPSED_RADIUS,
-              backgroundColor: showDragBar ? "rgba(20,20,34,0.85)" : "rgba(255,255,255,0.25)",
-              overflow: "Hidden",
-              transitionProperty: "top, left, width, height, border-radius, background-color",
-              transitionDuration: "0.25s",
-              transitionTimingFunction: "ease-out"
-            },
-            onPointerEnter: () => setGrabHovered(true),
-            onPointerLeave: () => {
-              if (!isActive())
-                setGrabHovered(false);
-            },
-            onPointerDown: (e) => {
-              if (e.target?.setPointerCapture) {
-                e.target.setPointerCapture(e.pointerId);
-              }
-              if (skipDrag.current) {
-                skipDrag.current = false;
-                return;
-              }
-              if (snapTimer.current) {
-                clearTimeout(snapTimer.current);
-                snapTimer.current = null;
-                setSnapping(false);
-              }
-              lockCanvasSize();
-              lockedWindowSize.current = { w: displaySize.w, h: displaySize.h };
-              drag.current = {
-                active: true,
-                ox: e.position.x - pos.x,
-                oy: e.position.y - pos.y
-              };
-              setInteracting(true);
-              focus();
-            }
-          },
-          /* @__PURE__ */ createElement(
-            "div",
-            {
-              style: {
-                position: "Absolute",
-                top: 0,
-                left: showDragBar ? 14 + EXPANDED_RADIUS : 0,
-                right: showDragBar ? 14 + EXPANDED_RADIUS : 0,
-                height: DRAG_BAR_HEIGHT,
-                flexDirection: "Row",
-                display: "Flex",
-                alignItems: "Center",
-                justifyContent: "SpaceBetween",
-                opacity: showDragBar ? 1 : 0,
-                transitionProperty: "opacity, left, right",
-                transitionDuration: "0.15s"
-              }
-            },
-            /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: "#89b4fa" } }, title),
-            /* @__PURE__ */ createElement("div", { style: { flexDirection: "Row", display: "Flex", alignItems: "Center" } }, compact ? /* @__PURE__ */ createElement(
-              "div",
-              {
-                style: {
-                  fontSize: 13,
-                  color: isCompact ? "#a6e3a1" : "#6c7086",
-                  paddingLeft: 6,
-                  paddingRight: 2,
-                  paddingTop: 2,
-                  paddingBottom: 2
-                },
-                onPointerDown: () => {
-                  skipDrag.current = true;
-                  toggleCompact();
-                }
-              },
-              isCompact ? "\uF065" : "\uF066"
-            ) : /* @__PURE__ */ createElement(
-              "div",
-              {
-                style: {
-                  fontSize: 11,
-                  color: "#6c7086",
-                  paddingLeft: 6,
-                  paddingRight: 2,
-                  paddingTop: 2,
-                  paddingBottom: 2
-                }
-              },
-              "\u283F"
-            ), canClose && /* @__PURE__ */ createElement(
-              "div",
-              {
-                style: {
-                  fontSize: 14,
-                  color: "#f38ba8",
-                  paddingLeft: 2,
-                  paddingRight: 4,
-                  paddingTop: 2,
-                  paddingBottom: 2,
-                  marginLeft: 2
-                },
-                onPointerDown: () => {
-                  skipDrag.current = true;
-                  onClose?.();
-                }
-              },
-              "\u2715"
-            ))
-          )
-        )
-      ),
-      canResize && /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            position: "Absolute",
-            right: RESIZE_MARGIN - ARC_HANDLE_PAD,
-            bottom: RESIZE_MARGIN - ARC_HANDLE_PAD,
-            width: ARC_HANDLE_SIZE,
-            height: ARC_HANDLE_SIZE
-          },
-          onPointerDown: (e) => {
-            if (e.target?.setPointerCapture) {
-              e.target.setPointerCapture(e.pointerId);
-            }
-            resize.current = {
-              active: true,
-              ox: e.position.x,
-              oy: e.position.y,
-              ow: normalSize.w,
-              oh: normalSize.h
-            };
-            setInteracting(true);
-            focus();
-          }
-        },
-        /* @__PURE__ */ createElement(
-          "canvas-2d",
-          {
-            ref: arcRef,
-            style: {
-              position: "Absolute",
-              top: 0,
-              left: 0,
-              width: ARC_HANDLE_SIZE,
-              height: ARC_HANDLE_SIZE,
-              overflow: "Hidden"
-            },
-            "picking-mode": PICKING_IGNORE
-          }
-        )
-      )
-    )
-  );
-};
-
-// index.tsx
-if (typeof globalThis.requestAnimationFrame === "undefined") {
-  ;
-  globalThis.requestAnimationFrame = (cb) => setTimeout(
-    () => cb(
-      typeof CS !== "undefined" ? CS.UnityEngine.Time.realtimeSinceStartupAsDouble * 1e3 : Date.now()
-    ),
-    1
-  );
-  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
-}
-var pluginRegistry = [];
-var _refreshPlugins = null;
-globalThis.__registerPlugin = (def) => {
-  pluginRegistry.push(def);
-  console.log(`[WindowManager] Plugin registered: ${def.id}`);
-  _refreshPlugins?.();
-  setTimeout(() => notifyVisibilitySubscribers(), 0);
-};
-globalThis.__unregisterPlugin = (id) => {
-  const idx = pluginRegistry.findIndex((p) => p.id === id);
-  if (idx >= 0) {
-    pluginRegistry.splice(idx, 1);
-    _refreshPlugins?.();
-    setTimeout(() => notifyVisibilitySubscribers(), 0);
-  }
-};
-globalThis.__refreshPlugins = () => {
-  _refreshPlugins?.();
-  setTimeout(() => notifyVisibilitySubscribers(), 0);
-};
-function loadPlugins() {
-  try {
-    const base = String(chill.io.basePath).replace(/\\/g, "/").replace(/\/$/, "");
-    const wd = String(chill.workingDir).replace(/\\/g, "/").replace(/\/$/, "");
-    const relPrefix = wd.startsWith(base) ? wd.substring(base.length + 1) : wd;
-    const pluginsRel = relPrefix + "/@outputs/plugins";
-    if (!chill.io.exists(pluginsRel))
-      return;
-    const dirs = JSON.parse(chill.io.listDirs(pluginsRel));
-    for (const dirName of dirs) {
-      try {
-        chill.evalFile(`@outputs/plugins/${dirName}/app.js`);
-      } catch (e) {
-        console.error(`[WM] Failed to load plugin '${dirName}':`, e);
-      }
+    "\u6062\u590D"
+  )), /* @__PURE__ */ createElement("div", { style: { height: 34, marginBottom: 4, backgroundColor: "#0b1220", borderWidth: 1, borderColor: "#1f2937", paddingLeft: 6, paddingRight: 6, paddingTop: 4, paddingBottom: 4, flexShrink: 0, overflow: "Hidden" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 9, color: "#64748b", whiteSpace: "Normal" } }, "\u9ED8\u8BA4: ", String(defaults[k] ?? ""))), /* @__PURE__ */ createElement(
+    "textfield",
+    {
+      value: String(draft[k] ?? ""),
+      multiline: true,
+      "vertical-scroller-visibility": 1,
+      onValueChanged: (e) => setDraft({ ...draft, [k]: e.newValue ?? "" }),
+      style: { height: k === "SystemPrompt" ? 180 : 88, minHeight: k === "SystemPrompt" ? 180 : 88, maxHeight: k === "SystemPrompt" ? 180 : 88, width: "100%", fontSize: 10, backgroundColor: "#1f2937", borderWidth: 1, borderColor: "#334155", color: "#e2e8f0", paddingLeft: 6, paddingRight: 6, paddingTop: 4, paddingBottom: 4, flexShrink: 0 }
     }
-  } catch (e) {
-    console.error("[WM] Plugin discovery failed:", e);
-  }
-}
-var ErrorBoundary = ({ children }) => {
-  const [error, resetError] = useErrorBoundary((err) => {
-    console.error("[WindowManager] Error boundary caught:", err);
-  });
-  if (error) {
-    return /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          flexGrow: 1,
-          justifyContent: "Center",
-          alignItems: "Center",
-          display: "Flex",
-          flexDirection: "Column",
-          backgroundColor: "#1e293b",
-          paddingLeft: 20,
-          paddingRight: 20
-        }
-      },
-      /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#f87171", marginBottom: 8 } }, "\u63D2\u4EF6\u6E32\u67D3\u51FA\u9519"),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            fontSize: 11,
-            color: "rgba(255,255,255,0.5)",
-            marginBottom: 16,
-            unityTextAlign: "MiddleCenter"
-          }
-        },
-        String(error)
-      ),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            fontSize: 12,
-            color: "#89b4fa",
-            paddingTop: 6,
-            paddingBottom: 6,
-            paddingLeft: 16,
-            paddingRight: 16,
-            borderRadius: 6,
-            borderWidth: 1,
-            borderColor: "#89b4fa"
-          },
-          onPointerDown: () => resetError()
-        },
-        "\u91CD\u7F6E"
-      )
-    );
-  }
-  return children;
+  )) : /* @__PURE__ */ createElement("div", { key: k, style: { display: "Flex", flexDirection: "Row", alignItems: "Center", marginBottom: 6, backgroundColor: "#111827", paddingTop: 4, paddingBottom: 4, paddingLeft: 6, paddingRight: 6, borderWidth: 1, borderColor: "#1f2937", borderRadius: 6, flexShrink: 0 } }, /* @__PURE__ */ createElement("div", { style: { width: 126, fontSize: 10, color: "#94a3b8", marginRight: 6 } }, k), /* @__PURE__ */ createElement(
+    "textfield",
+    {
+      value: String(draft[k] ?? ""),
+      onValueChanged: (e) => setDraft({ ...draft, [k]: e.newValue ?? "" }),
+      style: { flexGrow: 1, height: 22, fontSize: 10, backgroundColor: "#1f2937", borderWidth: 1, borderColor: "#334155", color: "#e2e8f0", paddingLeft: 6, paddingRight: 6, marginRight: 6 }
+    }
+  ), /* @__PURE__ */ createElement("div", { style: { width: 120, fontSize: 9, color: "#64748b", overflow: "Hidden", marginRight: 6 } }, "\u9ED8\u8BA4: ", String(defaults[k] ?? "")), /* @__PURE__ */ createElement(
+    "div",
+    {
+      onPointerDown: () => setDraft({ ...draft, [k]: String(defaults[k] ?? "") }),
+      style: { fontSize: 9, color: "#93c5fd", paddingLeft: 4, paddingRight: 4, paddingTop: 3, paddingBottom: 3, borderWidth: 1, borderColor: "#334155", borderRadius: 4 }
+    },
+    "\u6062\u590D"
+  ));
+  return /* @__PURE__ */ createElement("div", { style: { flexGrow: 1, height: "100%", display: "Flex", flexDirection: "Column", backgroundColor: "#0f172a", padding: 10, overflow: "Hidden" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: "#e2e8f0", marginBottom: 8, flexShrink: 0 } }, "AIChat \u914D\u7F6E"), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", marginBottom: 8, flexShrink: 0 } }, pages.map((g, idx) => /* @__PURE__ */ createElement("div", { key: g, onPointerDown: () => {
+    setPage(idx);
+    setContentPage(0);
+  }, style: { fontSize: 10, color: idx === page ? "#0f172a" : "#cbd5e1", backgroundColor: idx === page ? "#93c5fd" : "#1e293b", paddingLeft: 8, paddingRight: 8, paddingTop: 5, paddingBottom: 5, borderRadius: 6, marginRight: 6 } }, g.replace("1. ", "").replace("2. ", "").replace("3. ", "").replace("4. ", "")))), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: "#93c5fd", marginBottom: 6, flexShrink: 0 } }, currentGroup), /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: { flexGrow: 1, flexShrink: 1, minHeight: 120, backgroundColor: "#0b1220", borderWidth: 1, borderColor: "#1f2937", borderRadius: 6, padding: 6, overflow: "Hidden" },
+      onGeometryChanged: (e) => setContentHeight(Math.max(120, Math.floor(e?.newRect?.height ?? e?.target?.layout?.height ?? 220)))
+    },
+    displayFields.map(row),
+    currentGroup === "4. Persona" && /* @__PURE__ */ createElement("div", { style: { fontSize: 9, color: "#64748b", marginTop: 4, flexShrink: 0 } }, "SystemPrompt \u5EFA\u8BAE\u624B\u52A8\u7C98\u8D34\u5B8C\u6574\u5185\u5BB9\u540E\u518D\u70B9\u51FB\u786E\u5B9A\u4FDD\u5B58\u3002")
+  ), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginTop: 8, flexShrink: 0 } }, /* @__PURE__ */ createElement("div", { onPointerDown: () => setContentPage(Math.max(0, contentPage - 1)), style: { fontSize: 10, color: contentPage > 0 ? "#cbd5e1" : "#475569", padding: "5 8", borderWidth: 1, borderColor: "#334155", borderRadius: 6 } }, "\u4E0A\u4E00\u9875"), /* @__PURE__ */ createElement("div", { style: { fontSize: 10, color: "#64748b" } }, `${Math.min(contentPage, maxContentPage) + 1}/${fieldPages.length}`), /* @__PURE__ */ createElement("div", { onPointerDown: () => setContentPage(Math.min(maxContentPage, contentPage + 1)), style: { fontSize: 10, color: contentPage < maxContentPage ? "#cbd5e1" : "#475569", padding: "5 8", borderWidth: 1, borderColor: "#334155", borderRadius: 6 } }, "\u4E0B\u4E00\u9875")), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", justifyContent: "FlexEnd", marginTop: 8, flexShrink: 0 } }, /* @__PURE__ */ createElement("div", { onPointerDown: onCancel, style: { fontSize: 11, color: "#cbd5e1", padding: "6 12", marginRight: 8, borderWidth: 1, borderColor: "#475569", borderRadius: 6 } }, "\u53D6\u6D88"), /* @__PURE__ */ createElement("div", { onPointerDown: onOk, style: { fontSize: 11, color: "#0f172a", backgroundColor: "#93c5fd", padding: "6 12", borderRadius: 6 } }, "\u786E\u5B9A")));
 };
-var hoverEnabled = chill.config.appGetOrCreate("HoverEffect.Enabled", true, "\u662F\u5426\u542F\u7528\u7A97\u53E3 hover \u653E\u5927\u6548\u679C");
-var hoverScale = chill.config.appGetOrCreate("HoverEffect.Scale", 1.03, "hover \u653E\u5927\u500D\u6570 (1.0 = \u65E0\u653E\u5927)");
-var hoverDuration = chill.config.appGetOrCreate("HoverEffect.Duration", 0.4, "hover \u52A8\u753B\u65F6\u957F (\u79D2)");
-var VISIBILITY_STATE_FILE = "window-states/plugin-visibility.json";
-function loadVisibilityState() {
-  try {
-    if (!chill.io.exists(VISIBILITY_STATE_FILE))
-      return {};
-    return JSON.parse(chill.io.readText(VISIBILITY_STATE_FILE) || "{}");
-  } catch {
-    return {};
-  }
-}
-function saveVisibilityState(state) {
-  try {
-    chill.io.writeText(VISIBILITY_STATE_FILE, JSON.stringify(state, null, 2));
-  } catch (e) {
-    console.error("[WM] Failed to save visibility state:", e);
-  }
-}
-var _visibilitySubscribers = [];
-var _controlRef = null;
-globalThis.__wmPluginControl = {
-  listPlugins() {
-    return pluginRegistry.map((p) => ({
-      id: p.id,
-      title: p.title,
-      enabled: _controlRef?.isVisible?.(p.id) ?? true,
-      launcher: p.launcher || { text: p.title.charAt(0), background: "#6c7086" }
-    }));
-  },
-  togglePluginVisible(id) {
-    _controlRef?.toggleVisible?.(id);
-  },
-  subscribe(fn) {
-    _visibilitySubscribers.push(fn);
-    return () => {
-      _visibilitySubscribers = _visibilitySubscribers.filter((s) => s !== fn);
-    };
-  }
-};
-function notifyVisibilitySubscribers() {
-  for (const fn of _visibilitySubscribers)
-    fn();
-}
-var App = () => {
-  const [plugins, setPlugins] = useState([]);
-  const [visibility, setVisibility] = useState({});
-  const visibilityRef = useRef({});
+var ChatPanel = ({ compact = false }) => {
+  const [prompt, setPrompt] = useState("");
+  const [rec, setRec] = useState(false);
+  const [cfgMode, setCfgMode] = useState(false);
+  const [draft, setDraft] = useState({});
+  const [defaults, setDefaults] = useState({});
+  const [status, setStatus] = useState({ available: false });
+  const [last, setLast] = useState(null);
+  const [token, setToken] = useState("");
+  const [vu, setVu] = useState(0);
   useEffect(() => {
-    loadPlugins();
-    const vis = loadVisibilityState();
-    visibilityRef.current = vis;
-    setVisibility(vis);
-    setPlugins([...pluginRegistry]);
-    _refreshPlugins = () => setPlugins([...pluginRegistry]);
-    console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s)`);
+    if (!rec) {
+      setVu(0);
+      return;
+    }
+    const id = setInterval(() => {
+      const t = Date.now() / 160;
+      const noise = Math.random() * 0.5;
+      const level = Math.max(0.08, Math.min(1, Math.abs(Math.sin(t)) * 0.7 + noise * 0.3));
+      setVu(level);
+    }, 80);
+    return () => clearInterval(id);
+  }, [rec]);
+  const vuStyle = useMemo(() => ({
+    width: compact ? 14 : 18,
+    height: compact ? 14 : 18,
+    borderRadius: 999,
+    backgroundColor: rec ? "#f87171" : "#64748b",
+    scale: rec ? 0.9 + vu * 0.9 : 1,
+    opacity: rec ? 0.5 + vu * 0.5 : 0.35,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: rec ? "#fecaca" : "#94a3b8"
+  }), [rec, vu, compact]);
+  useEffect(() => {
+    setStatus(JSON.parse(chill.aichat.getStatus()));
+    setDraft(loadCfg());
+    setDefaults(loadDefaults());
+    const t = chill.aichat.onConversationCompleted((json) => setLast(JSON.parse(json || "{}")));
+    setToken(t);
     return () => {
-      _refreshPlugins = null;
+      if (t)
+        chill.aichat.offConversationCompleted(t);
     };
   }, []);
-  const isVisible = (id) => {
-    if (visibilityRef.current[id] === void 0)
-      return true;
-    return visibilityRef.current[id];
+  const send = () => {
+    if (!prompt.trim())
+      return;
+    const r = call("startTextConversation", prompt, "wm-plugin");
+    if (r.ok)
+      setPrompt("");
   };
-  const toggleVisible = (id) => {
-    const next = { ...visibilityRef.current, [id]: !isVisible(id) };
-    visibilityRef.current = next;
-    setVisibility(next);
-    saveVisibilityState(next);
+  const micDown = () => {
+    const r = call("startVoiceCapture");
+    if (r.ok)
+      setRec(true);
   };
-  useEffect(() => {
-    _controlRef = { isVisible, toggleVisible };
-    notifyVisibilitySubscribers();
-    return () => {
-      _controlRef = null;
-    };
-  }, [visibility]);
-  return /* @__PURE__ */ createElement(Fragment, null, plugins.map((p) => {
-    const visible = isVisible(p.id);
-    return /* @__PURE__ */ createElement(
-      Window,
-      {
-        key: p.id,
-        title: p.title,
-        width: p.width,
-        height: p.height,
-        initialX: p.initialX,
-        initialY: p.initialY,
-        resizable: p.resizable,
-        canClose: p.canClose !== false,
-        compact: p.compact,
-        hoverEnabled,
-        hoverScale,
-        hoverDuration,
-        onGeometryChange: p.onGeometryChange,
-        visible,
-        onClose: () => toggleVisible(p.id)
-      },
-      /* @__PURE__ */ createElement(ErrorBoundary, null, /* @__PURE__ */ createElement(p.component, null))
-    );
-  }));
+  const micUp = () => {
+    const r = call("stopVoiceCaptureAndSend", "wm-plugin");
+    setRec(false);
+    if (!r.ok)
+      console.log(r.error);
+  };
+  const save = () => {
+    let ok = true;
+    for (const k of Object.keys(draft)) {
+      const r = call("setConfig", k, String(draft[k] ?? ""));
+      if (!r.ok)
+        ok = false;
+    }
+    const rs = call("saveConfig");
+    setCfgMode(false);
+    setStatus(JSON.parse(chill.aichat.getStatus()));
+    if (!ok || !rs.ok)
+      console.log("\u4FDD\u5B58\u5931\u8D25");
+  };
+  if (cfgMode && !compact)
+    return /* @__PURE__ */ createElement(SavePanel, { draft, defaults, setDraft, onCancel: () => setCfgMode(false), onOk: save });
+  return /* @__PURE__ */ createElement("div", { style: { flexGrow: 1, display: "Flex", flexDirection: "Column", backgroundColor: "#111827", padding: 10 } }, !compact && /* @__PURE__ */ createElement(Fragment, null, /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: status.available ? "#86efac" : "#fca5a5", marginBottom: 4 } }, status.available ? "AIChat \u5DF2\u8FDE\u63A5" : "AIChat \u672A\u5B89\u88C5"), /* @__PURE__ */ createElement("div", { style: { fontSize: 10, color: "#94a3b8", marginBottom: 8 } }, "busy:", String(!!status.isBusy), " ready:", String(!!status.isReady), " ver:", status.apiVersion || "-")), /* @__PURE__ */ createElement(
+    "textfield",
+    {
+      text: prompt,
+      onValueChanged: (e) => setPrompt(e.newValue ?? ""),
+      style: { height: compact ? 34 : 70, fontSize: 12, backgroundColor: "#1f2937", borderWidth: 1, borderColor: "#334155", color: "#e2e8f0", paddingLeft: 8, paddingRight: 8 }
+    }
+  ), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", marginTop: 8 } }, /* @__PURE__ */ createElement("div", { onPointerDown: send, style: { fontSize: 11, color: "#111827", backgroundColor: "#93c5fd", padding: "6 10", borderRadius: 6, marginRight: 6 } }, "\u53D1\u9001"), /* @__PURE__ */ createElement(
+    "div",
+    {
+      onPointerDown: micDown,
+      onPointerUp: micUp,
+      onPointerLeave: micUp,
+      style: { fontSize: 11, color: rec ? "#fff" : "#e2e8f0", backgroundColor: rec ? "#ef4444" : "#334155", padding: "6 10", borderRadius: 6, marginRight: 6, display: "Flex", flexDirection: "Row", alignItems: "Center" }
+    },
+    /* @__PURE__ */ createElement("div", { style: vuStyle }),
+    rec ? "\u677E\u5F00\u53D1\u9001" : "\u6309\u4F4F\u8BF4\u8BDD"
+  ), !compact && /* @__PURE__ */ createElement("div", { onPointerDown: () => setCfgMode(true), style: { fontSize: 11, color: "#e2e8f0", backgroundColor: "#334155", padding: "6 10", borderRadius: 6 } }, "\u914D\u7F6E")), !compact && last && /* @__PURE__ */ createElement("div", { style: { marginTop: 8, padding: 6, borderWidth: 1, borderColor: "#1e293b", borderRadius: 6 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 10, color: "#93c5fd", marginBottom: 2 } }, `[${last.EmotionTag || "Think"}]`), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: "#e2e8f0", marginBottom: 2 } }, last.VoiceText || ""), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: "#cbd5e1" } }, last.SubtitleText || "")));
 };
-render(/* @__PURE__ */ createElement(App, null), document.body);
+__registerPlugin({
+  id: "aichat",
+  title: "AIChat",
+  width: 520,
+  height: 420,
+  initialX: 120,
+  initialY: 80,
+  resizable: true,
+  compact: { width: 420, height: 120, component: () => /* @__PURE__ */ createElement(ChatPanel, { compact: true }) },
+  launcher: {
+    text: "\uF27A",
+    background: "#008055"
+  },
+  component: () => /* @__PURE__ */ createElement(ChatPanel, null)
+});
 //# sourceMappingURL=app.js.map

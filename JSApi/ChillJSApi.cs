@@ -85,6 +85,11 @@ namespace ChillPatcher.JSApi
         public ChillInstanceApi instances { get; }
 
         /// <summary>
+        /// AIChat 联动 API
+        /// </summary>
+        public ChillAIChatApi aichat { get; }
+
+        /// <summary>
         /// 自定义 API 容器（模块可注册）
         /// </summary>
         public CustomApiContainer custom { get; }
@@ -147,6 +152,7 @@ namespace ChillPatcher.JSApi
             net = new ChillNetApi(logger);
             io = new ChillIOApi(logger);
             instances = new ChillInstanceApi(logger);
+            aichat = new ChillAIChatApi(logger);
             custom = new CustomApiContainer();
 
             // 初始化事件订阅

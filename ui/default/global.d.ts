@@ -2,6 +2,18 @@
 
 import { HTMLAttributes } from "preact/src/jsx";
 
+// ChillPatcher 全局 API
+declare var chill: {
+    ime: {
+        getContext(): string | null;
+        getInputRect(): string | null;
+        isActive(): boolean;
+        selectCandidate(index: number): boolean;
+        getInputMode(): boolean;
+        setInputMode(gameMode: boolean): void;
+    };
+};
+
 declare global {
     namespace JSX {
         interface IntrinsicElements {

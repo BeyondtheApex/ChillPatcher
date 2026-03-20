@@ -1574,6 +1574,10 @@ function useMemo(factory, args) {
   }
   return state._value;
 }
+function useCallback(callback, args) {
+  currentHook = 8;
+  return useMemo(() => callback, args);
+}
 function flushAfterPaintEffects() {
   let component;
   while (component = afterPaintEffects.shift()) {
@@ -1833,7 +1837,7 @@ var WeatherCompact = () => {
   const [loading, setLoading] = useState(true);
   const [weather, setWeather] = useState(null);
   const [error, setError] = useState(null);
-  const doFetch = () => {
+  const doFetch = useCallback(() => {
     setLoading(true);
     setError(null);
     fetchWeather((data, err) => {
@@ -1843,10 +1847,10 @@ var WeatherCompact = () => {
       else
         setError(err);
     });
-  };
+  }, []);
   useEffect(() => {
     doFetch();
-  }, []);
+  }, [doFetch]);
   if (loading || error || !weather) {
     return /* @__PURE__ */ createElement(
       "div",
@@ -1930,7 +1934,7 @@ var WeatherCard = () => {
   const [loading, setLoading] = useState(true);
   const [weather, setWeather] = useState(null);
   const [error, setError] = useState(null);
-  const doFetch = () => {
+  const doFetch = useCallback(() => {
     setLoading(true);
     setError(null);
     fetchWeather((data, err) => {
@@ -1940,10 +1944,10 @@ var WeatherCard = () => {
       else
         setError(err);
     });
-  };
+  }, []);
   useEffect(() => {
     doFetch();
-  }, []);
+  }, [doFetch]);
   if (loading)
     return /* @__PURE__ */ createElement(LoadingView, null);
   if (error)
@@ -1963,6 +1967,10 @@ __registerPlugin({
     width: 280,
     height: 100,
     component: WeatherCompact
+  },
+  launcher: {
+    text: "\u{F0898}",
+    background: "#0066aa"
   },
   component: WeatherCard
 });

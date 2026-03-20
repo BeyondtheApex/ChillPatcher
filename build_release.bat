@@ -28,6 +28,10 @@ cd /d %~dp0
 REM 配置
 set Configuration=Release
 
+REM Steam 路径（可在外部预先设置 CHILL_STEAM_LIBRARY 覆盖）
+if "%CHILL_STEAM_LIBRARY%"=="" set "CHILL_STEAM_LIBRARY=F:\SteamLibrary"
+echo Using Steam library: %CHILL_STEAM_LIBRARY%
+
 set ReleaseDir=%~dp0release
 set PluginDir=%ReleaseDir%\ChillPatcher
 set ModulesDir=%PluginDir%\Modules

@@ -31,7 +31,33 @@ namespace ChillPatcher.JSApi
 
             try
             {
-                _jsLogWriter = new StreamWriter(_jsLogPath, false, Encoding.UTF8) { AutoFlush = true };
+                // 尝试释放被占用的文件
+                if (File.Exists(_jsLogPath))
+                {
+                    try
+                    {
+                        // 尝试打开文件以检查是否被占用
+                        using (var fs = new FileStream(_jsLogPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                        {
+                            // 文件可以正常打开，没有被占用
+                        }
+                    }
+                    catch (IOException)
+                    {
+                        // 文件被占用，等待一段时间后重试
+                        System.Threading.Thread.Sleep(100);
+                        try
+                        {
+                            // 强制删除被占用的文件
+                            File.Delete(_jsLogPath);
+                        }
+                        catch { /* 忽略删除失败 */ }
+                    }
+                }
+
+                // 使用 FileStream 并允许其他进程读取文件
+                var fileStream = new FileStream(_jsLogPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                _jsLogWriter = new StreamWriter(fileStream, Encoding.UTF8) { AutoFlush = true };
                 _jsLogWriter.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] OneJS Log Started");
             }
             catch (Exception ex)
