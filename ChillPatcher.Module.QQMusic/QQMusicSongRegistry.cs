@@ -265,7 +265,7 @@ namespace ChillPatcher.Module.QQMusic
                 AlbumId = LOGIN_ALBUM_ID,
                 TagIds = new List<string> { TAG_FAVORITES },
                 SourceType = MusicSourceType.Stream,
-                Duration = 30f,
+                Duration = 120f,
                 ModuleId = _moduleId,
                 IsUnlocked = true,
                 IsFavorite = false

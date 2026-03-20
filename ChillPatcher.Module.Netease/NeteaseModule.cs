@@ -40,7 +40,7 @@ namespace ChillPatcher.Module.Netease
         // 登录歌曲常量
         private const string LOGIN_SONG_UUID_PREFIX = "netease_qr_login_";
         private const string LOGIN_SONG_TITLE = "网易云扫码登录";
-        private const float LOGIN_SONG_DURATION = 60f; // 1 分钟
+        private const float LOGIN_SONG_DURATION = 120f; // 2 分钟
         
         // 当前登录歌曲的 UUID（每次登录生成新的）
         private string _currentLoginSongUuid;

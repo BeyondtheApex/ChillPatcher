@@ -6,6 +6,7 @@ package main
 import "C"
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/buger/jsonparser"
@@ -95,6 +97,9 @@ func NeteaseInit(dataDirC *C.char) C.int {
 		return 0
 	}
 	util.SetGlobalCookieJar(jar)
+
+	// 修复上游库的假 NMTID cookie，替换为真实随机值
+	fixStrategyCookies(jar)
 
 	// 尝试加载用户信息
 	table := storage.NewTable()
@@ -618,6 +623,17 @@ func NeteaseGetSongLyric(songId C.longlong) *C.char {
 	}
 
 	return C.CString(lyric)
+}
+
+// fixStrategyCookies 修复上游库注入的假 cookie
+// go-musicfox/netease-music 的 ApplyRequestStrategy 会注入 NMTID=some_random_id_from_strategy
+// 这个字面量值会被网易云服务器检测为异常，返回 -462
+func fixStrategyCookies(jar http.CookieJar) {
+	u, _ := url.Parse("https://music.163.com")
+	realNMTID := fmt.Sprintf("%x", time.Now().UnixNano())
+	jar.SetCookies(u, []*http.Cookie{
+		{Name: "NMTID", Value: realNMTID},
+	})
 }
 
 func main() {

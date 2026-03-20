@@ -100,7 +100,14 @@ namespace ChillPatcher.Module.Bilibili
             if (uuid == _currentLoginUuid || uuid.Contains("bili_login_action"))
             {
                 _context.Logger.LogInfo("触发登录流程...");
+                // 等待二维码获取完成再返回，这样封面系统能拿到二维码 Sprite
+                var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                Action onReady = () => tcs.TrySetResult(true);
+                _qrManager.OnQRCodeReady += onReady;
                 _qrManager.StartLogin();
+                // 最多等5秒获取二维码
+                await Task.WhenAny(tcs.Task, Task.Delay(5000, token));
+                _qrManager.OnQRCodeReady -= onReady;
                 return PlayableSource.FromPcmStream(uuid, new SilentPcmReader(), AudioFormat.Mp3);
             }
 

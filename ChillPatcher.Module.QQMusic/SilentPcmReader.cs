@@ -12,7 +12,7 @@ namespace ChillPatcher.Module.QQMusic
         private readonly ulong _totalFrames;
         private ulong _currentFrame;
 
-        public SilentPcmReader(float durationSeconds = 30f)
+        public SilentPcmReader(float durationSeconds = 120f)
         {
             _totalFrames = (ulong)(44100 * durationSeconds);
         }
