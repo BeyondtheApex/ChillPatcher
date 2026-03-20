@@ -58,11 +58,34 @@ namespace ChillPatcher
             // 初始化UI框架配置
             UIFrameworkConfig.Initialize(Config);
 
-            // Apply Harmony patches
+            // Apply Harmony patches (safely, skip types that don't exist in updated game)
             var harmony = new Harmony(MyPluginInfo.PLUGIN_GUID);
-            harmony.PatchAll();
-
-            Logger.LogInfo("Harmony patches applied!");
+            try
+            {
+                harmony.PatchAll();
+                Logger.LogInfo("Harmony patches applied!");
+            }
+            catch (System.Exception ex)
+            {
+                Logger.LogWarning($"Some Harmony patches failed (game may have updated): {ex.Message}");
+                // 尝试逐个注册 patch，跳过失败的
+                foreach (var type in System.Reflection.Assembly.GetExecutingAssembly().GetTypes())
+                {
+                    try
+                    {
+                        if (type.GetCustomAttributes(typeof(HarmonyLib.HarmonyPatch), false).Length > 0 ||
+                            type.GetNestedTypes().Length > 0)
+                        {
+                            harmony.CreateClassProcessor(type).Patch();
+                        }
+                    }
+                    catch (System.Exception ex2)
+                    {
+                        Logger.LogWarning($"Skipped patch {type.Name}: {ex2.Message}");
+                    }
+                }
+                Logger.LogInfo("Harmony patches applied (with some skipped)!");
+            }
             
             // 输出配置状态
             Logger.LogInfo("==== ChillPatcher Configuration ====");

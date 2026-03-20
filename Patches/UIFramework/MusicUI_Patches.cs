@@ -751,14 +751,15 @@ namespace ChillPatcher.Patches.UIFramework
                 }
                 
                 // 订阅拖拽事件 - 使用 R3.Observable.Merge
+                // 兼容游戏版本变化：Item1 类型可能是 IMusicPlayListButton 或 MusicPlayListButtons
                 R3.Observable.Merge(_queueButtonList.Select(b => b.OnStartReorder))
-                    .Subscribe(x => OnQueueStartReorder(musicUI, x.Item1, x.Item2))
+                    .Subscribe(x => OnQueueStartReorder(musicUI, x.Item1 as MusicPlayListButtons, x.Item2))
                     .AddTo(_queueListDisposable);
                 R3.Observable.Merge(_queueButtonList.Select(b => b.OnReorderDrag))
-                    .Subscribe(x => OnQueueDragReorder(musicUI, x.Item1, x.Item2))
+                    .Subscribe(x => OnQueueDragReorder(musicUI, x.Item1 as MusicPlayListButtons, x.Item2))
                     .AddTo(_queueListDisposable);
                 R3.Observable.Merge(_queueButtonList.Select(b => b.OnEndReorder))
-                    .Subscribe(x => OnQueueEndReorder(musicUI, x.Item1, x.Item2))
+                    .Subscribe(x => OnQueueEndReorder(musicUI, x.Item1 as MusicPlayListButtons, x.Item2))
                     .AddTo(_queueListDisposable);
                 
                 // **关键：强制刷新布局**

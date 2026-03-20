@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Bulbul;
 using UnityEngine;
 using BepInEx.Logging;
 using UnityEngine.UI;
@@ -107,11 +108,11 @@ namespace ChillPatcher.Patches
         }
 
         /// <summary>
-        /// Hook 到 ChangeShowUIService.Setup
+        /// Hook 到 FacilityMusic.Setup（UI 初始化完成后重排列）
         /// </summary>
-        [HarmonyPatch(typeof(ChangeShowUIService), "Setup")]
         [HarmonyPostfix]
-        public static void ChangeShowUIService_Setup_Postfix()
+        [HarmonyPatch(typeof(FacilityMusic), "Setup")]
+        public static void FacilityMusic_Setup_Postfix()
         {
             if (!UIFrameworkConfig.EnableUIRearrange.Value)
             {
