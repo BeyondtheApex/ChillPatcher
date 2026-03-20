@@ -55,7 +55,7 @@ namespace ChillPatcher
         private static UIInstanceConfigData _data;
 
         // UI 实例配置版本号 — 当默认值发生变化时递增，旧配置会被重置
-        private const int CurrentVersion = 2;
+        private const int CurrentVersion = 3;
 
         // 需要重置默认值的实例 ID 集合
         private static readonly HashSet<string> _resetSections = new HashSet<string>();

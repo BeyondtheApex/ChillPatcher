@@ -374,9 +374,23 @@ namespace ChillPatcher.UIFramework.Audio
 
             var music = MusicRegistry.Instance?.GetMusic(audioInfo.UUID);
             
+            // 如果音乐已从注册表中移除（例如登录歌曲），跳过加载
+            if (music == null)
+            {
+                if (!string.IsNullOrEmpty(audioInfo.UUID) &&
+                    (audioInfo.UUID.IndexOf("login_song", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     audioInfo.UUID.StartsWith("netease_qr_login_", StringComparison.OrdinalIgnoreCase)))
+                {
+                    Plugin.Log.LogInfo($"[StreamingAudioLoader] Login song removed, skipping: {audioInfo.Title} ({audioInfo.UUID})");
+                    return null;
+                }
+
+                Plugin.Log.LogWarning($"[StreamingAudioLoader] Music not found in registry: {audioInfo.Title} ({audioInfo.UUID})");
+                return null;
+            }
+            
             // 流媒体源
-            if (music != null && (music.SourceType == MusicSourceType.Stream || 
-                                   music.SourceType == MusicSourceType.Url))
+            if (music.SourceType == MusicSourceType.Stream || music.SourceType == MusicSourceType.Url)
             {
                 Plugin.Log.LogInfo($"[StreamingAudioLoader] Smart load - Streaming: {audioInfo.Title}");
                 var clip = await LoadFromStreamingAsync(audioInfo.UUID, cancellationToken);

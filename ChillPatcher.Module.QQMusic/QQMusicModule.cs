@@ -40,6 +40,8 @@ namespace ChillPatcher.Module.QQMusic
         private string _currentLoginSongUuid;
         private string _wxLoginSongUuid;
         private QRLoginManager _qrLoginManager;
+        private readonly object _stateLock = new object();
+        private int _loginSuccessHandling;
 
         // Subscriptions
         private IDisposable _favoriteChangedSubscription;
@@ -169,11 +171,24 @@ namespace ChillPatcher.Module.QQMusic
 
         public Task<List<MusicInfo>> GetMusicListAsync()
         {
-            var allMusic = new List<MusicInfo>();
-            allMusic.AddRange(_musicList);
-            allMusic.AddRange(_recommendMusicList.Where(m => !_musicList.Any(f => f.UUID == m.UUID)));
+            List<MusicInfo> musicListSnapshot;
+            List<MusicInfo> recommendSnapshot;
+            List<List<MusicInfo>> customPlaylistsSnapshot;
 
-            foreach (var playlist in _customPlaylistMusicLists.Values)
+            lock (_stateLock)
+            {
+                musicListSnapshot = _musicList?.ToList() ?? new List<MusicInfo>();
+                recommendSnapshot = _recommendMusicList?.ToList() ?? new List<MusicInfo>();
+                customPlaylistsSnapshot = _customPlaylistMusicLists?.Values
+                    .Select(list => list?.ToList() ?? new List<MusicInfo>())
+                    .ToList() ?? new List<List<MusicInfo>>();
+            }
+
+            var allMusic = new List<MusicInfo>();
+            allMusic.AddRange(musicListSnapshot);
+            allMusic.AddRange(recommendSnapshot.Where(m => !musicListSnapshot.Any(f => f.UUID == m.UUID)));
+
+            foreach (var playlist in customPlaylistsSnapshot)
             {
                 allMusic.AddRange(playlist.Where(m => !allMusic.Any(e => e.UUID == m.UUID)));
             }
@@ -526,6 +541,8 @@ namespace ChillPatcher.Module.QQMusic
 
         private Task HandleNotLoggedInAsync()
         {
+            Interlocked.Exchange(ref _loginSuccessHandling, 0);
+
             // 初始化 QR 登录管理器
             _qrLoginManager = new QRLoginManager(_bridge, _logger);
             _qrLoginManager.OnLoginSuccess += OnQRLoginSuccess;
@@ -552,16 +569,35 @@ namespace ChillPatcher.Module.QQMusic
 
         private async void OnLoginSuccess()
         {
+            if (Interlocked.Exchange(ref _loginSuccessHandling, 1) == 1)
+            {
+                _logger?.LogWarning("[QQ音乐] 忽略重复登录成功回调");
+                return;
+            }
+
             try
             {
                 _logger?.LogInfo("[QQ音乐] 登录成功，开始加载音乐...");
 
+                // 先解绑并停止轮询，避免清理过程中继续触发状态回调
+                var qrManager = _qrLoginManager;
+                if (qrManager != null)
+                {
+                    qrManager.OnLoginSuccess -= OnQRLoginSuccess;
+                    qrManager.OnStatusChanged -= OnQRLoginStatusChanged;
+                    qrManager.OnQRCodeUpdated -= OnQRCodeUpdated;
+                    qrManager.CancelLogin();
+                }
+
                 // 清理登录歌曲
                 _songRegistry.UnregisterLoginSong();
-                _musicList.Clear();
-                _currentLoginSongUuid = null;
-                _wxLoginSongUuid = null;
-                _qrLoginManager = null;
+                lock (_stateLock)
+                {
+                    _musicList.Clear();
+                    _currentLoginSongUuid = null;
+                    _wxLoginSongUuid = null;
+                    _qrLoginManager = null;
+                }
 
                 // 注销旧的所有专辑（包括登录专辑），重新注册
                 _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
@@ -589,6 +625,10 @@ namespace ChillPatcher.Module.QQMusic
             {
                 _logger?.LogError($"OnLoginSuccess error: {ex}");
             }
+            finally
+            {
+                Interlocked.Exchange(ref _loginSuccessHandling, 0);
+            }
         }
 
         private void OnQRLoginSuccess()
@@ -602,9 +642,20 @@ namespace ChillPatcher.Module.QQMusic
             _logger?.LogInfo($"[QQ音乐] QR状态: {status}");
 
             // 更新登录歌曲的 Artist 字段显示状态
-            if (_currentLoginSongUuid != null)
+            string loginSongUuid;
+            lock (_stateLock)
             {
-                var loginSong = _musicList.FirstOrDefault(m => m.UUID == _currentLoginSongUuid);
+                loginSongUuid = _currentLoginSongUuid;
+            }
+
+            if (loginSongUuid != null)
+            {
+                MusicInfo loginSong;
+                lock (_stateLock)
+                {
+                    loginSong = _musicList.FirstOrDefault(m => m.UUID == loginSongUuid);
+                }
+
                 if (loginSong != null)
                 {
                     loginSong.Artist = status;
@@ -616,12 +667,18 @@ namespace ChillPatcher.Module.QQMusic
         private void OnQRCodeUpdated(Sprite newQRCode)
         {
             // 清除封面缓存，让 UI 重新加载新的二维码
-            if (!string.IsNullOrEmpty(_currentLoginSongUuid))
+            string loginSongUuid;
+            lock (_stateLock)
             {
-                _coverLoader?.RemoveMusicCoverCache(_currentLoginSongUuid);
+                loginSongUuid = _currentLoginSongUuid;
+            }
+
+            if (!string.IsNullOrEmpty(loginSongUuid))
+            {
+                _coverLoader?.RemoveMusicCoverCache(loginSongUuid);
                 _context.EventBus.Publish(new CoverInvalidatedEvent
                 {
-                    MusicUuid = _currentLoginSongUuid,
+                    MusicUuid = loginSongUuid,
                     Reason = "QR code updated"
                 });
             }
@@ -640,14 +697,20 @@ namespace ChillPatcher.Module.QQMusic
                 var likeSongs = await Task.Run(() => _bridge.GetLikeSongs(true));
                 _logger?.LogInfo($"ScanAndRegisterAsync: Got {likeSongs?.Count ?? 0} like songs, error: {_bridge.GetLastError()}");
 
-                if (likeSongs != null && likeSongs.Count > 0)
+                // 即使收藏为空也注册收藏 Tag/专辑，避免 UI 在刷新时访问到缺失实体
+                _songRegistry.RegisterFavoritesTag();
+                _songRegistry.RegisterFavoritesAlbum(likeSongs?.Count ?? 0);
+
+                var registeredFavorites = likeSongs != null && likeSongs.Count > 0
+                    ? _songRegistry.RegisterFavoritesSongs(likeSongs, _songInfoMap)
+                    : new List<MusicInfo>();
+
+                lock (_stateLock)
                 {
-                    // Only register favorites tag if there are songs
-                    _songRegistry.RegisterFavoritesTag();
-                    _songRegistry.RegisterFavoritesAlbum(likeSongs.Count);
-                    _musicList = _songRegistry.RegisterFavoritesSongs(likeSongs, _songInfoMap);
-                    _logger?.LogInfo($"Registered {_musicList.Count} favorite songs");
+                    _musicList = registeredFavorites;
                 }
+
+                _logger?.LogInfo($"Registered {registeredFavorites.Count} favorite songs");
 
                 // Import custom playlists
                 await ImportCustomPlaylistsAsync();

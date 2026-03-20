@@ -90,6 +90,11 @@ namespace ChillPatcher.JSApi
         public ChillAIChatApi aichat { get; }
 
         /// <summary>
+        /// 游戏控制 API（番茄钟/经验等级）
+        /// </summary>
+        public ChillGameApi game { get; }
+
+        /// <summary>
         /// 自定义 API 容器（模块可注册）
         /// </summary>
         public CustomApiContainer custom { get; }
@@ -153,6 +158,7 @@ namespace ChillPatcher.JSApi
             io = new ChillIOApi(logger);
             instances = new ChillInstanceApi(logger);
             aichat = new ChillAIChatApi(logger);
+            game = new ChillGameApi(logger);
             custom = new CustomApiContainer();
 
             // 初始化事件订阅
@@ -199,6 +205,7 @@ namespace ChillPatcher.JSApi
         {
             events?.Dispose();
             log?.Dispose();
+            game?.Dispose();
         }
 
         /// <summary>

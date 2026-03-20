@@ -2,6 +2,7 @@ using Bulbul;
 using ChillPatcher.UIFramework;
 using ChillPatcher.UIFramework.Audio;
 using ChillPatcher.UIFramework.Music;
+using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.ModuleSystem.Services;
 using Cysharp.Threading.Tasks;
 using HarmonyLib;
@@ -39,6 +40,8 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static CancellationTokenSource _currentLoadCts;
         private static readonly object _ctsLock = new object();
+        private static readonly object _invalidQueueLogLock = new object();
+        private static readonly HashSet<string> _loggedInvalidQueueUuids = new HashSet<string>();
         
         /// <summary>
         /// 获取用于队列填充的播放列表（使用显示顺序）
@@ -104,6 +107,53 @@ namespace ChillPatcher.Patches.UIFramework
         }
 
         /// <summary>
+        /// 队列过滤：跳过被排除歌曲，以及已从注册表移除的模块歌曲（例如登录歌曲清理后的残留项）
+        /// </summary>
+        private static bool ShouldSkipInQueue(MusicService musicService, GameAudioInfo audio)
+        {
+            if (audio == null)
+            {
+                return true;
+            }
+
+            if (musicService.IsContainsExcludedFromPlaylist(audio))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(audio.UUID))
+            {
+                return false;
+            }
+
+            var registryMusic = MusicRegistry.Instance?.GetMusic(audio.UUID);
+            if (registryMusic != null)
+            {
+                return false;
+            }
+
+            bool isModuleTrack =
+                audio.UUID.StartsWith("qqmusic_", StringComparison.OrdinalIgnoreCase) ||
+                audio.UUID.StartsWith("netease_", StringComparison.OrdinalIgnoreCase) ||
+                audio.UUID.StartsWith("bilibili_", StringComparison.OrdinalIgnoreCase);
+
+            if (!isModuleTrack)
+            {
+                return false;
+            }
+
+            lock (_invalidQueueLogLock)
+            {
+                if (_loggedInvalidQueueUuids.Add(audio.UUID))
+                {
+                    Plugin.Log.LogWarning($"[PlayQueuePatch] Skipping stale queue item removed from registry: {audio.AudioClipName} ({audio.UUID})");
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// 处理歌曲播放完成的回调
         /// 检查单曲循环模式，如果启用则重新播放当前歌曲
         /// </summary>
@@ -161,7 +211,7 @@ namespace ChillPatcher.Patches.UIFramework
         {
             var queueManager = PlayQueueManager.Instance;
             var currentPlaylist = GetPlaylistForQueue(musicService);
-            Func<GameAudioInfo, bool> isExcludedFunc = audio => musicService.IsContainsExcludedFromPlaylist(audio);
+            Func<GameAudioInfo, bool> isExcludedFunc = audio => ShouldSkipInQueue(musicService, audio);
             
             Plugin.Log.LogInfo($"[PlayQueuePatch] SkipWithQueueAsync: IsInHistoryMode={queueManager.IsInHistoryMode}, IsInExtendedMode={queueManager.IsInExtendedMode}, HistoryPosition={queueManager.HistoryPosition}, ExtendedSteps={queueManager.ExtendedSteps}");
             
@@ -266,7 +316,7 @@ namespace ChillPatcher.Patches.UIFramework
         {
             var queueManager = PlayQueueManager.Instance;
             var currentPlaylist = GetPlaylistForQueue(musicService);
-            Func<GameAudioInfo, bool> isExcludedFunc = audio => musicService.IsContainsExcludedFromPlaylist(audio);
+            Func<GameAudioInfo, bool> isExcludedFunc = audio => ShouldSkipInQueue(musicService, audio);
             
             GameAudioInfo prevAudio;
             
@@ -324,7 +374,7 @@ namespace ChillPatcher.Patches.UIFramework
             bool isShuffle = musicService.IsShuffle;
             
             // 使用 MusicService.IsContainsExcludedFromPlaylist 检查排除
-            Func<GameAudioInfo, bool> isExcludedFunc = audio => musicService.IsContainsExcludedFromPlaylist(audio);
+            Func<GameAudioInfo, bool> isExcludedFunc = audio => ShouldSkipInQueue(musicService, audio);
             
             GameAudioInfo nextAudio = null;
             
