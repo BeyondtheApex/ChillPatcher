@@ -74,8 +74,23 @@ namespace ChillPatcher.Module.Bilibili
             _qrManager = new QRLoginManager(_bridge, context.Logger);
 
             _qrManager.OnLoginSuccess += async () => {
+                context.Logger.LogInfo($"[{DisplayName}] 扫码登录成功！");
                 _registry.UpdateLoginSongTitle("登录成功！正在同步...");
+
+                // 清除登录歌曲和专辑
+                _context.MusicRegistry.UnregisterMusic(BilibiliSongRegistry.UUID_LOGIN);
+                _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
+                _currentLoginUuid = null;
+
+                // 加载音乐
                 await RefreshAsync();
+
+                // 通知 UI 刷新
+                _context.EventBus.Publish(new SDK.Events.PlaylistUpdatedEvent
+                {
+                    TagId = BilibiliSongRegistry.TAG_LOGIN,
+                    UpdateType = SDK.Events.PlaylistUpdateType.FullRefresh
+                });
             };
             _qrManager.OnStatusChanged += (msg) => _registry.UpdateLoginSongTitle(msg);
             _qrManager.OnQRCodeReady += () => {
@@ -85,8 +100,19 @@ namespace ChillPatcher.Module.Bilibili
 
             if (_bridge.IsLoggedIn)
             {
-                context.Logger.LogInfo($"Bilibili 已登录: {_bridge.CurrentUserId}");
-                await RefreshAsync();
+                // 验证 cookie 是否过期（尝试获取收藏夹列表）
+                var folders = await _bridge.GetMyFoldersAsync();
+                if (folders == null || folders.Count == 0)
+                {
+                    context.Logger.LogWarning($"[{DisplayName}] Cookie 已过期，清除并重新登录");
+                    _bridge.ClearSession();
+                    RefreshLoginSong();
+                }
+                else
+                {
+                    context.Logger.LogInfo($"Bilibili 已登录: {_bridge.CurrentUserId}");
+                    await RefreshAsync();
+                }
             }
             else
             {
@@ -99,14 +125,21 @@ namespace ChillPatcher.Module.Bilibili
         {
             if (uuid == _currentLoginUuid || uuid.Contains("bili_login_action"))
             {
+                // 如果二维码已经获取到了，直接返回静音流
+                if (_qrManager.QRCodeSprite != null)
+                {
+                    _context.Logger.LogInfo("登录流程已启动，二维码已就绪");
+                    return PlayableSource.FromPcmStream(uuid, new SilentPcmReader(), AudioFormat.Mp3);
+                }
+
                 _context.Logger.LogInfo("触发登录流程...");
-                // 等待二维码获取完成再返回，这样封面系统能拿到二维码 Sprite
+                // 等待二维码获取完成再返回
                 var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
                 Action onReady = () => tcs.TrySetResult(true);
                 _qrManager.OnQRCodeReady += onReady;
                 _qrManager.StartLogin();
-                // 最多等5秒获取二维码
-                await Task.WhenAny(tcs.Task, Task.Delay(5000, token));
+                // 最多等15秒
+                await Task.WhenAny(tcs.Task, Task.Delay(15000, token));
                 _qrManager.OnQRCodeReady -= onReady;
                 return PlayableSource.FromPcmStream(uuid, new SilentPcmReader(), AudioFormat.Mp3);
             }

@@ -668,6 +668,10 @@ func NeteaseQRGetKey() *C.char {
 	qrMutex.Lock()
 	defer qrMutex.Unlock()
 
+	// 每次获取二维码前使用全新空 cookie jar，避免残留 cookie 导致 -462
+	emptyJar, _ := cookiejar.NewEntriesJar(nil)
+	util.SetGlobalCookieJar(emptyJar)
+
 	qrService := service.LoginQRService{}
 	code, _, qrcodeUrl, err := qrService.GetKey()
 	if err != nil {
@@ -732,7 +736,18 @@ func NeteaseQRCheckStatus() *C.char {
 		statusMsg = "已扫码，等待确认"
 	case 803:
 		statusMsg = "登录成功"
-		// 登录成功后获取用户信息
+		// 登录成功后恢复文件 cookie jar 并保存登录 cookie
+		cookiePath := filepath.Join(dataDir, "cookie")
+		if fileJar, jarErr := cookiejar.NewFileJar(cookiePath, nil); jarErr == nil {
+			// 将当前 jar 的 cookie 复制到文件 jar
+			u, _ := url.Parse("https://music.163.com")
+			currentJar := util.GetGlobalCookieJar()
+			if currentJar != nil {
+				fileJar.SetCookies(u, currentJar.Cookies(u))
+			}
+			util.SetGlobalCookieJar(fileJar)
+		}
+		// 获取用户信息
 		if NeteaseRefreshLogin() == 1 {
 			statusMsg = "登录成功"
 		} else {

@@ -111,17 +111,27 @@ namespace ChillPatcher.Module.QQMusic
             // Register lyric API for JS frontend
             RegisterLyricApi();
 
-            // Check login status
+            // Check login status and validate cookie
             _isLoggedIn = _bridge.IsLoggedIn;
+
+            if (_isLoggedIn)
+            {
+                // 验证 cookie 是否过期（尝试获取用户信息）
+                var userInfo = await Task.Run(() => _bridge.GetUserInfo());
+                if (userInfo == null)
+                {
+                    _logger?.LogWarning("[QQ音乐] Cookie 已过期，清除并重新登录");
+                    _bridge.Logout();
+                    _isLoggedIn = false;
+                }
+            }
 
             if (!_isLoggedIn)
             {
-                // Not logged in - show login prompt
                 await HandleNotLoggedInAsync();
             }
             else
             {
-                // Logged in - load music
                 await ScanAndRegisterAsync();
             }
 
