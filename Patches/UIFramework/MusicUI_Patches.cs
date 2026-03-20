@@ -57,23 +57,33 @@ namespace ChillPatcher.Patches.UIFramework
         /// Patch MusicUI.Setup - 初始化虚拟滚动组件
         /// 使用Prefix确保在Setup内部的ViewPlayList调用之前完成初始化
         /// </summary>
-        [HarmonyPatch(typeof(MusicUI), "Setup")]
+        [HarmonyPatch(typeof(MusicUI), "Bulbul.IMusicListUI.Setup")]
         [HarmonyPrefix]
         static void Setup_Prefix(MusicUI __instance)
         {
 
             try
             {
-                // 获取UI组件
-                var scrollRect = Traverse.Create(__instance)
-                    .Field("scrollRect")
+                // 游戏更新后这些字段从 MusicUI 移到了 MusicPlayListView
+                var playListView = Traverse.Create(__instance)
+                    .Field("_musicPlayListView")
+                    .GetValue<MusicPlayListView>();
+
+                if (playListView == null)
+                {
+                    Plugin.Log.LogError("Failed to get _musicPlayListView from MusicUI");
+                    return;
+                }
+
+                var scrollRect = Traverse.Create(playListView)
+                    .Field("_scrollRect")
                     .GetValue<UnityEngine.UI.ScrollRect>();
 
-                var playListButtonsPrefab = Traverse.Create(__instance)
+                var playListButtonsPrefab = Traverse.Create(playListView)
                     .Field("_playListButtonsPrefab")
                     .GetValue<GameObject>();
 
-                var playListButtonsParent = Traverse.Create(__instance)
+                var playListButtonsParent = Traverse.Create(playListView)
                     .Field("_playListButtonsParent")
                     .GetValue<GameObject>();
 
@@ -136,17 +146,23 @@ namespace ChillPatcher.Patches.UIFramework
         /// <summary>
         /// Patch MusicUI.ViewPlayList - 使用虚拟滚动替代原实现
         /// </summary>
-        [HarmonyPatch(typeof(MusicUI), "ViewPlayList")]
+        [HarmonyPatch(typeof(MusicPlayListView), "ViewPlayList")]
         [HarmonyPrefix]
-        static bool ViewPlayList_Prefix(MusicUI __instance)
+        static bool ViewPlayList_Prefix(MusicPlayListView __instance)
         {
+            // 从 MusicPlayListView 获取 MusicUI
+            var facilityMusic = Traverse.Create(__instance)
+                .Field("_facilityMusic")
+                .GetValue<Bulbul.FacilityMusic>();
+            var musicUI = facilityMusic?._musicListUI as MusicUI;
+
             // 队列模式：使用原版列表但显示自定义数据
             if (IsShowingQueue)
             {
-                ViewQueueList(__instance);
+                if (musicUI != null) ViewQueueList(musicUI);
                 return false; // 阻止原方法
             }
-            
+
             // 如果框架未初始化，执行原方法
             if (!ChillUIFramework.IsInitialized)
             {
@@ -155,14 +171,9 @@ namespace ChillPatcher.Patches.UIFramework
 
             try
             {
-                // 获取_facilityMusic
-                var facilityMusic = Traverse.Create(__instance)
-                    .Field("_facilityMusic")
-                    .GetValue<Bulbul.FacilityMusic>();
-
-                if (facilityMusic == null)
+                if (facilityMusic == null || musicUI == null)
                 {
-                    Plugin.Log.LogError("Failed to get _facilityMusic from MusicUI");
+                    Plugin.Log.LogError("Failed to get FacilityMusic/MusicUI from MusicPlayListView");
                     return true;
                 }
 
@@ -182,7 +193,7 @@ namespace ChillPatcher.Patches.UIFramework
                 if (UIFrameworkConfig.EnableAlbumSeparators.Value && musicManager?.MixedVirtualScroll != null)
                 {
                     // 使用混合虚拟滚动
-                    _ = ViewPlayListWithAlbumSeparators(__instance, facilityMusic, playingList, musicManager);
+                    _ = ViewPlayListWithAlbumSeparators(musicUI, facilityMusic, playingList, musicManager);
                 }
                 else
                 {
