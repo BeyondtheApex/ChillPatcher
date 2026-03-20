@@ -189,5 +189,9 @@ __registerPlugin({
   initialY: 80,
   resizable: true,
   compact: { width: 420, height: 120, component: () => <ChatPanel compact={true} /> },
+  launcher: {
+    text: "",
+    background: "#008055",
+  },
   component: () => <ChatPanel />,
 })

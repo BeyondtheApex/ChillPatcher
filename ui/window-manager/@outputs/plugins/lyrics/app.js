@@ -1574,6 +1574,10 @@ function useMemo(factory, args) {
   }
   return state._value;
 }
+function useCallback(callback, args) {
+  currentHook = 8;
+  return useMemo(() => callback, args);
+}
 function flushAfterPaintEffects() {
   let component;
   while (component = afterPaintEffects.shift()) {
@@ -1745,6 +1749,7 @@ var useLyricsPoller = () => {
   const currentSongRef = useRef("");
   const lastIdxRef = useRef(-1);
   const loadingRef = useRef(false);
+  const apiUnavailableRef = useRef({});
   useEffect(() => {
     const poll = () => {
       try {
@@ -1789,9 +1794,18 @@ var useLyricsPoller = () => {
             if (b64)
               lrcText = base64Decode(b64);
           } else if (info.source === "netease") {
+            if (apiUnavailableRef.current["netease"]) {
+              log("netease API unavailable, skipping");
+              lyricsCache[info.cacheKey] = [];
+              setStatusText("\u6682\u65E0\u6B4C\u8BCD");
+              return;
+            }
             const neteaseApi = chill.custom.get("lyric_netease");
             if (!neteaseApi) {
-              currentSongRef.current = "";
+              log("lyric_netease API not available");
+              apiUnavailableRef.current["netease"] = true;
+              lyricsCache[info.cacheKey] = [];
+              setStatusText("\u6682\u65E0\u6B4C\u8BCD");
               return;
             }
             loadingRef.current = true;
@@ -1860,12 +1874,12 @@ var LyricsCompact = () => {
       log("resize error: " + (e?.message || e));
     }
   };
-  const handleSize = (mode) => {
+  const handleSize = useCallback((mode) => {
     _currentCompactWidth = COMPACT_SIZES[mode];
     setSizeMode(mode);
     resizeWindow(COMPACT_SIZES[mode]);
-  };
-  const SizeBtn = ({ mode }) => /* @__PURE__ */ createElement(
+  }, []);
+  const SizeBtn = useMemo(() => ({ mode }) => /* @__PURE__ */ createElement(
     "div",
     {
       style: {
@@ -1883,7 +1897,7 @@ var LyricsCompact = () => {
       onClick: () => handleSize(mode)
     },
     mode
-  );
+  ), [sizeMode, handleSize]);
   return /* @__PURE__ */ createElement(
     "div",
     {
@@ -1992,6 +2006,10 @@ __registerPlugin({
   initialX: 150,
   initialY: 80,
   resizable: true,
+  launcher: {
+    text: "\u{F0CB8}",
+    background: "#6d28d9"
+  },
   component: LyricsCard,
   compact: {
     get width() {

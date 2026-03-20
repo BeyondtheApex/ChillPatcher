@@ -40,6 +40,24 @@ namespace ChillPatcher.Patches
         /// </summary>
         public static bool IsGameMode => isGameMode;
 
+        /// <summary>
+        /// 获取输入模式（供 JS API 调用）
+        /// </summary>
+        public static bool GetInputMode()
+        {
+            return isGameMode;
+        }
+
+        /// <summary>
+        /// 设置输入模式（供 JS API 调用）
+        /// </summary>
+        public static void SetInputMode(bool gameMode)
+        {
+            isGameMode = gameMode;
+            string modeName = isGameMode ? "游戏模式（输入到游戏）" : "桌面模式（输入到系统）";
+            Plugin.Logger.LogInfo($"[KeyboardHook] 设置输入模式: {modeName}");
+        }
+
         // 双缓冲 Context - 线程安全设计
         private static RimeContextInfo cachedRimeContext = null;
         private static readonly object rimeContextCacheLock = new object();

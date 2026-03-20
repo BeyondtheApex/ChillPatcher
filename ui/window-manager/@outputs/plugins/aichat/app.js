@@ -1820,6 +1820,10 @@ __registerPlugin({
   initialY: 80,
   resizable: true,
   compact: { width: 420, height: 120, component: () => /* @__PURE__ */ createElement(ChatPanel, { compact: true }) },
+  launcher: {
+    text: "\uF27A",
+    background: "#008055"
+  },
   component: () => /* @__PURE__ */ createElement(ChatPanel, null)
 });
 //# sourceMappingURL=app.js.map
