@@ -124,7 +124,7 @@ C:\Users\<你的用户名>\AppData\LocalLow\Nestopi\Chill With You\Player.log
 - **API**: 通过原生 Go 桥接 DLL 调用 QQ 音乐官方接口
 - 详细文档: [QQ 音乐模块 README](ChillPatcher.Module.QQMusic/README.md)
 
-#### 网易云音乐模块 — 作者: [@JinCao-0721](https://github.com/JinCao-0721)
+#### 网易云音乐模块 — [gomusicfox改](https://github.com/go-musicfox/go-musicfox)
 - **🔓 二维码登录**：内置网易云二维码扫码登录
 - **🎵 收藏同步**：自动加载收藏歌曲和自定义歌单
 - **📻 个人 FM**：支持网易云个人 FM 推荐
