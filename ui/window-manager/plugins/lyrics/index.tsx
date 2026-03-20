@@ -1,5 +1,5 @@
 import { h } from "preact"
-import { useState, useRef, useEffect } from "preact/hooks"
+import { useState, useRef, useEffect, useCallback, useMemo } from "preact/hooks"
 
 declare const chill: any
 declare const __registerPlugin: any
@@ -141,6 +141,7 @@ const useLyricsPoller = () => {
     const currentSongRef = useRef("")
     const lastIdxRef = useRef(-1)
     const loadingRef = useRef(false)
+    const apiUnavailableRef = useRef<Record<string, boolean>>({})
 
     useEffect(() => {
         const poll = () => {
@@ -186,8 +187,21 @@ const useLyricsPoller = () => {
                         loadingRef.current = false
                         if (b64) lrcText = base64Decode(b64)
                     } else if (info.source === "netease") {
+                        // Check if API was previously unavailable
+                        if (apiUnavailableRef.current["netease"]) {
+                            log("netease API unavailable, skipping")
+                            lyricsCache[info.cacheKey] = []
+                            setStatusText("暂无歌词")
+                            return
+                        }
                         const neteaseApi = chill.custom.get("lyric_netease")
-                        if (!neteaseApi) { currentSongRef.current = ""; return }
+                        if (!neteaseApi) {
+                            log("lyric_netease API not available")
+                            apiUnavailableRef.current["netease"] = true
+                            lyricsCache[info.cacheKey] = []
+                            setStatusText("暂无歌词")
+                            return
+                        }
                         loadingRef.current = true
                         lrcText = neteaseApi.getSongLyric(info.id)
                         loadingRef.current = false
@@ -264,13 +278,13 @@ const LyricsCompact = () => {
         }
     }
 
-    const handleSize = (mode: SizeMode) => {
+    const handleSize = useCallback((mode: SizeMode) => {
         _currentCompactWidth = COMPACT_SIZES[mode]
         setSizeMode(mode)
         resizeWindow(COMPACT_SIZES[mode])
-    }
+    }, [])
 
-    const SizeBtn = ({ mode }: { mode: SizeMode }) => (
+    const SizeBtn = useMemo(() => ({ mode }: { mode: SizeMode }) => (
         <div
             style={{
                 fontSize: 9,
@@ -288,7 +302,7 @@ const LyricsCompact = () => {
         >
             {mode}
         </div>
-    )
+    ), [sizeMode, handleSize])
 
     return (
         <div
@@ -436,6 +450,10 @@ __registerPlugin({
     initialX: 150,
     initialY: 80,
     resizable: true,
+    launcher: {
+        text: "󰲸",
+        background: "#6d28d9",
+    },
     component: LyricsCard,
     compact: {
         get width() { return _currentCompactWidth },

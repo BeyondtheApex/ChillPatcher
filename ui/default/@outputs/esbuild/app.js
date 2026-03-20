@@ -2833,6 +2833,26 @@ var ErrorBoundary = class extends BaseComponent {
 };
 var App = () => {
   const [visible, setVisible] = useState(false);
+  const [isGameMode, setIsGameMode] = useState(true);
+  useEffect(() => {
+    if (typeof chill !== "undefined" && chill.ime) {
+      setIsGameMode(chill.ime.getInputMode());
+    }
+    const interval = setInterval(() => {
+      if (typeof chill !== "undefined" && chill.ime) {
+        const currentMode = chill.ime.getInputMode();
+        setIsGameMode(currentMode);
+      }
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
+  const toggleInputMode = () => {
+    if (typeof chill !== "undefined" && chill.ime) {
+      const newMode = !isGameMode;
+      chill.ime.setInputMode(newMode);
+      setIsGameMode(newMode);
+    }
+  };
   if (!visible) {
     return /* @__PURE__ */ createElement(
       "div",
@@ -2842,22 +2862,40 @@ var App = () => {
           position: "Absolute",
           top: 0,
           right: 0,
-          width: 52,
+          width: 80,
           height: 52,
           backgroundColor: theme.bg,
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,
           borderBottomRightRadius: 0,
           borderBottomLeftRadius: 52,
+          flexDirection: "Row",
           justifyContent: "Center",
           alignItems: "Center",
           display: "Flex",
-          paddingLeft: 8,
+          paddingLeft: 12,
           paddingBottom: 8
-        },
-        onClick: () => setVisible(true)
+        }
       },
-      /* @__PURE__ */ createElement("div", { style: { fontSize: 18, color: theme.accent } }, "\uEB51")
+      /* @__PURE__ */ createElement(
+        "div",
+        {
+          style: { fontSize: 18, color: theme.accent },
+          onClick: (e) => {
+            e.StopPropagation();
+            toggleInputMode();
+          }
+        },
+        isGameMode ? "\u{F0B82}  " : "\uF108  "
+      ),
+      /* @__PURE__ */ createElement(
+        "div",
+        {
+          style: { fontSize: 18, color: theme.accent },
+          onClick: () => setVisible(true)
+        },
+        "\uEB51"
+      )
     );
   }
   return /* @__PURE__ */ createElement("div", { key: "panel", style: {
@@ -2882,19 +2920,27 @@ var App = () => {
     paddingRight: 20,
     borderBottomWidth: 1,
     borderBottomColor: theme.border
-  } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: theme.accent } }, "ChillPatcher"), /* @__PURE__ */ createElement(
+  } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: theme.accent } }, "ChillPatcher"), /* @__PURE__ */ createElement("div", { style: {
+    flexDirection: "Row",
+    display: "Flex",
+    alignItems: "Center"
+  } }, /* @__PURE__ */ createElement(
     "div",
     {
-      style: {
-        fontSize: 14,
-        color: theme.textMuted,
-        paddingLeft: 8,
-        paddingRight: 4
-      },
+      style: { fontSize: 18, color: theme.accent },
+      onClick: () => {
+        toggleInputMode();
+      }
+    },
+    isGameMode ? "\u{F0B82}  " : "\uF108  "
+  ), /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: { fontSize: 18, color: theme.accent },
       onClick: () => setVisible(false)
     },
     "\u2715"
-  )), /* @__PURE__ */ createElement("scrollview", { style: { flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: {
+  ))), /* @__PURE__ */ createElement("scrollview", { style: { flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: {
     flexDirection: "Column",
     display: "Flex",
     paddingTop: 8,

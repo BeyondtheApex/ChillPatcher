@@ -12,6 +12,13 @@
     <RootNamespace>ChillPatcher.Module.Bilibili</RootNamespace>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">$(CHILL_STEAM_LIBRARY)</SteamLibraryRoot>
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">F:\SteamLibrary</SteamLibraryRoot>
+    <GamePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed</GamePath>
+    <BepInExCorePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core</BepInExCorePath>
+  </PropertyGroup>
+
   <!-- 引用 SDK -->
   <ItemGroup>
     <ProjectReference Include="..\ChillPatcher.SDK\ChillPatcher.SDK.csproj">
@@ -32,23 +39,23 @@
   <!-- Unity Engine -->
   <ItemGroup>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.AudioModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.AudioModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.Networking">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="UnityEngine.UnityWebRequestTextureModule">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
@@ -56,7 +63,7 @@
   <!-- BepInEx -->
   <ItemGroup>
     <Reference Include="BepInEx">
-      <HintPath>D:\steam\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core\BepInEx.dll</HintPath>
+      <HintPath>$(BepInExCorePath)\BepInEx.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>

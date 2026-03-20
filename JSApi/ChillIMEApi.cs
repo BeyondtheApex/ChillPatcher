@@ -95,5 +95,21 @@ namespace ChillPatcher.JSApi
             if (index < 0 || index > 8) return false;
             return KeyboardHookPatch.SelectRimeCandidate(index);
         }
+
+        /// <summary>
+        /// 获取输入模式（true = 游戏模式，false = 桌面模式）
+        /// </summary>
+        public bool getInputMode()
+        {
+            return KeyboardHookPatch.GetInputMode();
+        }
+
+        /// <summary>
+        /// 设置输入模式（true = 游戏模式，false = 桌面模式）
+        /// </summary>
+        public void setInputMode(bool gameMode)
+        {
+            KeyboardHookPatch.SetInputMode(gameMode);
+        }
     }
 }
