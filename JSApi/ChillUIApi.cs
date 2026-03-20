@@ -12,11 +12,11 @@ namespace ChillPatcher.JSApi
     /// Unity UGUI 树操作 API
     /// 
     /// JS 端用法：
-    ///   chill.ui.getTree("Paremt/Canvas/UI", 2)
-    ///   chill.ui.find("Paremt/Canvas/UI/MostFrontArea/TopIcons")
-    ///   chill.ui.click("Paremt/Canvas/UI/.../IconExit_Button")
-    ///   chill.ui.hide("Paremt/Canvas/UI/BottomBackImage")
-    ///   chill.ui.show("Paremt/Canvas/UI/BottomBackImage")
+    ///   chill.ui.getTree("Paremt/PCPlatform/Canvas/UI", 2)
+    ///   chill.ui.find("Paremt/PCPlatform/Canvas/UI/MostFrontArea/TopIcons")
+    ///   chill.ui.click("Paremt/PCPlatform/Canvas/UI/.../IconExit_Button")
+    ///   chill.ui.hide("Paremt/PCPlatform/Canvas/UI/BottomBackImage")
+    ///   chill.ui.show("Paremt/PCPlatform/Canvas/UI/BottomBackImage")
     /// </summary>
     public class ChillUIApi
     {
@@ -51,7 +51,7 @@ namespace ChillPatcher.JSApi
         /// <summary>
         /// 获取指定路径下的 UI 树结构
         /// </summary>
-        /// <param name="path">GameObject 路径（如 "Paremt/Canvas/UI"）</param>
+        /// <param name="path">GameObject 路径（如 "Paremt/PCPlatform/Canvas/UI"）</param>
         /// <param name="depth">递归深度，默认 1（仅直接子节点），-1 为无限深度</param>
         /// <returns>树节点信息字典</returns>
         public string getTree(string path, int depth = 1)

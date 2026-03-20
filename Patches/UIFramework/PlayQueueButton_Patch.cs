@@ -14,7 +14,7 @@ namespace ChillPatcher.Patches.UIFramework
 {
     /// <summary>
     /// 添加播放队列按钮到音乐播放列表 UI
-    /// 位置: Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents
+    /// 位置: Paremt/PCPlatform/Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents
     /// </summary>
     [HarmonyPatch]
     public class PlayQueueButton_Patch
@@ -86,13 +86,13 @@ namespace ChillPatcher.Patches.UIFramework
         private static void CreatePlayQueueButton(MusicUI musicUI)
         {
             // 查找 Contents 容器
-            var contentsPath = "Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents";
+            var contentsPath = "Paremt/PCPlatform/Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents";
             var contents = GameObject.Find(contentsPath);
             
             if (contents == null)
             {
                 // 尝试从 Canvas 查找
-                var canvas = GameObject.Find("Canvas");
+                var canvas = GameObject.Find("Paremt/PCPlatform/Canvas");
                 if (canvas != null)
                 {
                     var target = canvas.transform.Find("UI/ChangeOrderObjects/MusicPlayList/Contents");
@@ -168,6 +168,7 @@ namespace ChillPatcher.Patches.UIFramework
         
         /// <summary>
         /// 确保列表容器有 CanvasGroup 组件
+        /// 注意: 游戏更新后 _playListButtonsParent 从 MusicUI 移到了 MusicPlayListView
         /// </summary>
         private static CanvasGroup EnsureCanvasGroup()
         {
@@ -176,7 +177,14 @@ namespace ChillPatcher.Patches.UIFramework
             var musicUI = UnityEngine.Object.FindObjectOfType<MusicUI>();
             if (musicUI == null) return null;
             
-            var playListButtonsParent = Traverse.Create(musicUI)
+            // 游戏更新后: 从 MusicUI 获取 MusicPlayListView，再获取 _playListButtonsParent
+            var playListView = Traverse.Create(musicUI)
+                .Field("_musicPlayListView")
+                .GetValue<Bulbul.MusicPlayListView>();
+                
+            if (playListView == null) return null;
+            
+            var playListButtonsParent = Traverse.Create(playListView)
                 .Field("_playListButtonsParent")
                 .GetValue<GameObject>();
                 

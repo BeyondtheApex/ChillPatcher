@@ -151,8 +151,8 @@ namespace ChillPatcher.Patches
                     // 打印新版游戏的 UI 结构帮助适配
                     // 新版游戏: Canvas 在 Paremt/PCPlatform/Canvas
                     var mostFront = GameObject.Find("Paremt/PCPlatform/Canvas");
-                    if (mostFront == null) mostFront = GameObject.Find("Paremt/Canvas/UI/MostFrontArea");
-                    if (mostFront == null) mostFront = GameObject.Find("Paremt/Canvas/UI");
+                    if (mostFront == null) mostFront = GameObject.Find("Paremt/PCPlatform/Canvas/UI/MostFrontArea");
+                    if (mostFront == null) mostFront = GameObject.Find("Paremt/PCPlatform/Canvas/UI");
                     if (mostFront == null) mostFront = GameObject.Find("Paremt");
 
                     if (mostFront != null)
@@ -176,7 +176,7 @@ namespace ChillPatcher.Patches
                     }
                     else
                     {
-                        Logger.LogError("找不到任何 UI 容器 (Paremt/Canvas/UI)");
+                        Logger.LogError("找不到任何 UI 容器 (Paremt/PCPlatform/Canvas/UI)");
                     }
 
                     Logger.LogError("找不到 TopIcons 容器，UI 结构已变更");
