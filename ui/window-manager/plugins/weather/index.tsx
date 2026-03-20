@@ -1,5 +1,5 @@
 import { h } from "preact"
-import { useState, useRef, useEffect } from "preact/hooks"
+import { useState, useRef, useEffect, useCallback } from "preact/hooks"
 
 declare const chill: any
 declare const __registerPlugin: any
@@ -34,15 +34,15 @@ const getWeatherInfo = (code: number) => {
         // 晴天
         case code === 0:
             return { text: "晴朗", icon: "󰖙", bg: "#2563eb" }; // nf-mdi-weather_sunny
-        
+
         // 多云 / 阴天
         case code === 1:
             return { text: "晴间多云", icon: "󰖕", bg: "#3b82f6" }; // nf-mdi-weather_partly_cloudy
         case code === 2:
             return { text: "多云", icon: "󰖐", bg: "#475569" }; // nf-mdi-weather_cloudy
         case code === 3:
-            return { text: "阴天", icon: "󰅟", bg: "#334155" }; 
-            
+            return { text: "阴天", icon: "󰅟", bg: "#334155" };
+
         // 雾 / 霾
         case code === 45 || code === 48:
             return { text: "雾", icon: "󰖑", bg: "#64748b" }; // nf-mdi-weather_fog
@@ -53,7 +53,7 @@ const getWeatherInfo = (code: number) => {
 
         // 降雨
         case code === 61 || code === 63:
-            return { text: "小到中雨", icon: "󰖗", bg: "#1e3a5f" }; 
+            return { text: "小到中雨", icon: "󰖗", bg: "#1e3a5f" };
         case code === 65 || code === 66 || code === 67:
             return { text: "大雨/暴雨", icon: "󰖖", bg: "#152a45" }; // nf-mdi-weather_pouring
 
@@ -258,7 +258,7 @@ const WeatherCompact = () => {
     const [weather, setWeather] = useState<WeatherData | null>(null)
     const [error, setError] = useState<string | null>(null)
 
-    const doFetch = () => {
+    const doFetch = useCallback(() => {
         setLoading(true)
         setError(null)
         fetchWeather((data, err) => {
@@ -266,11 +266,11 @@ const WeatherCompact = () => {
             if (data) setWeather(data)
             else setError(err)
         })
-    }
+    }, [])
 
     useEffect(() => {
         doFetch()
-    }, [])
+    }, [doFetch])
 
     if (loading || error || !weather) {
         return (
@@ -439,7 +439,7 @@ const WeatherCard = () => {
     const [weather, setWeather] = useState<WeatherData | null>(null)
     const [error, setError] = useState<string | null>(null)
 
-    const doFetch = () => {
+    const doFetch = useCallback(() => {
         setLoading(true)
         setError(null)
         fetchWeather((data, err) => {
@@ -447,11 +447,11 @@ const WeatherCard = () => {
             if (data) setWeather(data)
             else setError(err)
         })
-    }
+    }, [])
 
     useEffect(() => {
         doFetch()
-    }, [])
+    }, [doFetch])
 
     if (loading) return <LoadingView />
     if (error) return <ErrorView message={error} onRetry={doFetch} />
@@ -471,6 +471,10 @@ __registerPlugin({
         width: 280,
         height: 100,
         component: WeatherCompact,
+    },
+    launcher: {
+        text: "󰢘",
+        background: "#0066aa",
     },
     component: WeatherCard,
 })

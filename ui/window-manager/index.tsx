@@ -1,5 +1,5 @@
 import { h, Fragment, render } from "preact"
-import { useState, useEffect, useErrorBoundary } from "preact/hooks"
+import { useState, useEffect, useRef, useErrorBoundary } from "preact/hooks"
 import { Window } from "./components/Window"
 
 declare const chill: any
@@ -30,6 +30,11 @@ interface PluginDef {
     initialX?: number
     initialY?: number
     resizable?: boolean
+    canClose?: boolean
+    launcher?: {
+        text: string
+        background: string
+    }
     compact?: {
         width: number
         height: number
@@ -46,15 +51,27 @@ let _refreshPlugins: (() => void) | null = null
 ;(globalThis as any).__registerPlugin = (def: PluginDef) => {
     pluginRegistry.push(def)
     console.log(`[WindowManager] Plugin registered: ${def.id}`)
+    // 更新App组件的插件列表
+    _refreshPlugins?.()
+    // 通知订阅者刷新列表
+    setTimeout(() => notifyVisibilitySubscribers(), 0)
 }
 
 ;(globalThis as any).__unregisterPlugin = (id: string) => {
     const idx = pluginRegistry.findIndex(p => p.id === id)
-    if (idx >= 0) pluginRegistry.splice(idx, 1)
+    if (idx >= 0) {
+        pluginRegistry.splice(idx, 1)
+        // 更新App组件的插件列表
+        _refreshPlugins?.()
+        // 通知订阅者刷新列表
+        setTimeout(() => notifyVisibilitySubscribers(), 0)
+    }
 }
 
 ;(globalThis as any).__refreshPlugins = () => {
     _refreshPlugins?.()
+    // 同时通知订阅者刷新列表
+    setTimeout(() => notifyVisibilitySubscribers(), 0)
 }
 
 // ---- Load plugins from @outputs/plugins/ ----
@@ -134,98 +151,115 @@ const ErrorBoundary = ({ children }: { children?: any }) => {
     return children
 }
 
-// ---- Plugin enable config ----
-const pluginEnabledCache: Record<string, boolean> = {}
-
-function isPluginEnabled(id: string): boolean {
-    if (!(id in pluginEnabledCache)) {
-        pluginEnabledCache[id] = chill.config.appGetOrCreate(
-            `Plugin.${id}.Enabled`, true,
-            `是否启用 ${id} 小组件 (重启生效)`)
-    }
-    return pluginEnabledCache[id]
-}
-
-// ---- Window state persistence (via chill.config) ----
-interface WindowState {
-    x: number
-    y: number
-    w: number
-    h: number
-    compact: boolean
-    dockedEdge: string
-}
-
-function getWindowState(id: string, defaults: { x: number, y: number, w: number, h: number }): WindowState {
-    return {
-        x: chill.config.appGetOrCreate(`Window.${id}.X`, defaults.x, `${id} 窗口 X 坐标`),
-        y: chill.config.appGetOrCreate(`Window.${id}.Y`, defaults.y, `${id} 窗口 Y 坐标`),
-        w: chill.config.appGetOrCreate(`Window.${id}.W`, defaults.w, `${id} 窗口宽度`),
-        h: chill.config.appGetOrCreate(`Window.${id}.H`, defaults.h, `${id} 窗口高度`),
-        compact: chill.config.appGetOrCreate(`Window.${id}.Compact`, false, `${id} 窗口是否为紧凑模式`),
-        dockedEdge: chill.config.appGetOrCreate(`Window.${id}.DockedEdge`, "", `${id} 窗口吸附边缘 (left/right/top/bottom/空)`),
-    }
-}
-
-function updateWindowState(id: string, x: number, y: number, w: number, h: number, compact: boolean, dockedEdge: string | null) {
-    try {
-        chill.config.appSet(`Window.${id}.X`, Math.round(x))
-        chill.config.appSet(`Window.${id}.Y`, Math.round(y))
-        chill.config.appSet(`Window.${id}.W`, Math.round(w))
-        chill.config.appSet(`Window.${id}.H`, Math.round(h))
-        chill.config.appSet(`Window.${id}.Compact`, compact)
-        chill.config.appSet(`Window.${id}.DockedEdge`, dockedEdge || "")
-    } catch (e) {
-        console.error(`[WM] Failed to save state for ${id}:`, e)
-    }
-}
-
 // ---- Hover effect config ----
 const hoverEnabled = chill.config.appGetOrCreate("HoverEffect.Enabled", true, "是否启用窗口 hover 放大效果")
 const hoverScale = chill.config.appGetOrCreate("HoverEffect.Scale", 1.03, "hover 放大倍数 (1.0 = 无放大)")
 const hoverDuration = chill.config.appGetOrCreate("HoverEffect.Duration", 0.4, "hover 动画时长 (秒)")
 
+// ---- Plugin visibility state (persisted) ----
+const VISIBILITY_STATE_FILE = "window-states/plugin-visibility.json"
+
+function loadVisibilityState(): Record<string, boolean> {
+    try {
+        if (!chill.io.exists(VISIBILITY_STATE_FILE)) return {}
+        return JSON.parse(chill.io.readText(VISIBILITY_STATE_FILE) || "{}")
+    } catch { return {} }
+}
+
+function saveVisibilityState(state: Record<string, boolean>) {
+    try {
+        chill.io.writeText(VISIBILITY_STATE_FILE, JSON.stringify(state, null, 2))
+    } catch (e) {
+        console.error("[WM] Failed to save visibility state:", e)
+    }
+}
+
+// ---- __wmPluginControl global ----
+let _visibilitySubscribers: (() => void)[] = []
+let _controlRef: any = null
+
+;(globalThis as any).__wmPluginControl = {
+    listPlugins(): Array<{ id: string; title: string; enabled: boolean; launcher: { text: string; background: string } }> {
+        return pluginRegistry.map(p => ({
+            id: p.id,
+            title: p.title,
+            enabled: _controlRef?.isVisible?.(p.id) ?? true,
+            launcher: p.launcher || { text: p.title.charAt(0), background: "#6c7086" },
+        }))
+    },
+    togglePluginVisible(id: string) {
+        _controlRef?.toggleVisible?.(id)
+    },
+    subscribe(fn: () => void) {
+        _visibilitySubscribers.push(fn)
+        return () => {
+            _visibilitySubscribers = _visibilitySubscribers.filter(s => s !== fn)
+        }
+    },
+}
+
+function notifyVisibilitySubscribers() {
+    for (const fn of _visibilitySubscribers) fn()
+}
+
 // ---- App ----
 const App = () => {
     const [plugins, setPlugins] = useState<PluginDef[]>([])
+    const [visibility, setVisibility] = useState<Record<string, boolean>>({})
+    const visibilityRef = useRef<Record<string, boolean>>({})
 
+    // Load initial visibility state after plugins are loaded
     useEffect(() => {
         loadPlugins()
-        const enabled = pluginRegistry.filter(p => isPluginEnabled(p.id))
-        setPlugins(enabled)
-        _refreshPlugins = () => setPlugins(pluginRegistry.filter(p => isPluginEnabled(p.id)))
-        console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s), enabled ${enabled.length}`)
+        const vis = loadVisibilityState()
+        visibilityRef.current = vis
+        setVisibility(vis)
+        setPlugins([...pluginRegistry])
+        _refreshPlugins = () => setPlugins([...pluginRegistry])
+        console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s)`)
         return () => { _refreshPlugins = null }
     }, [])
+
+    const isVisible = (id: string) => {
+        if (visibilityRef.current[id] === undefined) return true
+        return visibilityRef.current[id]
+    }
+
+    const toggleVisible = (id: string) => {
+        const next = { ...visibilityRef.current, [id]: !isVisible(id) }
+        visibilityRef.current = next
+        setVisibility(next)
+        saveVisibilityState(next)
+    }
+
+    // Expose control methods & notify subscribers when visibility changes
+    useEffect(() => {
+        _controlRef = { isVisible, toggleVisible }
+        notifyVisibilitySubscribers()
+        return () => { _controlRef = null }
+    }, [visibility])
 
     return (
         <>
             {plugins.map((p) => {
-                const saved = getWindowState(p.id, {
-                    x: p.initialX ?? 200,
-                    y: p.initialY ?? 100,
-                    w: p.width ?? 300,
-                    h: p.height ?? 400,
-                })
+                const visible = isVisible(p.id)
                 return (
                     <Window
                         key={p.id}
                         title={p.title}
-                        width={saved.w}
-                        height={saved.h}
-                        initialX={saved.x}
-                        initialY={saved.y}
-                        initialCompact={saved.compact}
-                        initialDockedEdge={saved.dockedEdge || null}
+                        width={p.width}
+                        height={p.height}
+                        initialX={p.initialX}
+                        initialY={p.initialY}
                         resizable={p.resizable}
+                        canClose={p.canClose !== false}
                         compact={p.compact}
                         hoverEnabled={hoverEnabled}
                         hoverScale={hoverScale}
                         hoverDuration={hoverDuration}
-                        onGeometryChange={(x, y, w, h, isCompact, dockedEdge) => {
-                            updateWindowState(p.id, x, y, w, h, isCompact, dockedEdge)
-                            p.onGeometryChange?.(x, y, w, h)
-                        }}
+                        onGeometryChange={p.onGeometryChange}
+                        visible={visible}
+                        onClose={() => toggleVisible(p.id)}
                     >
                         <ErrorBoundary>
                             <p.component />

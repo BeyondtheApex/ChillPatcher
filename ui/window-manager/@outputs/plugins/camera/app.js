@@ -1574,6 +1574,10 @@ function useMemo(factory, args) {
   }
   return state._value;
 }
+function useCallback(callback, args) {
+  currentHook = 8;
+  return useMemo(() => callback, args);
+}
 function flushAfterPaintEffects() {
   let component;
   while (component = afterPaintEffects.shift()) {
@@ -1713,7 +1717,9 @@ function registerCameraWindow(cfg) {
       cfg.windowW = Math.round(w);
       cfg.windowH = Math.round(h2);
       saveConfig(cfg);
-    }
+    },
+    // 根据enabled状态设置窗口的visibility
+    visible: cfg.enabled
   });
   dynamicWindowIds.add(wid);
 }
@@ -1730,15 +1736,15 @@ for (const cfg of initialConfigs) {
     registerCameraWindow(cfg);
 }
 var hold = (input, key, val) => ({
-  onPointerDown: () => {
+  onPointerDown: useCallback(() => {
     input.current[key] = val;
-  },
-  onPointerUp: () => {
+  }, [input, key, val]),
+  onPointerUp: useCallback(() => {
     input.current[key] = 0;
-  },
-  onPointerLeave: () => {
+  }, [input, key]),
+  onPointerLeave: useCallback(() => {
     input.current[key] = 0;
-  }
+  }, [input, key])
 });
 var Btn = ({ label, input, k, v }) => /* @__PURE__ */ createElement(
   "div",
@@ -1847,19 +1853,14 @@ var CameraEditor = () => {
     };
     saveConfig(cfg);
     registerCameraWindow(cfg);
-    __refreshPlugins();
     reloadConfigs();
     setNewName("");
   };
   const handleToggle = (cfg) => {
     cfg.enabled = !cfg.enabled;
     saveConfig(cfg);
-    if (cfg.enabled) {
-      registerCameraWindow(cfg);
-    } else {
-      unregisterCameraWindow(cfg.name);
-    }
-    __refreshPlugins();
+    const wid = `cam-${cfg.name}`;
+    __wmPluginControl?.togglePluginVisible?.(wid);
     reloadConfigs();
   };
   const handleDelete = (cfg) => {
@@ -1867,7 +1868,6 @@ var CameraEditor = () => {
       unregisterCameraWindow(cfg.name);
     }
     deleteConfig(cfg);
-    __refreshPlugins();
     reloadConfigs();
   };
   const totalPages = Math.max(1, Math.ceil(configs.length / ITEMS_PER_PAGE));
@@ -1987,6 +1987,10 @@ __registerPlugin({
   initialX: 50,
   initialY: 50,
   resizable: true,
+  launcher: {
+    text: "\uF03D",
+    background: "#c9860b"
+  },
   component: CameraEditor
 });
 //# sourceMappingURL=app.js.map

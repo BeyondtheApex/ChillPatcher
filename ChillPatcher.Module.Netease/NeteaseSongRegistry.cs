@@ -38,17 +38,22 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 注册收藏专辑 (普通专辑，同时属于收藏 Tag 和 FM Tag)
+        /// 注册收藏专辑
         /// </summary>
-        public void RegisterFavoritesAlbum(int songCount)
+        public void RegisterFavoritesAlbum(int songCount, bool includePersonalFmTag = true)
         {
+            var tagIds = new List<string> { TAG_FAVORITES };
+            if (includePersonalFmTag)
+            {
+                tagIds.Add(TAG_PERSONAL_FM);
+            }
+
             var album = new AlbumInfo
             {
                 AlbumId = FAVORITES_ALBUM_ID,
                 DisplayName = "网易云音乐收藏",
                 Artist = "网易云音乐",
-                // 同时属于收藏 Tag 和 FM Tag
-                TagIds = new List<string> { TAG_FAVORITES, TAG_PERSONAL_FM },
+                TagIds = tagIds,
                 ModuleId = _moduleId,
                 SongCount = songCount,
                 SortOrder = 0, // 排在增长专辑前面

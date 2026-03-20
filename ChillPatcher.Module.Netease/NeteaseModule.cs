@@ -52,6 +52,7 @@ namespace ChillPatcher.Module.Netease
         private ConfigEntry<string> _customPlaylistIds;  // 直接指定歌单 ID
         private ConfigEntry<int> _streamReadyTimeoutMs;  // PCM 流就绪超时
         private ConfigEntry<int> _streamMaxRetries;  // PCM 流最大重试次数
+        private ConfigEntry<bool> _enablePersonalFM;  // 是否启用个人FM
 
         // 自定义歌单
         private Dictionary<long, List<MusicInfo>> _customPlaylistMusicLists = new Dictionary<long, List<MusicInfo>>();
@@ -149,14 +150,29 @@ namespace ChillPatcher.Module.Netease
             // 初始化辅助管理器
             _favoriteManager = new NeteaseFavoriteManager(_bridge, context.Logger, _songInfoMap);
             _songRegistry = new NeteaseSongRegistry(context, ModuleId, _songInfoMap, _favoriteManager, context.Logger);
+            if (IsPersonalFMEnabled)
+            {
+                _fmManager = new PersonalFMManager(_bridge);
+            }
+
             // 登录后注册 Tags
             RegisterFavoritesTag();
+            if (IsPersonalFMEnabled)
+            {
+                RegisterFMTag();
+            }
 
             // 获取并缓存收藏歌曲 ID 列表
             await _favoriteManager.LoadLikeListAsync();
 
             // 扫描并注册收藏歌曲
             await ScanAndRegisterAsync();
+
+            if (IsPersonalFMEnabled)
+            {
+                // 初始化个人 FM 并注册初始歌曲
+                await InitializePersonalFMAsync();
+            }
 
             // 搜索并注册自定义歌单（如"献给聪音"）
             await SearchAndRegisterCustomPlaylistsAsync();
@@ -175,7 +191,8 @@ namespace ChillPatcher.Module.Netease
 
             // 统计自定义歌单歌曲数
             var customSongCount = _customPlaylistMusicLists.Values.Sum(list => list.Count);
-            context.Logger.LogInfo($"[{DisplayName}] ✅ 初始化完成，收藏 {_musicList.Count} 首，自定义歌单 {customSongCount} 首");
+            var fmPart = IsPersonalFMEnabled ? $"，FM {_fmMusicList.Count} 首" : string.Empty;
+            context.Logger.LogInfo($"[{DisplayName}] ✅ 初始化完成，收藏 {_musicList.Count} 首{fmPart}，自定义歌单 {customSongCount} 首");
         }
 
         public void OnEnable()
@@ -520,7 +537,15 @@ namespace ChillPatcher.Module.Netease
                 "StreamMaxRetries",
                 3,
                 "PCM 流创建失败时的最大重试次数，默认 3 次");
+
+            _enablePersonalFM = configManager.Bind(
+                "",  // 使用默认 section
+                "EnablePersonalFM",
+                false,
+                "是否启用个人FM Tag和歌曲加载 (true=启用, false=关闭)");
         }
+
+        private bool IsPersonalFMEnabled => _enablePersonalFM?.Value ?? false;
 
         /// <summary>
         /// 注册收藏 Tag（无论登录与否都需要）
@@ -667,12 +692,23 @@ namespace ChillPatcher.Module.Netease
             // 初始化辅助管理器
             _favoriteManager = new NeteaseFavoriteManager(_bridge, _context.Logger, _songInfoMap);
             _songRegistry = new NeteaseSongRegistry(_context, ModuleId, _songInfoMap, _favoriteManager, _context.Logger);
+            if (IsPersonalFMEnabled)
+            {
+                _fmManager = new PersonalFMManager(_bridge);
+                RegisterFMTag();
+            }
 
             // 获取并缓存收藏歌曲 ID 列表
             await _favoriteManager.LoadLikeListAsync();
 
             // 扫描并注册收藏歌曲
             await ScanAndRegisterAsync();
+
+            if (IsPersonalFMEnabled)
+            {
+                // 初始化个人 FM 并注册初始歌曲
+                await InitializePersonalFMAsync();
+            }
 
             // 搜索并注册自定义歌单（如"献给聪音"）
             await SearchAndRegisterCustomPlaylistsAsync();
@@ -688,7 +724,8 @@ namespace ChillPatcher.Module.Netease
 
             // 统计自定义歌单歌曲数
             var customSongCount = _customPlaylistMusicLists.Values.Sum(list => list.Count);
-            _context.Logger.LogInfo($"[{DisplayName}] ✅ 登录后初始化完成，收藏 {_musicList.Count} 首，自定义歌单 {customSongCount} 首");
+            var fmPart = IsPersonalFMEnabled ? $"，FM {_fmMusicList.Count} 首" : string.Empty;
+            _context.Logger.LogInfo($"[{DisplayName}] ✅ 登录后初始化完成，收藏 {_musicList.Count} 首{fmPart}，自定义歌单 {customSongCount} 首");
 
             // 发布刷新事件
             _context.EventBus.Publish(new SDK.Events.PlaylistUpdatedEvent
@@ -850,7 +887,7 @@ namespace ChillPatcher.Module.Netease
             _context.Logger.LogInfo($"[{DisplayName}] 获取到 {songs.Count} 首收藏歌曲");
 
             // 使用 SongRegistry 注册专辑和歌曲
-            _songRegistry.RegisterFavoritesAlbum(songs.Count);
+            _songRegistry.RegisterFavoritesAlbum(songs.Count, IsPersonalFMEnabled);
             _musicList = _songRegistry.RegisterFavoritesSongs(songs);
 
             _context.Logger.LogInfo($"[{DisplayName}] 已注册 1 个专辑(歌单), {_musicList.Count} 首歌曲");

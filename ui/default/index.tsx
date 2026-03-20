@@ -1,5 +1,5 @@
 import { h, render, Component } from "preact"
-import { useState } from "preact/hooks"
+import { useState, useEffect } from "preact/hooks"
 import { theme } from "./components/theme"
 import { TabContainer } from "./components/TabContainer"
 import { SettingsPanel } from "./components/SettingsPanel"
@@ -11,7 +11,7 @@ import { IMESettingsPanel } from "./components/IMESettingsPanel"
 import { IMECandidatePanel } from "./components/IMECandidatePanel"
 
 // Error boundary to catch render errors and display them visually
-class ErrorBoundary extends Component<{name: string}, {error: string | null}> {
+class ErrorBoundary extends Component<{ name: string }, { error: string | null }> {
     constructor(props: any) {
         super(props)
         this.state = { error: null }
@@ -34,6 +34,34 @@ class ErrorBoundary extends Component<{name: string}, {error: string | null}> {
 
 const App = () => {
     const [visible, setVisible] = useState(false)
+    const [isGameMode, setIsGameMode] = useState(true) // true = 游戏模式, false = 桌面模式
+
+    // 从 API 获取初始状态并定期轮询
+    useEffect(() => {
+        // 获取初始状态
+        if (typeof chill !== 'undefined' && chill.ime) {
+            setIsGameMode(chill.ime.getInputMode())
+        }
+
+        // 定期轮询状态（F5 按下时会改变状态）
+        const interval = setInterval(() => {
+            if (typeof chill !== 'undefined' && chill.ime) {
+                const currentMode = chill.ime.getInputMode()
+                setIsGameMode(currentMode)
+            }
+        }, 200) // 每 200ms 检查一次
+
+        return () => clearInterval(interval)
+    }, [])
+
+    // 切换输入模式
+    const toggleInputMode = () => {
+        if (typeof chill !== 'undefined' && chill.ime) {
+            const newMode = !isGameMode
+            chill.ime.setInputMode(newMode)
+            setIsGameMode(newMode)
+        }
+    }
 
     if (!visible) {
         return (
@@ -43,22 +71,38 @@ const App = () => {
                     position: "Absolute",
                     top: 0,
                     right: 0,
-                    width: 52,
+                    width: 80,
                     height: 52,
                     backgroundColor: theme.bg,
                     borderTopLeftRadius: 0,
                     borderTopRightRadius: 0,
                     borderBottomRightRadius: 0,
                     borderBottomLeftRadius: 52,
+                    flexDirection: "Row",
                     justifyContent: "Center",
                     alignItems: "Center",
                     display: "Flex",
-                    paddingLeft: 8,
+                    paddingLeft: 12,
                     paddingBottom: 8,
                 }}
-                onClick={() => setVisible(true)}
             >
-                <div style={{ fontSize: 18, color: theme.accent }}></div>
+                {/* 输入模式状态按钮 */}
+                <div
+                    style={{ fontSize: 18, color: theme.accent }}
+                    onClick={(e) => {
+                        e.StopPropagation()
+                        toggleInputMode()
+                    }}
+                >
+                    {isGameMode ? "󰮂  " : "  "}
+                </div>
+                {/* 设置图标 */}
+                <div
+                    style={{ fontSize: 18, color: theme.accent }}
+                    onClick={() => setVisible(true)}
+                >
+                    
+                </div>
             </div>
         )
     }
@@ -92,16 +136,27 @@ const App = () => {
                 <div style={{ fontSize: 16, color: theme.accent }}>
                     ChillPatcher
                 </div>
-                <div
-                    style={{
-                        fontSize: 14,
-                        color: theme.textMuted,
-                        paddingLeft: 8,
-                        paddingRight: 4,
-                    }}
-                    onClick={() => setVisible(false)}
-                >
-                    ✕
+                <div style={{
+                    flexDirection: "Row",
+                    display: "Flex",
+                    alignItems: "Center",
+                }}>
+                    {/* 输入模式切换按钮 */}
+                    <div
+                        style={{ fontSize: 18, color: theme.accent }}
+                        onClick={() => {
+                            toggleInputMode()
+                        }}
+                    >
+                        {isGameMode ? "󰮂  " : "  "}
+                    </div>
+                    {/* 关闭按钮 */}
+                    <div
+                        style={{ fontSize: 18, color: theme.accent }}
+                        onClick={() => setVisible(false)}
+                    >
+                        ✕
+                    </div>
                 </div>
             </div>
 

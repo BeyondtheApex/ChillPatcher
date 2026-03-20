@@ -1371,39 +1371,6 @@ function doRender(props, state, context) {
   return this.constructor(props, context);
 }
 
-// node_modules/onejs-preact/render.js
-var cleanupMap = /* @__PURE__ */ new WeakMap();
-function render(vnode, parentDom, replaceNode) {
-  if (typeof globalThis.ONEJS_WEBGL !== "undefined" && globalThis.ONEJS_WEBGL && vnode !== null) {
-    render(null, parentDom);
-  }
-  if (typeof onejs !== "undefined" && parentDom && !cleanupMap.has(parentDom)) {
-    onejs.add_onDispose(() => render(null, parentDom));
-    cleanupMap.set(parentDom, true);
-  }
-  if (options_default._root)
-    options_default._root(vnode, parentDom);
-  let isHydrating = typeof replaceNode == "function";
-  let oldVNode = isHydrating ? null : replaceNode && replaceNode._children || parentDom._children;
-  vnode = (!isHydrating && replaceNode || parentDom)._children = createElement(Fragment, null, [vnode]);
-  let commitQueue = [], refQueue = [];
-  diff(
-    parentDom,
-    // Determine the new vnode tree and store it on the DOM element on
-    // our custom `_children` property.
-    vnode,
-    oldVNode || EMPTY_OBJ,
-    EMPTY_OBJ,
-    parentDom.namespaceURI,
-    !isHydrating && replaceNode ? [replaceNode] : oldVNode ? null : parentDom.firstChild ? slice.call(parentDom.childNodes) : null,
-    commitQueue,
-    !isHydrating && replaceNode ? replaceNode : oldVNode ? oldVNode._dom : parentDom.firstChild,
-    isHydrating,
-    refQueue
-  );
-  commitRoot(commitQueue, vnode, refQueue);
-}
-
 // node_modules/onejs-preact/hooks/index.js
 var currentIndex;
 var currentComponent;
@@ -1607,23 +1574,9 @@ function useMemo(factory, args) {
   }
   return state._value;
 }
-function useErrorBoundary(cb) {
-  const state = getHookState(currentIndex++, 10);
-  const errState = useState();
-  state._value = cb;
-  if (!currentComponent.componentDidCatch) {
-    currentComponent.componentDidCatch = (err, errorInfo) => {
-      if (state._value)
-        state._value(err, errorInfo);
-      errState[1](err);
-    };
-  }
-  return [
-    errState[0],
-    () => {
-      errState[1](void 0);
-    }
-  ];
+function useCallback(callback, args) {
+  currentHook = 8;
+  return useMemo(() => callback, args);
 }
 function flushAfterPaintEffects() {
   let component;
@@ -1681,828 +1634,261 @@ function invokeOrReturn(arg, f) {
   return typeof f == "function" ? f(arg) : f;
 }
 
-// components/Window.tsx
-var GRAB_ZONE_HEIGHT = 30;
-var GRAB_PILL_WIDTH = 40;
-var GRAB_PILL_HEIGHT = 4;
-var DRAG_BAR_HEIGHT = GRAB_ZONE_HEIGHT;
-var COLLAPSED_RADIUS = GRAB_PILL_HEIGHT / 2;
-var EXPANDED_RADIUS = (DRAG_BAR_HEIGHT + DRAG_BAR_HEIGHT) / 2;
-var ARC_RADIUS = 14;
-var ARC_THICKNESS = 3;
-var ARC_CAP_R = ARC_THICKNESS / 2;
-var ARC_HANDLE_PAD = Math.ceil(ARC_CAP_R);
-var ARC_HANDLE_SIZE = ARC_RADIUS + ARC_HANDLE_PAD;
-var RESIZE_MARGIN = 6;
-var MIN_WIDTH = 120;
-var MIN_HEIGHT = 80;
-var EDGE_THRESHOLD = 60;
-var HYSTERESIS = 20;
-var PICKING_IGNORE = 1;
-var WINDOW_RADIUS = 20;
-var PERSISTENCE_INTERVAL = 5e3;
-var Window = ({
-  title,
-  width = 300,
-  height = 400,
-  initialX = 200,
-  initialY = 100,
-  resizable = false,
-  canClose = true,
-  compact,
-  hoverEnabled: hoverEnabled2 = true,
-  hoverScale: hoverScale2 = 1.03,
-  hoverDuration: hoverDuration2 = 0.4,
-  onFocus,
-  onGeometryChange,
-  visible = true,
-  onClose,
-  children
-}) => {
-  const [pos, setPos] = useState({ x: initialX, y: initialY });
-  const [normalSize, setNormalSize] = useState({
-    w: Math.max(MIN_WIDTH, width),
-    h: Math.max(MIN_HEIGHT, height)
-  });
-  const [isCompact, setIsCompact] = useState(false);
-  const [dockedEdge, setDockedEdge] = useState(null);
-  const drag = useRef({ active: false, ox: 0, oy: 0 });
-  const resize = useRef({ active: false, ox: 0, oy: 0, ow: 0, oh: 0 });
-  const lockedCanvasSize = useRef(null);
-  const lockedWindowSize = useRef(null);
-  const [hovered, setHovered] = useState(false);
-  const [interacting, setInteracting] = useState(false);
-  const [grabHovered, setGrabHovered] = useState(false);
-  const [snapping, setSnapping] = useState(false);
-  const containerRef = useRef(null);
-  const snapTimer = useRef(null);
-  const skipDrag = useRef(false);
-  const arcRef = useRef(null);
-  const persistenceTimer = useRef(null);
-  const lastPersistedState = useRef("");
-  const isStateDirty = useRef(false);
-  useEffect(() => {
-    const el = arcRef.current;
-    if (!el?.ve || !canResize)
-      return;
-    const ve = el.ve;
-    const cx = ARC_THICKNESS / 2;
-    const cy = ARC_THICKNESS / 2;
-    const R = ARC_HANDLE_SIZE - ARC_THICKNESS;
-    ve.ClearCommands();
-    ve.SetStrokeColor("rgb(255, 255, 255)");
-    ve.SetLineWidth(ARC_THICKNESS);
-    ve.SetLineCap(1);
-    ve.BeginPath();
-    ve.Arc(cx, cy, R, 0, 90);
-    ve.Stroke();
-    ve.Commit();
-  });
-  const getWindowStateId = () => `window-${title.replace(/\s+/g, "-")}`;
-  const getWindowState = () => ({
-    id: getWindowStateId(),
-    x: pos.x,
-    y: pos.y,
-    width: normalSize.w,
-    height: normalSize.h,
-    isCompact,
-    dockedEdge,
-    timestamp: Date.now()
-  });
-  const persistWindowState = () => {
+// plugins/launchpad/index.tsx
+var BG = "#0b1020";
+var CARD = "#111827";
+var TEXT = "#e5e7eb";
+var DIM = "#94a3b8";
+var ACCENT = "#7dd3fc";
+var defaultCfg = { blur: true, iconScale: 1, compactScale: 1, maxItems: 12 };
+function normalizeCfg(raw) {
+  return {
+    blur: raw.blur !== false,
+    iconScale: Math.max(0.7, Math.min(1.8, Number(raw.iconScale) || defaultCfg.iconScale)),
+    compactScale: Math.max(0.6, Math.min(1.8, Number(raw.compactScale) || defaultCfg.compactScale)),
+    maxItems: Math.max(4, Math.min(48, Number(raw.maxItems) || defaultCfg.maxItems))
+  };
+}
+function getRootRel() {
+  const base = String(chill.io.basePath).replace(/\\/g, "/").replace(/\/$/, "");
+  const wd = String(chill.workingDir).replace(/\\/g, "/").replace(/\/$/, "");
+  return wd.startsWith(base + "/") ? wd.substring(base.length + 1) : "ui/window-manager";
+}
+var cfgPath = `${getRootRel()}/state/launchpad-config.json`;
+var globalState = {
+  items: [],
+  cfg: loadCfg()
+};
+try {
+  const all = __wmPluginControl?.listPlugins?.() || [];
+  globalState.items = all.filter((p) => p.id !== "launchpad").sort((a, b) => a.title.localeCompare(b.title));
+} catch {
+}
+function calcCompactSize(items, cfg) {
+  const scale = cfg.compactScale;
+  const edgePadding = 10;
+  const topPadding = Math.round(edgePadding * 3.5);
+  const shown = items.slice(0, cfg.maxItems);
+  const innerWidth = shown.length * (42 * scale) + Math.max(0, shown.length - 1) * 8;
+  return {
+    w: Math.max(120, Math.min(900, 20 + innerWidth)),
+    h: Math.round(topPadding + 42 * scale + edgePadding)
+  };
+}
+function loadCfg() {
+  try {
+    if (!chill.io.exists(cfgPath))
+      return defaultCfg;
+    const raw = JSON.parse(chill.io.readText(cfgPath) || "{}");
+    return normalizeCfg(raw || {});
+  } catch {
+    return defaultCfg;
+  }
+}
+function saveCfg(cfg) {
+  chill.io.writeText(cfgPath, JSON.stringify(cfg, null, 2));
+}
+var usePluginItems = () => {
+  const [items, setItems] = useState([]);
+  const refresh = useCallback(() => {
+    const all = __wmPluginControl?.listPlugins?.() || [];
+    const filtered = all.filter((p) => p.id !== "launchpad").sort((a, b) => a.title.localeCompare(b.title));
+    setItems(filtered);
+    globalState.items = filtered;
     try {
-      const state = getWindowState();
-      const stateJson = JSON.stringify(state);
-      if (stateJson === lastPersistedState.current)
-        return;
-      const stateDir = "window-states";
-      const stateFile = `${stateDir}/${getWindowStateId()}.json`;
-      if (!chill.io.exists(stateDir)) {
-        chill.io.writeText(`${stateDir}/.keep`, "");
+      if (typeof __refreshPlugins === "function") {
+        __refreshPlugins();
       }
-      chill.io.writeText(stateFile, stateJson);
-      lastPersistedState.current = stateJson;
-      isStateDirty.current = false;
-      console.log(`[Window] \u72B6\u6001\u5DF2\u6301\u4E45\u5316: ${title}`);
-    } catch (e) {
-      console.error(`[Window] \u72B6\u6001\u6301\u4E45\u5316\u5931\u8D25: ${title}`, e);
+    } catch {
     }
-  };
-  const loadWindowState = () => {
-    try {
-      const stateFile = `window-states/${getWindowStateId()}.json`;
-      if (!chill.io.exists(stateFile))
-        return false;
-      const stateJson = chill.io.readText(stateFile);
-      if (!stateJson)
-        return false;
-      const state = JSON.parse(stateJson);
-      if (typeof state.x === "number" && typeof state.y === "number") {
-        setPos({ x: state.x, y: state.y });
-      }
-      if (typeof state.width === "number" && typeof state.height === "number") {
-        setNormalSize({
-          w: Math.max(MIN_WIDTH, state.width),
-          h: Math.max(MIN_HEIGHT, state.height)
-        });
-      }
-      if (typeof state.isCompact === "boolean") {
-        setIsCompact(state.isCompact);
-      }
-      if (state.dockedEdge) {
-        setDockedEdge(state.dockedEdge);
-      }
-      console.log(`[Window] \u72B6\u6001\u5DF2\u52A0\u8F7D: ${title}`);
-      return true;
-    } catch (e) {
-      console.error(`[Window] \u72B6\u6001\u52A0\u8F7D\u5931\u8D25: ${title}`, e);
-      return false;
-    }
-  };
-  const markStateDirty = () => {
-    isStateDirty.current = true;
-  };
+  }, []);
   useEffect(() => {
-    persistenceTimer.current = setInterval(() => {
-      if (isStateDirty.current) {
-        persistWindowState();
-      }
-    }, PERSISTENCE_INTERVAL);
+    refresh();
+    const off = __wmPluginControl?.subscribe?.(refresh);
     return () => {
-      if (persistenceTimer.current) {
-        clearInterval(persistenceTimer.current);
-      }
+      if (typeof off === "function")
+        off();
     };
+  }, [refresh]);
+  const toggle = useCallback((id) => {
+    __wmPluginControl?.togglePluginVisible?.(id);
   }, []);
+  return { items, toggle };
+};
+var LaunchpadCompact = () => {
+  const { items, toggle } = usePluginItems();
+  const [cfg] = useState(loadCfg);
+  const compactSizeRef = useRef({ w: 420, h: 87 });
+  const scale = cfg.compactScale;
+  const edgePadding = 10;
+  const topPadding = Math.round(edgePadding * 3.5);
   useEffect(() => {
-    loadWindowState();
-  }, []);
-  const displaySize = isCompact && compact ? { w: compact.width, h: compact.height } : normalSize;
-  const canResize = resizable && !isCompact;
-  const showDragBar = grabHovered || drag.current.active;
-  const isActive = () => drag.current.active || resize.current.active;
-  const getCanvasSize = () => {
-    if (lockedCanvasSize.current) {
-      return lockedCanvasSize.current;
-    }
+    globalState.items = items;
+    globalState.cfg = cfg;
+  }, [items, cfg]);
+  const compactSize = useMemo(() => {
+    const shown2 = items.slice(0, cfg.maxItems);
+    const innerWidth = shown2.length * (42 * scale) + Math.max(0, shown2.length - 1) * 8;
+    return {
+      w: Math.max(120, Math.min(900, 20 + innerWidth)),
+      h: Math.round(topPadding + 42 * scale + edgePadding)
+    };
+  }, [items.length, scale, cfg.maxItems, topPadding, edgePadding]);
+  useEffect(() => {
+    compactSizeRef.current = compactSize;
     try {
-      if (typeof chill !== "undefined" && chill.screen) {
-        return { w: chill.screen.width || 1920, h: chill.screen.height || 1080 };
+      const win = document.body?.firstChild;
+      if (win?.style) {
+        win.style.width = compactSize.w;
+        win.style.height = compactSize.h;
       }
-      return { w: 1920, h: 1080 };
-    } catch (_) {
-      return { w: 1920, h: 1080 };
+    } catch {
     }
-  };
-  const lockCanvasSize = () => {
-    try {
-      if (typeof chill !== "undefined" && chill.screen) {
-        lockedCanvasSize.current = {
-          w: chill.screen.width || 1920,
-          h: chill.screen.height || 1080
-        };
-      } else {
-        lockedCanvasSize.current = { w: 1920, h: 1080 };
+  }, [compactSize]);
+  const shown = useMemo(() => items.slice(0, cfg.maxItems), [items, cfg.maxItems]);
+  const handleItemClick = useCallback((id) => {
+    toggle(id);
+  }, [toggle]);
+  const content = useMemo(() => /* @__PURE__ */ createElement("div", { style: { flexGrow: 1, display: "Flex", flexDirection: "Row", alignItems: "Center", paddingLeft: edgePadding, paddingRight: edgePadding, paddingTop: topPadding, paddingBottom: edgePadding, overflow: "Hidden" } }, shown.map((item, index) => /* @__PURE__ */ createElement(
+    "div",
+    {
+      key: item.id,
+      onPointerDown: () => handleItemClick(item.id),
+      style: {
+        width: 42 * scale,
+        height: 42 * scale,
+        borderRadius: 10 * scale,
+        backgroundColor: item.launcher.background,
+        marginRight: index === shown.length - 1 ? 0 : 8,
+        display: "Flex",
+        justifyContent: "Center",
+        alignItems: "Center",
+        fontSize: 16 * scale,
+        color: "#fff",
+        opacity: item.enabled ? 1 : 0.35
       }
-    } catch (_) {
-      lockedCanvasSize.current = { w: 1920, h: 1080 };
-    }
-  };
-  const unlockCanvasSize = () => {
-    lockedCanvasSize.current = null;
-  };
-  const bringToFront = () => {
-    try {
-      containerRef.current?.ve?.BringToFront();
-    } catch (_) {
-    }
-  };
-  const focus = () => {
-    bringToFront();
-    onFocus?.();
-  };
-  const toggleCompact = () => {
-    if (!compact)
-      return;
-    if (isCompact) {
-      setIsCompact(false);
-      setDockedEdge(null);
-    } else {
-      setIsCompact(true);
-    }
-    markStateDirty();
-  };
-  const handleMove = (e) => {
-    if (drag.current.active) {
-      const mx = e.position.x;
-      const my = e.position.y;
-      if (compact) {
-        const canvas = getCanvasSize();
-        const nearLeft = mx < EDGE_THRESHOLD;
-        const nearRight = mx > canvas.w - EDGE_THRESHOLD;
-        const nearTop = my < EDGE_THRESHOLD;
-        const nearBottom = my > canvas.h - EDGE_THRESHOLD;
-        const detachThreshold = EDGE_THRESHOLD + HYSTERESIS;
-        const shouldDetach = dockedEdge === "left" && mx > detachThreshold || dockedEdge === "right" && mx < canvas.w - detachThreshold || dockedEdge === "top" && my > detachThreshold || dockedEdge === "bottom" && my < canvas.h - detachThreshold;
-        if (shouldDetach && dockedEdge) {
-          const cw = compact.width;
-          const ch = compact.height;
-          const handleOffsetX = cw / 2;
-          const handleOffsetY = GRAB_ZONE_HEIGHT / 2;
-          const newX = Math.max(0, Math.min(mx - handleOffsetX, canvas.w - cw));
-          const newY = Math.max(0, Math.min(my - handleOffsetY, canvas.h - ch));
-          setPos({ x: newX, y: newY });
-          drag.current.ox = mx - newX;
-          drag.current.oy = my - newY;
-          setDockedEdge(null);
-          return;
-        }
-        if (nearLeft || nearRight || nearTop || nearBottom) {
-          const edges = [];
-          if (nearLeft)
-            edges.push({ edge: "left", dist: mx });
-          if (nearRight)
-            edges.push({ edge: "right", dist: canvas.w - mx });
-          if (nearTop)
-            edges.push({ edge: "top", dist: my });
-          if (nearBottom)
-            edges.push({ edge: "bottom", dist: canvas.h - my });
-          const nearest = edges.sort((a, b) => a.dist - b.dist)[0];
-          const cw = compact.width;
-          const ch = compact.height;
-          const handleOffsetX = cw / 2;
-          const handleOffsetY = GRAB_ZONE_HEIGHT / 2;
-          let sx = 0, sy = 0;
-          switch (nearest.edge) {
-            case "left":
-              sx = 0;
-              sy = Math.max(
-                0,
-                Math.min(my - handleOffsetY, canvas.h - ch)
-              );
-              break;
-            case "right":
-              sx = canvas.w - cw;
-              sy = Math.max(
-                0,
-                Math.min(my - handleOffsetY, canvas.h - ch)
-              );
-              break;
-            case "top":
-              sx = Math.max(
-                0,
-                Math.min(mx - handleOffsetX, canvas.w - cw)
-              );
-              sy = 0;
-              break;
-            case "bottom":
-              sx = Math.max(
-                0,
-                Math.min(mx - handleOffsetX, canvas.w - cw)
-              );
-              sy = canvas.h - ch;
-              break;
-          }
-          setPos({ x: sx, y: sy });
-          if (!isCompact)
-            setIsCompact(true);
-          if (dockedEdge !== nearest.edge)
-            setDockedEdge(nearest.edge);
-          return;
-        }
+    },
+    item.launcher.text
+  ))), [shown, scale, edgePadding, topPadding, handleItemClick]);
+  return cfg.blur ? /* @__PURE__ */ createElement("blur-panel", { downsample: 1, "blur-iterations": 4, interval: 1, tint: "#ffffff1a", style: { flexGrow: 1, display: "Flex", backgroundColor: CARD } }, content) : /* @__PURE__ */ createElement("div", { style: { flexGrow: 1, display: "Flex", backgroundColor: CARD } }, content);
+};
+var LaunchpadPanel = () => {
+  const { items, toggle } = usePluginItems();
+  const [cfg, setCfg] = useState(loadCfg);
+  const [showCfg, setShowCfg] = useState(false);
+  const patchCfg = useCallback((partial) => {
+    const next = normalizeCfg({ ...cfg, ...partial });
+    setCfg(next);
+    saveCfg(next);
+  }, [cfg]);
+  const toggleShowCfg = useCallback(() => setShowCfg((prev) => !prev), []);
+  const shown = useMemo(() => items.slice(0, cfg.maxItems), [items, cfg.maxItems]);
+  const stepBtnStyle = { fontSize: 11, color: "#cbd5e1", marginLeft: 6, marginRight: 6 };
+  const iconSize = 56 * cfg.iconScale;
+  const marginSize = 10 * cfg.iconScale;
+  const handleItemClick = useCallback((id) => {
+    toggle(id);
+  }, [toggle]);
+  const content = useMemo(() => showCfg ? /* @__PURE__ */ createElement("div", { style: { flexGrow: 1, display: "Flex", flexDirection: "Column", color: TEXT, fontSize: 11, padding: 10 } }, /* @__PURE__ */ createElement("div", { style: { marginBottom: 8 } }, "Launchpad \u8BBE\u7F6E"), /* @__PURE__ */ createElement("div", { onPointerDown: () => patchCfg({ blur: !cfg.blur }), style: { marginBottom: 6, color: cfg.blur ? "#86efac" : DIM } }, "\u6BDB\u73BB\u7483: ", cfg.blur ? "\u5F00" : "\u5173"), /* @__PURE__ */ createElement("div", { style: { marginBottom: 6, display: "Flex", flexDirection: "Row", alignItems: "Center" } }, "\u56FE\u6807\u7F29\u653E ", /* @__PURE__ */ createElement("div", { onPointerDown: () => patchCfg({ iconScale: Math.round((cfg.iconScale - 0.1) * 10) / 10 }), style: stepBtnStyle }, "-"), " ", cfg.iconScale.toFixed(1), " ", /* @__PURE__ */ createElement("div", { onPointerDown: () => patchCfg({ iconScale: Math.round((cfg.iconScale + 0.1) * 10) / 10 }), style: stepBtnStyle }, "+")), /* @__PURE__ */ createElement("div", { style: { marginBottom: 6, display: "Flex", flexDirection: "Row", alignItems: "Center" } }, "\u6298\u53E0\u7F29\u653E ", /* @__PURE__ */ createElement("div", { onPointerDown: () => patchCfg({ compactScale: Math.round((cfg.compactScale - 0.1) * 10) / 10 }), style: stepBtnStyle }, "-"), " ", cfg.compactScale.toFixed(1), " ", /* @__PURE__ */ createElement("div", { onPointerDown: () => patchCfg({ compactScale: Math.round((cfg.compactScale + 0.1) * 10) / 10 }), style: stepBtnStyle }, "+")), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", alignItems: "Center" } }, "\u6700\u591A\u5C55\u793A ", /* @__PURE__ */ createElement("div", { onPointerDown: () => patchCfg({ maxItems: cfg.maxItems - 1 }), style: stepBtnStyle }, "-"), " ", cfg.maxItems, " ", /* @__PURE__ */ createElement("div", { onPointerDown: () => patchCfg({ maxItems: cfg.maxItems + 1 }), style: stepBtnStyle }, "+"))) : /* @__PURE__ */ createElement("div", { style: {
+    width: "100%",
+    height: "100%",
+    display: "Flex",
+    flexDirection: "Row",
+    flexWrap: "Wrap",
+    justifyContent: "FlexStart",
+    // 修改点：从左侧开始对齐
+    alignContent: "Center",
+    // 垂直方向依然保持整体居中
+    overflow: "Hidden"
+  } }, shown.map((item) => /* @__PURE__ */ createElement(
+    "div",
+    {
+      key: item.id,
+      onPointerDown: () => handleItemClick(item.id),
+      style: {
+        width: iconSize,
+        height: iconSize,
+        margin: marginSize,
+        borderRadius: 14 * cfg.iconScale,
+        backgroundColor: item.launcher.background,
+        display: "Flex",
+        justifyContent: "Center",
+        alignItems: "Center",
+        opacity: item.enabled ? 1 : 0.35
       }
-      setPos({
-        x: mx - drag.current.ox,
-        y: my - drag.current.oy
-      });
-      markStateDirty();
-      if (isCompact && dockedEdge) {
-        setDockedEdge(null);
-      }
-    } else if (resize.current.active) {
-      const dx = e.position.x - resize.current.ox;
-      const dy = e.position.y - resize.current.oy;
-      setNormalSize({
-        w: Math.max(MIN_WIDTH, resize.current.ow + dx),
-        h: Math.max(MIN_HEIGHT, resize.current.oh + dy)
-      });
-      markStateDirty();
-    }
-  };
-  const handleUp = (e) => {
-    if (e?.target?.releasePointerCapture && e.pointerId !== void 0) {
-      try {
-        e.target.releasePointerCapture(e.pointerId);
-      } catch (_) {
-      }
-    }
-    drag.current.active = false;
-    resize.current.active = false;
-    setInteracting(false);
-    unlockCanvasSize();
-    lockedWindowSize.current = null;
-    if (!dockedEdge) {
-      const canvas = getCanvasSize();
-      const cx = Math.max(
-        0,
-        Math.min(pos.x, canvas.w - displaySize.w)
-      );
-      const cy = Math.max(
-        0,
-        Math.min(pos.y, canvas.h - displaySize.h)
-      );
-      if (cx !== pos.x || cy !== pos.y) {
-        setSnapping(true);
-        setPos({ x: cx, y: cy });
-        if (snapTimer.current)
-          clearTimeout(snapTimer.current);
-        snapTimer.current = setTimeout(() => setSnapping(false), 350);
-      }
-    }
-    onGeometryChange?.(pos.x, pos.y, normalSize.w, normalSize.h);
-    markStateDirty();
-    persistWindowState();
-  };
-  const r = WINDOW_RADIUS;
-  const borderRadii = !dockedEdge ? {
-    borderTopLeftRadius: r,
-    borderTopRightRadius: r,
-    borderBottomRightRadius: r,
-    borderBottomLeftRadius: r
-  } : dockedEdge === "left" ? {
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: r,
-    borderBottomRightRadius: r,
-    borderBottomLeftRadius: 0
-  } : dockedEdge === "right" ? {
-    borderTopLeftRadius: r,
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
-    borderBottomLeftRadius: r
-  } : dockedEdge === "top" ? {
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: r,
-    borderBottomLeftRadius: r
-  } : {
-    borderTopLeftRadius: r,
-    borderTopRightRadius: r,
-    borderBottomRightRadius: 0,
-    borderBottomLeftRadius: 0
-  };
-  const borderWidths = !dockedEdge ? { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1 } : dockedEdge === "left" ? { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 0 } : dockedEdge === "right" ? { borderTopWidth: 1, borderRightWidth: 0, borderBottomWidth: 1, borderLeftWidth: 1 } : dockedEdge === "top" ? { borderTopWidth: 0, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 1 } : { borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 0, borderLeftWidth: 1 };
-  if (!visible)
-    return null;
+    },
+    /* @__PURE__ */ createElement("div", { style: {
+      color: "#fff",
+      fontSize: 28 * cfg.iconScale,
+      display: "Flex",
+      justifyContent: "Center",
+      alignItems: "Center"
+    } }, item.launcher.text)
+  ))), [showCfg, cfg, shown, iconSize, marginSize, patchCfg, handleItemClick]);
   return /* @__PURE__ */ createElement(
     "div",
     {
-      ref: containerRef,
-      "picking-mode": PICKING_IGNORE,
       style: {
-        position: "Absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0
+        flexGrow: 1,
+        display: "Flex",
+        flexDirection: "Column",
+        backgroundColor: BG,
+        paddingLeft: 12,
+        paddingRight: 12,
+        paddingTop: 10,
+        paddingBottom: 10
       }
     },
-    interacting && /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          position: "Absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0
-        },
-        onPointerMove: handleMove,
-        onPointerUp: handleUp
-      }
-    ),
-    /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          position: "Absolute",
-          left: pos.x,
-          top: pos.y,
-          width: displaySize.w,
-          height: displaySize.h,
-          ...borderRadii,
-          ...borderWidths,
-          borderColor: "rgba(255,255,255,0.1)",
-          flexDirection: "Column",
-          display: "Flex",
-          overflow: "Hidden",
-          scale: hoverEnabled2 && hovered ? hoverScale2 : 1,
-          transitionProperty: snapping ? "scale, left, top" : "scale",
-          transitionDuration: snapping ? `${hoverDuration2}s, 0.3s, 0.3s` : `${hoverDuration2}s`,
-          transitionTimingFunction: "ease-out"
-        },
-        onPointerEnter: () => setHovered(true),
-        onPointerLeave: () => {
-          if (!isActive())
-            setHovered(false);
-        },
-        onPointerDown: () => focus(),
-        onPointerMove: handleMove,
-        onPointerUp: handleUp
-      },
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            flexGrow: 1,
-            display: "Flex",
-            flexDirection: "Column",
-            overflow: "Hidden"
-          }
-        },
-        isCompact && compact ? /* @__PURE__ */ createElement(compact.component, null) : children
-      ),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            position: "Absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: DRAG_BAR_HEIGHT,
-            overflow: "Hidden"
-          },
-          "picking-mode": PICKING_IGNORE
-        },
-        /* @__PURE__ */ createElement(
-          "div",
-          {
-            style: {
-              position: "Absolute",
-              top: showDragBar ? 0 : (DRAG_BAR_HEIGHT - GRAB_PILL_HEIGHT) / 2,
-              left: showDragBar ? -EXPANDED_RADIUS : (displaySize.w - GRAB_PILL_WIDTH) / 2,
-              width: showDragBar ? displaySize.w + EXPANDED_RADIUS * 2 : GRAB_PILL_WIDTH,
-              height: showDragBar ? DRAG_BAR_HEIGHT + EXPANDED_RADIUS : GRAB_PILL_HEIGHT,
-              borderRadius: showDragBar ? EXPANDED_RADIUS : COLLAPSED_RADIUS,
-              backgroundColor: showDragBar ? "rgba(20,20,34,0.85)" : "rgba(255,255,255,0.25)",
-              overflow: "Hidden",
-              transitionProperty: "top, left, width, height, border-radius, background-color",
-              transitionDuration: "0.25s",
-              transitionTimingFunction: "ease-out"
-            },
-            onPointerEnter: () => setGrabHovered(true),
-            onPointerLeave: () => {
-              if (!isActive())
-                setGrabHovered(false);
-            },
-            onPointerDown: (e) => {
-              if (e.target?.setPointerCapture) {
-                e.target.setPointerCapture(e.pointerId);
-              }
-              if (skipDrag.current) {
-                skipDrag.current = false;
-                return;
-              }
-              if (snapTimer.current) {
-                clearTimeout(snapTimer.current);
-                snapTimer.current = null;
-                setSnapping(false);
-              }
-              lockCanvasSize();
-              lockedWindowSize.current = { w: displaySize.w, h: displaySize.h };
-              drag.current = {
-                active: true,
-                ox: e.position.x - pos.x,
-                oy: e.position.y - pos.y
-              };
-              setInteracting(true);
-              focus();
-            }
-          },
-          /* @__PURE__ */ createElement(
-            "div",
-            {
-              style: {
-                position: "Absolute",
-                top: 0,
-                left: showDragBar ? 14 + EXPANDED_RADIUS : 0,
-                right: showDragBar ? 14 + EXPANDED_RADIUS : 0,
-                height: DRAG_BAR_HEIGHT,
-                flexDirection: "Row",
-                display: "Flex",
-                alignItems: "Center",
-                justifyContent: "SpaceBetween",
-                opacity: showDragBar ? 1 : 0,
-                transitionProperty: "opacity, left, right",
-                transitionDuration: "0.15s"
-              }
-            },
-            /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: "#89b4fa" } }, title),
-            /* @__PURE__ */ createElement("div", { style: { flexDirection: "Row", display: "Flex", alignItems: "Center" } }, compact ? /* @__PURE__ */ createElement(
-              "div",
-              {
-                style: {
-                  fontSize: 13,
-                  color: isCompact ? "#a6e3a1" : "#6c7086",
-                  paddingLeft: 6,
-                  paddingRight: 2,
-                  paddingTop: 2,
-                  paddingBottom: 2
-                },
-                onPointerDown: () => {
-                  skipDrag.current = true;
-                  toggleCompact();
-                }
-              },
-              isCompact ? "\uF065" : "\uF066"
-            ) : /* @__PURE__ */ createElement(
-              "div",
-              {
-                style: {
-                  fontSize: 11,
-                  color: "#6c7086",
-                  paddingLeft: 6,
-                  paddingRight: 2,
-                  paddingTop: 2,
-                  paddingBottom: 2
-                }
-              },
-              "\u283F"
-            ), canClose && /* @__PURE__ */ createElement(
-              "div",
-              {
-                style: {
-                  fontSize: 14,
-                  color: "#f38ba8",
-                  paddingLeft: 2,
-                  paddingRight: 4,
-                  paddingTop: 2,
-                  paddingBottom: 2,
-                  marginLeft: 2
-                },
-                onPointerDown: () => {
-                  skipDrag.current = true;
-                  onClose?.();
-                }
-              },
-              "\u2715"
-            ))
-          )
-        )
-      ),
-      canResize && /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            position: "Absolute",
-            right: RESIZE_MARGIN - ARC_HANDLE_PAD,
-            bottom: RESIZE_MARGIN - ARC_HANDLE_PAD,
-            width: ARC_HANDLE_SIZE,
-            height: ARC_HANDLE_SIZE
-          },
-          onPointerDown: (e) => {
-            if (e.target?.setPointerCapture) {
-              e.target.setPointerCapture(e.pointerId);
-            }
-            resize.current = {
-              active: true,
-              ox: e.position.x,
-              oy: e.position.y,
-              ow: normalSize.w,
-              oh: normalSize.h
-            };
-            setInteracting(true);
-            focus();
-          }
-        },
-        /* @__PURE__ */ createElement(
-          "canvas-2d",
-          {
-            ref: arcRef,
-            style: {
-              position: "Absolute",
-              top: 0,
-              left: 0,
-              width: ARC_HANDLE_SIZE,
-              height: ARC_HANDLE_SIZE,
-              overflow: "Hidden"
-            },
-            "picking-mode": PICKING_IGNORE
-          }
-        )
-      )
-    )
+    /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: ACCENT, marginBottom: 8, unityFontStyleAndWeight: "Bold", display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween" } }, /* @__PURE__ */ createElement("div", null, "Launchpad"), /* @__PURE__ */ createElement("div", { onPointerDown: toggleShowCfg, style: { color: "#cbd5e1" } }, showCfg ? "\u5B8C\u6210" : "\u8BBE\u7F6E")),
+    content
   );
 };
-
-// index.tsx
-if (typeof globalThis.requestAnimationFrame === "undefined") {
-  ;
-  globalThis.requestAnimationFrame = (cb) => setTimeout(
-    () => cb(
-      typeof CS !== "undefined" ? CS.UnityEngine.Time.realtimeSinceStartupAsDouble * 1e3 : Date.now()
-    ),
-    1
-  );
-  globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
-}
-var pluginRegistry = [];
-var _refreshPlugins = null;
-globalThis.__registerPlugin = (def) => {
-  pluginRegistry.push(def);
-  console.log(`[WindowManager] Plugin registered: ${def.id}`);
-  _refreshPlugins?.();
-  setTimeout(() => notifyVisibilitySubscribers(), 0);
-};
-globalThis.__unregisterPlugin = (id) => {
-  const idx = pluginRegistry.findIndex((p) => p.id === id);
-  if (idx >= 0) {
-    pluginRegistry.splice(idx, 1);
-    _refreshPlugins?.();
-    setTimeout(() => notifyVisibilitySubscribers(), 0);
-  }
-};
-globalThis.__refreshPlugins = () => {
-  _refreshPlugins?.();
-  setTimeout(() => notifyVisibilitySubscribers(), 0);
-};
-function loadPlugins() {
-  try {
-    const base = String(chill.io.basePath).replace(/\\/g, "/").replace(/\/$/, "");
-    const wd = String(chill.workingDir).replace(/\\/g, "/").replace(/\/$/, "");
-    const relPrefix = wd.startsWith(base) ? wd.substring(base.length + 1) : wd;
-    const pluginsRel = relPrefix + "/@outputs/plugins";
-    if (!chill.io.exists(pluginsRel))
-      return;
-    const dirs = JSON.parse(chill.io.listDirs(pluginsRel));
-    for (const dirName of dirs) {
+__registerPlugin({
+  id: "launchpad",
+  title: "Launchpad",
+  width: 560,
+  height: 220,
+  initialX: 80,
+  initialY: 120,
+  resizable: true,
+  canClose: false,
+  launcher: {
+    text: "\uEB44",
+    background: "#0ea5e9"
+  },
+  compact: {
+    get width() {
       try {
-        chill.evalFile(`@outputs/plugins/${dirName}/app.js`);
-      } catch (e) {
-        console.error(`[WM] Failed to load plugin '${dirName}':`, e);
-      }
-    }
-  } catch (e) {
-    console.error("[WM] Plugin discovery failed:", e);
-  }
-}
-var ErrorBoundary = ({ children }) => {
-  const [error, resetError] = useErrorBoundary((err) => {
-    console.error("[WindowManager] Error boundary caught:", err);
-  });
-  if (error) {
-    return /* @__PURE__ */ createElement(
-      "div",
-      {
-        style: {
-          flexGrow: 1,
-          justifyContent: "Center",
-          alignItems: "Center",
-          display: "Flex",
-          flexDirection: "Column",
-          backgroundColor: "#1e293b",
-          paddingLeft: 20,
-          paddingRight: 20
-        }
-      },
-      /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#f87171", marginBottom: 8 } }, "\u63D2\u4EF6\u6E32\u67D3\u51FA\u9519"),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            fontSize: 11,
-            color: "rgba(255,255,255,0.5)",
-            marginBottom: 16,
-            unityTextAlign: "MiddleCenter"
+        if (globalState.items.length === 0) {
+          try {
+            const all = __wmPluginControl?.listPlugins?.() || [];
+            globalState.items = all.filter((p) => p.id !== "launchpad").sort((a, b) => a.title.localeCompare(b.title));
+          } catch {
           }
-        },
-        String(error)
-      ),
-      /* @__PURE__ */ createElement(
-        "div",
-        {
-          style: {
-            fontSize: 12,
-            color: "#89b4fa",
-            paddingTop: 6,
-            paddingBottom: 6,
-            paddingLeft: 16,
-            paddingRight: 16,
-            borderRadius: 6,
-            borderWidth: 1,
-            borderColor: "#89b4fa"
-          },
-          onPointerDown: () => resetError()
-        },
-        "\u91CD\u7F6E"
-      )
-    );
-  }
-  return children;
-};
-var hoverEnabled = chill.config.appGetOrCreate("HoverEffect.Enabled", true, "\u662F\u5426\u542F\u7528\u7A97\u53E3 hover \u653E\u5927\u6548\u679C");
-var hoverScale = chill.config.appGetOrCreate("HoverEffect.Scale", 1.03, "hover \u653E\u5927\u500D\u6570 (1.0 = \u65E0\u653E\u5927)");
-var hoverDuration = chill.config.appGetOrCreate("HoverEffect.Duration", 0.4, "hover \u52A8\u753B\u65F6\u957F (\u79D2)");
-var VISIBILITY_STATE_FILE = "window-states/plugin-visibility.json";
-function loadVisibilityState() {
-  try {
-    if (!chill.io.exists(VISIBILITY_STATE_FILE))
-      return {};
-    return JSON.parse(chill.io.readText(VISIBILITY_STATE_FILE) || "{}");
-  } catch {
-    return {};
-  }
-}
-function saveVisibilityState(state) {
-  try {
-    chill.io.writeText(VISIBILITY_STATE_FILE, JSON.stringify(state, null, 2));
-  } catch (e) {
-    console.error("[WM] Failed to save visibility state:", e);
-  }
-}
-var _visibilitySubscribers = [];
-var _controlRef = null;
-globalThis.__wmPluginControl = {
-  listPlugins() {
-    return pluginRegistry.map((p) => ({
-      id: p.id,
-      title: p.title,
-      enabled: _controlRef?.isVisible?.(p.id) ?? true,
-      launcher: p.launcher || { text: p.title.charAt(0), background: "#6c7086" }
-    }));
+        }
+        const size = calcCompactSize(globalState.items, globalState.cfg);
+        return size.w;
+      } catch {
+        return 420;
+      }
+    },
+    get height() {
+      try {
+        if (globalState.items.length === 0) {
+          try {
+            const all = __wmPluginControl?.listPlugins?.() || [];
+            globalState.items = all.filter((p) => p.id !== "launchpad").sort((a, b) => a.title.localeCompare(b.title));
+          } catch {
+          }
+        }
+        const size = calcCompactSize(globalState.items, globalState.cfg);
+        return size.h;
+      } catch {
+        return 87;
+      }
+    },
+    component: LaunchpadCompact
   },
-  togglePluginVisible(id) {
-    _controlRef?.toggleVisible?.(id);
-  },
-  subscribe(fn) {
-    _visibilitySubscribers.push(fn);
-    return () => {
-      _visibilitySubscribers = _visibilitySubscribers.filter((s) => s !== fn);
-    };
-  }
-};
-function notifyVisibilitySubscribers() {
-  for (const fn of _visibilitySubscribers)
-    fn();
-}
-var App = () => {
-  const [plugins, setPlugins] = useState([]);
-  const [visibility, setVisibility] = useState({});
-  const visibilityRef = useRef({});
-  useEffect(() => {
-    loadPlugins();
-    const vis = loadVisibilityState();
-    visibilityRef.current = vis;
-    setVisibility(vis);
-    setPlugins([...pluginRegistry]);
-    _refreshPlugins = () => setPlugins([...pluginRegistry]);
-    console.log(`[WM] Loaded ${pluginRegistry.length} plugin(s)`);
-    return () => {
-      _refreshPlugins = null;
-    };
-  }, []);
-  const isVisible = (id) => {
-    if (visibilityRef.current[id] === void 0)
-      return true;
-    return visibilityRef.current[id];
-  };
-  const toggleVisible = (id) => {
-    const next = { ...visibilityRef.current, [id]: !isVisible(id) };
-    visibilityRef.current = next;
-    setVisibility(next);
-    saveVisibilityState(next);
-  };
-  useEffect(() => {
-    _controlRef = { isVisible, toggleVisible };
-    notifyVisibilitySubscribers();
-    return () => {
-      _controlRef = null;
-    };
-  }, [visibility]);
-  return /* @__PURE__ */ createElement(Fragment, null, plugins.map((p) => {
-    const visible = isVisible(p.id);
-    return /* @__PURE__ */ createElement(
-      Window,
-      {
-        key: p.id,
-        title: p.title,
-        width: p.width,
-        height: p.height,
-        initialX: p.initialX,
-        initialY: p.initialY,
-        resizable: p.resizable,
-        canClose: p.canClose !== false,
-        compact: p.compact,
-        hoverEnabled,
-        hoverScale,
-        hoverDuration,
-        onGeometryChange: p.onGeometryChange,
-        visible,
-        onClose: () => toggleVisible(p.id)
-      },
-      /* @__PURE__ */ createElement(ErrorBoundary, null, /* @__PURE__ */ createElement(p.component, null))
-    );
-  }));
-};
-render(/* @__PURE__ */ createElement(App, null), document.body);
+  component: () => /* @__PURE__ */ createElement(LaunchpadPanel, null)
+});
 //# sourceMappingURL=app.js.map
