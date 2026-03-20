@@ -22,7 +22,7 @@ namespace ChillPatcher.UIFramework.Core
         /// <summary>
         /// 简单胶囊按钮 Prefab (来自 LocalMusicImportButton)
         /// 结构: MusicTitleText, icon, baseActiveImage
-        /// 路径: Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents/LocalMusicImportButton
+        /// 路径: Paremt/PCPlatform/Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents/LocalMusicImportButton
         /// </summary>
         public static GameObject SimpleCapsuleButtonPrefab { get; private set; }
         
@@ -33,7 +33,7 @@ namespace ChillPatcher.UIFramework.Core
         
         /// <summary>
         /// 循环箭头按钮 Prefab (来自番茄钟的上下按钮)
-        /// 路径: Canvas/UI/UI_FacilityPomodoro/PomodoroSetting/LoopTime/UpButtonUI
+        /// 路径: Paremt/PCPlatform/Canvas/UI/UI_FacilityPomodoro/PomodoroTimer/PomodoroSetting/LoopTime/UpButtonUI
         /// </summary>
         public static GameObject CircleArrowButtonPrefab { get; private set; }
         
@@ -99,6 +99,7 @@ namespace ChillPatcher.UIFramework.Core
         
         /// <summary>
         /// 从 MusicUI 缓存 PlayListButtons Prefab
+        /// 注意: 游戏更新后 _playListButtonsPrefab 从 MusicUI 移到了 MusicPlayListView
         /// </summary>
         public static void CacheFromMusicUI(MusicUI musicUI)
         {
@@ -107,9 +108,17 @@ namespace ChillPatcher.UIFramework.Core
                 
             try
             {
-                PlayListButtonsPrefab = Traverse.Create(musicUI)
-                    .Field("_playListButtonsPrefab")
-                    .GetValue<GameObject>();
+                // 游戏更新后: 从 MusicUI 获取 MusicPlayListView，再获取 _playListButtonsPrefab
+                var playListView = Traverse.Create(musicUI)
+                    .Field("_musicPlayListView")
+                    .GetValue<Bulbul.MusicPlayListView>();
+                    
+                if (playListView != null)
+                {
+                    PlayListButtonsPrefab = Traverse.Create(playListView)
+                        .Field("_playListButtonsPrefab")
+                        .GetValue<GameObject>();
+                }
                     
                 if (PlayListButtonsPrefab != null)
                 {
@@ -117,6 +126,10 @@ namespace ChillPatcher.UIFramework.Core
                     
                     // 从 PlayListButtonsPrefab 缓存 XCloseButton
                     CacheXCloseButtonFromPlaylistButton();
+                }
+                else
+                {
+                    Plugin.Log.LogWarning("Failed to get _playListButtonsPrefab from MusicPlayListView");
                 }
             }
             catch (System.Exception ex)
@@ -136,7 +149,7 @@ namespace ChillPatcher.UIFramework.Core
         
         /// <summary>
         /// 从场景中缓存 SimpleCapsuleButton Prefab
-        /// 路径: Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents/LocalMusicImportButton
+        /// 路径: Paremt/PCPlatform/Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents/LocalMusicImportButton
         /// </summary>
         public static void CacheCapsuleButtonFromScene()
         {
@@ -146,12 +159,12 @@ namespace ChillPatcher.UIFramework.Core
             try
             {
                 // 尝试通过路径查找
-                var localMusicImportButton = GameObject.Find("Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents/LocalMusicImportButton");
+                var localMusicImportButton = GameObject.Find("Paremt/PCPlatform/Canvas/UI/ChangeOrderObjects/MusicPlayList/Contents/LocalMusicImportButton");
                 
                 if (localMusicImportButton == null)
                 {
                     // 尝试备用路径
-                    var canvas = GameObject.Find("Canvas");
+                    var canvas = GameObject.Find("Paremt/PCPlatform/Canvas");
                     if (canvas != null)
                     {
                         var target = canvas.transform.Find("UI/ChangeOrderObjects/MusicPlayList/Contents/LocalMusicImportButton");
@@ -178,6 +191,7 @@ namespace ChillPatcher.UIFramework.Core
         
         /// <summary>
         /// 从 MusicUI 缓存 Scrollbar Prefab
+        /// 注意: 游戏更新后 _scrollbar 从 MusicUI 移到了 MusicPlayListView
         /// </summary>
         private static void CacheScrollbarFromMusicUI(MusicUI musicUI)
         {
@@ -186,14 +200,26 @@ namespace ChillPatcher.UIFramework.Core
                 
             try
             {
-                var scrollbar = Traverse.Create(musicUI)
-                    .Field("scrollbar")
-                    .GetValue<Scrollbar>();
+                // 游戏更新后: 从 MusicUI 获取 MusicPlayListView，再获取 _scrollbar
+                var playListView = Traverse.Create(musicUI)
+                    .Field("_musicPlayListView")
+                    .GetValue<Bulbul.MusicPlayListView>();
                     
-                if (scrollbar != null && scrollbar.gameObject != null)
+                if (playListView != null)
                 {
-                    ScrollbarPrefab = CreateGenericButtonPrefab(scrollbar.gameObject, "Scrollbar_Prefab");
-                    Plugin.Log.LogInfo("Cached ScrollbarPrefab from MusicUI");
+                    var scrollbar = Traverse.Create(playListView)
+                        .Field("_scrollbar")
+                        .GetValue<Scrollbar>();
+                        
+                    if (scrollbar != null && scrollbar.gameObject != null)
+                    {
+                        ScrollbarPrefab = CreateGenericButtonPrefab(scrollbar.gameObject, "Scrollbar_Prefab");
+                        Plugin.Log.LogInfo("Cached ScrollbarPrefab from MusicPlayListView");
+                    }
+                }
+                else
+                {
+                    Plugin.Log.LogWarning("Failed to get MusicPlayListView for ScrollbarPrefab");
                 }
             }
             catch (System.Exception ex)
@@ -204,7 +230,7 @@ namespace ChillPatcher.UIFramework.Core
         
         /// <summary>
         /// 从场景中缓存 CircleArrowButton Prefab（循环箭头按钮）
-        /// 路径: Canvas/UI/UI_FacilityPomodoro/PomodoroSetting/LoopTime/UpButtonUI
+        /// 路径: Paremt/PCPlatform/Canvas/UI/UI_FacilityPomodoro/PomodoroTimer/PomodoroSetting/LoopTime/UpButtonUI
         /// </summary>
         public static void CacheCircleArrowButtonFromScene()
         {
@@ -214,14 +240,14 @@ namespace ChillPatcher.UIFramework.Core
             try
             {
                 // 尝试查找番茄钟的上下按钮
-                var canvas = GameObject.Find("Canvas");
+                var canvas = GameObject.Find("Paremt/PCPlatform/Canvas");
                 if (canvas != null)
                 {
-                    var target = canvas.transform.Find("UI/UI_FacilityPomodoro/PomodoroSetting/LoopTime/UpButtonUI");
+                    var target = canvas.transform.Find("UI/UI_FacilityPomodoro/PomodoroTimer/PomodoroSetting/LoopTime/UpButtonUI");
                     if (target != null)
                     {
                         CircleArrowButtonPrefab = CreateGenericButtonPrefab(target.gameObject, "CircleArrowButton_Prefab");
-                        Plugin.Log.LogInfo($"Cached CircleArrowButtonPrefab from PomodoroSetting/LoopTime/UpButtonUI");
+                        Plugin.Log.LogInfo($"Cached CircleArrowButtonPrefab from PomodoroTimer/PomodoroSetting/LoopTime/UpButtonUI");
                         
                         // 触发缓存完成事件
                         OnCircleArrowButtonPrefabCached?.Invoke();

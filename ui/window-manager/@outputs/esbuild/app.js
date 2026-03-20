@@ -1903,21 +1903,65 @@ var Window = ({
         const nearTop = my < EDGE_THRESHOLD;
         const nearBottom = my > canvas.h - EDGE_THRESHOLD;
         const detachThreshold = EDGE_THRESHOLD + HYSTERESIS;
-        const shouldDetach = dockedEdge === "left" && mx > detachThreshold || dockedEdge === "right" && mx < canvas.w - detachThreshold || dockedEdge === "top" && my > detachThreshold || dockedEdge === "bottom" && my < canvas.h - detachThreshold;
-        if (shouldDetach && dockedEdge) {
-          const cw = compact.width;
-          const ch = compact.height;
-          const handleOffsetX = cw / 2;
-          const handleOffsetY = GRAB_ZONE_HEIGHT / 2;
-          const newX = Math.max(0, Math.min(mx - handleOffsetX, canvas.w - cw));
-          const newY = Math.max(0, Math.min(my - handleOffsetY, canvas.h - ch));
-          setPos({ x: newX, y: newY });
-          drag.current.ox = mx - newX;
-          drag.current.oy = my - newY;
-          setDockedEdge(null);
-          return;
+        if (dockedEdge) {
+          const shouldDetach = dockedEdge === "left" && mx > detachThreshold || dockedEdge === "right" && mx < canvas.w - detachThreshold || dockedEdge === "top" && my > detachThreshold || dockedEdge === "bottom" && my < canvas.h - detachThreshold;
+          if (shouldDetach) {
+            const cw = compact.width;
+            const ch = compact.height;
+            const newX = Math.max(0, Math.min(mx - cw / 2, canvas.w - cw));
+            const newY = Math.max(0, Math.min(my - GRAB_ZONE_HEIGHT / 2, canvas.h - ch));
+            setPos({ x: newX, y: newY });
+            drag.current.ox = cw / 2;
+            drag.current.oy = GRAB_ZONE_HEIGHT / 2;
+            setDockedEdge(null);
+            return;
+          } else {
+            const cw = compact.width;
+            const ch = compact.height;
+            switch (dockedEdge) {
+              case "left":
+                setPos({
+                  x: 0,
+                  y: Math.max(
+                    0,
+                    Math.min(my - GRAB_ZONE_HEIGHT / 2, canvas.h - ch)
+                  )
+                });
+                break;
+              case "right":
+                setPos({
+                  x: canvas.w - cw,
+                  y: Math.max(
+                    0,
+                    Math.min(my - GRAB_ZONE_HEIGHT / 2, canvas.h - ch)
+                  )
+                });
+                break;
+              case "top":
+                setPos({
+                  x: Math.max(
+                    0,
+                    Math.min(mx - cw / 2, canvas.w - cw)
+                  ),
+                  y: 0
+                });
+                break;
+              case "bottom":
+                setPos({
+                  x: Math.max(
+                    0,
+                    Math.min(mx - cw / 2, canvas.w - cw)
+                  ),
+                  y: canvas.h - ch
+                });
+                break;
+            }
+            return;
+          }
         }
-        if (nearLeft || nearRight || nearTop || nearBottom) {
+        const attachThreshold = EDGE_THRESHOLD;
+        const shouldAttach = nearLeft || nearRight || nearTop || nearBottom;
+        if (shouldAttach) {
           const edges = [];
           if (nearLeft)
             edges.push({ edge: "left", dist: mx });
@@ -1930,44 +1974,43 @@ var Window = ({
           const nearest = edges.sort((a, b) => a.dist - b.dist)[0];
           const cw = compact.width;
           const ch = compact.height;
-          const handleOffsetX = cw / 2;
-          const handleOffsetY = GRAB_ZONE_HEIGHT / 2;
           let sx = 0, sy = 0;
           switch (nearest.edge) {
             case "left":
               sx = 0;
               sy = Math.max(
                 0,
-                Math.min(my - handleOffsetY, canvas.h - ch)
+                Math.min(my - GRAB_ZONE_HEIGHT / 2, canvas.h - ch)
               );
               break;
             case "right":
               sx = canvas.w - cw;
               sy = Math.max(
                 0,
-                Math.min(my - handleOffsetY, canvas.h - ch)
+                Math.min(my - GRAB_ZONE_HEIGHT / 2, canvas.h - ch)
               );
               break;
             case "top":
               sx = Math.max(
                 0,
-                Math.min(mx - handleOffsetX, canvas.w - cw)
+                Math.min(mx - cw / 2, canvas.w - cw)
               );
               sy = 0;
               break;
             case "bottom":
               sx = Math.max(
                 0,
-                Math.min(mx - handleOffsetX, canvas.w - cw)
+                Math.min(mx - cw / 2, canvas.w - cw)
               );
               sy = canvas.h - ch;
               break;
           }
           setPos({ x: sx, y: sy });
+          drag.current.ox = mx - sx;
+          drag.current.oy = my - sy;
           if (!isCompact)
             setIsCompact(true);
-          if (dockedEdge !== nearest.edge)
-            setDockedEdge(nearest.edge);
+          setDockedEdge(nearest.edge);
           return;
         }
       }
@@ -1976,9 +2019,6 @@ var Window = ({
         y: my - drag.current.oy
       });
       markStateDirty();
-      if (isCompact && dockedEdge) {
-        setDockedEdge(null);
-      }
     } else if (resize.current.active) {
       const dx = e.position.x - resize.current.ox;
       const dy = e.position.y - resize.current.oy;

@@ -625,6 +625,7 @@ namespace ChillPatcher.Patches.UIFramework
         
         /// <summary>
         /// 使用原版列表渲染队列（非虚拟滚动）
+        /// 注意: 游戏更新后 _playListButtonsPrefab, _playListButtonsParent, _scrollbar 从 MusicUI 移到了 MusicPlayListView
         /// </summary>
         private static void ViewQueueList(MusicUI musicUI)
         {
@@ -633,19 +634,32 @@ namespace ChillPatcher.Patches.UIFramework
                 // 清除dirty标志
                 Traverse.Create(musicUI).Field("isPlaylistDirty").SetValue(false);
                 
-                // 获取 prefab 和 parent
-                var playListButtonsPrefab = Traverse.Create(musicUI)
+                // 游戏更新后: 从 MusicUI 获取 MusicPlayListView
+                var playListView = Traverse.Create(musicUI)
+                    .Field("_musicPlayListView")
+                    .GetValue<Bulbul.MusicPlayListView>();
+                    
+                if (playListView == null)
+                {
+                    Plugin.Log.LogError("Failed to get _musicPlayListView from MusicUI");
+                    return;
+                }
+                
+                // 获取 prefab 和 parent (从 MusicPlayListView 获取)
+                var playListButtonsPrefab = Traverse.Create(playListView)
                     .Field("_playListButtonsPrefab")
                     .GetValue<GameObject>();
-                var playListButtonsParent = Traverse.Create(musicUI)
+                var playListButtonsParent = Traverse.Create(playListView)
                     .Field("_playListButtonsParent")
                     .GetValue<GameObject>();
+                var scrollRect = Traverse.Create(playListView)
+                    .Field("_scrollRect")
+                    .GetValue<UnityEngine.UI.ScrollRect>();
+                    
+                // facilityMusic 仍然在 MusicUI 中
                 var facilityMusic = Traverse.Create(musicUI)
                     .Field("_facilityMusic")
                     .GetValue<FacilityMusic>();
-                var scrollRect = Traverse.Create(musicUI)
-                    .Field("scrollRect")
-                    .GetValue<UnityEngine.UI.ScrollRect>();
                     
                 if (playListButtonsPrefab == null || playListButtonsParent == null)
                 {
@@ -806,13 +820,24 @@ namespace ChillPatcher.Patches.UIFramework
             _queueOriginalIndex = _queueButtonList.IndexOf(button);
             _currentDropIndex = _queueOriginalIndex;
             
+            // 游戏更新后: 从 MusicUI 获取 MusicPlayListView
+            var playListView = Traverse.Create(musicUI)
+                .Field("_musicPlayListView")
+                .GetValue<Bulbul.MusicPlayListView>();
+                
+            if (playListView == null)
+            {
+                Plugin.Log.LogError("Failed to get _musicPlayListView from MusicUI");
+                return;
+            }
+            
             // 获取并暂时禁用布局组件和滚动
-            var playListButtonsParent = Traverse.Create(musicUI)
+            var playListButtonsParent = Traverse.Create(playListView)
                 .Field("_playListButtonsParent")
                 .GetValue<GameObject>();
             
-            _dragScrollRect = Traverse.Create(musicUI)
-                .Field("scrollRect")
+            _dragScrollRect = Traverse.Create(playListView)
+                .Field("_scrollRect")
                 .GetValue<UnityEngine.UI.ScrollRect>();
             
             if (playListButtonsParent != null)
@@ -1203,7 +1228,15 @@ namespace ChillPatcher.Patches.UIFramework
             var musicUI = UnityEngine.Object.FindObjectOfType<MusicUI>();
             if (musicUI != null)
             {
-                var playListButtonsParent = Traverse.Create(musicUI)
+                // 游戏更新后: 从 MusicUI 获取 MusicPlayListView
+                var playListView = Traverse.Create(musicUI)
+                    .Field("_musicPlayListView")
+                    .GetValue<Bulbul.MusicPlayListView>();
+                    
+                if (playListView == null)
+                    return;
+                    
+                var playListButtonsParent = Traverse.Create(playListView)
                     .Field("_playListButtonsParent")
                     .GetValue<GameObject>();
                     
