@@ -67,7 +67,7 @@ namespace ChillPatcher.Patches.UIFramework
             }
             
             var musicManager = SingletonMonoBehaviour<MusicManager>.Instance;
-            var musicUI = __instance._musicUI;
+            var musicUI = __instance._musicListUI as MusicUI;
             var musicService = __instance.MusicService;
             
             // 检查是否有播放器（原始检查方式）

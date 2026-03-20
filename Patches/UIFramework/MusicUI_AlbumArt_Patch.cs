@@ -57,7 +57,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// 在 Setup 方法执行后初始化封面显示
         /// </summary>
         [HarmonyPostfix]
-        [HarmonyPatch("Setup")]
+        [HarmonyPatch("Bulbul.IMusicListUI.Setup")]
         public static void Setup_Postfix(MusicUI __instance)
         {
             // 检查配置是否启用

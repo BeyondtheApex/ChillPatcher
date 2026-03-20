@@ -120,16 +120,26 @@ namespace ChillPatcher.Module.Netease
         {
             try
             {
+                int failCount = 0;
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     await Task.Delay(1500, cancellationToken); // 每 1.5 秒检查一次
 
-                    var status = _bridge.CheckQRLoginStatus();
+                    var status = await Task.Run(() => _bridge.CheckQRLoginStatus(), cancellationToken);
                     if (status == null)
                     {
-                        _logger.LogWarning("[QRLoginManager] 检查状态失败");
+                        failCount++;
+                        _logger.LogWarning($"[QRLoginManager] 检查状态失败 ({failCount})");
+                        // 连续失败60次（约90秒）后重新获取二维码
+                        if (failCount >= 60)
+                        {
+                            _logger.LogInfo("[QRLoginManager] 连续失败过多，重新获取二维码...");
+                            await StartLoginAsync();
+                            return;
+                        }
                         continue;
                     }
+                    failCount = 0;
 
                     _currentState = status;
                     OnStatusChanged?.Invoke(status.StatusMsg);

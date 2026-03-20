@@ -189,7 +189,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// 扩展音频格式支持 - 可配置开关
         /// 默认关闭，不影响原游戏行为和存档
         /// </summary>
-        [HarmonyPatch(typeof(GameAudioInfo), "<DownloadAudioFile>g__GetAudioType|18_0")]
+        [HarmonyPatch(typeof(GameAudioInfo), "<DownloadAudioFile>g__GetAudioType|20_0")]
         [HarmonyPrefix]
         static bool GetAudioType_Prefix(string uri, ref AudioType __result)
         {

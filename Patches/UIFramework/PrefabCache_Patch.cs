@@ -23,7 +23,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// <summary>
         /// 从 MusicUI 缓存 PlayListButtons Prefab
         /// </summary>
-        [HarmonyPatch(typeof(MusicUI), "Setup")]
+        [HarmonyPatch(typeof(MusicUI), "Bulbul.IMusicListUI.Setup")]
         [HarmonyPostfix]
         static void MusicUI_Setup_Postfix(MusicUI __instance)
         {

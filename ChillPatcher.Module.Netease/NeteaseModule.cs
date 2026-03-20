@@ -40,7 +40,7 @@ namespace ChillPatcher.Module.Netease
         // 登录歌曲常量
         private const string LOGIN_SONG_UUID_PREFIX = "netease_qr_login_";
         private const string LOGIN_SONG_TITLE = "网易云扫码登录";
-        private const float LOGIN_SONG_DURATION = 60f; // 1 分钟
+        private const float LOGIN_SONG_DURATION = 120f; // 2 分钟
         
         // 当前登录歌曲的 UUID（每次登录生成新的）
         private string _currentLoginSongUuid;
@@ -102,8 +102,18 @@ namespace ChillPatcher.Module.Netease
                 return;
             }
 
-            // 检查登录状态
+            // 检查登录状态并验证 cookie
             _isLoggedIn = _bridge.IsLoggedIn;
+            if (_isLoggedIn)
+            {
+                // 验证 cookie 是否过期（尝试获取用户信息）
+                var validateInfo = _bridge.GetUserInfo();
+                if (validateInfo == null)
+                {
+                    context.Logger.LogWarning($"[{DisplayName}] Cookie 已过期，清除并重新登录");
+                    _isLoggedIn = false;
+                }
+            }
             if (!_isLoggedIn)
             {
                 context.Logger.LogWarning($"[{DisplayName}] 未登录网易云音乐，显示二维码登录");

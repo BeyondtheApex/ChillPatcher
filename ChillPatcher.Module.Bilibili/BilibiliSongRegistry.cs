@@ -30,7 +30,7 @@ namespace ChillPatcher.Module.Bilibili
                 TagId = TAG_LOGIN,
                 SourceType = MusicSourceType.Stream,
                 SourcePath = "login_trigger",
-                Duration = 60,
+                Duration = 120,
                 ModuleId = _moduleId,
                 IsFavorite = false
             };

@@ -91,6 +91,9 @@ echo Adding extra dependencies to vendor...
 go get github.com/telanflow/cookiejar@latest >nul 2>&1
 go mod vendor >nul 2>&1
 
+:: 修复上游库的假 NMTID cookie（会被网易云服务器拒绝）
+powershell -Command "$f='vendor\github.com\go-musicfox\netease-music\util\common.go'; $c=[IO.File]::ReadAllText($f,[Text.Encoding]::UTF8); $c=$c.Replace('some_random_id_from_strategy','nmtid_'+[guid]::NewGuid().ToString('N').Substring(0,16)); [IO.File]::WriteAllText($f,$c,[Text.Encoding]::UTF8)" >nul 2>&1
+
 :: 构建 DLL
 echo.
 echo [5/5] Building DLL...

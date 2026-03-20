@@ -91,7 +91,8 @@ namespace ChillPatcher.Module.QQMusic
                 {
                     await Task.Delay(1500, cancellationToken);
 
-                    var status = _bridge.CheckQRStatus();
+                    // 在后台线程执行（微信长轮询可能耗时40秒）
+                    var status = await Task.Run(() => _bridge.CheckQRStatus(), cancellationToken);
                     if (status == null)
                     {
                         _logger.LogWarning("[QRLoginManager] 检查状态失败");

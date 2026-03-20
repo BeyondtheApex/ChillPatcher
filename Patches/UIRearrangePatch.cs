@@ -1,4 +1,5 @@
 using HarmonyLib;
+using Bulbul;
 using UnityEngine;
 using BepInEx.Logging;
 using UnityEngine.UI;
@@ -87,8 +88,9 @@ namespace ChillPatcher.Patches
         private static class ButtonPaths
         {
             // 注意：游戏中根节点名字是 "Paremt"（拼写错误但这就是实际名字）
-            public const string RootPath = "Paremt/Canvas/UI/MostFrontArea";
-            public const string BottomBackImage = "Paremt/Canvas/UI/BottomBackImage";
+            // 游戏更新后 Canvas 从 Paremt/Canvas 移到了 Paremt/PCPlatform/Canvas
+            public const string RootPath = "Paremt/PCPlatform/Canvas/UI/MostFrontArea";
+            public const string BottomBackImage = "Paremt/PCPlatform/Canvas/UI/BottomBackImage";
             public const string UIFacilityMusic = RootPath + "/UI_FacilityMusic";
             
             // 原始位置
@@ -107,11 +109,11 @@ namespace ChillPatcher.Patches
         }
 
         /// <summary>
-        /// Hook 到 ChangeShowUIService.Setup
+        /// Hook 到 FacilityMusic.Setup（UI 初始化完成后重排列）
         /// </summary>
-        [HarmonyPatch(typeof(ChangeShowUIService), "Setup")]
         [HarmonyPostfix]
-        public static void ChangeShowUIService_Setup_Postfix()
+        [HarmonyPatch(typeof(FacilityMusic), "Setup")]
+        public static void FacilityMusic_Setup_Postfix()
         {
             if (!UIFrameworkConfig.EnableUIRearrange.Value)
             {
@@ -146,7 +148,38 @@ namespace ChillPatcher.Patches
 
                 if (topIcons == null)
                 {
-                    Logger.LogError("找不到 TopIcons 容器");
+                    // 打印新版游戏的 UI 结构帮助适配
+                    // 新版游戏: Canvas 在 Paremt/PCPlatform/Canvas
+                    var mostFront = GameObject.Find("Paremt/PCPlatform/Canvas");
+                    if (mostFront == null) mostFront = GameObject.Find("Paremt/Canvas/UI/MostFrontArea");
+                    if (mostFront == null) mostFront = GameObject.Find("Paremt/Canvas/UI");
+                    if (mostFront == null) mostFront = GameObject.Find("Paremt");
+
+                    if (mostFront != null)
+                    {
+                        Logger.LogInfo($"[UIRearrange] 找到容器: {mostFront.name}, 路径: {mostFront.GetGameObjectPath()}");
+                        for (int i = 0; i < mostFront.transform.childCount; i++)
+                        {
+                            var child = mostFront.transform.GetChild(i);
+                            Logger.LogInfo($"[UIRearrange]   [{i}] {child.name} (active={child.gameObject.activeSelf})");
+                            for (int j = 0; j < child.childCount; j++)
+                            {
+                                var gc = child.GetChild(j);
+                                Logger.LogInfo($"[UIRearrange]     [{i}/{j}] {gc.name} (active={gc.gameObject.activeSelf})");
+                                for (int k = 0; k < gc.childCount; k++)
+                                {
+                                    var ggc = gc.GetChild(k);
+                                    Logger.LogInfo($"[UIRearrange]       [{i}/{j}/{k}] {ggc.name} (active={ggc.gameObject.activeSelf})");
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Logger.LogError("找不到任何 UI 容器 (Paremt/Canvas/UI)");
+                    }
+
+                    Logger.LogError("找不到 TopIcons 容器，UI 结构已变更");
                     return;
                 }
 
@@ -641,6 +674,21 @@ namespace ChillPatcher.Patches
         {
             yield return new WaitForSeconds(seconds);
             action?.Invoke();
+        }
+    }
+
+    internal static class GameObjectExtensions
+    {
+        public static string GetGameObjectPath(this GameObject obj)
+        {
+            string path = obj.name;
+            var parent = obj.transform.parent;
+            while (parent != null)
+            {
+                path = parent.name + "/" + path;
+                parent = parent.parent;
+            }
+            return path;
         }
     }
 }

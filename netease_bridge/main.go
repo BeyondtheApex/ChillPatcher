@@ -6,6 +6,7 @@ package main
 import "C"
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/buger/jsonparser"
@@ -95,6 +97,9 @@ func NeteaseInit(dataDirC *C.char) C.int {
 		return 0
 	}
 	util.SetGlobalCookieJar(jar)
+
+	// 修复上游库的假 NMTID cookie，替换为真实随机值
+	fixStrategyCookies(jar)
 
 	// 尝试加载用户信息
 	table := storage.NewTable()
@@ -620,6 +625,17 @@ func NeteaseGetSongLyric(songId C.longlong) *C.char {
 	return C.CString(lyric)
 }
 
+// fixStrategyCookies 修复上游库注入的假 cookie
+// go-musicfox/netease-music 的 ApplyRequestStrategy 会注入 NMTID=some_random_id_from_strategy
+// 这个字面量值会被网易云服务器检测为异常，返回 -462
+func fixStrategyCookies(jar http.CookieJar) {
+	u, _ := url.Parse("https://music.163.com")
+	realNMTID := fmt.Sprintf("%x", time.Now().UnixNano())
+	jar.SetCookies(u, []*http.Cookie{
+		{Name: "NMTID", Value: realNMTID},
+	})
+}
+
 func main() {
 	// 这个 main 函数是必需的，但在编译为 DLL 时不会被调用
 	log.Println("This is a shared library, not meant to be run directly")
@@ -651,6 +667,10 @@ func NeteaseQRGetKey() *C.char {
 
 	qrMutex.Lock()
 	defer qrMutex.Unlock()
+
+	// 每次获取二维码前使用全新空 cookie jar，避免残留 cookie 导致 -462
+	emptyJar, _ := cookiejar.NewEntriesJar(nil)
+	util.SetGlobalCookieJar(emptyJar)
 
 	qrService := service.LoginQRService{}
 	code, _, qrcodeUrl, err := qrService.GetKey()
@@ -716,7 +736,18 @@ func NeteaseQRCheckStatus() *C.char {
 		statusMsg = "已扫码，等待确认"
 	case 803:
 		statusMsg = "登录成功"
-		// 登录成功后获取用户信息
+		// 登录成功后恢复文件 cookie jar 并保存登录 cookie
+		cookiePath := filepath.Join(dataDir, "cookie")
+		if fileJar, jarErr := cookiejar.NewFileJar(cookiePath, nil); jarErr == nil {
+			// 将当前 jar 的 cookie 复制到文件 jar
+			u, _ := url.Parse("https://music.163.com")
+			currentJar := util.GetGlobalCookieJar()
+			if currentJar != nil {
+				fileJar.SetCookies(u, currentJar.Cookies(u))
+			}
+			util.SetGlobalCookieJar(fileJar)
+		}
+		// 获取用户信息
 		if NeteaseRefreshLogin() == 1 {
 			statusMsg = "登录成功"
 		} else {

@@ -144,15 +144,15 @@ namespace ChillPatcher.Patches.UIFramework
                 facility._mainState = FacilityMusic.MainState.Playing;
                 Plugin.Log.LogInfo("[PlaybackState] Set FacilityMusic._mainState to Playing");
 
-                // ✅ 直接访问 _musicUI 字段并调用 OnPlayMusic()（Publicizer 消除反射）
-                if (facility._musicUI != null)
+                var musicUI = facility._musicListUI as MusicUI;
+                if (musicUI != null)
                 {
-                    facility._musicUI.OnPlayMusic();
+                    musicUI.OnPlayMusic();
                     Plugin.Log.LogInfo("[PlaybackState] Called MusicUI.OnPlayMusic() to update UI");
                 }
                 else
                 {
-                    Plugin.Log.LogWarning("[PlaybackState] MusicUI is null");
+                    Plugin.Log.LogWarning("[PlaybackState] MusicListUI is null");
                 }
             }
             catch (Exception ex)

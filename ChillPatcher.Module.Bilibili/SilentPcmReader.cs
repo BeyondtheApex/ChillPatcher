@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using ChillPatcher.SDK.Interfaces;
 using ChillPatcher.SDK.Models;
 
@@ -6,17 +6,45 @@ namespace ChillPatcher.Module.Bilibili
 {
     public class SilentPcmReader : IPcmStreamReader
     {
-        public PcmStreamInfo Info => new PcmStreamInfo { SampleRate = 44100, Channels = 2, TotalFrames = 44100 * 60, Format = "pcm_s16le" };
+        private readonly ulong _totalFrames;
+        private ulong _currentFrame;
+
+        public SilentPcmReader(float durationSeconds = 120f)
+        {
+            _totalFrames = (ulong)(44100 * durationSeconds);
+        }
+
+        public PcmStreamInfo Info => new PcmStreamInfo
+        {
+            SampleRate = 44100,
+            Channels = 2,
+            TotalFrames = _totalFrames
+        };
+
         public bool IsReady => true;
-        public ulong CurrentFrame => 0;
-        public bool IsEndOfStream => false;
-        public bool CanSeek => false;
+        public ulong CurrentFrame => _currentFrame;
+        public bool IsEndOfStream => _currentFrame >= _totalFrames;
+        public bool CanSeek => true;
         public double CacheProgress => 100.0;
         public bool IsCacheComplete => true;
         public bool HasPendingSeek => false;
         public long PendingSeekFrame => -1;
-        public long ReadFrames(float[] buffer, int framesToRead) { Array.Clear(buffer, 0, buffer.Length); return framesToRead; }
-        public bool Seek(ulong frameIndex) => true;
+
+        public long ReadFrames(float[] buffer, int framesToRead)
+        {
+            ulong remaining = _totalFrames - _currentFrame;
+            int actual = (int)Math.Min((ulong)framesToRead, remaining);
+            Array.Clear(buffer, 0, actual * 2);
+            _currentFrame += (ulong)actual;
+            return actual;
+        }
+
+        public bool Seek(ulong frameIndex)
+        {
+            _currentFrame = Math.Min(frameIndex, _totalFrames);
+            return true;
+        }
+
         public void CancelPendingSeek() { }
         public void Dispose() { }
     }
