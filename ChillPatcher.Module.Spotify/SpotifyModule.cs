@@ -49,8 +49,10 @@ namespace ChillPatcher.Module.Spotify
         private SpotifySongRegistry _registry;
 
         private string _dataPath;
-        private string _clientId;
-        private string _pluginPath;
+
+        // 配置项（通过 SDK ConfigManager 管理，写入主配置文件）
+        private ConfigEntry<string> _clientIdEntry;
+        private ConfigEntry<bool> _enableImguiEntry;
 
         // JSApi（供 OneJS 前端访问）
         private SpotifyJSApi _jsApi;
@@ -68,15 +70,14 @@ namespace ChillPatcher.Module.Spotify
         // Client ID 未配置标志
         private bool _needsClientId;
 
-        // 是否启用 IMGUI 窗口（可与 JSApi 并存，默认关闭）
-        private bool _enableImgui;
-
         // 当前选定的设备
         private string _activeDeviceId;
         private string _activeDeviceName;
 
         // 事件订阅
         private IDisposable _pauseSubscription;
+        private CancellationTokenSource _jsApiRegistrationCts;
+        private Task _jsApiRegistrationTask;
 
         // Win32 API: 授权完成后将游戏窗口拉回前台
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
@@ -99,29 +100,30 @@ namespace ChillPatcher.Module.Spotify
             _logger.LogInfo("Spotify module initializing...");
 
             // 数据目录
-            _pluginPath = Path.GetDirectoryName(typeof(SpotifyModule).Assembly.Location);
             _dataPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "ChillPatcher", ModuleId);
             Directory.CreateDirectory(_dataPath);
 
             // 读取配置
-            LoadConfig(_pluginPath);
-            _logger.LogInfo($"Config loaded: ClientId={(string.IsNullOrEmpty(_clientId) ? "(empty)" : _clientId.Substring(0, Math.Min(8, _clientId.Length)) + "...")}");
+            RegisterConfig();
+            var clientId = _clientIdEntry.Value;
+            _logger.LogInfo($"Config loaded: ClientId={(string.IsNullOrEmpty(clientId) ? "(empty)" : clientId.Substring(0, Math.Min(8, clientId.Length)) + "...")}");
 
 
-            if (string.IsNullOrEmpty(_clientId) || _clientId == "YOUR_SPOTIFY_CLIENT_ID")
+            if (string.IsNullOrEmpty(clientId) || clientId == "YOUR_SPOTIFY_CLIENT_ID")
             {
                 _logger.LogWarning("Spotify Client ID not configured. Will prompt on first play.");
                 _needsClientId = true;
                 _registry = new SpotifySongRegistry(_context, ModuleId);
-                _registry.RegisterLoginSong(">>> 点击播放以配置 Spotify <<<");
+                if (_enableImguiEntry.Value)
+                    _registry.RegisterLoginSong(">>> 点击播放以配置 Spotify <<<");
                 OnReadyStateChanged?.Invoke(false);
 
                 // 初始化 JSApi 并注册
                 InitJSApi();
-                _jsApi.loginStatus = ">>> 点击播放以配置 Spotify <<<";
-                _ = RegisterJSApiToInstancesAsync();
+                _jsApi.needsClientId = true;
+                EnsureJSApiRegistrationLoop();
                 return;
             }
 
@@ -132,23 +134,16 @@ namespace ChillPatcher.Module.Spotify
         private void ShowConfigWindow()
         {
             _logger.LogInfo("Showing Spotify config via JSApi");
-            if (_jsApi != null)
-            {
-                _jsApi.showConfigPanel = true;
-                _jsApi.loginStatus = "请在 Spotify 插件面板中输入 Client ID";
-            }
-            _registry.UpdateLoginStatus("请在 Spotify 插件面板中输入 Client ID");
 
-            if (_enableImgui)
+            if (_enableImguiEntry.Value)
             {
                 _logger.LogInfo("Showing Spotify Client ID configuration window");
                 SpotifyConfigWindow.Show(
                     onSubmit: async (clientId) =>
                     {
                         _logger.LogInfo("Client ID submitted via config window");
-                        _clientId = clientId;
+                        _clientIdEntry.Value = clientId;
                         _needsClientId = false;
-                        SaveClientId(clientId);
 
                         _registry.UpdateLoginStatus("Client ID 已保存，正在初始化...");
 
@@ -161,7 +156,7 @@ namespace ChillPatcher.Module.Spotify
                         }
 
                         // 初始化 Bridge 和 OAuthManager（不走 InitWithClientIdAsync 以避免注册新登录歌曲）
-                        _bridge = new SpotifyBridge(_clientId, _dataPath, _logger);
+                        _bridge = new SpotifyBridge(_clientIdEntry.Value, _dataPath, _logger);
                         InitOAuthManager();
                         SubscribePlaybackEvents();
 
@@ -186,29 +181,17 @@ namespace ChillPatcher.Module.Spotify
             }
         }
 
-        private void SaveClientId(string clientId)
-        {
-            var bepInExConfigPath = Path.Combine(_pluginPath, "..", "..", "config", "com.chillpatcher.plugin.cfg");
-            var configFile = new ConfigFile(bepInExConfigPath, false);
-            var entry = configFile.Bind(
-                $"Module:{ModuleId}",
-                "ClientId",
-                "YOUR_SPOTIFY_CLIENT_ID",
-                "Spotify Developer App Client ID.");
-            entry.Value = clientId;
-            configFile.Save();
-            _logger.LogInfo("Client ID saved to config file");
-        }
+
 
         private async Task InitWithClientIdAsync()
         {
-            _bridge = new SpotifyBridge(_clientId, _dataPath, _logger);
+            _bridge = new SpotifyBridge(_clientIdEntry.Value, _dataPath, _logger);
             _registry = new SpotifySongRegistry(_context, ModuleId);
 
             InitOAuthManager();
             SubscribePlaybackEvents();
             InitJSApi();
-            _ = RegisterJSApiToInstancesAsync();
+            EnsureJSApiRegistrationLoop();
 
             // 加载已保存的 session
             _bridge.LoadSession();
@@ -248,9 +231,10 @@ namespace ChillPatcher.Module.Spotify
                 _bridge.ClearSession();
             }
 
-            // 未登录，显示登录歌曲
-            _registry.RegisterLoginSong("点击播放以登录 Spotify");
-            if (_jsApi != null) _jsApi.loginStatus = "点击播放以登录 Spotify";
+            // 未登录，按需显示登录歌曲（仅 IMGUI 模式）
+            if (_enableImguiEntry.Value)
+                _registry.RegisterLoginSong("点击播放以登录 Spotify");
+            if (_jsApi != null) _jsApi.loginStatus = "点击登录按销连接 Spotify";
             OnReadyStateChanged?.Invoke(false);
         }
 
@@ -260,6 +244,10 @@ namespace ChillPatcher.Module.Spotify
 
         public void OnUnload()
         {
+            _jsApiRegistrationCts?.Cancel();
+            _jsApiRegistrationCts?.Dispose();
+            _jsApiRegistrationCts = null;
+            _jsApiRegistrationTask = null;
             _pauseSubscription?.Dispose();
             _oauthManager?.Dispose();
             _bridge?.Dispose();
@@ -271,29 +259,23 @@ namespace ChillPatcher.Module.Spotify
         // 配置
         // =====================================================================
 
-        private void LoadConfig(string pluginPath)
+        private void RegisterConfig()
         {
-            // 直接读取 BepInEx 配置文件
-            var bepInExConfigPath = Path.Combine(pluginPath, "..", "..", "config", "com.chillpatcher.plugin.cfg");
-            var configFile = new ConfigFile(bepInExConfigPath, false);
+            var config = _context.ConfigManager;
 
-            _clientId = configFile.Bind(
-                $"Module:{ModuleId}",
+            _clientIdEntry = config.BindDefault(
                 "ClientId",
                 "YOUR_SPOTIFY_CLIENT_ID",
                 "Spotify Developer App Client ID.\n" +
                 "在 https://developer.spotify.com/dashboard 创建 App 获取。\n" +
                 "Redirect URI 设置为: fullstop://callback"
-            ).Value;
+            );
 
-            _enableImgui = configFile.Bind(
-                $"Module:{ModuleId}",
+            _enableImguiEntry = config.BindDefault(
                 "EnableIMGUI",
                 false,
                 "启用 IMGUI 窗口（配置/设备选择），可与 OneJS 前端并存"
-            ).Value;
-
-            configFile.Save();
+            );
         }
 
         // =====================================================================
@@ -302,7 +284,7 @@ namespace ChillPatcher.Module.Spotify
 
         private void InitOAuthManager()
         {
-            _oauthManager = new OAuthManager(_clientId, _dataPath, _logger);
+            _oauthManager = new OAuthManager(_clientIdEntry.Value, _dataPath, _logger);
 
             _oauthManager.OnStatusChanged += (status) =>
             {
@@ -460,8 +442,9 @@ namespace ChillPatcher.Module.Spotify
                     }
                 }
 
-                // 注册/更新设备选择歌曲
-                _registry.RegisterDeviceSelector(_activeDeviceName);
+                // 注册/更新设备选择歌曲（仅 IMGUI 模式）
+                if (_enableImguiEntry.Value)
+                    _registry.RegisterDeviceSelector(_activeDeviceName);
 
                 if (_jsApi != null)
                 {
@@ -472,7 +455,8 @@ namespace ChillPatcher.Module.Spotify
             catch (Exception ex)
             {
                 _logger.LogWarning($"[Spotify] Failed to load devices: {ex.Message}");
-                _registry.RegisterDeviceSelector(null);
+                if (_enableImguiEntry.Value)
+                    _registry.RegisterDeviceSelector(null);
             }
         }
 
@@ -480,7 +464,7 @@ namespace ChillPatcher.Module.Spotify
         {
             _ = ShowDeviceSelectorViaJSApiAsync();
 
-            if (_enableImgui)
+            if (_enableImguiEntry.Value)
             {
                 _ = ShowDeviceSelectorViaImguiAsync();
             }
@@ -858,15 +842,14 @@ namespace ChillPatcher.Module.Spotify
             _jsApi.OnClientIdSubmitted += async (clientId) =>
             {
                 _logger.LogInfo("Client ID submitted via JSApi");
-                _clientId = clientId;
+                _clientIdEntry.Value = clientId;
                 _needsClientId = false;
                 _jsApi.needsClientId = false;
-                SaveClientId(clientId);
 
                 _registry.UpdateLoginStatus("Client ID 已保存，正在初始化...");
                 _jsApi.loginStatus = "Client ID 已保存，正在初始化...";
 
-                _bridge = new SpotifyBridge(_clientId, _dataPath, _logger);
+                _bridge = new SpotifyBridge(_clientIdEntry.Value, _dataPath, _logger);
                 InitOAuthManager();
                 SubscribePlaybackEvents();
 
@@ -923,7 +906,8 @@ namespace ChillPatcher.Module.Spotify
                 _jsApi.userName = "";
                 _jsApi.accountType = "";
                 _registry.UnregisterAll();
-                _registry.RegisterLoginSong("点击播放以登录 Spotify");
+                if (_enableImguiEntry.Value)
+                    _registry.RegisterLoginSong("点击播放以登录 Spotify");
                 OnReadyStateChanged?.Invoke(false);
             };
 
@@ -964,18 +948,33 @@ namespace ChillPatcher.Module.Spotify
         /// <summary>
         /// 注册 JSApi 到所有 OneJS UI 实例（与 NeteaseModule 使用相同模式）。
         /// </summary>
-        private async Task RegisterJSApiToInstancesAsync()
+        private void EnsureJSApiRegistrationLoop()
         {
-            if (_jsApi == null) return;
+            if (_jsApiRegistrationTask != null && !_jsApiRegistrationTask.IsCompleted) return;
 
-            for (int attempt = 0; attempt < 15; attempt++)
+            _jsApiRegistrationCts?.Cancel();
+            _jsApiRegistrationCts?.Dispose();
+            _jsApiRegistrationCts = new CancellationTokenSource();
+            _jsApiRegistrationTask = Task.Run(() => RegisterJSApiToInstancesAsync(_jsApiRegistrationCts.Token));
+        }
+
+        private async Task RegisterJSApiToInstancesAsync(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
             {
                 try
                 {
+                    var currentJsApi = _jsApi;
+                    if (currentJsApi == null)
+                    {
+                        await Task.Delay(1000, cancellationToken);
+                        continue;
+                    }
+
                     var bridgeType = Type.GetType("ChillPatcher.OneJSBridge, ChillPatcher");
                     if (bridgeType == null)
                     {
-                        await Task.Delay(1000);
+                        await Task.Delay(1000, cancellationToken);
                         continue;
                     }
 
@@ -984,11 +983,12 @@ namespace ChillPatcher.Module.Spotify
                     var instances = instancesProp?.GetValue(null) as System.Collections.IEnumerable;
                     if (instances == null)
                     {
-                        await Task.Delay(1000);
+                        await Task.Delay(1000, cancellationToken);
                         continue;
                     }
 
                     int registered = 0;
+                    int newlyRegistered = 0;
                     foreach (var kv in instances)
                     {
                         var kvType = kv.GetType();
@@ -1006,22 +1006,26 @@ namespace ChillPatcher.Module.Spotify
                         if (existing != null) { registered++; continue; }
 
                         var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
-                        registerMethod?.Invoke(jsApi, new object[] { "spotify", _jsApi });
+                        registerMethod?.Invoke(jsApi, new object[] { "spotify", currentJsApi });
                         registered++;
+                        newlyRegistered++;
                     }
 
-                    if (registered > 0)
+                    if (newlyRegistered > 0)
                     {
-                        _logger.LogInfo($"[Spotify] JSApi registered on {registered} UI instance(s)");
-                        return;
+                        _logger.LogInfo($"[Spotify] JSApi registered on {registered} UI instance(s), newly attached to {newlyRegistered} instance(s)");
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning($"[Spotify] JSApi registration attempt {attempt + 1} failed: {ex.Message}");
+                    _logger.LogWarning($"[Spotify] JSApi registration loop failed: {ex.Message}");
                 }
 
-                await Task.Delay(1000);
+                await Task.Delay(1000, cancellationToken);
             }
         }
 

@@ -1967,7 +1967,7 @@ var PomodoroPanel = () => {
       onMinus: () => commitLoop(Number(pm?.loopTotal || 1) - 1),
       onPlus: () => commitLoop(Number(pm?.loopTotal || 1) + 1)
     }
-  )), /* @__PURE__ */ createElement("div", { style: { display: showSettingsPage ? "None" : "Flex", flexDirection: "Column", backgroundColor: CARD, borderRadius: 12, padding: 12 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: DIM, marginBottom: 4 } }, `${clock?.date || "----/--/--"}`), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 6 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: TEXT, unityFontStyleAndWeight: "Bold" } }, `Lv.${pg?.level || 0}`), /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: DIM } }, `${Math.round(Number(pg?.exp || 0))}/${Math.round(Number(pg?.nextLevelExp || 0))}`)), /* @__PURE__ */ createElement("div", { style: { height: 3, borderRadius: 0, backgroundColor: "rgba(148,163,184,0.25)", overflow: "Hidden", marginBottom: 6 } }, /* @__PURE__ */ createElement("div", { style: { width: `${Math.round(levelProg * 100)}%`, height: 3, backgroundColor: OK } })), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: DIM } }, `Total Focus: ${Math.round(Number(pg?.totalWorkSeconds || 0) / 3600 * 10) / 10}h`)), /* @__PURE__ */ createElement("div", { style: { display: showSettingsPage ? "Flex" : "None", flexDirection: "Column", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: { backgroundColor: PANEL, borderRadius: 12, padding: 12, marginBottom: 8 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: TEXT, unityFontStyleAndWeight: "Bold", marginBottom: 8 } }, "\u8BBE\u7F6E"), /* @__PURE__ */ createElement(
+  )), /* @__PURE__ */ createElement("div", { style: { display: showSettingsPage ? "None" : "Flex", flexDirection: "Column", backgroundColor: CARD, borderRadius: 12, padding: 12 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: DIM, marginBottom: 4 } }, "Player Level"), /* @__PURE__ */ createElement("div", { style: { display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 6 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: TEXT, unityFontStyleAndWeight: "Bold" } }, `Lv.${pg?.level || 0}`), /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: DIM } }, `${Math.round(Number(pg?.exp || 0))}/${Math.round(Number(pg?.nextLevelExp || 0))}`)), /* @__PURE__ */ createElement("div", { style: { height: 3, borderRadius: 0, backgroundColor: "rgba(148,163,184,0.25)", overflow: "Hidden", marginBottom: 6 } }, /* @__PURE__ */ createElement("div", { style: { width: `${Math.round(levelProg * 100)}%`, height: 3, backgroundColor: OK } })), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: DIM } }, `Total Focus: ${Math.round(Number(pg?.totalWorkSeconds || 0) / 3600 * 10) / 10}h`)), /* @__PURE__ */ createElement("div", { style: { display: showSettingsPage ? "Flex" : "None", flexDirection: "Column", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: { backgroundColor: PANEL, borderRadius: 12, padding: 12, marginBottom: 8 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 13, color: TEXT, unityFontStyleAndWeight: "Bold", marginBottom: 8 } }, "\u8BBE\u7F6E"), /* @__PURE__ */ createElement(
     SettingsCheckbox,
     {
       checked: settings.hideDefaultPomodoroUI,
@@ -2053,7 +2053,28 @@ var PomodoroCompact = () => {
   const statusColor = controlState === "idle" ? DIM : isBreakPhase ? "#4CAF50" : ACCENT;
   const timerText = remain > 0 ? hhmmss(remain) : hhmmss(total);
   const compactClockText = formatClockDisplay(clock, settings.showSeconds);
-  const cbtn = (t, on, bg = "rgba(125,211,252,0.15)", color = ACCENT) => /* @__PURE__ */ createElement("div", { onPointerDown: on, style: { fontSize: 11, color, backgroundColor: bg, borderRadius: 6, paddingLeft: 6, paddingRight: 6, paddingTop: 4, paddingBottom: 4, unityTextAlign: "MiddleCenter", flexShrink: 1 } }, t);
+  const cbtn = (t, on, bg = "rgba(125,211,252,0.15)", color = ACCENT) => /* @__PURE__ */ createElement(
+    "div",
+    {
+      onPointerDown: on,
+      style: {
+        fontSize: 11,
+        color,
+        backgroundColor: bg,
+        borderRadius: 6,
+        paddingLeft: 6,
+        paddingRight: 6,
+        paddingTop: 4,
+        paddingBottom: 4,
+        unityTextAlign: "MiddleCenter",
+        flexGrow: 1,
+        flexBasis: 0,
+        marginLeft: 3,
+        marginRight: 3
+      }
+    },
+    t
+  );
   return /* @__PURE__ */ createElement("div", { style: {
     flexGrow: 1,
     display: "Flex",

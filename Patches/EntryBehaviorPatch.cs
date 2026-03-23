@@ -23,18 +23,27 @@ namespace ChillPatcher.Patches
 
     /// <summary>
     /// Patch: 修复 SteamManager.IsInitialized 属性
-    /// 让它在离线模式下返回 true，以绕过 EntryBehavior 中的等待
+    /// 壁纸引擎模式：始终返回 true（完全绕过Steam等待）
+    /// 静默启动模式：Steam Pending时也返回 true，让游戏继续启动；连接后由原始逻辑接管
     /// </summary>
     [HarmonyPatch(typeof(NestopiSystem.Steam.SteamManager), "IsInitialized", MethodType.Getter)]
     public class SteamManager_IsInitialized_Patch
     {
         static bool Prefix(ref bool __result)
         {
-            if (!PluginConfig.EnableWallpaperEngineMode.Value)
-                return true; // 不屏蔽，执行原方法
-                
-            __result = true; // 始终返回 true，表示"已初始化"
-            return false; // 阻止原方法执行
+            if (PluginConfig.EnableWallpaperEngineMode.Value)
+            {
+                __result = true;
+                return false;
+            }
+
+            if (SteamConnectionState.CurrentState == SteamConnectionState.State.Pending)
+            {
+                __result = true; // Steam 待连接中，但不阻塞游戏启动
+                return false;
+            }
+
+            return true; // 其他情况执行原方法
         }
     }
 }

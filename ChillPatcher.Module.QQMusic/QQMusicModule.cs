@@ -45,6 +45,9 @@ namespace ChillPatcher.Module.QQMusic
 
         // Subscriptions
         private IDisposable _favoriteChangedSubscription;
+        private IDisposable _playStartedSubscription;
+        private CancellationTokenSource _lyricApiRegistrationCts;
+        private Task _lyricApiRegistrationTask;
 
         // Config
         private ConfigEntry<string> _dataDir;
@@ -146,9 +149,15 @@ namespace ChillPatcher.Module.QQMusic
 
         public void OnUnload()
         {
+            _lyricApiRegistrationCts?.Cancel();
+            _lyricApiRegistrationCts?.Dispose();
+            _lyricApiRegistrationCts = null;
+            _lyricApiRegistrationTask = null;
             _qrLoginManager?.CancelLogin();
             _coverLoader?.ClearCache();
             _favoriteChangedSubscription?.Dispose();
+            _playStartedSubscription?.Dispose();
+            _playStartedSubscription = null;
         }
 
         #endregion
@@ -414,88 +423,84 @@ namespace ChillPatcher.Module.QQMusic
 
         private void RegisterLyricApi()
         {
-            // UI instances initialize after modules, so retry until they become available.
-            // Register on ALL instances (default + window-manager) so chill.custom.get("lyric") works everywhere.
-            Task.Run(async () =>
+            EnsureLyricApiRegistrationLoop();
+        }
+
+        private void EnsureLyricApiRegistrationLoop()
+        {
+            if (_lyricApiRegistrationTask != null && !_lyricApiRegistrationTask.IsCompleted) return;
+
+            _lyricApiRegistrationCts?.Cancel();
+            _lyricApiRegistrationCts?.Dispose();
+            _lyricApiRegistrationCts = new CancellationTokenSource();
+            _lyricApiRegistrationTask = Task.Run(() => RegisterLyricApiLoopAsync(_lyricApiRegistrationCts.Token));
+        }
+
+        private async Task RegisterLyricApiLoopAsync(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
             {
-                const int maxRetries = 30;
-                for (int attempt = 0; attempt < maxRetries; attempt++)
+                try
                 {
-                    try
+                    var bridgeType = Type.GetType("ChillPatcher.OneJSBridge, ChillPatcher");
+                    if (bridgeType == null)
                     {
-                        // Get OneJSBridge.Instances (Dictionary<string, UIInstance>)
-                        var bridgeType = Type.GetType("ChillPatcher.OneJSBridge, ChillPatcher");
-                        if (bridgeType == null)
-                        {
-                            _logger?.LogWarning("OneJSBridge type not found, skipping lyric API registration");
-                            return;
-                        }
-
-                        var instancesProp = bridgeType.GetProperty("Instances",
-                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                        var instances = instancesProp?.GetValue(null) as System.Collections.IEnumerable;
-                        if (instances == null)
-                        {
-                            await Task.Delay(1000);
-                            continue;
-                        }
-
-                        // Count total instances and how many have JSApi ready
-                        int total = 0;
-                        int withJsApi = 0;
-                        var registeredIds = new System.Collections.Generic.List<string>();
-
-                        foreach (var kv in instances)
-                        {
-                            total++;
-                            var kvType = kv.GetType();
-                            var valueProp = kvType.GetProperty("Value");
-                            var uiInstance = valueProp?.GetValue(kv);
-                            if (uiInstance == null) continue;
-
-                            var jsApiProp = uiInstance.GetType().GetProperty("JSApi");
-                            var jsApi = jsApiProp?.GetValue(uiInstance);
-                            if (jsApi == null) continue;
-                            withJsApi++;
-
-                            // Check if already registered on this instance
-                            var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
-                            var existing = getMethod?.Invoke(jsApi, new object[] { "lyric" });
-                            if (existing != null) {
-                                registeredIds.Add(kvType.GetProperty("Key")?.GetValue(kv) as string ?? "?");
-                                continue;
-                            }
-
-                            var lyricApi = new QQMusicLyricApi(_bridge, _logger);
-                            var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
-                            registerMethod?.Invoke(jsApi, new object[] { "lyric", lyricApi });
-
-                            var keyProp = kvType.GetProperty("Key");
-                            var instanceId = keyProp?.GetValue(kv) as string ?? "?";
-                            _logger?.LogInfo($"Lyric API registered on instance: {instanceId}");
-                            registeredIds.Add(instanceId);
-                        }
-
-                        _logger?.LogInfo($"Lyric API: {registeredIds.Count}/{total} instances (jsApi ready: {withJsApi}), attempt {attempt + 1}");
-
-                        // Keep retrying for at least 15 attempts to catch late-initializing instances
-                        // Only stop early after minimum attempts AND all found instances are registered
-                        if (attempt >= 14 && registeredIds.Count > 0)
-                        {
-                            _logger?.LogInfo($"Lyric API registration complete: {registeredIds.Count} instance(s)");
-                            return;
-                        }
-
-                        await Task.Delay(1000);
+                        await Task.Delay(1000, cancellationToken);
+                        continue;
                     }
-                    catch (Exception ex)
+
+                    var instancesProp = bridgeType.GetProperty("Instances",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    var instances = instancesProp?.GetValue(null) as System.Collections.IEnumerable;
+                    if (instances == null)
                     {
-                        _logger?.LogError($"Failed to register lyric API (attempt {attempt + 1}): {ex.Message}");
-                        await Task.Delay(1000);
+                        await Task.Delay(1000, cancellationToken);
+                        continue;
+                    }
+
+                    int total = 0;
+                    int withJsApi = 0;
+                    int newlyRegistered = 0;
+
+                    foreach (var kv in instances)
+                    {
+                        total++;
+                        var kvType = kv.GetType();
+                        var valueProp = kvType.GetProperty("Value");
+                        var uiInstance = valueProp?.GetValue(kv);
+                        if (uiInstance == null) continue;
+
+                        var jsApiProp = uiInstance.GetType().GetProperty("JSApi");
+                        var jsApi = jsApiProp?.GetValue(uiInstance);
+                        if (jsApi == null) continue;
+                        withJsApi++;
+
+                        var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
+                        var existing = getMethod?.Invoke(jsApi, new object[] { "lyric" });
+                        if (existing != null) continue;
+
+                        var lyricApi = new QQMusicLyricApi(_bridge, _logger);
+                        var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
+                        registerMethod?.Invoke(jsApi, new object[] { "lyric", lyricApi });
+                        newlyRegistered++;
+                    }
+
+                    if (newlyRegistered > 0)
+                    {
+                        _logger?.LogInfo($"Lyric API registered on {withJsApi} ready instance(s), newly attached to {newlyRegistered} instance(s)");
                     }
                 }
-                _logger?.LogError("Lyric API registration failed after all retries");
-            });
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError($"Lyric API registration loop failed: {ex.Message}");
+                }
+
+                await Task.Delay(1000, cancellationToken);
+            }
         }
 
         private void RegisterConfig()
@@ -552,10 +557,10 @@ namespace ChillPatcher.Module.QQMusic
             _wxLoginSongUuid = wxLoginSong.UUID;
             _musicList.Add(wxLoginSong);
 
-            _logger?.LogInfo("QQ音乐未登录，等待扫码登录");
+            _logger?.LogInfo("QQ音乐未登录，等待扫码登录（点击登录歌曲加载二维码）");
 
-            // 预先获取 QQ 二维码，这样歌曲列表显示时封面就能看到二维码
-            _ = _qrLoginManager.StartLoginAsync("qq");
+            // 监听播放事件：如果用户切到其他歌曲，取消 QR 待机
+            _playStartedSubscription = _context.EventBus.Subscribe<PlayStartedEvent>(OnPlayStartedBeforeLogin);
 
             return Task.CompletedTask;
         }
@@ -597,6 +602,10 @@ namespace ChillPatcher.Module.QQMusic
 
                 _isLoggedIn = true;
 
+                // 不再需要监听播放事件（已登录）
+                _playStartedSubscription?.Dispose();
+                _playStartedSubscription = null;
+
                 // 加载音乐
                 await ScanAndRegisterAsync();
 
@@ -628,6 +637,18 @@ namespace ChillPatcher.Module.QQMusic
         {
             _logger?.LogInfo("[QQ音乐] QR扫码登录成功！");
             OnLoginSuccess();
+        }
+
+        private void OnPlayStartedBeforeLogin(PlayStartedEvent evt)
+        {
+            // 用户切换到非登录歌曲，停止 QR 轮询
+            var uuid = evt?.Music?.UUID;
+            if (uuid == null) return;
+            lock (_stateLock)
+            {
+                if (uuid == _currentLoginSongUuid || uuid == _wxLoginSongUuid) return;
+            }
+            _qrLoginManager?.CancelLogin();
         }
 
         private void OnQRLoginStatusChanged(string status)

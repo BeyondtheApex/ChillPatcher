@@ -16,6 +16,7 @@ namespace ChillPatcher.JSApi
     /// - "playEnded"    — 播放结束
     /// - "playPaused"   — 播放暂停/恢复
     /// - "playProgress" — 播放进度变化
+    /// - "playSeek"     — Seek 跳转（含延迟 Seek 完成通知）
     /// - "queueChanged" — 播放队列变化
     /// - "tagRegistered"   — Tag 注册
     /// - "tagUnregistered" — Tag 注销
@@ -82,6 +83,16 @@ namespace ChillPatcher.JSApi
                     ["currentTime"] = e.CurrentTime,
                     ["totalTime"] = e.TotalTime,
                     ["progress"] = e.Progress
+                }))));
+
+            _subscriptions.Add(eventBus.Subscribe<PlaySeekEvent>(e =>
+                Emit("playSeek", JSApiHelper.ToJson(new Dictionary<string, object>
+                {
+                    ["uuid"] = e.Music?.UUID ?? "",
+                    ["progress"] = e.Progress,
+                    ["targetTime"] = e.TargetTime,
+                    ["isPending"] = e.IsPending,
+                    ["isCompleted"] = e.IsCompleted
                 }))));
 
             // 订阅队列变化

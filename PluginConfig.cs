@@ -134,9 +134,11 @@ namespace ChillPatcher
                 "EnableWallpaperEngineMode",
                 false,
                 "是否启用壁纸引擎兼容功能\n" +
-                "true = 启用离线模式，屏蔽所有Steam在线功能\n" +
-                "false = 使用游戏原本逻辑（默认）\n" +
-                "注意：启用后将强制使用配置的存档，成就不会同步到Steam"
+                "true = 启用离线兼容模式，Steam未运行时自动回退到本地存档\n" +
+                "  - 启动时不强制要求Steam运行（开机自启友好）\n" +
+                "  - Steam就绪后自动重连并同步缓存成就\n" +
+                "  - 强制使用配置的OfflineUserId作为存档路径\n" +
+                "false = 使用游戏原本逻辑（默认，Steam未运行则退出）"
             );
 
             // 多存档设置
