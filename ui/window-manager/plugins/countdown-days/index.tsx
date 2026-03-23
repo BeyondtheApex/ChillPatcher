@@ -74,6 +74,9 @@ const PAGER_BUTTON_WIDTH = 34
 const COMPACT_INNER_WIDTH = 258
 const COMPACT_INNER_HEIGHT = 132
 const COMPACT_CARD_GAP = 4
+const LAYOUT_HINT_SETTLE_DELAY_MS = 140
+const LAYOUT_HINT_POLL_INTERVAL_MS = 1800
+const COMPACT_SYNC_INTERVAL_MS = 30000
 
 const WEEK_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
 
@@ -416,6 +419,39 @@ const sortEventsPinnedFirst = (events: CalendarEvent[]) => {
 
         return a.createdAt.localeCompare(b.createdAt)
     })
+}
+
+const areEventsEqual = (a: CalendarEvent[], b: CalendarEvent[]) => {
+    if (a === b) return true
+    if (a.length !== b.length) return false
+
+    for (let i = 0; i < a.length; i += 1) {
+        const left = a[i]
+        const right = b[i]
+        if (
+            left.id !== right.id ||
+            left.title !== right.title ||
+            left.targetDate !== right.targetDate ||
+            left.type !== right.type ||
+            left.createdAt !== right.createdAt ||
+            Boolean(left.pinned) !== Boolean(right.pinned)
+        ) {
+            return false
+        }
+    }
+
+    return true
+}
+
+const areCompactConfigEqual = (a: CalendarWidgetConfig, b: CalendarWidgetConfig) => {
+    return (
+        a.compactCount === b.compactCount &&
+        a.titleColor === b.titleColor &&
+        a.daysColor === b.daysColor &&
+        a.rightPanelBgColor === b.rightPanelBgColor &&
+        a.textColor === b.textColor &&
+        areEventsEqual(a.events, b.events)
+    )
 }
 
 const normalizeEvent = (raw: any, index: number): CalendarEvent | null => {
@@ -780,7 +816,7 @@ const useWindowLayoutHint = (eventListRef: any, pagerRowRef: any) => {
         const flushLayoutAfterResize = () => {
             readLayout(true)
             if (settleTimer) clearTimeout(settleTimer)
-            settleTimer = setTimeout(() => readLayout(true), 140)
+            settleTimer = setTimeout(() => readLayout(true), LAYOUT_HINT_SETTLE_DELAY_MS)
         }
 
         const onPointerUp = () => flushLayoutAfterResize()
@@ -795,7 +831,10 @@ const useWindowLayoutHint = (eventListRef: any, pagerRowRef: any) => {
         doc?.addEventListener?.("pointerup", onPointerUp)
         doc?.addEventListener?.("mouseup", onMouseUp)
         doc?.addEventListener?.("touchend", onTouchEnd)
-        fallbackTimer = setInterval(() => readLayout(false), 900)
+        fallbackTimer = setInterval(() => {
+            if (!eventListRef.current && !pagerRowRef.current) return
+            readLayout(false)
+        }, LAYOUT_HINT_POLL_INTERVAL_MS)
 
         return () => {
             if (settleTimer) clearTimeout(settleTimer)
@@ -932,6 +971,7 @@ const CountdownPanel = () => {
 
         return Array.from({ length: end - start + 1 }, (_, index) => start + index)
     }, [eventPage, totalEventPages, pageLabelCount])
+    const todayIsoValue = todayIso()
 
     const calendarCells = useMemo(() => buildCalendarCells(viewYear, viewMonth), [viewYear, viewMonth])
 
@@ -1538,7 +1578,7 @@ const CountdownPanel = () => {
                                     <div key={`row-${rowIndex}`} style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 3, width: "100%" }}>
                                         {row.map((cell) => {
                                             const isSelected = cell.iso === selectedDate
-                                            const isToday = cell.iso === todayIso()
+                                            const isToday = cell.iso === todayIsoValue
                                             const count = eventCountByDate.get(cell.iso) || 0
 
                                             return (
@@ -1966,14 +2006,19 @@ const CountdownCompact = () => {
             const loadedSettings = loadConfig()
             const loadedEventsPath = normalizeConfigPath(loadedSettings.eventsFilePath, DEFAULT_CONFIG.eventsFilePath)
             const loadedEvents = loadEventsFromFile(loadedEventsPath)
-            setConfig({ ...loadedSettings, eventsFilePath: loadedEventsPath, events: sortEvents(loadedEvents ?? loadedSettings.events) })
+            const nextConfig = {
+                ...loadedSettings,
+                eventsFilePath: loadedEventsPath,
+                events: sortEvents(loadedEvents ?? loadedSettings.events),
+            }
+            setConfig((prev) => (areCompactConfigEqual(prev, nextConfig) ? prev : nextConfig))
         }
 
         syncCompactConfig()
         const timer = setInterval(() => {
             setClockTick((tick) => tick + 1)
             syncCompactConfig()
-        }, 30000)
+        }, COMPACT_SYNC_INTERVAL_MS)
 
         return () => clearInterval(timer)
     }, [])
