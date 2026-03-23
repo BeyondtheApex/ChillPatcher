@@ -1,4 +1,4 @@
-﻿import { h } from "preact"
+import { h } from "preact"
 import { useEffect, useMemo, useRef, useState } from "preact/hooks"
 
 declare const __registerPlugin: any
@@ -1803,8 +1803,7 @@ const CountdownPanel = () => {
                             />
                         </div>
 
-                        <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", alignItems: "Center" }}>
-                            <ActionButton text="使用选中日期" onClick={() => setEditDialogDate(selectedDate)} color={textColor} bg={softActionBg} compact />
+                        <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "FlexEnd", alignItems: "Center" }}>
                             <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
                                 <ActionButton text="保存" onClick={saveEditedEvent} color={textColor} bg={accentButtonBg} compact />
                                 <div style={{ width: 4 }} />
