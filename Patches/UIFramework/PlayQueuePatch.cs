@@ -1,9 +1,12 @@
 using Bulbul;
+using ChillPatcher.ModuleSystem;
 using ChillPatcher.UIFramework;
 using ChillPatcher.UIFramework.Audio;
 using ChillPatcher.UIFramework.Music;
 using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.ModuleSystem.Services;
+using ChillPatcher.SDK.Events;
+using ChillPatcher.SDK.Models;
 using Cysharp.Threading.Tasks;
 using HarmonyLib;
 using KanKikuchi.AudioManager;
@@ -159,6 +162,26 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static void OnMusicPlaybackComplete(MusicService musicService)
         {
+            // 发布 PlayEndedEvent（自然结束）
+            try
+            {
+                var eventBus = EventBus.Instance;
+                if (eventBus != null)
+                {
+                    var endedAudio = musicService.PlayingMusic;
+                    MusicInfo endedInfo = null;
+                    if (!string.IsNullOrEmpty(endedAudio?.UUID))
+                        endedInfo = MusicRegistry.Instance?.GetMusic(endedAudio.UUID);
+                    if (endedInfo == null && endedAudio != null)
+                        endedInfo = new MusicInfo { UUID = endedAudio.UUID ?? string.Empty, Title = endedAudio.AudioClipName };
+                    eventBus.Publish(new PlayEndedEvent { Music = endedInfo, Reason = PlayEndReason.Completed });
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[PlayQueuePatch] PlayEndedEvent publish failed: {ex.Message}");
+            }
+
             // 检查单曲循环模式
             if (musicService.IsRepeatOneMusic)
             {
@@ -1136,7 +1159,50 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static void InvokeOnPlayMusic(MusicService musicService, GameAudioInfo audio)
         {
+            // 发布 PlayEndedEvent（被新歌曲替换）
+            try
+            {
+                var eventBus = EventBus.Instance;
+                var previous = musicService.PlayingMusic;
+                if (eventBus != null && previous != null && previous.UUID != audio?.UUID)
+                {
+                    MusicInfo prevInfo = null;
+                    if (!string.IsNullOrEmpty(previous.UUID))
+                        prevInfo = MusicRegistry.Instance?.GetMusic(previous.UUID);
+                    if (prevInfo == null)
+                        prevInfo = new MusicInfo { UUID = previous.UUID ?? string.Empty, Title = previous.AudioClipName };
+                    eventBus.Publish(new PlayEndedEvent { Music = prevInfo, Reason = PlayEndReason.Replaced });
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[PlayQueuePatch] PlayEndedEvent(Replaced) publish failed: {ex.Message}");
+            }
+
             musicService.onPlayMusic.OnNext(audio);
+
+            // 向 EventBus 发布 PlayStartedEvent，让订阅了此事件的模块（如 QQ音乐、网易云）
+            // 能够在切换到非登录歌曲时取消 QR 登录轮询
+            try
+            {
+                var eventBus = EventBus.Instance;
+                if (eventBus != null)
+                {
+                    MusicInfo musicInfo = null;
+                    if (!string.IsNullOrEmpty(audio?.UUID))
+                        musicInfo = MusicRegistry.Instance?.GetMusic(audio.UUID);
+
+                    // 即使 MusicInfo 为 null（游戏内置歌曲），也要发布事件，UUID 通过临时对象传递
+                    if (musicInfo == null && audio != null)
+                        musicInfo = new MusicInfo { UUID = audio.UUID ?? string.Empty, Title = audio.AudioClipName };
+
+                    eventBus.Publish(new PlayStartedEvent { Music = musicInfo });
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[PlayQueuePatch] InvokeOnPlayMusic: EventBus publish failed: {ex.Message}");
+            }
         }
         
         #endregion

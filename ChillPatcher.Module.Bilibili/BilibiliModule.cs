@@ -98,21 +98,11 @@ namespace ChillPatcher.Module.Bilibili
                     _context.EventBus.Publish(new CoverInvalidatedEvent { MusicUuid = _currentLoginUuid, Reason = "QR" });
             };
 
+            // 信任 cookie 文件，不做额外 API 验证（避免因验证接口问题误删有效 cookie）
             if (_bridge.IsLoggedIn)
             {
-                // 验证 cookie 是否过期（尝试获取收藏夹列表）
-                var folders = await _bridge.GetMyFoldersAsync();
-                if (folders == null || folders.Count == 0)
-                {
-                    context.Logger.LogWarning($"[{DisplayName}] Cookie 已过期，清除并重新登录");
-                    _bridge.ClearSession();
-                    RefreshLoginSong();
-                }
-                else
-                {
-                    context.Logger.LogInfo($"Bilibili 已登录: {_bridge.CurrentUserId}");
-                    await RefreshAsync();
-                }
+                context.Logger.LogInfo($"Bilibili 已登录: {_bridge.CurrentUserId}");
+                await RefreshAsync();
             }
             else
             {
@@ -129,18 +119,20 @@ namespace ChillPatcher.Module.Bilibili
                 if (_qrManager.QRCodeSprite != null)
                 {
                     _context.Logger.LogInfo("登录流程已启动，二维码已就绪");
-                    return PlayableSource.FromPcmStream(uuid, new SilentPcmReader(), AudioFormat.Mp3);
+                }
+                else
+                {
+                    _context.Logger.LogInfo("触发登录流程...");
+                    var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                    Action onReady = () => tcs.TrySetResult(true);
+                    _qrManager.OnQRCodeReady += onReady;
+                    _qrManager.StartLogin();
+                    await Task.WhenAny(tcs.Task, Task.Delay(15000, token));
+                    _qrManager.OnQRCodeReady -= onReady;
                 }
 
-                _context.Logger.LogInfo("触发登录流程...");
-                // 等待二维码获取完成再返回
-                var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
-                Action onReady = () => tcs.TrySetResult(true);
-                _qrManager.OnQRCodeReady += onReady;
-                _qrManager.StartLogin();
-                // 最多等15秒
-                await Task.WhenAny(tcs.Task, Task.Delay(15000, token));
-                _qrManager.OnQRCodeReady -= onReady;
+                // 强制刷新封面缓存
+                _context.EventBus.Publish(new SDK.Events.CoverInvalidatedEvent { MusicUuid = uuid, Reason = "login song played" });
                 return PlayableSource.FromPcmStream(uuid, new SilentPcmReader(), AudioFormat.Mp3);
             }
 
@@ -202,8 +194,11 @@ namespace ChillPatcher.Module.Bilibili
         public Task<PlayableSource> RefreshUrlAsync(string u, AudioQuality q, CancellationToken t) => ResolveAsync(u, q, t);
         private void RefreshLoginSong()
         {
-            _registry.RegisterLoginSong(">>> 点击播放以扫码 <<<");
+            _registry.RegisterLoginSong("B站扫码登录");
             _currentLoginUuid = BilibiliSongRegistry.UUID_LOGIN;
+
+            // 预先获取二维码，这样歌曲列表显示时封面就能看到二维码
+            _qrManager.StartLogin();
         }
 
         public async Task<List<MusicInfo>> GetMusicListAsync()

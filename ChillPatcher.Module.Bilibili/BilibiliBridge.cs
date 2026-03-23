@@ -83,12 +83,18 @@ namespace ChillPatcher.Module.Bilibili
             return JObject.Parse(json)["data"].ToObject<BiliQrCodeData>();
         }
 
-        public async Task<bool> CheckLoginStatusAsync(string key)
+        /// <summary>
+        /// 检查二维码登录状态
+        /// 返回: 0=成功, 86101=未扫码, 86090=已扫码未确认, 86038=已过期
+        /// </summary>
+        public async Task<int> CheckLoginStatusAsync(string key)
         {
             var response = await _client.GetAsync($"https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key={key}");
             var obj = JObject.Parse(await response.Content.ReadAsStringAsync());
 
-            if ((int)obj["data"]["code"] == 0)
+            int code = (int)obj["data"]["code"];
+
+            if (code == 0)
             {
                 if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
                 {
@@ -105,10 +111,9 @@ namespace ChillPatcher.Module.Bilibili
                         }
                     }
                     SaveSession();
-                    return true;
                 }
             }
-            return false;
+            return code;
         }
 
         public async Task<List<BiliFolder>> GetMyFoldersAsync()

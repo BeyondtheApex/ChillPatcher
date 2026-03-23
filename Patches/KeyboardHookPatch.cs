@@ -24,6 +24,15 @@ namespace ChillPatcher.Patches
         internal static readonly Queue<uint> navigationKeyQueue = new Queue<uint>(); // 导航键队列(方向键/Delete等)
         internal static readonly Queue<char> inputQueue_internal = inputQueue;
         internal static readonly object queueLock = new object();
+
+        /// <summary>剪贴板操作类型</summary>
+        public enum ClipAction : byte { Paste, SelectAll, Copy, Cut }
+        private static readonly Queue<ClipAction> clipActionQueue = new Queue<ClipAction>();
+        private static string _pendingPasteText;
+
+        /// <summary>自行跟踪 Ctrl 键状态（低级钩子中 GetAsyncKeyState 不可靠）</summary>
+        private static volatile bool _ctrlHeld;
+
         private static Thread hookThread;
         private static bool isRunning = false;
         
@@ -34,6 +43,16 @@ namespace ChillPatcher.Patches
 
         // 键盘输入模式：true = 游戏模式（拦截输入到游戏），false = 桌面模式（输入到系统）
         private static bool isGameMode = true;
+
+        /// <summary>
+        /// Rime Context 变化通知（由 Hook 线程 set，主线程在 Tick 中检测并消费）
+        /// </summary>
+        internal static volatile bool RimeContextDirty;
+
+        /// <summary>
+        /// 输入模式变化通知（由 Hook 或主线程 set，主线程 Tick 中消费）
+        /// </summary>
+        internal static volatile bool InputModeDirty;
 
         /// <summary>
         /// 当前是否为游戏输入模式
@@ -56,6 +75,7 @@ namespace ChillPatcher.Patches
             isGameMode = gameMode;
             string modeName = isGameMode ? "游戏模式（输入到游戏）" : "桌面模式（输入到系统）";
             Plugin.Logger.LogInfo($"[KeyboardHook] 设置输入模式: {modeName}");
+            InputModeDirty = true;
         }
 
         // 双缓冲 Context - 线程安全设计
@@ -107,6 +127,23 @@ namespace ChillPatcher.Patches
 
         [DllImport("user32.dll")]
         private static extern void PostQuitMessage(int nExitCode);
+
+        [DllImport("user32.dll")]
+        private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+        [DllImport("user32.dll")]
+        private static extern bool CloseClipboard();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetClipboardData(uint uFormat);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GlobalLock(IntPtr hMem);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool GlobalUnlock(IntPtr hMem);
+
+        private const uint CF_UNICODETEXT = 13;
         
         private const uint PM_REMOVE = 0x0001;
 
@@ -131,6 +168,7 @@ namespace ChillPatcher.Patches
         // 常量
         private const int WH_KEYBOARD_LL = 13;
         private const int WM_KEYDOWN = 0x0100;
+        private const int WM_KEYUP = 0x0101;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct KBDLLHOOKSTRUCT
@@ -350,68 +388,101 @@ namespace ChillPatcher.Patches
         /// </summary>
         private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN)
+            if (nCode >= 0)
             {
                 KBDLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
                 uint vkCode = hookStruct.vkCode;
 
-                // F5: 切换键盘输入模式（游戏模式 ↔ 桌面模式）
-                if (vkCode == 0x74) // VK_F5 = 0x74
+                // 跟踪 Ctrl 修饰键状态（WM_KEYDOWN + WM_KEYUP），低级钩子中 GetAsyncKeyState 不可靠
+                if (vkCode == 0x11 || vkCode == 0xA2 || vkCode == 0xA3) // VK_CONTROL / VK_LCONTROL / VK_RCONTROL
                 {
-                    isGameMode = !isGameMode;
-                    string modeName = isGameMode ? "游戏模式（输入到游戏）" : "桌面模式（输入到系统）";
-                    Plugin.Logger.LogInfo($"[KeyboardHook] F5切换输入模式: {modeName}");
-                    return (IntPtr)1; // 拦截 F5
+                    _ctrlHeld = (wParam == (IntPtr)WM_KEYDOWN);
                 }
 
-                // F6: 重新部署Rime(热重载配置)
-                if (vkCode == 0x75 && useRime && rimeEngine != null) // VK_F6 = 0x75
+                if (wParam == (IntPtr)WM_KEYDOWN)
                 {
-                    Plugin.Logger.LogInfo("[Rime] 用户按下F6,开始重新部署...");
-                    rimeEngine.Redeploy();
-                    return (IntPtr)1; // 拦截 F6
-                }
-
-                // 移除F4特殊处理,让Rime根据配置处理(default.yaml中定义了F4为方案选单)
-                // if (vkCode == 0x73 && useRime && rimeEngine != null) // VK_F4 = 0x73
-                // {
-                //     rimeEngine.ToggleAsciiMode();
-                //     return (IntPtr)1; // 拦截 F4
-                // }
-
-                // Shift 键临时切换(按下Shift时切到英文,松开恢复中文)
-                // 这个功能稍后实现,需要处理 WM_KEYUP
-
-                // 桌面模式：不拦截任何输入，让系统处理
-                if (!isGameMode)
-                {
-                    return CallNextHookEx(hookId, nCode, wParam, lParam);
-                }
-
-                // 游戏模式：检测是否在桌面（只在桌面激活时拦截输入到游戏）
-                bool isDesktop = IsDesktopActive();
-                
-                if (isDesktop)
-                {
-                    if (useRime && rimeEngine != null)
+                    // F5: 切换键盘输入模式（游戏模式 ↔ 桌面模式）
+                    if (vkCode == 0x74) // VK_F5 = 0x74
                     {
-                        // 使用Rime处理输入
-                        ProcessKeyWithRime(vkCode);
-                        
-                        // 通知InputField刷新Rime显示
-                        TMP_InputField_LateUpdate_Patch.RequestRimeUpdate();
-                        
-                        return (IntPtr)1; // Rime模式总是拦截
+                        isGameMode = !isGameMode;
+                        string modeName = isGameMode ? "游戏模式（输入到游戏）" : "桌面模式（输入到系统）";
+                        Plugin.Logger.LogInfo($"[KeyboardHook] F5切换输入模式: {modeName}");
+                        InputModeDirty = true;
+                        return (IntPtr)1; // 拦截 F5
                     }
-                    else
+
+                    // F6: 重新部署Rime(热重载配置)
+                    if (vkCode == 0x75 && useRime && rimeEngine != null) // VK_F6 = 0x75
                     {
-                        // 简单队列模式
-                        bool shouldIntercept = ProcessKeySimple(vkCode);
-                        if (shouldIntercept)
+                        Plugin.Logger.LogInfo("[Rime] 用户按下F6,开始重新部署...");
+                        rimeEngine.Redeploy();
+                        return (IntPtr)1; // 拦截 F6
+                    }
+
+                    // Ctrl 组合键（剪贴板操作）—— 与模式无关，仅在 UIToolkit TextField 获焦时拦截
+                    if (_ctrlHeld && UIToolkitInputDispatcher.IsUIToolkitTextFieldFocused)
+                    {
+                        if (vkCode == 0x56) // Ctrl+V: 粘贴
                         {
-                            return (IntPtr)1; // 拦截已处理的按键
+                            string text = GetClipboardText();
+                            if (!string.IsNullOrEmpty(text))
+                            {
+                                lock (queueLock)
+                                {
+                                    _pendingPasteText = text;
+                                    clipActionQueue.Enqueue(ClipAction.Paste);
+                                }
+                            }
+                            return (IntPtr)1;
                         }
-                        // 未处理的按键(如方向键)传递给Unity
+                        if (vkCode == 0x41) // Ctrl+A: 全选
+                        {
+                            lock (queueLock) { clipActionQueue.Enqueue(ClipAction.SelectAll); }
+                            return (IntPtr)1;
+                        }
+                        if (vkCode == 0x43) // Ctrl+C: 复制
+                        {
+                            lock (queueLock) { clipActionQueue.Enqueue(ClipAction.Copy); }
+                            return (IntPtr)1;
+                        }
+                        if (vkCode == 0x58) // Ctrl+X: 剪切
+                        {
+                            lock (queueLock) { clipActionQueue.Enqueue(ClipAction.Cut); }
+                            return (IntPtr)1;
+                        }
+                    }
+
+                    // 桌面模式：不拦截任何输入，让系统处理
+                    if (!isGameMode)
+                    {
+                        return CallNextHookEx(hookId, nCode, wParam, lParam);
+                    }
+
+                    // 游戏模式：检测是否在桌面（只在桌面激活时拦截输入到游戏）
+                    bool isDesktop = IsDesktopActive();
+
+                    if (isDesktop)
+                    {
+                        if (useRime && rimeEngine != null)
+                        {
+                            // 使用Rime处理输入
+                            ProcessKeyWithRime(vkCode);
+
+                            // 通知InputField刷新Rime显示
+                            TMP_InputField_LateUpdate_Patch.RequestRimeUpdate();
+
+                            return (IntPtr)1; // Rime模式总是拦截
+                        }
+                        else
+                        {
+                            // 简单队列模式
+                            bool shouldIntercept = ProcessKeySimple(vkCode);
+                            if (shouldIntercept)
+                            {
+                                return (IntPtr)1; // 拦截已处理的按键
+                            }
+                            // 未处理的按键(如方向键)传递给Unity
+                        }
                     }
                 }
             }
@@ -504,6 +575,7 @@ namespace ChillPatcher.Patches
                 lock (rimeContextCacheLock)
                 {
                     cachedRimeContext = newContext;
+                    RimeContextDirty = true;
                 }
             }
             catch (Exception ex)
@@ -563,6 +635,52 @@ namespace ChillPatcher.Patches
 
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
+
+        /// <summary>
+        /// 从 Win32 剪贴板读取 Unicode 文本（可在钩子线程调用）
+        /// </summary>
+        private static string GetClipboardText()
+        {
+            if (!OpenClipboard(IntPtr.Zero))
+                return null;
+            try
+            {
+                IntPtr hData = GetClipboardData(CF_UNICODETEXT);
+                if (hData == IntPtr.Zero) return null;
+                IntPtr pData = GlobalLock(hData);
+                if (pData == IntPtr.Zero) return null;
+                try
+                {
+                    return Marshal.PtrToStringUni(pData);
+                }
+                finally
+                {
+                    GlobalUnlock(hData);
+                }
+            }
+            finally
+            {
+                CloseClipboard();
+            }
+        }
+
+        /// <summary>
+        /// 获取下一个剪贴板操作（主线程调用）
+        /// </summary>
+        /// <param name="pasteText">如果是 Paste 操作，包含要粘贴的文本</param>
+        /// <returns>剪贴板操作类型，无操作时返回 null</returns>
+        public static ClipAction? GetClipboardAction(out string pasteText)
+        {
+            pasteText = null;
+            lock (queueLock)
+            {
+                if (clipActionQueue.Count == 0) return null;
+                var action = clipActionQueue.Dequeue();
+                if (action == ClipAction.Paste)
+                    pasteText = _pendingPasteText;
+                return action;
+            }
+        }
 
         /// <summary>
         /// 获取并清空输入队列
@@ -723,6 +841,7 @@ namespace ChillPatcher.Patches
                     lock (rimeContextCacheLock)
                     {
                         cachedRimeContext = newContext;
+                        RimeContextDirty = true;
                     }
 
                     // 通知 TMP patch 更新
@@ -763,6 +882,7 @@ namespace ChillPatcher.Patches
                     lock (rimeContextCacheLock)
                     {
                         cachedRimeContext = newContext;
+                        RimeContextDirty = true;
                     }
 
                     TMP_InputField_LateUpdate_Patch.RequestRimeUpdate();
@@ -793,6 +913,7 @@ namespace ChillPatcher.Patches
                 lock (rimeContextCacheLock)
                 {
                     cachedRimeContext = null;
+                    RimeContextDirty = true;
                 }
             }
             catch (Exception ex)

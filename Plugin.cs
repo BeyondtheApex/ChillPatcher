@@ -23,6 +23,7 @@ namespace ChillPatcher
     [BepInPlugin(MyPluginInfo.PLUGIN_GUID, MyPluginInfo.PLUGIN_NAME, MyPluginInfo.PLUGIN_VERSION)]
     public class Plugin : BaseUnityPlugin
     {
+        private const string SteamAppId = "3548580";
         internal static new ManualLogSource Logger;
         internal static ManualLogSource Log; // 别名，用于Patches
         
@@ -47,6 +48,8 @@ namespace ChillPatcher
             // 设置路径
             PluginPath = Path.GetDirectoryName(Info.Location);
             ModulesPath = Path.Combine(PluginPath, "modules");
+
+            EnsureSteamAppIdFile();
             
             CoreDependencyLoader.EnsureDependencies(Log);
             Logger.LogInfo($"Plugin {MyPluginInfo.PLUGIN_GUID} is loaded!");
@@ -106,6 +109,13 @@ namespace ChillPatcher
                 Logger.LogInfo("Achievement sync manager initialized!");
             }
 
+            // 壁纸引擎模式：自动启动 Steam 重连监視器
+            if (PluginConfig.EnableWallpaperEngineMode.Value)
+            {
+                SteamReconnectManager.Initialize();
+                Logger.LogInfo("Steam reconnect manager initialized (wallpaper engine mode)!");
+            }
+
             // ========== 初始化模块系统 ==========
             try
             {
@@ -143,6 +153,45 @@ namespace ChillPatcher
                 Logger.LogError($"Failed to install PlayerLoop injector: {ex}");
             }
 
+        }
+
+        private void EnsureSteamAppIdFile()
+        {
+            TryWriteSteamAppIdFile(Directory.GetCurrentDirectory());
+
+            try
+            {
+                var appRoot = Path.GetDirectoryName(UnityEngine.Application.dataPath);
+                if (!string.IsNullOrEmpty(appRoot))
+                    TryWriteSteamAppIdFile(appRoot);
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogWarning($"[SteamAppId] 无法解析 Application.dataPath: {ex.Message}");
+            }
+        }
+
+        private void TryWriteSteamAppIdFile(string directory)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+                    return;
+
+                var appIdPath = Path.Combine(directory, "steam_appid.txt");
+                var needsWrite = !File.Exists(appIdPath) ||
+                    !string.Equals(File.ReadAllText(appIdPath).Trim(), SteamAppId, StringComparison.Ordinal);
+
+                if (!needsWrite)
+                    return;
+
+                File.WriteAllText(appIdPath, SteamAppId + Environment.NewLine);
+                Logger?.LogInfo($"[SteamAppId] 已写入 {appIdPath}");
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogWarning($"[SteamAppId] 写入失败 ({directory}): {ex.Message}");
+            }
         }
 
         /// <summary>

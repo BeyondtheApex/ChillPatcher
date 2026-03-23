@@ -4,23 +4,6 @@ using NestopiSystem.Steam;
 namespace ChillPatcher.Patches
 {
     /// <summary>
-    /// Patch 1: 核心阻断 - SteamManager.Initialize
-    /// 强制离线模式，跳过Steam初始化
-    /// </summary>
-    [HarmonyPatch(typeof(SteamManager), "Initialize")]
-    public class SteamManager_Initialize_Patch
-    {
-        static bool Prefix()
-        {
-            if (!PluginConfig.EnableWallpaperEngineMode.Value)
-                return true; // 不屏蔽，执行原方法
-                
-            Plugin.Logger.LogInfo("[ChillPatcher] SteamManager.Initialize - 跳过Steam初始化（离线模式）");
-            return false; // 阻止原方法执行
-        }
-    }
-
-    /// <summary>
     /// Patch 2: 核心阻断 - SteamManager.Tick
     /// 切断心跳
     /// </summary>

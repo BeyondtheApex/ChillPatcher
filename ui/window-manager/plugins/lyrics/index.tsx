@@ -141,7 +141,6 @@ const useLyricsPoller = () => {
     const currentSongRef = useRef("")
     const lastIdxRef = useRef(-1)
     const loadingRef = useRef(false)
-    const apiUnavailableRef = useRef<Record<string, boolean>>({})
 
     useEffect(() => {
         const poll = () => {
@@ -187,19 +186,11 @@ const useLyricsPoller = () => {
                         loadingRef.current = false
                         if (b64) lrcText = base64Decode(b64)
                     } else if (info.source === "netease") {
-                        // Check if API was previously unavailable
-                        if (apiUnavailableRef.current["netease"]) {
-                            log("netease API unavailable, skipping")
-                            lyricsCache[info.cacheKey] = []
-                            setStatusText("暂无歌词")
-                            return
-                        }
                         const neteaseApi = chill.custom.get("lyric_netease")
                         if (!neteaseApi) {
                             log("lyric_netease API not available")
-                            apiUnavailableRef.current["netease"] = true
-                            lyricsCache[info.cacheKey] = []
-                            setStatusText("暂无歌词")
+                            currentSongRef.current = ""
+                            setStatusText("等待歌词接口...")
                             return
                         }
                         loadingRef.current = true

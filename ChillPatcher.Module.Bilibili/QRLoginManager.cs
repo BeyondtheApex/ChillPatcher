@@ -33,7 +33,7 @@ namespace ChillPatcher.Module.Bilibili
 
             try
             {
-                OnStatusChanged?.Invoke("正在获取二维码...");
+                OnStatusChanged?.Invoke("请使用B站扫码登录");
 
                 var qrData = await _bridge.GetLoginUrlAsync();
                 var imgBytes = await _bridge.GenerateQRBytesAsync(qrData.Url);
@@ -42,18 +42,34 @@ namespace ChillPatcher.Module.Bilibili
                 tex.LoadImage(imgBytes);
                 QRCodeSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
 
-                OnStatusChanged?.Invoke("请使用 Bilibili 扫码");
+                OnStatusChanged?.Invoke("请使用B站扫码登录");
                 OnQRCodeReady?.Invoke();
 
                 while (!token.IsCancellationRequested)
                 {
-                    if (await _bridge.CheckLoginStatusAsync(qrData.Key))
+                    var statusCode = await _bridge.CheckLoginStatusAsync(qrData.Key);
+
+                    if (statusCode == 0)
                     {
                         IsSuccess = true;
                         OnStatusChanged?.Invoke("登录成功！");
                         OnLoginSuccess?.Invoke();
                         break;
                     }
+                    else if (statusCode == 86038)
+                    {
+                        // 二维码已过期，重新获取
+                        _logger.LogInfo("[QRLoginManager] B站二维码已过期，重新获取...");
+                        OnStatusChanged?.Invoke("二维码已过期，正在刷新...");
+                        StartLogin();
+                        return; // 新的登录流程已启动
+                    }
+                    else if (statusCode == 86090)
+                    {
+                        OnStatusChanged?.Invoke("已扫码，请在手机上确认");
+                    }
+                    // 86101 = 未扫码，继续轮询
+
                     await Task.Delay(3000, token);
                 }
             }

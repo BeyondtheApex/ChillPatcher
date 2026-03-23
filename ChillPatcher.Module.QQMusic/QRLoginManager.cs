@@ -51,7 +51,8 @@ namespace ChillPatcher.Module.QQMusic
                 CancelPolling();
                 CleanupQRCodeResources();
 
-                // 获取 QR 码 PNG 图片（base64 编码）
+                // 同步调用 Go DLL 获取 QR 码（必须在主线程，因为后续创建 Texture2D/Sprite 需要主线程）
+                // 切换 QQ/微信扫码时会有短暂卡顿，这是正常的
                 var base64Png = _bridge.GetQRImage(loginType);
                 if (string.IsNullOrEmpty(base64Png))
                 {
@@ -60,7 +61,7 @@ namespace ChillPatcher.Module.QQMusic
                     return false;
                 }
 
-                // 将 base64 PNG 转换为 Texture2D + Sprite
+                // 在当前线程创建 Texture2D + Sprite（必须在主线程）
                 LoadQRCodeFromBase64(base64Png);
 
                 _currentState = new QQMusicBridge.QRLoginState { Code = 66, Msg = "等待扫码" };

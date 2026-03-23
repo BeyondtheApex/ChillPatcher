@@ -2,6 +2,12 @@ using HarmonyLib;
 using Bulbul;
 using KanKikuchi.AudioManager;
 using NestopiSystem;
+using ChillPatcher.ModuleSystem;
+using ChillPatcher.ModuleSystem.Registry;
+using ChillPatcher.SDK.Events;
+using ChillPatcher.SDK.Models;
+using System;
+using UnityEngine;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -43,6 +49,12 @@ namespace ChillPatcher.Patches.UIFramework
         public static float PendingSeekProgress { get; set; } = 0f;
         
         /// <summary>
+        /// 进度事件节流计时器（避免每帧发布）
+        /// </summary>
+        private static float _progressEventTimer = 0f;
+        private const float ProgressEventInterval = 1f; // 每秒发布一次
+
+        /// <summary>
         /// 拦截 UpdateFacility，修复流媒体播放时的状态判断
         /// </summary>
         [HarmonyPatch(typeof(FacilityMusic), nameof(FacilityMusic.UpdateFacility))]
@@ -79,7 +91,9 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 // 原始逻辑：有播放器，更新进度条
                 // MusicService_GetProgress_Patch 会处理流媒体的特殊情况（等待 Seek 等）
-                musicUI.UpdateProgressBar(musicService.GetCurrentMusicProgress());
+                var progress = musicService.GetCurrentMusicProgress();
+                musicUI.UpdateProgressBar(progress);
+                TryPublishProgressEvent(musicService, playingMusic, progress);
                 return false; // 跳过原始方法
             }
             
@@ -100,7 +114,9 @@ namespace ChillPatcher.Patches.UIFramework
                 // 有音乐正在播放（可能是流媒体），更新进度条
                 // 但不调用 PauseMusic()
                 // MusicService_GetProgress_Patch 会处理流媒体的特殊情况（等待 Seek 等）
-                musicUI.UpdateProgressBar(musicService.GetCurrentMusicProgress());
+                var progress = musicService.GetCurrentMusicProgress();
+                musicUI.UpdateProgressBar(progress);
+                TryPublishProgressEvent(musicService, playingMusic, progress);
                 Plugin.Log.LogDebug("[FacilityMusic_Patch] Music is playing via streaming, skipping pause");
                 return false; // 跳过原始方法
             }
@@ -135,6 +151,38 @@ namespace ChillPatcher.Patches.UIFramework
             }
             
             return true; // 执行原始方法
+        }
+
+        private static void TryPublishProgressEvent(MusicService musicService, GameAudioInfo playingMusic, float progress)
+        {
+            try
+            {
+                _progressEventTimer += Time.deltaTime;
+                if (_progressEventTimer < ProgressEventInterval) return;
+                _progressEventTimer = 0f;
+
+                var eventBus = EventBus.Instance;
+                if (eventBus == null) return;
+
+                MusicInfo musicInfo = null;
+                if (!string.IsNullOrEmpty(playingMusic?.UUID))
+                    musicInfo = MusicRegistry.Instance?.GetMusic(playingMusic.UUID);
+
+                float totalTime = playingMusic?.AudioClip != null ? playingMusic.AudioClip.length : 0f;
+                float currentTime = totalTime * progress;
+
+                eventBus.Publish(new PlayProgressEvent
+                {
+                    Music = musicInfo,
+                    CurrentTime = currentTime,
+                    TotalTime = totalTime,
+                    Progress = progress
+                });
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[FacilityMusic_Patch] PlayProgressEvent publish failed: {ex.Message}");
+            }
         }
     }
 }

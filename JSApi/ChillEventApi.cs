@@ -16,6 +16,7 @@ namespace ChillPatcher.JSApi
     /// - "playEnded"    — 播放结束
     /// - "playPaused"   — 播放暂停/恢复
     /// - "playProgress" — 播放进度变化
+    /// - "playSeek"     — Seek 跳转（含延迟 Seek 完成通知）
     /// - "queueChanged" — 播放队列变化
     /// - "tagRegistered"   — Tag 注册
     /// - "tagUnregistered" — Tag 注销
@@ -84,6 +85,16 @@ namespace ChillPatcher.JSApi
                     ["progress"] = e.Progress
                 }))));
 
+            _subscriptions.Add(eventBus.Subscribe<PlaySeekEvent>(e =>
+                Emit("playSeek", JSApiHelper.ToJson(new Dictionary<string, object>
+                {
+                    ["uuid"] = e.Music?.UUID ?? "",
+                    ["progress"] = e.Progress,
+                    ["targetTime"] = e.TargetTime,
+                    ["isPending"] = e.IsPending,
+                    ["isCompleted"] = e.IsCompleted
+                }))));
+
             // 订阅队列变化
             var queueMgr = PlayQueueManager.Instance;
             if (queueMgr != null)
@@ -97,6 +108,25 @@ namespace ChillPatcher.JSApi
                         ["artist"] = audio?.Credit ?? ""
                     }));
             }
+
+            // 订阅 IME Context 变化（替代 50ms 轮询）
+            UIToolkitInputDispatcher.OnImeContextChanged += (ctxJson, rectJson) =>
+            {
+                Emit("imeContextChanged", JSApiHelper.ToJson(new Dictionary<string, object>
+                {
+                    ["context"] = ctxJson,
+                    ["inputRect"] = rectJson,
+                }));
+            };
+
+            // 订阅输入模式变化（替代 200ms 轮询，主线程安全）
+            UIToolkitInputDispatcher.OnInputModeChanged += (isGameMode) =>
+            {
+                Emit("inputModeChanged", JSApiHelper.ToJson(new Dictionary<string, object>
+                {
+                    ["isGameMode"] = isGameMode,
+                }));
+            };
 
             _logger.LogInfo("[JSApi.Events] Event subscriptions initialized");
         }
