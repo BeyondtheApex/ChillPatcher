@@ -36,22 +36,23 @@ const App = () => {
     const [visible, setVisible] = useState(false)
     const [isGameMode, setIsGameMode] = useState(true) // true = 游戏模式, false = 桌面模式
 
-    // 从 API 获取初始状态并定期轮询
+    // 从 API 获取初始状态并订阅变化事件
     useEffect(() => {
         // 获取初始状态
         if (typeof chill !== 'undefined' && chill.ime) {
             setIsGameMode(chill.ime.getInputMode())
         }
 
-        // 定期轮询状态（F5 按下时会改变状态）
-        const interval = setInterval(() => {
-            if (typeof chill !== 'undefined' && chill.ime) {
-                const currentMode = chill.ime.getInputMode()
-                setIsGameMode(currentMode)
-            }
-        }, 200) // 每 200ms 检查一次
-
-        return () => clearInterval(interval)
+        // 订阅输入模式变化事件（替代轮询）
+        if (typeof chill !== 'undefined' && chill.events) {
+            const unsub = chill.events.on("inputModeChanged", (data: any) => {
+                try {
+                    const parsed = typeof data === 'string' ? JSON.parse(data) : data
+                    setIsGameMode(parsed.isGameMode)
+                } catch (e) {}
+            })
+            return unsub
+        }
     }, [])
 
     // 切换输入模式

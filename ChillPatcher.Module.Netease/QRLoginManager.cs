@@ -81,7 +81,7 @@ namespace ChillPatcher.Module.Netease
                 // 清理旧的二维码资源（每次重新开始时都清理）
                 CleanupQRCodeResources();
 
-                // 获取新的二维码
+                // 获取二维码（同步调用 Go DLL）
                 _currentState = _bridge.StartQRLogin();
                 if (_currentState == null || string.IsNullOrEmpty(_currentState.QRCodeURL))
                 {

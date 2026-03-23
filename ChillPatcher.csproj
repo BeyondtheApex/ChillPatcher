@@ -45,6 +45,10 @@
     <Compile Remove="ChillPatcher.Module.QQMusic\**" />
     <EmbeddedResource Remove="ChillPatcher.Module.QQMusic\**" />
     <None Remove="ChillPatcher.Module.QQMusic\**" />
+    <!-- Exclude Spotify module sources (built separately) -->
+    <Compile Remove="ChillPatcher.Module.Spotify\**" />
+    <EmbeddedResource Remove="ChillPatcher.Module.Spotify\**" />
+    <None Remove="ChillPatcher.Module.Spotify\**" />
     <!-- Exclude rime sources (librime, rime-schemas, etc.) -->
     <Compile Remove="rime\**" />
     <EmbeddedResource Remove="rime\**" />

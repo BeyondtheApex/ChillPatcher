@@ -44,6 +44,9 @@ namespace ChillPatcher.Module.Netease
         
         // 当前登录歌曲的 UUID（每次登录生成新的）
         private string _currentLoginSongUuid;
+        private IDisposable _playStartedSubscription;
+        private CancellationTokenSource _lyricApiRegistrationCts;
+        private Task _lyricApiRegistrationTask;
 
         // 配置项
         private ConfigEntry<string> _dataDir;
@@ -102,18 +105,8 @@ namespace ChillPatcher.Module.Netease
                 return;
             }
 
-            // 检查登录状态并验证 cookie
+            // 信任 cookie 文件，不做额外 API 验证（避免因验证接口问题误删有效 cookie）
             _isLoggedIn = _bridge.IsLoggedIn;
-            if (_isLoggedIn)
-            {
-                // 验证 cookie 是否过期（尝试获取用户信息）
-                var validateInfo = _bridge.GetUserInfo();
-                if (validateInfo == null)
-                {
-                    context.Logger.LogWarning($"[{DisplayName}] Cookie 已过期，清除并重新登录");
-                    _isLoggedIn = false;
-                }
-            }
             if (!_isLoggedIn)
             {
                 context.Logger.LogWarning($"[{DisplayName}] 未登录网易云音乐，显示二维码登录");
@@ -132,7 +125,10 @@ namespace ChillPatcher.Module.Netease
                 
                 // 注册登录歌曲
                 RegisterLoginSong("请使用网易云 APP 扫码");
-                
+
+                // 监听播放事件：切换到其他歌曲时取消 QR 等待
+                _playStartedSubscription = _context.EventBus.Subscribe<PlayStartedEvent>(OnPlayStartedBeforeLogin);
+
                 _isReady = true;
                 OnReadyStateChanged?.Invoke(_isReady);
                 
@@ -207,6 +203,13 @@ namespace ChillPatcher.Module.Netease
 
         public void OnUnload()
         {
+            _lyricApiRegistrationCts?.Cancel();
+            _lyricApiRegistrationCts?.Dispose();
+            _lyricApiRegistrationCts = null;
+            _lyricApiRegistrationTask = null;
+            _qrLoginManager?.CancelLogin();
+            _playStartedSubscription?.Dispose();
+            _playStartedSubscription = null;
             _musicList.Clear();
             _fmMusicList.Clear();
             _songInfoMap.Clear();
@@ -354,11 +357,14 @@ namespace ChillPatcher.Module.Netease
         /// </summary>
         private async Task<PlayableSource> ResolveLoginSongAsync(string uuid, CancellationToken cancellationToken)
         {
-            _context.Logger.LogInfo($"[{DisplayName}] 开始二维码登录流程...");
-
-            // 启动二维码登录
-            if (_qrLoginManager != null)
+            // 如果二维码已经就绪，直接返回
+            if (_qrLoginManager != null && _qrLoginManager.QRCodeSprite != null)
             {
+                _context.Logger.LogInfo($"[{DisplayName}] 二维码已就绪，直接返回");
+            }
+            else if (_qrLoginManager != null)
+            {
+                _context.Logger.LogInfo($"[{DisplayName}] 开始二维码登录流程...");
                 var success = await _qrLoginManager.StartLoginAsync();
                 if (success)
                 {
@@ -369,6 +375,9 @@ namespace ChillPatcher.Module.Netease
                     UpdateLoginSongStatus("获取二维码失败，请重试");
                 }
             }
+
+            // 强制刷新封面缓存
+            _context.EventBus.Publish(new CoverInvalidatedEvent { MusicUuid = uuid, Reason = "login song played" });
 
             // 返回静音流（使用传入的 uuid）
             var silentReader = new SilentPcmReader(44100, 2, LOGIN_SONG_DURATION);
@@ -590,7 +599,7 @@ namespace ChillPatcher.Module.Netease
             var album = new AlbumInfo
             {
                 AlbumId = NeteaseSongRegistry.FAVORITES_ALBUM_ID,
-                DisplayName = "网易云登录",
+                DisplayName = "网易云收藏",
                 Artist = "请扫码登录",
                 TagIds = new List<string> { NeteaseSongRegistry.TAG_FAVORITES },
                 ModuleId = ModuleId,
@@ -676,6 +685,10 @@ namespace ChillPatcher.Module.Netease
             _context.Logger.LogInfo($"[{DisplayName}] 二维码登录成功！");
             _isLoggedIn = true;
 
+            // 停止登录前的播放监听
+            _playStartedSubscription?.Dispose();
+            _playStartedSubscription = null;
+
             // 获取用户信息
             var userInfo = _bridge.GetUserInfo();
             if (userInfo != null)
@@ -735,6 +748,13 @@ namespace ChillPatcher.Module.Netease
             });
         }
 
+        private void OnPlayStartedBeforeLogin(PlayStartedEvent evt)
+        {
+            var uuid = evt?.Music?.UUID;
+            if (uuid == null || IsLoginSongUuid(uuid)) return;
+            _qrLoginManager?.CancelLogin();
+        }
+
         /// <summary>
         /// 二维码登录状态变化回调
         /// </summary>
@@ -767,92 +787,84 @@ namespace ChillPatcher.Module.Netease
 
         private void RegisterLyricApi()
         {
-            // UI instances initialize after modules, so retry until they become available.
-            // Register on ALL instances so chill.custom.get("lyric_netease") works everywhere.
-            Task.Run(async () =>
+            EnsureLyricApiRegistrationLoop();
+        }
+
+        private void EnsureLyricApiRegistrationLoop()
+        {
+            if (_lyricApiRegistrationTask != null && !_lyricApiRegistrationTask.IsCompleted) return;
+
+            _lyricApiRegistrationCts?.Cancel();
+            _lyricApiRegistrationCts?.Dispose();
+            _lyricApiRegistrationCts = new CancellationTokenSource();
+            _lyricApiRegistrationTask = Task.Run(() => RegisterLyricApiLoopAsync(_lyricApiRegistrationCts.Token));
+        }
+
+        private async Task RegisterLyricApiLoopAsync(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
             {
-                const int maxRetries = 30;
-                for (int attempt = 0; attempt < maxRetries; attempt++)
+                try
                 {
-                    try
+                    var bridgeType = Type.GetType("ChillPatcher.OneJSBridge, ChillPatcher");
+                    if (bridgeType == null)
                     {
-                        var bridgeType = Type.GetType("ChillPatcher.OneJSBridge, ChillPatcher");
-                        if (bridgeType == null)
-                        {
-                            _context.Logger.LogWarning($"[{DisplayName}] OneJSBridge type not found, skipping lyric API registration");
-                            return;
-                        }
-
-                        var instancesProp = bridgeType.GetProperty("Instances",
-                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                        var instances = instancesProp?.GetValue(null) as System.Collections.IEnumerable;
-                        if (instances == null)
-                        {
-                            await Task.Delay(1000);
-                            continue;
-                        }
-
-                        var lyricApiType = Type.GetType("ChillPatcher.JSApi.ChillLyricNeteaseApi, ChillPatcher");
-                        if (lyricApiType == null)
-                        {
-                            _context.Logger.LogWarning($"[{DisplayName}] ChillLyricNeteaseApi type not found, skipping lyric API registration");
-                            return;
-                        }
-
-                        int total = 0;
-                        int withJsApi = 0;
-                        var registeredIds = new List<string>();
-
-                        foreach (var kv in instances)
-                        {
-                            total++;
-                            var kvType = kv.GetType();
-                            var valueProp = kvType.GetProperty("Value");
-                            var uiInstance = valueProp?.GetValue(kv);
-                            if (uiInstance == null) continue;
-
-                            var jsApiProp = uiInstance.GetType().GetProperty("JSApi");
-                            var jsApi = jsApiProp?.GetValue(uiInstance);
-                            if (jsApi == null) continue;
-                            withJsApi++;
-
-                            // Check if already registered
-                            var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
-                            var existing = getMethod?.Invoke(jsApi, new object[] { "lyric_netease" });
-                            if (existing != null)
-                            {
-                                registeredIds.Add(kvType.GetProperty("Key")?.GetValue(kv) as string ?? "?");
-                                continue;
-                            }
-
-                            // Create ChillLyricNeteaseApi(bridge, songInfoMap, logger)
-                            var lyricApi = Activator.CreateInstance(lyricApiType, new object[] { _bridge, _songInfoMap, _context.Logger });
-                            var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
-                            registerMethod?.Invoke(jsApi, new object[] { "lyric_netease", lyricApi });
-
-                            var instanceId = kvType.GetProperty("Key")?.GetValue(kv) as string ?? "?";
-                            _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease) registered on instance: {instanceId}");
-                            registeredIds.Add(instanceId);
-                        }
-
-                        _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease): {registeredIds.Count}/{total} instances (jsApi ready: {withJsApi}), attempt {attempt + 1}");
-
-                        if (attempt >= 14 && registeredIds.Count > 0)
-                        {
-                            _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease) registration complete: {registeredIds.Count} instance(s)");
-                            return;
-                        }
-
-                        await Task.Delay(1000);
+                        await Task.Delay(1000, cancellationToken);
+                        continue;
                     }
-                    catch (Exception ex)
+
+                    var instancesProp = bridgeType.GetProperty("Instances",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    var instances = instancesProp?.GetValue(null) as System.Collections.IEnumerable;
+                    if (instances == null)
                     {
-                        _context.Logger.LogError($"[{DisplayName}] Failed to register lyric API (attempt {attempt + 1}): {ex.Message}");
-                        await Task.Delay(1000);
+                        await Task.Delay(1000, cancellationToken);
+                        continue;
+                    }
+
+                    int total = 0;
+                    int withJsApi = 0;
+                    int newlyRegistered = 0;
+
+                    foreach (var kv in instances)
+                    {
+                        total++;
+                        var kvType = kv.GetType();
+                        var valueProp = kvType.GetProperty("Value");
+                        var uiInstance = valueProp?.GetValue(kv);
+                        if (uiInstance == null) continue;
+
+                        var jsApiProp = uiInstance.GetType().GetProperty("JSApi");
+                        var jsApi = jsApiProp?.GetValue(uiInstance);
+                        if (jsApi == null) continue;
+                        withJsApi++;
+
+                        var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
+                        var existing = getMethod?.Invoke(jsApi, new object[] { "lyric_netease" });
+                        if (existing != null) continue;
+
+                        var lyricApi = new NeteaseLyricApi(_bridge, _songInfoMap, _context.Logger);
+                        var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
+                        registerMethod?.Invoke(jsApi, new object[] { "lyric_netease", lyricApi });
+                        newlyRegistered++;
+                    }
+
+                    if (newlyRegistered > 0)
+                    {
+                        _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease) registered on {withJsApi} ready instance(s), newly attached to {newlyRegistered} instance(s)");
                     }
                 }
-                _context.Logger.LogError($"[{DisplayName}] Lyric API (netease) registration failed after all retries");
-            });
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _context.Logger.LogError($"[{DisplayName}] Lyric API (netease) registration loop failed: {ex.Message}");
+                }
+
+                await Task.Delay(1000, cancellationToken);
+            }
         }
 
         private void SubscribeToFavoriteEvents()

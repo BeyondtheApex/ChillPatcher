@@ -138,6 +138,7 @@ namespace ChillPatcher
                 _log?.LogInfo("[PlayerLoop] First tick running!");
             }
 
+            ChillPatcher.Patches.SteamReconnectManager.Tick();
             OneJSBridge.Tick();
         }
     }
