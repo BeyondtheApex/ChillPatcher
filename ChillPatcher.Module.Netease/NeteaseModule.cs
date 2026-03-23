@@ -791,13 +791,6 @@ namespace ChillPatcher.Module.Netease
                             continue;
                         }
 
-                        var lyricApiType = Type.GetType("ChillPatcher.JSApi.ChillLyricNeteaseApi, ChillPatcher");
-                        if (lyricApiType == null)
-                        {
-                            _context.Logger.LogWarning($"[{DisplayName}] ChillLyricNeteaseApi type not found, skipping lyric API registration");
-                            return;
-                        }
-
                         int total = 0;
                         int withJsApi = 0;
                         var registeredIds = new List<string>();
@@ -824,8 +817,7 @@ namespace ChillPatcher.Module.Netease
                                 continue;
                             }
 
-                            // Create ChillLyricNeteaseApi(bridge, songInfoMap, logger)
-                            var lyricApi = Activator.CreateInstance(lyricApiType, new object[] { _bridge, _songInfoMap, _context.Logger });
+                            var lyricApi = new NeteaseLyricApi(_bridge, _songInfoMap, _context.Logger);
                             var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
                             registerMethod?.Invoke(jsApi, new object[] { "lyric_netease", lyricApi });
 

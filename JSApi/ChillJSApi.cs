@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using BepInEx.Logging;
+using ChillPatcher.SDK.Interfaces;
 
 namespace ChillPatcher.JSApi
 {

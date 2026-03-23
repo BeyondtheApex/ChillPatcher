@@ -12,6 +12,25 @@ declare var chill: {
         getInputMode(): boolean;
         setInputMode(gameMode: boolean): void;
     };
+    events: {
+        on(eventName: string, handler: (data: any) => void): () => void;
+        once(eventName: string, handler: (data: any) => void): () => void;
+        off(eventName: string, handler: (data: any) => void): void;
+    };
+    config: {
+        appGet(key: string): any;
+        appSet(key: string, value: any): void;
+        appGetOrCreate(key: string, defaultValue: any, description?: string): any;
+        getSections(): string;
+        getAll(section: string): string;
+        set(section: string, key: string, value: any): void;
+        save(): void;
+    };
+    modules: {
+        getAll(): string;
+        enable(moduleId: string): void;
+        disable(moduleId: string): void;
+    };
 };
 
 declare global {
