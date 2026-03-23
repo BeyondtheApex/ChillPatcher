@@ -3,6 +3,9 @@ using Bulbul;
 using System;
 using R3;
 using ChillPatcher.UIFramework.Audio;
+using ChillPatcher.ModuleSystem;
+using ChillPatcher.SDK.Events;
+using ChillPatcher.Patches.UIFramework;
 
 namespace ChillPatcher.Patches
 {
@@ -88,15 +91,16 @@ namespace ChillPatcher.Patches
         {
             try
             {
-                if (!PluginConfig.EnableSystemMediaTransport.Value)
-                    return;
-                    
-                SystemMediaTransportService.Instance.SetPlaybackStatus(false);
+                if (PluginConfig.EnableSystemMediaTransport.Value)
+                    SystemMediaTransportService.Instance.SetPlaybackStatus(false);
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"[SMTC] PauseMusic 异常: {ex.Message}");
             }
+
+            // 通知模块（如 Spotify Connect）暂停
+            PublishPlayPausedEvent(true);
         }
 
         /// <summary>
@@ -108,14 +112,40 @@ namespace ChillPatcher.Patches
         {
             try
             {
-                if (!PluginConfig.EnableSystemMediaTransport.Value)
-                    return;
-                    
-                SystemMediaTransportService.Instance.SetPlaybackStatus(true);
+                if (PluginConfig.EnableSystemMediaTransport.Value)
+                    SystemMediaTransportService.Instance.SetPlaybackStatus(true);
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"[SMTC] UnPauseMusic 异常: {ex.Message}");
+            }
+
+            // 通知模块（如 Spotify Connect）恢复播放
+            PublishPlayPausedEvent(false);
+        }
+
+        private static void PublishPlayPausedEvent(bool isPaused)
+        {
+            try
+            {
+                var eventBus = EventBus.Instance;
+                if (eventBus == null) return;
+
+                var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
+                var playingUuid = musicService?.PlayingMusic?.UUID;
+                var musicInfo = !string.IsNullOrEmpty(playingUuid)
+                    ? ModuleSystem.Registry.MusicRegistry.Instance?.GetMusic(playingUuid)
+                    : null;
+
+                eventBus.Publish(new PlayPausedEvent
+                {
+                    Music = musicInfo,
+                    IsPaused = isPaused
+                });
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"[SMTC] PublishPlayPausedEvent 异常: {ex.Message}");
             }
         }
     }
