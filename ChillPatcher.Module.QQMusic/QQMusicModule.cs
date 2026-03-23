@@ -113,20 +113,10 @@ namespace ChillPatcher.Module.QQMusic
             // Register lyric API for JS frontend
             RegisterLyricApi();
 
-            // Check login status and validate cookie
+            // Check login status — 信任 cookie 文件，不做额外 API 验证
+            // GetUserProfile 接口可能不支持 musickey 认证，会误判为过期并删除有效 cookie
+            // 如果 cookie 确实过期，后续 API 调用会自然失败
             _isLoggedIn = _bridge.IsLoggedIn;
-
-            if (_isLoggedIn)
-            {
-                // 验证 cookie 是否过期（尝试获取用户信息）
-                var userInfo = await Task.Run(() => _bridge.GetUserInfo());
-                if (userInfo == null)
-                {
-                    _logger?.LogWarning("[QQ音乐] Cookie 已过期，清除并重新登录");
-                    _bridge.Logout();
-                    _isLoggedIn = false;
-                }
-            }
 
             if (!_isLoggedIn)
             {
@@ -233,18 +223,20 @@ namespace ChillPatcher.Module.QQMusic
             // Handle login song - 触发二维码登录
             if (uuid == _currentLoginSongUuid || uuid == "qqmusic_login_song")
             {
-                if (_qrLoginManager != null && !_qrLoginManager.IsWaitingForLogin)
+                if (_qrLoginManager != null && (_qrLoginManager.QRCodeSprite == null || _qrLoginManager.LoginType != "qq"))
                 {
-                    _ = _qrLoginManager.StartLoginAsync("qq");
+                    await _qrLoginManager.StartLoginAsync("qq");
                 }
+                _context.EventBus.Publish(new CoverInvalidatedEvent { MusicUuid = uuid, Reason = "login song played" });
                 return CreateSilentSource(uuid);
             }
             if (uuid == _wxLoginSongUuid || uuid == "qqmusic_login_song_wx")
             {
-                if (_qrLoginManager != null && !_qrLoginManager.IsWaitingForLogin)
+                if (_qrLoginManager != null && (_qrLoginManager.QRCodeSprite == null || _qrLoginManager.LoginType != "wx"))
                 {
-                    _ = _qrLoginManager.StartLoginAsync("wx");
+                    await _qrLoginManager.StartLoginAsync("wx");
                 }
+                _context.EventBus.Publish(new CoverInvalidatedEvent { MusicUuid = uuid, Reason = "login song played" });
                 return CreateSilentSource(uuid);
             }
 
@@ -342,9 +334,13 @@ namespace ChillPatcher.Module.QQMusic
 
         public Task<(byte[] data, string mimeType)> GetMusicCoverBytesAsync(string uuid)
         {
-            if ((uuid == _currentLoginSongUuid || uuid == _wxLoginSongUuid) && _qrLoginManager?.QRCodeBytes != null)
+            if (_qrLoginManager?.QRCodeBytes != null)
             {
-                return Task.FromResult((_qrLoginManager.QRCodeBytes, "image/png"));
+                if ((uuid == _currentLoginSongUuid && _qrLoginManager.LoginType == "qq") ||
+                    (uuid == _wxLoginSongUuid && _qrLoginManager.LoginType == "wx"))
+                {
+                    return Task.FromResult((_qrLoginManager.QRCodeBytes, "image/png"));
+                }
             }
             return _coverLoader.GetMusicCoverBytesAsync(uuid);
         }
@@ -564,6 +560,10 @@ namespace ChillPatcher.Module.QQMusic
             _musicList.Add(wxLoginSong);
 
             _logger?.LogInfo("QQ音乐未登录，等待扫码登录");
+
+            // 预先获取 QQ 二维码，这样歌曲列表显示时封面就能看到二维码
+            _ = _qrLoginManager.StartLoginAsync("qq");
+
             return Task.CompletedTask;
         }
 
@@ -666,19 +666,31 @@ namespace ChillPatcher.Module.QQMusic
 
         private void OnQRCodeUpdated(Sprite newQRCode)
         {
-            // 清除封面缓存，让 UI 重新加载新的二维码
-            string loginSongUuid;
+            // 清除两首登录歌曲的封面缓存，让 UI 重新加载新的二维码
+            string qqUuid, wxUuid;
             lock (_stateLock)
             {
-                loginSongUuid = _currentLoginSongUuid;
+                qqUuid = _currentLoginSongUuid;
+                wxUuid = _wxLoginSongUuid;
             }
 
-            if (!string.IsNullOrEmpty(loginSongUuid))
+            // 清除 QQ 登录歌曲封面缓存
+            if (!string.IsNullOrEmpty(qqUuid))
             {
-                _coverLoader?.RemoveMusicCoverCache(loginSongUuid);
+                _coverLoader?.RemoveMusicCoverCache(qqUuid);
                 _context.EventBus.Publish(new CoverInvalidatedEvent
                 {
-                    MusicUuid = loginSongUuid,
+                    MusicUuid = qqUuid,
+                    Reason = "QR code updated"
+                });
+            }
+            // 清除微信登录歌曲封面缓存
+            if (!string.IsNullOrEmpty(wxUuid))
+            {
+                _coverLoader?.RemoveMusicCoverCache(wxUuid);
+                _context.EventBus.Publish(new CoverInvalidatedEvent
+                {
+                    MusicUuid = wxUuid,
                     Reason = "QR code updated"
                 });
             }
@@ -831,7 +843,7 @@ namespace ChillPatcher.Module.QQMusic
         private PlayableSource CreateSilentSource(string uuid)
         {
             // Return a silent PCM stream for login song
-            var reader = new SilentPcmReader(30f);
+            var reader = new SilentPcmReader(120f);
             return PlayableSource.FromPcmStream(uuid, reader, AudioFormat.Mp3);
         }
 

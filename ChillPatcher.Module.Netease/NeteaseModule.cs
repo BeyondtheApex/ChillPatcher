@@ -102,18 +102,8 @@ namespace ChillPatcher.Module.Netease
                 return;
             }
 
-            // 检查登录状态并验证 cookie
+            // 信任 cookie 文件，不做额外 API 验证（避免因验证接口问题误删有效 cookie）
             _isLoggedIn = _bridge.IsLoggedIn;
-            if (_isLoggedIn)
-            {
-                // 验证 cookie 是否过期（尝试获取用户信息）
-                var validateInfo = _bridge.GetUserInfo();
-                if (validateInfo == null)
-                {
-                    context.Logger.LogWarning($"[{DisplayName}] Cookie 已过期，清除并重新登录");
-                    _isLoggedIn = false;
-                }
-            }
             if (!_isLoggedIn)
             {
                 context.Logger.LogWarning($"[{DisplayName}] 未登录网易云音乐，显示二维码登录");
@@ -132,7 +122,10 @@ namespace ChillPatcher.Module.Netease
                 
                 // 注册登录歌曲
                 RegisterLoginSong("请使用网易云 APP 扫码");
-                
+
+                // 预先获取二维码，这样歌曲列表显示时封面就能看到二维码
+                _ = _qrLoginManager.StartLoginAsync();
+
                 _isReady = true;
                 OnReadyStateChanged?.Invoke(_isReady);
                 
@@ -354,11 +347,14 @@ namespace ChillPatcher.Module.Netease
         /// </summary>
         private async Task<PlayableSource> ResolveLoginSongAsync(string uuid, CancellationToken cancellationToken)
         {
-            _context.Logger.LogInfo($"[{DisplayName}] 开始二维码登录流程...");
-
-            // 启动二维码登录
-            if (_qrLoginManager != null)
+            // 如果二维码已经就绪，直接返回
+            if (_qrLoginManager != null && _qrLoginManager.QRCodeSprite != null)
             {
+                _context.Logger.LogInfo($"[{DisplayName}] 二维码已就绪，直接返回");
+            }
+            else if (_qrLoginManager != null)
+            {
+                _context.Logger.LogInfo($"[{DisplayName}] 开始二维码登录流程...");
                 var success = await _qrLoginManager.StartLoginAsync();
                 if (success)
                 {
@@ -369,6 +365,9 @@ namespace ChillPatcher.Module.Netease
                     UpdateLoginSongStatus("获取二维码失败，请重试");
                 }
             }
+
+            // 强制刷新封面缓存
+            _context.EventBus.Publish(new CoverInvalidatedEvent { MusicUuid = uuid, Reason = "login song played" });
 
             // 返回静音流（使用传入的 uuid）
             var silentReader = new SilentPcmReader(44100, 2, LOGIN_SONG_DURATION);
@@ -590,7 +589,7 @@ namespace ChillPatcher.Module.Netease
             var album = new AlbumInfo
             {
                 AlbumId = NeteaseSongRegistry.FAVORITES_ALBUM_ID,
-                DisplayName = "网易云登录",
+                DisplayName = "网易云收藏",
                 Artist = "请扫码登录",
                 TagIds = new List<string> { NeteaseSongRegistry.TAG_FAVORITES },
                 ModuleId = ModuleId,
