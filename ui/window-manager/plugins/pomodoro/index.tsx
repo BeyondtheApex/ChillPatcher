@@ -530,7 +530,7 @@ const PomodoroCompact = () => {
   const timerText = remain > 0 ? hhmmss(remain) : hhmmss(total)
   const compactClockText = formatClockDisplay(clock, settings.showSeconds)
   const cbtn = (t: string, on: () => void, bg = "rgba(125,211,252,0.15)", color = ACCENT) => (
-    <div onPointerDown={on} style={{ fontSize: 11, color, backgroundColor: bg, borderRadius: 6, paddingLeft: 8, paddingRight: 8, paddingTop: 4, paddingBottom: 4 }}>{t}</div>
+    <div onPointerDown={on} style={{ fontSize: 11, color, backgroundColor: bg, borderRadius: 6, paddingLeft: 6, paddingRight: 6, paddingTop: 4, paddingBottom: 4, unityTextAlign: "MiddleCenter", flexShrink: 1 }}>{t}</div>
   )
 
   return (
@@ -557,15 +557,15 @@ const PomodoroCompact = () => {
 
       <div style={{ flexGrow: 1 }} />
 
-      <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween" }}>
+      <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceEvenly" }}>
         {controlState === "idle" && cbtn("Reset", applyIdlePresetReset, "rgba(125,211,252,0.15)", ACCENT)}
         {controlState === "idle" && cbtn("Start", () => chill?.game?.startPomodoro?.(), "rgba(52,211,153,0.16)", OK)}
-        {controlState === "running" && cbtn("Pause ", () => chill?.game?.togglePomodoroPause?.())}
-        {controlState === "running" && cbtn(" Skip ", () => chill?.game?.skipPomodoroPhase?.())}
-        {controlState === "running" && cbtn(" Stop ", () => chill?.game?.resetPomodoro?.(), "rgba(245,158,11,0.16)", WARN)}
+        {controlState === "running" && cbtn("Pause", () => chill?.game?.togglePomodoroPause?.())}
+        {controlState === "running" && cbtn("Skip", () => chill?.game?.skipPomodoroPhase?.())}
+        {controlState === "running" && cbtn("Stop", () => chill?.game?.resetPomodoro?.(), "rgba(245,158,11,0.16)", WARN)}
         {controlState === "paused" && cbtn("Resume", () => chill?.game?.togglePomodoroPause?.(), "rgba(52,211,153,0.16)", OK)}
-        {controlState === "paused" && cbtn(" Skip ", () => chill?.game?.skipPomodoroPhase?.())}
-        {controlState === "paused" && cbtn(" Stop ", () => chill?.game?.resetPomodoro?.(), "rgba(245,158,11,0.16)", WARN)}
+        {controlState === "paused" && cbtn("Skip", () => chill?.game?.skipPomodoroPhase?.())}
+        {controlState === "paused" && cbtn("Stop", () => chill?.game?.resetPomodoro?.(), "rgba(245,158,11,0.16)", WARN)}
       </div>
     </div>
   )

@@ -440,13 +440,6 @@ namespace ChillPatcher.Module.QQMusic
                             continue;
                         }
 
-                        var lyricApiType = Type.GetType("ChillPatcher.JSApi.ChillLyricApi, ChillPatcher");
-                        if (lyricApiType == null)
-                        {
-                            _logger?.LogWarning("ChillLyricApi type not found, skipping lyric API registration");
-                            return;
-                        }
-
                         // Count total instances and how many have JSApi ready
                         int total = 0;
                         int withJsApi = 0;
@@ -473,7 +466,7 @@ namespace ChillPatcher.Module.QQMusic
                                 continue;
                             }
 
-                            var lyricApi = Activator.CreateInstance(lyricApiType, new object[] { _bridge, _logger });
+                            var lyricApi = new QQMusicLyricApi(_bridge, _logger);
                             var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
                             registerMethod?.Invoke(jsApi, new object[] { "lyric", lyricApi });
 

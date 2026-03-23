@@ -42,7 +42,7 @@ set NpmLicenseDir=%LicenseDir%\npm
 
 REM 清理旧的发布目录
 echo.
-echo [0/8] Cleaning release directory...
+echo [0/10] Cleaning release directory...
 if exist "%ReleaseDir%" rmdir /s /q "%ReleaseDir%"
 mkdir "%PluginDir%"
 mkdir "%ModulesDir%"
@@ -51,7 +51,7 @@ mkdir "%PluginDir%\SDK"
 
 REM ========== Step 1: Build SDK ==========
 echo.
-echo [1/8] Building ChillPatcher.SDK...
+echo [1/10] Building ChillPatcher.SDK...
 dotnet build ChillPatcher.SDK\ChillPatcher.SDK.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: SDK build failed!
@@ -60,7 +60,7 @@ if %errorlevel% neq 0 (
 
 REM ========== Step 2: Build Main Plugin ==========
 echo.
-echo [2/8] Building ChillPatcher (Main Plugin)...
+echo [2/10] Building ChillPatcher (Main Plugin)...
 dotnet build ChillPatcher.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: Main plugin build failed!
@@ -69,7 +69,7 @@ if %errorlevel% neq 0 (
 
 REM ========== Step 3: Build Modules ==========
 echo.
-echo [3/8] Building ChillPatcher.Module.LocalFolder...
+echo [3/10] Building ChillPatcher.Module.LocalFolder...
 dotnet build ChillPatcher.Module.LocalFolder\ChillPatcher.Module.LocalFolder.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: LocalFolder module build failed!
@@ -77,7 +77,7 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [4/8] Building ChillPatcher.Module.Netease...
+echo [4/10] Building ChillPatcher.Module.Netease...
 dotnet build ChillPatcher.Module.Netease\ChillPatcher.Module.Netease.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: Netease module build failed!
@@ -85,7 +85,7 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [5/8] Building ChillPatcher.Module.Bilibili...
+echo [5/10] Building ChillPatcher.Module.Bilibili...
 dotnet build ChillPatcher.Module.Bilibili\ChillPatcher.Module.Bilibili.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: Bilibili module build failed!
@@ -93,16 +93,24 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [6/9] Building ChillPatcher.Module.QQMusic...
+echo [6/10] Building ChillPatcher.Module.QQMusic...
 dotnet build ChillPatcher.Module.QQMusic\ChillPatcher.Module.QQMusic.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: QQMusic module build failed!
     exit /b 1
 )
 
+echo.
+echo [6.5/10] Building ChillPatcher.Module.Spotify...
+dotnet build ChillPatcher.Module.Spotify\ChillPatcher.Module.Spotify.csproj -c %Configuration% --no-restore
+if %errorlevel% neq 0 (
+    echo ERROR: Spotify module build failed!
+    exit /b 1
+)
+
 REM ========== Step 7: Build OneJS ==========
 echo.
-echo [7/9] Building ChillPatcher.OneJS...
+echo [7/10] Building ChillPatcher.OneJS...
 dotnet build ChillPatcher.OneJS\ChillPatcher.OneJS.csproj -c %Configuration% --no-restore
 if %errorlevel% neq 0 (
     echo ERROR: OneJS build failed!
@@ -111,7 +119,7 @@ if %errorlevel% neq 0 (
 
 REM ========== Step 7.5: Build OneJS UI (esbuild) ==========
 echo.
-echo [7.5/9] Building OneJS UI (Preact + esbuild)...
+echo [7.5/10] Building OneJS UI (Preact + esbuild)...
 
 REM -- ui/default --
 cd ui\default
@@ -156,7 +164,7 @@ cd ..\..
 REM ========== Step 7: Build Native Plugins (Only in full mode) ==========
 if %FULL_BUILD% equ 1 (
 echo.
-echo [8/9] Building Native Plugins...
+echo [8/10] Building Native Plugins...
 
 if exist "NativePlugins\AudioDecoder\build.bat" (
     echo   - Building Audio Decoder...
@@ -209,12 +217,12 @@ if exist "qqmusic_bridge\build.bat" (
 )
 ) else (
 echo.
-echo [8/9] Native Plugins: SKIPPED ^(quick build^)
+echo [8/10] Native Plugins: SKIPPED ^(quick build^)
 )
 
 REM ========== Step 8: Copy files to release directory ==========
 echo.
-echo [9/9] Copying files to release directory...
+echo [9/10] Copying files to release directory...
 
 REM Main Plugin
 echo   - Main Plugin files...
@@ -324,6 +332,14 @@ if exist "qqmusic_bridge\ChillQQMusic.dll" (
     copy /y "qqmusic_bridge\ChillQQMusic.dll" "%QQMusicModuleDir%\native\x64\" >nul
 )
 
+REM Spotify 模块 (ID: com.chillpatcher.spotify)
+echo   - Spotify Module...
+set "SpotifyModuleDir=%ModulesDir%\com.chillpatcher.spotify"
+if not exist "%SpotifyModuleDir%" mkdir "%SpotifyModuleDir%"
+copy /y "ChillPatcher.Module.Spotify\bin\ChillPatcher.Module.Spotify.dll" "%SpotifyModuleDir%\" >nul
+REM Spotify 模块的依赖
+copy /y "ChillPatcher.Module.Spotify\bin\Newtonsoft.Json.dll" "%SpotifyModuleDir%\" >nul
+
 REM RIME data directory (rime-data/shared 和 rime-data/user)
 echo   - RIME data...
 set RimeDataDir=%PluginDir%\rime-data
@@ -396,6 +412,7 @@ if %errorlevel% equ 0 (
     dotnet-project-licenses -i ChillPatcher.Module.Netease\ChillPatcher.Module.Netease.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
     dotnet-project-licenses -i ChillPatcher.Module.Bilibili\ChillPatcher.Module.Bilibili.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
     dotnet-project-licenses -i ChillPatcher.Module.QQMusic\ChillPatcher.Module.QQMusic.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
+    dotnet-project-licenses -i ChillPatcher.Module.Spotify\ChillPatcher.Module.Spotify.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
     dotnet-project-licenses -i ChillPatcher.OneJS\ChillPatcher.OneJS.csproj -e -f "%NugetLicenseDir%" -u -c --packages-filter build\nuget-packages-filter.json -l Error >nul 2>&1
     REM Remove JSON summary (only keep license text files)
     if exist "%NugetLicenseDir%\licenses.json" del /q "%NugetLicenseDir%\licenses.json"
@@ -463,7 +480,10 @@ echo       ^|   +-- native\
 echo       ^|       +-- x64\
 echo       ^|           +-- SQLite.Interop.dll
 echo       +-- Netease\
-echo           +-- ChillPatcher.Module.Netease.dll
+echo       ^|   +-- ChillPatcher.Module.Netease.dll
+echo       ^|   +-- Newtonsoft.Json.dll
+echo       +-- Spotify\
+echo           +-- ChillPatcher.Module.Spotify.dll
 echo           +-- Newtonsoft.Json.dll
 echo.
 echo To deploy: Copy ChillPatcher folder to

@@ -1,4 +1,4 @@
-namespace ChillPatcher.JSApi
+namespace ChillPatcher.SDK.Interfaces
 {
     /// <summary>
     /// 自定义 JS API 接口

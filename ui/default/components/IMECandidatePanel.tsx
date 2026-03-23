@@ -70,30 +70,37 @@ export const IMECandidatePanel = () => {
     const [cfg, setCfg] = useState(getIMEConfig)
 
     useEffect(() => {
-        const poll = () => {
-            try {
-                const ctxJson = chill.ime.getContext() as string
-                const ctx = parse<IMEContext>(ctxJson)
-                setContext(ctx)
-
-                if (ctx) {
-                    const rectJson = chill.ime.getInputRect() as string
-                    setInputRect(parse<InputRect>(rectJson))
-                }
-            } catch (e) {
-                // Silently ignore poll errors
+        // 获取初始状态
+        try {
+            const ctxJson = chill.ime.getContext() as string
+            const ctx = parse<IMEContext>(ctxJson)
+            setContext(ctx)
+            if (ctx) {
+                setInputRect(parse<InputRect>(chill.ime.getInputRect() as string))
             }
-        }
+        } catch (e) {}
 
-        // Poll at ~20fps for responsive feel
-        const timer = setInterval(poll, 50)
-        poll()
+        // 订阅 IME Context 变化事件（替代 50ms 轮询）
+        let unsub: (() => void) | undefined
+        if (typeof chill !== 'undefined' && chill.events) {
+            unsub = chill.events.on("imeContextChanged", (data: any) => {
+                try {
+                    const parsed = typeof data === 'string' ? JSON.parse(data) : data
+                    const ctx = typeof parsed.context === 'string' ? parse<IMEContext>(parsed.context) : parsed.context
+                    setContext(ctx)
+                    if (ctx) {
+                        const rect = typeof parsed.inputRect === 'string' ? parse<InputRect>(parsed.inputRect) : parsed.inputRect
+                        setInputRect(rect)
+                    }
+                } catch (e) {}
+            })
+        }
 
         // Refresh config every 2s
         const cfgTimer = setInterval(() => {
             try { setCfg(getIMEConfig()) } catch (e) {}
         }, 2000)
-        return () => { clearInterval(timer); clearInterval(cfgTimer) }
+        return () => { unsub?.(); clearInterval(cfgTimer) }
     }, [])
 
     // Don't render if no active IME context or no preedit

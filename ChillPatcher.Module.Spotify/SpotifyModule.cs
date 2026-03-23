@@ -52,6 +52,9 @@ namespace ChillPatcher.Module.Spotify
         private string _clientId;
         private string _pluginPath;
 
+        // JSApi（供 OneJS 前端访问）
+        private SpotifyJSApi _jsApi;
+
         // 封面缓存
         private readonly Dictionary<string, Sprite> _spriteCache = new Dictionary<string, Sprite>();
 
@@ -64,6 +67,9 @@ namespace ChillPatcher.Module.Spotify
 
         // Client ID 未配置标志
         private bool _needsClientId;
+
+        // 是否启用 IMGUI 窗口（可与 JSApi 并存，默认关闭）
+        private bool _enableImgui;
 
         // 当前选定的设备
         private string _activeDeviceId;
@@ -111,6 +117,11 @@ namespace ChillPatcher.Module.Spotify
                 _registry = new SpotifySongRegistry(_context, ModuleId);
                 _registry.RegisterLoginSong(">>> 点击播放以配置 Spotify <<<");
                 OnReadyStateChanged?.Invoke(false);
+
+                // 初始化 JSApi 并注册
+                InitJSApi();
+                _jsApi.loginStatus = ">>> 点击播放以配置 Spotify <<<";
+                _ = RegisterJSApiToInstancesAsync();
                 return;
             }
 
@@ -120,33 +131,59 @@ namespace ChillPatcher.Module.Spotify
 
         private void ShowConfigWindow()
         {
-            _logger.LogInfo("Showing Spotify Client ID configuration window");
-            SpotifyConfigWindow.Show(
-                onSubmit: async (clientId) =>
-                {
-                    _logger.LogInfo("Client ID submitted via config window");
-                    _clientId = clientId;
-                    _needsClientId = false;
-                    SaveClientId(clientId);
+            _logger.LogInfo("Showing Spotify config via JSApi");
+            if (_jsApi != null)
+            {
+                _jsApi.showConfigPanel = true;
+                _jsApi.loginStatus = "请在 Spotify 插件面板中输入 Client ID";
+            }
+            _registry.UpdateLoginStatus("请在 Spotify 插件面板中输入 Client ID");
 
-                    _registry.UpdateLoginStatus("Client ID 已保存，正在初始化...");
+            if (_enableImgui)
+            {
+                _logger.LogInfo("Showing Spotify Client ID configuration window");
+                SpotifyConfigWindow.Show(
+                    onSubmit: async (clientId) =>
+                    {
+                        _logger.LogInfo("Client ID submitted via config window");
+                        _clientId = clientId;
+                        _needsClientId = false;
+                        SaveClientId(clientId);
 
-                    // 初始化 Bridge 和 OAuthManager（不走 InitWithClientIdAsync 以避免注册新登录歌曲）
-                    _bridge = new SpotifyBridge(_clientId, _dataPath, _logger);
-                    InitOAuthManager();
-                    SubscribePlaybackEvents();
+                        _registry.UpdateLoginStatus("Client ID 已保存，正在初始化...");
 
-                    // 直接启动 OAuth 登录流程
-                    _logger.LogInfo("Starting OAuth flow after config...");
-                    _ = Task.Run(() => _oauthManager.StartLoginAsync());
-                },
-                onCancel: () =>
-                {
-                    _logger.LogInfo("Spotify config window cancelled");
-                    _isLoggingIn = false;
-                    _registry.UpdateLoginStatus(">>> 点击播放以配置 Spotify <<<");
-                }
-            );
+                        // 同步 JSApi 状态
+                        if (_jsApi != null)
+                        {
+                            _jsApi.needsClientId = false;
+                            _jsApi.showConfigPanel = false;
+                            _jsApi.loginStatus = "Client ID 已保存，正在初始化...";
+                        }
+
+                        // 初始化 Bridge 和 OAuthManager（不走 InitWithClientIdAsync 以避免注册新登录歌曲）
+                        _bridge = new SpotifyBridge(_clientId, _dataPath, _logger);
+                        InitOAuthManager();
+                        SubscribePlaybackEvents();
+
+                        // 直接启动 OAuth 登录流程
+                        _logger.LogInfo("Starting OAuth flow after config...");
+                        _ = Task.Run(() => _oauthManager.StartLoginAsync());
+                    },
+                    onCancel: () =>
+                    {
+                        _logger.LogInfo("Spotify config window cancelled");
+                        _isLoggingIn = false;
+                        _registry.UpdateLoginStatus(">>> 点击播放以配置 Spotify <<<");
+
+                        // 同步 JSApi 状态
+                        if (_jsApi != null)
+                        {
+                            _jsApi.showConfigPanel = false;
+                            _jsApi.loginStatus = ">>> 点击播放以配置 Spotify <<<";
+                        }
+                    }
+                );
+            }
         }
 
         private void SaveClientId(string clientId)
@@ -170,6 +207,8 @@ namespace ChillPatcher.Module.Spotify
 
             InitOAuthManager();
             SubscribePlaybackEvents();
+            InitJSApi();
+            _ = RegisterJSApiToInstancesAsync();
 
             // 加载已保存的 session
             _bridge.LoadSession();
@@ -189,6 +228,13 @@ namespace ChillPatcher.Module.Spotify
 
                         _logger.LogInfo($"Spotify logged in as {user.DisplayName} ({user.Product})");
 
+                        if (_jsApi != null)
+                        {
+                            _jsApi.isLoggedIn = true;
+                            _jsApi.userName = user.DisplayName ?? "";
+                            _jsApi.accountType = user.Product ?? "";
+                        }
+
                         if (!_bridge.Session.IsPremium)
                             _logger.LogWarning("Spotify Free account - playback control requires Premium");
 
@@ -204,6 +250,7 @@ namespace ChillPatcher.Module.Spotify
 
             // 未登录，显示登录歌曲
             _registry.RegisterLoginSong("点击播放以登录 Spotify");
+            if (_jsApi != null) _jsApi.loginStatus = "点击播放以登录 Spotify";
             OnReadyStateChanged?.Invoke(false);
         }
 
@@ -239,6 +286,13 @@ namespace ChillPatcher.Module.Spotify
                 "Redirect URI 设置为: fullstop://callback"
             ).Value;
 
+            _enableImgui = configFile.Bind(
+                $"Module:{ModuleId}",
+                "EnableIMGUI",
+                false,
+                "启用 IMGUI 窗口（配置/设备选择），可与 OneJS 前端并存"
+            ).Value;
+
             configFile.Save();
         }
 
@@ -254,6 +308,7 @@ namespace ChillPatcher.Module.Spotify
             {
                 _logger.LogInfo($"OAuth status: {status}");
                 _registry.UpdateLoginStatus(status);
+                if (_jsApi != null) _jsApi.loginStatus = status;
             };
 
             _oauthManager.OnTokenReceived += async (tokenResponse) =>
@@ -272,6 +327,13 @@ namespace ChillPatcher.Module.Spotify
                     _bridge.Session.Product = user.Product;
                     _bridge.SaveSession();
                     _logger.LogInfo($"Logged in as {user.DisplayName} ({user.Product})");
+
+                    if (_jsApi != null)
+                    {
+                        _jsApi.isLoggedIn = true;
+                        _jsApi.userName = user.DisplayName ?? "";
+                        _jsApi.accountType = user.Product ?? "";
+                    }
                 }
 
                 // 移除登录歌曲，加载歌单
@@ -280,6 +342,7 @@ namespace ChillPatcher.Module.Spotify
                 await LoadPlaylistsAsync();
 
                 _isLoggingIn = false;
+                if (_jsApi != null) _jsApi.isLoggingIn = false;
                 OnReadyStateChanged?.Invoke(true);
             };
 
@@ -288,6 +351,11 @@ namespace ChillPatcher.Module.Spotify
                 _logger.LogError($"Login failed: {error}");
                 _registry.UpdateLoginStatus($"登录失败: {error}，再次播放以重试");
                 _isLoggingIn = false;
+                if (_jsApi != null)
+                {
+                    _jsApi.isLoggingIn = false;
+                    _jsApi.loginStatus = $"登录失败: {error}";
+                }
                 BringGameToForeground();
             };
         }
@@ -394,6 +462,12 @@ namespace ChillPatcher.Module.Spotify
 
                 // 注册/更新设备选择歌曲
                 _registry.RegisterDeviceSelector(_activeDeviceName);
+
+                if (_jsApi != null)
+                {
+                    _jsApi.activeDeviceId = _activeDeviceId ?? "";
+                    _jsApi.activeDeviceName = _activeDeviceName ?? "";
+                }
             }
             catch (Exception ex)
             {
@@ -404,10 +478,37 @@ namespace ChillPatcher.Module.Spotify
 
         private void ShowDeviceSelector()
         {
-            _ = ShowDeviceSelectorAsync();
+            _ = ShowDeviceSelectorViaJSApiAsync();
+
+            if (_enableImgui)
+            {
+                _ = ShowDeviceSelectorViaImguiAsync();
+            }
         }
 
-        private async Task ShowDeviceSelectorAsync()
+        private async Task ShowDeviceSelectorViaJSApiAsync()
+        {
+            if (_jsApi == null) return;
+
+            _jsApi.isLoadingDevices = true;
+            var devices = await _bridge.GetAvailableDevicesAsync();
+            _logger.LogInfo($"[Spotify] Showing device selector via JSApi, {devices.Count} devices");
+
+            _jsApi.devicesJson = JsonConvert.SerializeObject(devices.Select(d => new
+            {
+                id = d.Id,
+                name = d.Name,
+                type = d.Type,
+                isActive = d.IsActive,
+                volume = d.VolumePercent
+            }));
+            _jsApi.activeDeviceId = _activeDeviceId ?? "";
+            _jsApi.activeDeviceName = _activeDeviceName ?? "";
+            _jsApi.isLoadingDevices = false;
+            _jsApi.showDevicePanel = true;
+        }
+
+        private async Task ShowDeviceSelectorViaImguiAsync()
         {
             var devices = await _bridge.GetAvailableDevicesAsync();
             _logger.LogInfo($"[Spotify] Showing device selector, {devices.Count} devices");
@@ -428,10 +529,21 @@ namespace ChillPatcher.Module.Spotify
                         _logger.LogWarning($"[Spotify] Failed to transfer to: {device.Name}");
 
                     _registry.UpdateDeviceStatus(device.Name);
+
+                    if (_jsApi != null)
+                    {
+                        _jsApi.activeDeviceId = device.Id;
+                        _jsApi.activeDeviceName = device.Name;
+                        _jsApi.showDevicePanel = false;
+                    }
                 },
                 onCancel: () =>
                 {
                     _logger.LogInfo("[Spotify] Device selection cancelled");
+                    if (_jsApi != null)
+                    {
+                        _jsApi.showDevicePanel = false;
+                    }
                 }
             );
         }
@@ -729,6 +841,188 @@ namespace ChillPatcher.Module.Spotify
         {
             var music = _context.MusicRegistry.GetMusic(uuid);
             return GetTrackMeta(music);
+        }
+
+        // =====================================================================
+        // JSApi 注册
+        // =====================================================================
+
+        private void InitJSApi()
+        {
+            _jsApi = new SpotifyJSApi(_logger);
+            _jsApi.needsClientId = _needsClientId;
+            _jsApi.isLoggedIn = _bridge?.IsLoggedIn ?? false;
+            _jsApi.loginStatus = "";
+
+            // Client ID 提交回调
+            _jsApi.OnClientIdSubmitted += async (clientId) =>
+            {
+                _logger.LogInfo("Client ID submitted via JSApi");
+                _clientId = clientId;
+                _needsClientId = false;
+                _jsApi.needsClientId = false;
+                SaveClientId(clientId);
+
+                _registry.UpdateLoginStatus("Client ID 已保存，正在初始化...");
+                _jsApi.loginStatus = "Client ID 已保存，正在初始化...";
+
+                _bridge = new SpotifyBridge(_clientId, _dataPath, _logger);
+                InitOAuthManager();
+                SubscribePlaybackEvents();
+
+                _logger.LogInfo("Starting OAuth flow after JSApi config...");
+                _ = Task.Run(() => _oauthManager.StartLoginAsync());
+            };
+
+            _jsApi.OnConfigCancelled += () =>
+            {
+                _isLoggingIn = false;
+                _registry.UpdateLoginStatus(">>> 点击播放以配置 Spotify <<<");
+                _jsApi.loginStatus = ">>> 点击播放以配置 Spotify <<<";
+            };
+
+            // 设备选择回调
+            _jsApi.OnDeviceSelected += async (deviceId) =>
+            {
+                var devices = await _bridge.GetAvailableDevicesAsync();
+                var device = devices.Find(d => d.Id == deviceId);
+                if (device == null) return;
+
+                _logger.LogInfo($"[Spotify] User selected device via JSApi: {device.Name}");
+                _activeDeviceId = device.Id;
+                _activeDeviceName = device.Name;
+                _jsApi.activeDeviceId = device.Id;
+                _jsApi.activeDeviceName = device.Name;
+
+                var success = await _bridge.TransferPlaybackAsync(device.Id, play: false);
+                if (success)
+                    _logger.LogInfo($"[Spotify] Transferred playback to: {device.Name}");
+                else
+                    _logger.LogWarning($"[Spotify] Failed to transfer to: {device.Name}");
+
+                _registry.UpdateDeviceStatus(device.Name);
+            };
+
+            _jsApi.OnDevicePanelCancelled += () =>
+            {
+                _logger.LogInfo("[Spotify] Device selection cancelled via JSApi");
+            };
+
+            // 登录/登出回调
+            _jsApi.OnLoginRequested += () =>
+            {
+                if (_oauthManager == null || _isLoggingIn) return;
+                _isLoggingIn = true;
+                _ = Task.Run(() => _oauthManager.StartLoginAsync());
+            };
+
+            _jsApi.OnLogoutRequested += () =>
+            {
+                _bridge?.ClearSession();
+                _jsApi.isLoggedIn = false;
+                _jsApi.userName = "";
+                _jsApi.accountType = "";
+                _registry.UnregisterAll();
+                _registry.RegisterLoginSong("点击播放以登录 Spotify");
+                OnReadyStateChanged?.Invoke(false);
+            };
+
+            // 刷新设备回调
+            _jsApi.OnRefreshDevicesRequested += async () =>
+            {
+                if (_bridge == null || !_bridge.IsLoggedIn) return;
+                await RefreshDevicesViaJSApiAsync();
+            };
+        }
+
+        private async Task RefreshDevicesViaJSApiAsync()
+        {
+            if (_jsApi == null) return;
+            _jsApi.isLoadingDevices = true;
+            try
+            {
+                var devices = await _bridge.GetAvailableDevicesAsync();
+                _jsApi.devicesJson = JsonConvert.SerializeObject(devices.Select(d => new
+                {
+                    id = d.Id,
+                    name = d.Name,
+                    type = d.Type,
+                    isActive = d.IsActive,
+                    volume = d.VolumePercent
+                }));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"[Spotify] Refresh devices failed: {ex.Message}");
+            }
+            finally
+            {
+                _jsApi.isLoadingDevices = false;
+            }
+        }
+
+        /// <summary>
+        /// 注册 JSApi 到所有 OneJS UI 实例（与 NeteaseModule 使用相同模式）。
+        /// </summary>
+        private async Task RegisterJSApiToInstancesAsync()
+        {
+            if (_jsApi == null) return;
+
+            for (int attempt = 0; attempt < 15; attempt++)
+            {
+                try
+                {
+                    var bridgeType = Type.GetType("ChillPatcher.OneJSBridge, ChillPatcher");
+                    if (bridgeType == null)
+                    {
+                        await Task.Delay(1000);
+                        continue;
+                    }
+
+                    var instancesProp = bridgeType.GetProperty("Instances",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    var instances = instancesProp?.GetValue(null) as System.Collections.IEnumerable;
+                    if (instances == null)
+                    {
+                        await Task.Delay(1000);
+                        continue;
+                    }
+
+                    int registered = 0;
+                    foreach (var kv in instances)
+                    {
+                        var kvType = kv.GetType();
+                        var valueProp = kvType.GetProperty("Value");
+                        var uiInstance = valueProp?.GetValue(kv);
+                        if (uiInstance == null) continue;
+
+                        var jsApiProp = uiInstance.GetType().GetProperty("JSApi");
+                        var jsApi = jsApiProp?.GetValue(uiInstance);
+                        if (jsApi == null) continue;
+
+                        // 检查是否已注册
+                        var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
+                        var existing = getMethod?.Invoke(jsApi, new object[] { "spotify" });
+                        if (existing != null) { registered++; continue; }
+
+                        var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
+                        registerMethod?.Invoke(jsApi, new object[] { "spotify", _jsApi });
+                        registered++;
+                    }
+
+                    if (registered > 0)
+                    {
+                        _logger.LogInfo($"[Spotify] JSApi registered on {registered} UI instance(s)");
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"[Spotify] JSApi registration attempt {attempt + 1} failed: {ex.Message}");
+                }
+
+                await Task.Delay(1000);
+            }
         }
 
         /// <summary>

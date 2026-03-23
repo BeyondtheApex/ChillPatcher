@@ -98,6 +98,25 @@ namespace ChillPatcher.JSApi
                     }));
             }
 
+            // 订阅 IME Context 变化（替代 50ms 轮询）
+            UIToolkitInputDispatcher.OnImeContextChanged += (ctxJson, rectJson) =>
+            {
+                Emit("imeContextChanged", JSApiHelper.ToJson(new Dictionary<string, object>
+                {
+                    ["context"] = ctxJson,
+                    ["inputRect"] = rectJson,
+                }));
+            };
+
+            // 订阅输入模式变化（替代 200ms 轮询，主线程安全）
+            UIToolkitInputDispatcher.OnInputModeChanged += (isGameMode) =>
+            {
+                Emit("inputModeChanged", JSApiHelper.ToJson(new Dictionary<string, object>
+                {
+                    ["isGameMode"] = isGameMode,
+                }));
+            };
+
             _logger.LogInfo("[JSApi.Events] Event subscriptions initialized");
         }
 
