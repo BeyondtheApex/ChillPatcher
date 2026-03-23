@@ -25,7 +25,7 @@ namespace ChillPatcher.Module.Bilibili
             {
                 UUID = UUID_LOGIN,
                 Title = "B站扫码登录",
-                Artist = "请使用哔哩哔哩 APP 扫码",
+                Artist = "请使用B站扫码登录",
                 AlbumId = ALBUM_LOGIN,
                 TagId = TAG_LOGIN,
                 SourceType = MusicSourceType.Stream,
