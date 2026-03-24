@@ -28,6 +28,7 @@ namespace ChillPatcher
                     "concrt140.dll",
                     "ChillFlacDecoder.dll",
                     "ChillSmtcBridge.dll",
+                    "ChillEsbuildBridge.dll",  // Go esbuild bridge
                     "puerts.dll"          // <-- PuerTS V8 引擎 (OneJS)
                 };
 

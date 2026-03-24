@@ -478,6 +478,27 @@ namespace ChillPatcher.UIFramework.Music
 
         #region IDisposable
 
+        /// <summary>
+        /// 场景重载前重置状态，允许重新初始化
+        /// </summary>
+        public void ResetForSceneReload()
+        {
+            if (_scrollRect != null)
+            {
+                _scrollRect.onValueChanged.RemoveListener(OnScrollValueChanged);
+            }
+
+            _buttonPool?.Clear();
+            _activeItems?.Clear();
+            UnsubscribeFromDataSource();
+
+            _scrollRect = null;
+            _contentTransform = null;
+            _viewportTransform = null;
+            _dataSource = null;
+            _isInitialized = false;
+        }
+
         public void Dispose()
         {
             if (_scrollRect != null)

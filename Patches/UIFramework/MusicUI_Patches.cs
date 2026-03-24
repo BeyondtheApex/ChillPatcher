@@ -27,6 +27,21 @@ namespace ChillPatcher.Patches.UIFramework
     {
         private static bool _componentsInitialized = false;
         private static bool _mixedComponentsInitialized = false;
+
+        /// <summary>
+        /// 场景重载前重置静态状态（存档切换用）
+        /// </summary>
+        public static void ResetForSceneReload()
+        {
+            _componentsInitialized = false;
+            _mixedComponentsInitialized = false;
+            IsShowingQueue = false;
+            
+            // 重置 MixedVirtualScrollController 的初始化状态
+            var musicManager = ChillUIFramework.Music as MusicUIManager;
+            musicManager?.MixedVirtualScroll?.ResetForSceneReload();
+            (musicManager?.VirtualScroll as VirtualScrollController)?.ResetForSceneReload();
+        }
         
         /// <summary>
         /// 是否正在显示队列模式（禁用虚拟滚动，使用原版列表但自定义数据）
@@ -103,6 +118,12 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         musicManager.MixedVirtualScroll.BufferCount = UIFrameworkConfig.VirtualScrollBufferSize.Value;
                         musicManager.MixedVirtualScroll.InitializeComponents(scrollRect, playListButtonsPrefab, playListButtonsParent.transform);
+                        
+                        // 先取消旧订阅，防止场景重载后重复订阅
+                        musicManager.MixedVirtualScroll.OnAlbumToggle -= OnAlbumToggleHandler;
+                        MusicService_Excluded_Patch.OnSongExcludedChanged -= OnSongExcludedChangedHandler;
+                        MusicService_Favorite_Patch.OnSongFavoriteChanged -= OnSongFavoriteChangedHandler;
+                        musicManager.MixedVirtualScroll.OnScrollToBottom -= OnScrollToBottomHandler;
                         
                         // 订阅专辑切换事件
                         musicManager.MixedVirtualScroll.OnAlbumToggle += OnAlbumToggleHandler;

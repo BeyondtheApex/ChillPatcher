@@ -215,6 +215,16 @@ if exist "qqmusic_bridge\build.bat" (
     )
     cd ..
 )
+
+if exist "NativePlugins\EsbuildBridge\build.bat" (
+    echo   - Building Esbuild Bridge ^(Go DLL^)...
+    cd NativePlugins\EsbuildBridge
+    call build.bat >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo WARNING: Esbuild bridge build failed, using existing if available
+    )
+    cd ..\..
+)
 ) else (
 echo.
 echo [8/10] Native Plugins: SKIPPED ^(quick build^)
@@ -260,6 +270,7 @@ echo   - Native plugins...
 if exist "bin\native\x64\ChillAudioDecoder.dll" copy /y "bin\native\x64\ChillAudioDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillFlacDecoder.dll" copy /y "bin\native\x64\ChillFlacDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillSmtcBridge.dll" copy /y "bin\native\x64\ChillSmtcBridge.dll" "%NativeDir%\x64\" >nul
+if exist "bin\native\x64\ChillEsbuildBridge.dll" copy /y "bin\native\x64\ChillEsbuildBridge.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillNetease.dll" copy /y "bin\native\x64\ChillNetease.dll" "%NativeDir%\x64\" >nul
 if exist "ChillPatcher.OneJS\native\x64\puerts.dll" copy /y "ChillPatcher.OneJS\native\x64\puerts.dll" "%NativeDir%\x64\" >nul
 
@@ -401,6 +412,9 @@ if exist "NativePlugins\minimp4\LICENSE" copy /y "NativePlugins\minimp4\LICENSE"
 if exist "ChillPatcher.OneJS\LICENSE-OneJS.txt" copy /y "ChillPatcher.OneJS\LICENSE-OneJS.txt" "%LicenseDir%\OneJS-LICENSE.txt" >nul
 if exist "ChillPatcher.OneJS\LICENSE-Puerts.txt" copy /y "ChillPatcher.OneJS\LICENSE-Puerts.txt" "%LicenseDir%\Puerts-LICENSE.txt" >nul
 if exist "ChillPatcher.Module.Netease\LICENSE-go-musicfox.txt" copy /y "ChillPatcher.Module.Netease\LICENSE-go-musicfox.txt" "%LicenseDir%\go-musicfox-LICENSE.txt" >nul
+if exist "NativePlugins\EsbuildBridge\LICENSE-esbuild.txt" copy /y "NativePlugins\EsbuildBridge\LICENSE-esbuild.txt" "%LicenseDir%\esbuild-LICENSE.txt" >nul
+if exist "NativePlugins\EsbuildBridge\LICENSE-golang.txt" copy /y "NativePlugins\EsbuildBridge\LICENSE-golang.txt" "%LicenseDir%\golang-LICENSE.txt" >nul
+if exist "NativePlugins\EsbuildBridge\LICENSE-golang-x-sys.txt" copy /y "NativePlugins\EsbuildBridge\LICENSE-golang-x-sys.txt" "%LicenseDir%\golang-x-sys-LICENSE.txt" >nul
 
 REM NuGet package licenses (via dotnet-project-licenses)
 echo   - NuGet package licenses...
@@ -425,19 +439,36 @@ if %errorlevel% equ 0 (
 REM npm package licenses (via license-checker)
 echo   - npm package licenses...
 if not exist "%NpmLicenseDir%" mkdir "%NpmLicenseDir%"
-cd ui\default
-where npx >nul 2>&1
-if %errorlevel% equ 0 (
-    call npx license-checker --production --json --out "%NpmLicenseDir%\licenses.json" >nul 2>&1
-    call npx license-checker --production --csv --out "%NpmLicenseDir%\licenses.csv" >nul 2>&1
-    echo     npm licenses collected.
-) else (
-    echo     WARNING: npx not found, skipping npm license collection.
+
+REM 启用延迟变量扩展，以便在循环中正确处理变量
+setlocal enabledelayedexpansion
+
+REM 遍历 ui 目录下的所有子文件夹
+for /d %%D in (ui\*) do (
+    set "projectName=%%~nxD"
+    echo     正在处理项目: !projectName!
+    
+    pushd "%%D"
+    
+    REM 检查是否存在 package.json，确保是一个 npm 项目
+    if exist "package.json" (
+        where npx >nul 2>&1
+        if !errorlevel! equ 0 (
+            REM 为每个项目生成独立的授权文件，避免覆盖
+            call npx license-checker --production --json --out "%NpmLicenseDir%\licenses_!projectName!.json" >nul 2>&1
+            call npx license-checker --production --csv --out "%NpmLicenseDir%\licenses_!projectName!.csv" >nul 2>&1
+            echo       !projectName! licenses collected.
+        ) else (
+            echo       WARNING: npx not found in !projectName!, skipping.
+        )
+    ) else (
+        echo       SKIPPED: No package.json found in !projectName!.
+    )
+    
+    popd
 )
-cd ..\..
-) else (
-echo   - Licenses: SKIPPED ^(quick build, reusing existing^)
-)
+
+endlocal
 
 echo.
 echo ========================================

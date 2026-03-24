@@ -290,6 +290,23 @@ const PomodoroPanel = () => {
 
       const payload = evt.payload || {}
 
+      // 场景重载后重新应用 UI 修改
+      if (evt.name === "sceneReloaded") {
+        offsetTargetOrigin = null  // 重置缓存的原始位置（旧节点已销毁）
+        const s = loadPomodoroSettings()
+        setSettings(s)
+        syncDefaultPomodoroUI(s.hideDefaultPomodoroUI)
+        // 重新拉取状态
+        const freshPm = json(chill?.game?.getPomodoroState?.(), pm)
+        const freshPg = json(chill?.game?.getPlayerProgress?.(), pg)
+        const freshClock = readClock(clock)
+        setPm(freshPm)
+        syncPhaseFromState(freshPm, false)
+        setPg(freshPg)
+        setClock(freshClock)
+        return
+      }
+
       if (evt.name === "gameClockTick" || evt.name === "gameDateChanged") {
         setClock(payload)
         return
@@ -490,6 +507,18 @@ const PomodoroCompact = () => {
       const evt = json(e, null)
       if (!evt) return
       const payload = evt.payload || {}
+
+      // 场景重载后重新应用 UI 修改
+      if (evt.name === "sceneReloaded") {
+        offsetTargetOrigin = null
+        const s = loadPomodoroSettings()
+        setSettings(s)
+        syncDefaultPomodoroUI(s.hideDefaultPomodoroUI)
+        const freshState = json(chill?.game?.getPomodoroState?.(), state)
+        syncCompactState(freshState, false)
+        setClock(json(chill?.game?.getGameClock?.(), clock))
+        return
+      }
 
       if (evt.name === "gameClockTick" || evt.name === "gameDateChanged") {
         setClock(payload)

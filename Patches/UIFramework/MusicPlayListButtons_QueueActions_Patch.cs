@@ -38,6 +38,17 @@ namespace ChillPatcher.Patches.UIFramework
         private static bool _prefabEventSubscribed = false;
         
         /// <summary>
+        /// 场景重载前重置状态，确保新 MusicService 能被正确订阅
+        /// </summary>
+        public static void ResetForSceneReload()
+        {
+            _musicChangeSubscription?.Dispose();
+            _musicChangeSubscription = null;
+            _activeInstances.Clear();
+            Plugin.Log.LogInfo("[QueueActions] Reset for scene reload");
+        }
+        
+        /// <summary>
         /// 确保订阅了 Prefab 缓存事件
         /// </summary>
         private static void EnsurePrefabEventSubscription()

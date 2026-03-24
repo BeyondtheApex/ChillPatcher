@@ -1871,6 +1871,20 @@ var PomodoroPanel = () => {
       if (!evt)
         return;
       const payload = evt.payload || {};
+      if (evt.name === "sceneReloaded") {
+        offsetTargetOrigin = null;
+        const s = loadPomodoroSettings();
+        setSettings(s);
+        syncDefaultPomodoroUI(s.hideDefaultPomodoroUI);
+        const freshPm = json(chill?.game?.getPomodoroState?.(), pm);
+        const freshPg = json(chill?.game?.getPlayerProgress?.(), pg);
+        const freshClock = readClock(clock);
+        setPm(freshPm);
+        syncPhaseFromState(freshPm, false);
+        setPg(freshPg);
+        setClock(freshClock);
+        return;
+      }
       if (evt.name === "gameClockTick" || evt.name === "gameDateChanged") {
         setClock(payload);
         return;
@@ -2023,6 +2037,16 @@ var PomodoroCompact = () => {
       if (!evt)
         return;
       const payload = evt.payload || {};
+      if (evt.name === "sceneReloaded") {
+        offsetTargetOrigin = null;
+        const s = loadPomodoroSettings();
+        setSettings(s);
+        syncDefaultPomodoroUI(s.hideDefaultPomodoroUI);
+        const freshState = json(chill?.game?.getPomodoroState?.(), state);
+        syncCompactState(freshState, false);
+        setClock(json(chill?.game?.getGameClock?.(), clock));
+        return;
+      }
       if (evt.name === "gameClockTick" || evt.name === "gameDateChanged") {
         setClock(payload);
         return;

@@ -17,7 +17,7 @@ namespace ChillPatcher.Integration
     public sealed class GameApiService : IDisposable
     {
         private readonly ManualLogSource _logger;
-        private readonly CompositeDisposable _subscriptions = new CompositeDisposable();
+        private CompositeDisposable _subscriptions = new CompositeDisposable();
         private bool _eventsSubscribed;
 
         public event Action<string, object> OnGameEvent;
@@ -376,6 +376,17 @@ namespace ChillPatcher.Integration
         public void Dispose()
         {
             _subscriptions.Dispose();
+            _eventsSubscribed = false;
+        }
+
+        /// <summary>
+        /// 清理旧的事件订阅，允许下次 ensureEventBridge() 重新绑定。
+        /// 用于场景重载（存档切换）后重置状态。
+        /// </summary>
+        public void ResetEventBridge()
+        {
+            _subscriptions.Dispose();
+            _subscriptions = new CompositeDisposable();
             _eventsSubscribed = false;
         }
 

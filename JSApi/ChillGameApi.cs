@@ -19,10 +19,61 @@ namespace ChillPatcher.JSApi
 
         private bool _isSubscribed;
 
+        /// <summary>环境（场景/音效/背景）API</summary>
+        public ChillEnvironmentApi environment { get; }
+        /// <summary>装饰物 API</summary>
+        public ChillDecorationApi decoration { get; }
+        /// <summary>模式/活动 API</summary>
+        public ChillModeApi mode { get; }
+        /// <summary>角色行为 API</summary>
+        public ChillCharacterApi character { get; }
+        /// <summary>字幕/台词 API</summary>
+        public ChillSubtitleApi subtitle { get; }
+        /// <summary>语音 API</summary>
+        public ChillVoiceApi voice { get; }
+
         public ChillGameApi(ManualLogSource logger)
         {
             _logger = logger;
             _service = new GameApiService(logger);
+
+            environment = new ChillEnvironmentApi(logger);
+            decoration = new ChillDecorationApi(logger);
+            mode = new ChillModeApi(logger);
+            character = new ChillCharacterApi(logger);
+            subtitle = new ChillSubtitleApi(logger);
+            voice = new ChillVoiceApi(logger);
+        }
+
+        /// <summary>
+        /// 场景重载前调用：清理旧事件订阅，以便下次 ensureEventBridge() 重新绑定新服务。
+        /// </summary>
+        internal void ResetForSceneReload()
+        {
+            _logger?.LogInfo($"[JSApi.Game] ResetForSceneReload: handlers={_handlers.Count}, isSubscribed={_isSubscribed}");
+            if (_isSubscribed)
+            {
+                _service.OnGameEvent -= OnServiceEvent;
+                _isSubscribed = false;
+            }
+            _service.ResetEventBridge();
+            // 不清空 _handlers — OneJS 引擎存活，JS 端注册的回调仍然有效
+            // 场景重载后通过 NotifySceneReloaded() 重新绑定并推送事件
+        }
+
+        /// <summary>
+        /// 场景重载完成后调用：重新建立事件桥并通知 JS 侧场景已重载。
+        /// JS 插件可以监听 "sceneReloaded" 事件来重新应用 UI 修改。
+        /// </summary>
+        internal void NotifySceneReloaded()
+        {
+            _logger?.LogInfo($"[JSApi.Game] NotifySceneReloaded: handlers={_handlers.Count}, isSubscribed={_isSubscribed}");
+            var bridgeOk = ensureEventBridge();
+            // 通知所有 JS 监听器场景已重载
+            OnServiceEvent("sceneReloaded", new Dictionary<string, object>
+            {
+                ["reason"] = "profileSwitch"
+            });
         }
 
         /// <summary>
@@ -168,7 +219,12 @@ namespace ChillPatcher.JSApi
 
         private void OnServiceEvent(string eventName, object payload)
         {
-            if (_handlers.Count == 0) return;
+            if (_handlers.Count == 0)
+            {
+                if (eventName == "sceneReloaded")
+                    _logger?.LogWarning("[JSApi.Game] sceneReloaded: _handlers is empty, no JS listeners!");
+                return;
+            }
 
             var packet = JSApiHelper.ToJson(new Dictionary<string, object>
             {
@@ -176,6 +232,7 @@ namespace ChillPatcher.JSApi
                 ["payload"] = payload
             });
 
+            var dispatched = 0;
             foreach (var kv in _handlers)
             {
                 var cfg = kv.Value;
@@ -184,12 +241,15 @@ namespace ChillPatcher.JSApi
                 try
                 {
                     cfg.Handler(packet);
+                    dispatched++;
                 }
                 catch (Exception ex)
                 {
                     _logger?.LogWarning($"[JSApi.Game] event handler error ({eventName}): {ex.Message}");
                 }
             }
+            if (eventName == "sceneReloaded")
+                _logger?.LogInfo($"[JSApi.Game] sceneReloaded dispatched to {dispatched}/{_handlers.Count} handlers");
         }
 
         private sealed class GameEventHandler
@@ -208,6 +268,13 @@ namespace ChillPatcher.JSApi
 
             _handlers.Clear();
             _service.Dispose();
+
+            environment?.Dispose();
+            decoration?.Dispose();
+            mode?.Dispose();
+            character?.Dispose();
+            subtitle?.Dispose();
+            voice?.Dispose();
         }
     }
 }

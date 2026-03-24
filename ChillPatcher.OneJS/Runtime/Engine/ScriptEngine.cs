@@ -60,6 +60,12 @@ namespace OneJS {
         Action<string, object> _addToGlobal;
         #endregion
 
+        /// <summary>
+        /// 为 true 时，Update() 跳过 JsEnv.Tick()，由外部（如 UIInstance.Tick()）统一驱动。
+        /// 避免同一帧 JS 引擎被 Tick 两次。
+        /// </summary>
+        public bool externalTick;
+
         #region Lifecycles
         void Awake() {
             _uiDocument = GetComponent<UIDocument>();
@@ -77,6 +83,7 @@ namespace OneJS {
         }
 
         void Update() {
+            if (externalTick) return;
             try {
                 _jsEnv.Tick();
                 _tick++;

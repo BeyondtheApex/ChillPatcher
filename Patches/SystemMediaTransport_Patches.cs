@@ -15,6 +15,9 @@ namespace ChillPatcher.Patches
     [HarmonyPatch]
     public class SystemMediaTransport_Patches
     {
+        private static IDisposable _playMusicSubscription;
+        private static IDisposable _changeMusicSubscription;
+
         /// <summary>
         /// 在 FacilityMusic.Setup 之后初始化 SMTC 服务
         /// </summary>
@@ -36,9 +39,13 @@ namespace ChillPatcher.Patches
                     __instance
                 );
 
+                // 释放旧订阅，防止场景重载后泄漏
+                _playMusicSubscription?.Dispose();
+                _changeMusicSubscription?.Dispose();
+
                 // 订阅播放事件
-                __instance.MusicService.onPlayMusic.Subscribe(OnPlayMusic);
-                __instance.MusicService.onChangeMusic.Subscribe(OnChangeMusic);
+                _playMusicSubscription = __instance.MusicService.onPlayMusic.Subscribe(OnPlayMusic);
+                _changeMusicSubscription = __instance.MusicService.onChangeMusic.Subscribe(OnChangeMusic);
                 
                 Plugin.Log.LogInfo("[SMTC] 服务已初始化并绑定到游戏");
             }

@@ -249,6 +249,9 @@ namespace ChillPatcher.UIFramework.Music
             if (index < 0 || index >= _items.Count)
                 return;
 
+            if (_viewportTransform == null)
+                return;
+
             float targetPosition = _itemPositions[index];
             float viewportHeight = _viewportTransform.rect.height;
             float contentHeight = _totalHeight;
@@ -307,6 +310,9 @@ namespace ChillPatcher.UIFramework.Music
         {
             if (_items.Count == 0)
                 return (0, 0);
+
+            if (_viewportTransform == null)
+                return (0, Mathf.Min(_items.Count, 10));
 
             float viewportHeight = _viewportTransform.rect.height;
             
@@ -548,6 +554,28 @@ namespace ChillPatcher.UIFramework.Music
         }
 
         #endregion
+
+        /// <summary>
+        /// 场景重载前重置状态，允许重新初始化
+        /// </summary>
+        public void ResetForSceneReload()
+        {
+            if (_scrollRect != null)
+            {
+                _scrollRect.onValueChanged.RemoveListener(OnScrollValueChanged);
+            }
+
+            ClearAllActiveItems();
+
+            _scrollRect = null;
+            _contentTransform = null;
+            _viewportTransform = null;
+            _isInitialized = false;
+            _visibleStartIndex = 0;
+            _visibleEndIndex = 0;
+            _lastScrollPosition = 0f;
+            _isPaused = false;
+        }
 
         #region IDisposable
 

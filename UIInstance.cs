@@ -189,6 +189,9 @@ namespace ChillPatcher
             _runner.liveReload = false;
             _runner.standalone = false;
 
+            // 由 UIInstance.Tick() 统一驱动 JsEnv，禁用 ScriptEngine.Update() 中的重复调用
+            _engine.externalTick = true;
+
             // 根据 enabled 状态激活
             _rootGo.SetActive(_enabled);
 
@@ -218,13 +221,7 @@ namespace ChillPatcher
                 _log.LogError($"[UIInstance:{Id}] JsEnv.Tick error: {ex}");
             }
 
-            // 非交互实例：JsEnv.Tick() 后立即刷新（Preact 在 Tick 中创建新元素）
-            if (!Interactive)
-            {
-                var rootVE = _engine.GetComponent<UIDocument>()?.rootVisualElement;
-                if (rootVE != null)
-                    SetAllPickingModeIgnore(rootVE);
-            }
+            // 非交互实例的 pickingMode 通过 AttachToPanelEvent 事件驱动设置，无需每帧遍历
 
             // 热重载
             var now = Time.realtimeSinceStartup;
@@ -328,9 +325,15 @@ namespace ChillPatcher
 
             if (!Interactive)
             {
-                // root=Ignore 不足以阻止子元素交互，
-                // 需要递归设所有子元素为 Ignore
+                // 初始化时一次性设置已有元素
                 SetAllPickingModeIgnore(rootVE);
+
+                // 事件驱动：新元素添加到 panel 时自动设置 PickingMode.Ignore
+                rootVE.RegisterCallback<AttachToPanelEvent>(evt =>
+                {
+                    if (evt.target is VisualElement ve)
+                        ve.pickingMode = PickingMode.Ignore;
+                }, TrickleDown.TrickleDown);
             }
 
             // 加载字体：优先使用实例本地字体，其次全局配置

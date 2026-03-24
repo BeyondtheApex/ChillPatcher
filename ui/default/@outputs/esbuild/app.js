@@ -2825,6 +2825,503 @@ var IMESettingsPanel = () => {
   }));
 };
 
+// components/GameApiTestPanel.tsx
+var ITEMS_PER_PAGE3 = 8;
+var GameApiTestPanel = () => {
+  const [expanded, setExpanded] = useState({});
+  const [result, setResult] = useState(null);
+  const [resultKey, setResultKey] = useState("");
+  const [page, setPage] = useState(0);
+  const toggle = (id) => {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const run = (label, action) => {
+    try {
+      const r = action();
+      const text = typeof r === "string" ? r : JSON.stringify(r, null, 2);
+      setResult(text ?? "void");
+      setResultKey(label);
+    } catch (e) {
+      setResult(`Error: ${e}`);
+      setResultKey(label);
+    }
+  };
+  const tree = buildTree();
+  const flat = flattenVisible(tree, expanded);
+  const totalPages = Math.max(1, Math.ceil(flat.length / ITEMS_PER_PAGE3));
+  const pageItems = flat.slice(page * ITEMS_PER_PAGE3, (page + 1) * ITEMS_PER_PAGE3);
+  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, result !== null && /* @__PURE__ */ createElement("div", { style: {
+    backgroundColor: theme.bgCard,
+    borderRadius: theme.radius,
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingLeft: 12,
+    paddingRight: 12,
+    marginBottom: 8,
+    maxHeight: 120,
+    overflow: "Hidden"
+  } }, /* @__PURE__ */ createElement("div", { style: {
+    flexDirection: "Row",
+    display: "Flex",
+    justifyContent: "SpaceBetween",
+    alignItems: "Center",
+    marginBottom: 4
+  } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.accent } }, resultKey), /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: { fontSize: 11, color: theme.textMuted },
+      onClick: () => setResult(null)
+    },
+    "\u2715"
+  )), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.text, whiteSpace: "Normal" } }, result.length > 500 ? result.substring(0, 500) + "..." : result)), pageItems.map((item, i) => /* @__PURE__ */ createElement(
+    TreeRow,
+    {
+      key: `row-${i}`,
+      item,
+      expanded: !!expanded[item.node.id],
+      onToggle: () => toggle(item.node.id),
+      onRun: (label, action) => run(label, action)
+    }
+  )), flat.length === 0 && /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: theme.textMuted, padding: 12 } }, "\uFF08\u65E0\u53EF\u7528 API\uFF09"), /* @__PURE__ */ createElement(Pagination, { page, totalPages, onPageChange: setPage }));
+};
+function flattenVisible(nodes, expanded, depth = 0) {
+  const out = [];
+  for (const n of nodes) {
+    const hasChildren = !!(n.children && n.children.length > 0);
+    out.push({ node: n, depth, hasChildren });
+    if (hasChildren && expanded[n.id]) {
+      out.push(...flattenVisible(n.children, expanded, depth + 1));
+    }
+  }
+  return out;
+}
+var TreeRow = ({ item, expanded, onToggle, onRun }) => {
+  const { node, depth, hasChildren } = item;
+  const indent = depth * 16;
+  const isLeaf = !hasChildren;
+  return /* @__PURE__ */ createElement("div", { style: {
+    flexDirection: "Row",
+    display: "Flex",
+    alignItems: "Center",
+    backgroundColor: theme.bgCard,
+    borderRadius: 4,
+    paddingLeft: 10 + indent,
+    paddingRight: 10,
+    marginBottom: 3,
+    height: 36
+  } }, /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: {
+        width: 20,
+        fontSize: 12,
+        color: hasChildren ? theme.accent : theme.textMuted,
+        flexShrink: 0
+      },
+      onClick: hasChildren ? onToggle : void 0
+    },
+    hasChildren ? expanded ? "\u25BC" : "\u25B6" : "\u2022"
+  ), /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: {
+        flexGrow: 1,
+        fontSize: 12,
+        color: hasChildren ? theme.accent : theme.text,
+        overflow: "Hidden"
+      },
+      onClick: hasChildren ? onToggle : void 0
+    },
+    node.label
+  ), isLeaf && node.action && /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: {
+        paddingTop: 2,
+        paddingBottom: 2,
+        paddingLeft: 8,
+        paddingRight: 8,
+        borderRadius: 4,
+        fontSize: 11,
+        backgroundColor: theme.accentDark,
+        color: theme.textBright,
+        flexShrink: 0
+      },
+      onClick: () => onRun(node.label, node.action)
+    },
+    "\u6267\u884C"
+  ), node.toggle && /* @__PURE__ */ createElement(ToggleButton, { toggle: node.toggle, onResult: (l, a) => onRun(l, a), label: node.label }));
+};
+var ToggleButton = ({ toggle, onResult, label }) => {
+  const [val, setVal] = useState(() => {
+    try {
+      return toggle.get();
+    } catch {
+      return false;
+    }
+  });
+  return /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: {
+        paddingTop: 2,
+        paddingBottom: 2,
+        paddingLeft: 8,
+        paddingRight: 8,
+        borderRadius: 4,
+        fontSize: 11,
+        backgroundColor: val ? theme.success : theme.danger,
+        color: theme.textBright,
+        flexShrink: 0
+      },
+      onClick: () => {
+        const next = !val;
+        try {
+          toggle.set(next);
+          setVal(next);
+        } catch (e) {
+          onResult(label, () => `Error: ${e}`);
+        }
+      }
+    },
+    val ? "ON" : "OFF"
+  );
+};
+function buildTree() {
+  const g = typeof chill !== "undefined" ? chill.game : null;
+  if (!g)
+    return [{ id: "unavailable", label: "chill.game \u4E0D\u53EF\u7528" }];
+  return [
+    buildEnvironmentTree(g.environment),
+    buildDecorationTree(g.decoration),
+    buildModeTree(g.mode),
+    buildCharacterTree(g.character),
+    buildSubtitleTree(g.subtitle),
+    buildVoiceTree(g.voice),
+    buildPomodoroTree(g)
+  ];
+}
+function buildEnvironmentTree(api) {
+  if (!api)
+    return { id: "env", label: "\u73AF\u5883 (unavailable)" };
+  return {
+    id: "env",
+    label: "\u{1F304} \u73AF\u5883 (Environment)",
+    children: [
+      { id: "env.locked", label: "locked (\u53EA\u8BFB, C#\u63A7\u5236)", action: () => String(api.locked) },
+      { id: "env.getEnvironments", label: "getEnvironments()", action: () => api.getEnvironments() },
+      { id: "env.getAutoTime", label: "getAutoTimeSettings()", action: () => api.getAutoTimeSettings() },
+      { id: "env.presetIndex", label: "getCurrentPresetIndex()", action: () => api.getCurrentPresetIndex() },
+      { id: "env.loadPreset0", label: "loadPreset(0)", action: () => api.loadPreset(0) },
+      { id: "env.loadPreset1", label: "loadPreset(1)", action: () => api.loadPreset(1) },
+      { id: "env.loadPreset2", label: "loadPreset(2)", action: () => api.loadPreset(2) }
+    ]
+  };
+}
+function buildDecorationTree(api) {
+  if (!api)
+    return { id: "deco", label: "\u88C5\u9970 (unavailable)" };
+  return {
+    id: "deco",
+    label: "\u{1FA91} \u88C5\u9970 (Decoration)",
+    children: [
+      { id: "deco.locked", label: "locked (\u53EA\u8BFB, C#\u63A7\u5236)", action: () => String(api.locked) },
+      { id: "deco.getCategories", label: "getCategories()", action: () => api.getCategories() },
+      { id: "deco.getDecorations", label: "getDecorations()", action: () => api.getDecorations() },
+      { id: "deco.getCurrentModels", label: "getCurrentModels()", action: () => api.getCurrentModels() },
+      { id: "deco.reloadFromSave", label: "reloadFromSave()", action: () => api.reloadFromSave() }
+    ]
+  };
+}
+function buildModeTree(api) {
+  if (!api)
+    return { id: "mode", label: "\u6A21\u5F0F (unavailable)" };
+  return {
+    id: "mode",
+    label: "\u{1F3AD} \u6A21\u5F0F (Mode)",
+    children: [
+      { id: "mode.locked", label: "locked (\u53EA\u8BFB, C#\u63A7\u5236)", action: () => String(api.locked) },
+      { id: "mode.getAvailable", label: "getAvailableModes()", action: () => api.getAvailableModes() },
+      { id: "mode.getCurrent", label: "getCurrentMode()", action: () => api.getCurrentMode() },
+      { id: "mode.getState", label: "getModeState()", action: () => api.getModeState() },
+      { id: "mode.canChange", label: "canChangeMode()", action: () => api.canChangeMode() },
+      { id: "mode.setNone", label: "setMode('None')", action: () => api.setMode("None") },
+      { id: "mode.setAlterEgo", label: "setMode('AlterEgo')", action: () => api.setMode("AlterEgo") }
+    ]
+  };
+}
+function buildCharacterTree(api) {
+  if (!api)
+    return { id: "char", label: "\u89D2\u8272 (unavailable)" };
+  return {
+    id: "char",
+    label: "\u{1F464} \u89D2\u8272 (Character)",
+    children: [
+      { id: "char.locked", label: "locked (\u53EA\u8BFB, C#\u63A7\u5236)", action: () => String(api.locked) },
+      { id: "char.getAvailable", label: "getAvailableStates()", action: () => api.getAvailableStates() },
+      { id: "char.getState", label: "getState()", action: () => api.getState() },
+      { id: "char.startWork", label: "startWork()", action: () => api.startWork() },
+      { id: "char.startBreak", label: "startBreak()", action: () => api.startBreak() },
+      { id: "char.cancelChange", label: "cancelChange()", action: () => api.cancelChange() },
+      { id: "char.matchAction", label: "matchCurrentAction()", action: () => api.matchCurrentAction() },
+      { id: "char.matchWild", label: "matchCurrentActionWithWild()", action: () => api.matchCurrentActionWithWild() }
+    ]
+  };
+}
+function buildSubtitleTree(api) {
+  if (!api)
+    return { id: "sub", label: "\u5B57\u5E55 (unavailable)" };
+  return {
+    id: "sub",
+    label: "\u{1F4AC} \u5B57\u5E55 (Subtitle)",
+    children: [
+      { id: "sub.locked", label: "locked (\u53EA\u8BFB, C#\u63A7\u5236)", action: () => String(api.locked) },
+      { id: "sub.isShowing", label: "isShowing()", action: () => api.isShowing() },
+      { id: "sub.show", label: "show('Hello!', 5)", action: () => api.show("Hello!", 5) },
+      { id: "sub.hide", label: "hide()", action: () => api.hide() },
+      { id: "sub.getScenarioState", label: "getScenarioState()", action: () => api.getScenarioState() }
+    ]
+  };
+}
+function buildVoiceTree(api) {
+  if (!api)
+    return { id: "voice", label: "\u8BED\u97F3 (unavailable)" };
+  return {
+    id: "voice",
+    label: "\u{1F50A} \u8BED\u97F3 (Voice)",
+    children: [
+      { id: "voice.locked", label: "locked (\u53EA\u8BFB, C#\u63A7\u5236)", action: () => String(api.locked) },
+      { id: "voice.getState", label: "getState()", action: () => api.getState() },
+      { id: "voice.isFinished", label: "isFinished()", action: () => api.isFinished() },
+      { id: "voice.isMouthMoving", label: "isMouthMoving()", action: () => api.isMouthMoving() },
+      { id: "voice.getScenarioTypes", label: "getScenarioTypes()", action: () => api.getScenarioTypes() },
+      { id: "voice.cancel", label: "cancelVoice()", action: () => api.cancelVoice() }
+    ]
+  };
+}
+function buildPomodoroTree(g) {
+  return {
+    id: "pomodoro",
+    label: "\u{1F345} \u756A\u8304\u949F (Pomodoro)",
+    children: [
+      { id: "pom.getState", label: "getPomodoroState()", action: () => g.getPomodoroState() },
+      { id: "pom.getProgress", label: "getPlayerProgress()", action: () => g.getPlayerProgress() },
+      { id: "pom.getClock", label: "getGameClock()", action: () => g.getGameClock() },
+      { id: "pom.start", label: "startPomodoro()", action: () => g.startPomodoro() },
+      { id: "pom.togglePause", label: "togglePomodoroPause()", action: () => g.togglePomodoroPause() },
+      { id: "pom.skip", label: "skipPomodoroPhase()", action: () => g.skipPomodoroPhase() },
+      { id: "pom.reset", label: "resetPomodoro()", action: () => g.resetPomodoro() },
+      { id: "pom.complete", label: "completePomodoroNow()", action: () => g.completePomodoroNow() },
+      { id: "pom.eventNames", label: "getEventNames()", action: () => g.getEventNames() }
+    ]
+  };
+}
+
+// components/SaveProfilePanel.tsx
+var SaveProfilePanel = () => {
+  const [profiles, setProfiles] = useState([]);
+  const [active, setActive] = useState("");
+  const [newName, setNewName] = useState("");
+  const [inheritAll, setInheritAll] = useState(true);
+  const [msg, setMsg] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const refresh = useCallback(() => {
+    try {
+      const sp = chill?.saveProfile;
+      if (!sp)
+        return;
+      const rawList = sp.listProfiles();
+      const rawActive = sp.getActiveProfile();
+      const list = typeof rawList === "string" ? parse(rawList) || [] : rawList || [];
+      setProfiles(list);
+      setActive(rawActive || "");
+      setLoaded(true);
+    } catch (e) {
+      setMsg(`\u5237\u65B0\u5931\u8D25: ${e}`);
+    }
+  }, []);
+  if (!loaded)
+    refresh();
+  useEffect(() => {
+    chill?.game?.ensureEventBridge?.();
+    const tk = chill?.game?.on?.("sceneReloaded", () => {
+      setLoaded(false);
+      refresh();
+    });
+    return () => {
+      if (tk)
+        chill?.game?.off?.(tk);
+    };
+  }, []);
+  const showMsg = (text) => {
+    setMsg(text);
+    setTimeout(() => setMsg(null), 4e3);
+  };
+  const onCreate = () => {
+    const name = newName.trim();
+    if (!name) {
+      showMsg("\u8BF7\u8F93\u5165\u540D\u79F0");
+      return;
+    }
+    try {
+      const ok = chill.saveProfile.createProfile(name, inheritAll ? ["*"] : null);
+      if (ok) {
+        showMsg(`\u5DF2\u521B\u5EFA: ${name}`);
+        setNewName("");
+        refresh();
+      } else
+        showMsg("\u521B\u5EFA\u5931\u8D25 (\u53EF\u80FD\u5DF2\u5B58\u5728\u6216\u88AB\u9501\u5B9A)");
+    } catch (e) {
+      showMsg(`\u9519\u8BEF: ${e}`);
+    }
+  };
+  const onDelete = (name) => {
+    try {
+      const ok = chill.saveProfile.deleteProfile(name);
+      if (ok) {
+        showMsg(`\u5DF2\u5220\u9664: ${name}`);
+        refresh();
+      } else
+        showMsg("\u5220\u9664\u5931\u8D25 (\u53EF\u80FD\u662F\u5F53\u524D\u5B58\u6863\u6216\u88AB\u9501\u5B9A)");
+    } catch (e) {
+      showMsg(`\u9519\u8BEF: ${e}`);
+    }
+  };
+  const onSwitch = (name) => {
+    try {
+      showMsg(`\u6B63\u5728\u5207\u6362\u5230: ${name || "\u4E3B\u5B58\u6863"} ...`);
+      chill.saveProfile.switchProfile(name);
+    } catch (e) {
+      showMsg(`\u5207\u6362\u5931\u8D25: ${e}`);
+    }
+  };
+  const locked = chill?.saveProfile?.locked ?? false;
+  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, msg && /* @__PURE__ */ createElement("div", { style: {
+    backgroundColor: theme.bgCard,
+    borderRadius: theme.radius,
+    paddingTop: 6,
+    paddingBottom: 6,
+    paddingLeft: 12,
+    paddingRight: 12,
+    marginBottom: 8,
+    fontSize: 11,
+    color: theme.warning
+  } }, msg), /* @__PURE__ */ createElement("div", { style: {
+    flexDirection: "Row",
+    display: "Flex",
+    alignItems: "Center",
+    marginBottom: 8,
+    fontSize: 12,
+    color: theme.textMuted
+  } }, /* @__PURE__ */ createElement("div", { style: { color: theme.text } }, `\u5F53\u524D: ${active || "\u4E3B\u5B58\u6863"}`), locked && /* @__PURE__ */ createElement("div", { style: { color: theme.danger, marginLeft: 12 } }, "\u{1F512} \u5DF2\u9501\u5B9A"), /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: { marginLeft: "auto", color: theme.accent, fontSize: 11 },
+      onClick: refresh
+    },
+    "\u5237\u65B0"
+  )), /* @__PURE__ */ createElement("div", { style: {
+    flexDirection: "Row",
+    display: "Flex",
+    alignItems: "Center",
+    backgroundColor: theme.bgCard,
+    borderRadius: theme.radius,
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingLeft: 12,
+    paddingRight: 12,
+    marginBottom: 8
+  } }, /* @__PURE__ */ createElement(
+    "textfield",
+    {
+      value: newName,
+      onValueChanged: (e) => setNewName(e.newValue ?? ""),
+      style: {
+        flexGrow: 1,
+        fontSize: 12,
+        color: theme.text,
+        backgroundColor: theme.bgPanel,
+        borderRadius: 4,
+        paddingTop: 4,
+        paddingBottom: 4,
+        paddingLeft: 8,
+        paddingRight: 8,
+        borderWidth: 1,
+        borderColor: theme.border
+      }
+    }
+  ), /* @__PURE__ */ createElement("div", { style: {
+    marginLeft: 8,
+    fontSize: 11,
+    color: inheritAll ? theme.success : theme.textMuted
+  }, onClick: () => setInheritAll(!inheritAll) }, inheritAll ? "\u7EE7\u627F\u5168\u90E8" : "\u7A7A\u767D\u5B58\u6863"), /* @__PURE__ */ createElement("div", { style: {
+    marginLeft: 8,
+    paddingTop: 4,
+    paddingBottom: 4,
+    paddingLeft: 10,
+    paddingRight: 10,
+    borderRadius: 4,
+    fontSize: 11,
+    backgroundColor: theme.accentDark,
+    color: theme.textBright
+  }, onClick: onCreate }, "\u521B\u5EFA")), /* @__PURE__ */ createElement(
+    ProfileRow,
+    {
+      name: "",
+      displayName: "\u4E3B\u5B58\u6863 (\u9ED8\u8BA4)",
+      isActive: !active,
+      onSwitch,
+      onDelete: null
+    }
+  ), profiles.map((name) => /* @__PURE__ */ createElement(
+    ProfileRow,
+    {
+      key: name,
+      name,
+      displayName: name,
+      isActive: active === name,
+      onSwitch,
+      onDelete
+    }
+  )), profiles.length === 0 && /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: theme.textMuted, padding: 12 } }, "\u6682\u65E0\u5B50\u5B58\u6863"));
+};
+var ProfileRow = ({ name, displayName, isActive, onSwitch, onDelete }) => /* @__PURE__ */ createElement("div", { style: {
+  flexDirection: "Row",
+  display: "Flex",
+  alignItems: "Center",
+  backgroundColor: isActive ? theme.bgHover : theme.bgCard,
+  borderRadius: 4,
+  paddingLeft: 12,
+  paddingRight: 10,
+  marginBottom: 3,
+  height: 36
+} }, /* @__PURE__ */ createElement("div", { style: {
+  width: 8,
+  height: 8,
+  borderRadius: 4,
+  marginRight: 8,
+  backgroundColor: isActive ? theme.success : theme.textMuted
+} }), /* @__PURE__ */ createElement("div", { style: { flexGrow: 1, fontSize: 12, color: isActive ? theme.accent : theme.text } }, displayName), !isActive && /* @__PURE__ */ createElement("div", { style: {
+  paddingTop: 2,
+  paddingBottom: 2,
+  paddingLeft: 8,
+  paddingRight: 8,
+  borderRadius: 4,
+  fontSize: 11,
+  backgroundColor: theme.accentDark,
+  color: theme.textBright,
+  marginRight: 4
+}, onClick: () => onSwitch(name) }, "\u5207\u6362"), isActive && /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.success } }, "\u25CF \u5F53\u524D"), onDelete && !isActive && /* @__PURE__ */ createElement("div", { style: {
+  paddingTop: 2,
+  paddingBottom: 2,
+  paddingLeft: 8,
+  paddingRight: 8,
+  borderRadius: 4,
+  fontSize: 11,
+  backgroundColor: theme.danger,
+  color: theme.textBright
+}, onClick: () => onDelete(name) }, "\u5220\u9664"));
+
 // index.tsx
 var ErrorBoundary = class extends BaseComponent {
   constructor(props) {
@@ -2966,6 +3463,8 @@ var App = () => {
       defaultTab: "modules",
       tabs: [
         { id: "modules", label: "\u6A21\u5757", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "ModulesPanel" }, /* @__PURE__ */ createElement(ModulesPanel, null)) },
+        { id: "gameapi", label: "\u6E38\u620FAPI", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "GameApiTestPanel" }, /* @__PURE__ */ createElement(GameApiTestPanel, null)) },
+        { id: "profiles", label: "\u5B58\u6863", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "SaveProfilePanel" }, /* @__PURE__ */ createElement(SaveProfilePanel, null)) },
         { id: "explorer", label: "\u573A\u666F\u6811", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "UIExplorerPanel" }, /* @__PURE__ */ createElement(UIExplorerPanel, null)) },
         { id: "ime", label: "\u8F93\u5165\u6CD5", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "IMESettingsPanel" }, /* @__PURE__ */ createElement(IMESettingsPanel, null)) },
         { id: "settings", label: "\u8BBE\u7F6E", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "SettingsPanel" }, /* @__PURE__ */ createElement(SettingsPanel, null)) },
