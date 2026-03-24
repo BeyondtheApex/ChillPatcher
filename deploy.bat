@@ -51,6 +51,9 @@ REM 复制新文件
 echo Copying files...
 xcopy /s /i /q /y "release\ChillPatcher" "%PluginDir%"
 
+echo Writing steam_appid.txt...
+> "%GameDir%\steam_appid.txt" echo 3548580
+
 REM 恢复用户数据
 if exist "%TEMP%\ChillPatcher_cameras_backup" (
     echo Restoring cameras folder...

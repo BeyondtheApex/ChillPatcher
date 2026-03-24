@@ -18,6 +18,12 @@ namespace ChillPatcher
         /// <summary>当前帧是否有 UIToolkit TextField 获焦</summary>
         public static bool IsUIToolkitTextFieldFocused { get; private set; }
 
+        /// <summary>Rime Context 变化事件（主线程触发，JSON 数据或 "null"）</summary>
+        public static event Action<string, string> OnImeContextChanged;
+
+        /// <summary>输入模式变化事件（主线程触发）</summary>
+        public static event Action<bool> OnInputModeChanged;
+
         /// <summary>当前获焦的 TextField（供 IME API 读取位置）</summary>
         private static TextField _currentFocusedTextField;
 
@@ -149,12 +155,90 @@ namespace ChillPatcher
                     }
 
                     DispatchInput(tf);
+                    CheckAndEmitImeContextChanged();
                     return;
                 }
             }
 
             // 无 TextField 获焦时清除缓存
             _lastTextFieldRect = null;
+            CheckAndEmitImeContextChanged();
+        }
+
+        /// <summary>
+        /// 检测 Rime Context 和输入模式是否有变化，有则触发事件推送给 JS 层
+        /// </summary>
+        private static void CheckAndEmitImeContextChanged()
+        {
+            // 检测输入模式变化
+            if (KeyboardHookPatch.InputModeDirty)
+            {
+                KeyboardHookPatch.InputModeDirty = false;
+                try
+                {
+                    OnInputModeChanged?.Invoke(KeyboardHookPatch.IsGameMode);
+                }
+                catch (Exception ex)
+                {
+                    _log?.LogWarning($"[UIToolkitInputDispatcher] InputMode event error: {ex.Message}");
+                }
+            }
+
+            // 检测 Rime Context 变化
+            if (!KeyboardHookPatch.RimeContextDirty) return;
+            KeyboardHookPatch.RimeContextDirty = false;
+
+            if (OnImeContextChanged == null) return;
+
+            try
+            {
+                var ctx = KeyboardHookPatch.GetRimeContext();
+                string ctxJson = ctx != null && !string.IsNullOrEmpty(ctx.Preedit)
+                    ? JSApi.JSApiHelper.ToJson(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["preedit"] = ctx.Preedit,
+                        ["cursorPos"] = ctx.CursorPos,
+                        ["highlightedIndex"] = ctx.HighlightedIndex,
+                        ["candidates"] = BuildCandidatesList(ctx),
+                    })
+                    : "null";
+
+                var rect = GetFocusedTextFieldRect();
+                string rectJson = rect.HasValue
+                    ? JSApi.JSApiHelper.ToJson(new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["x"] = rect.Value.x,
+                        ["y"] = rect.Value.y,
+                        ["width"] = rect.Value.width,
+                        ["height"] = rect.Value.height,
+                    })
+                    : "null";
+
+                OnImeContextChanged.Invoke(ctxJson, rectJson);
+            }
+            catch (Exception ex)
+            {
+                _log?.LogWarning($"[UIToolkitInputDispatcher] IME context event error: {ex.Message}");
+            }
+        }
+
+        private static System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>> BuildCandidatesList(Rime.RimeContextInfo ctx)
+        {
+            var list = new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string, object>>();
+            if (ctx.Candidates != null)
+            {
+                foreach (var c in ctx.Candidates)
+                {
+                    var item = new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["text"] = c.Text ?? "",
+                    };
+                    if (!string.IsNullOrEmpty(c.Comment))
+                        item["comment"] = c.Comment;
+                    list.Add(item);
+                }
+            }
+            return list;
         }
 
         /// <summary>
@@ -249,6 +333,31 @@ namespace ChillPatcher
                     HandleNavigationKey(tf, navKey.Value);
                     navKey = KeyboardHookPatch.GetNavigationKey();
                 }
+
+                // 4. 剪贴板操作 (Ctrl+V/A/C/X)
+                string pasteText;
+                var clipAction = KeyboardHookPatch.GetClipboardAction(out pasteText);
+                while (clipAction.HasValue)
+                {
+                    switch (clipAction.Value)
+                    {
+                        case KeyboardHookPatch.ClipAction.Paste:
+                            if (!string.IsNullOrEmpty(pasteText))
+                                InsertTextAtCursor(tf, pasteText);
+                            break;
+                        case KeyboardHookPatch.ClipAction.SelectAll:
+                            tf.SelectAll();
+                            break;
+                        case KeyboardHookPatch.ClipAction.Copy:
+                            CopySelectionToClipboard(tf);
+                            break;
+                        case KeyboardHookPatch.ClipAction.Cut:
+                            CopySelectionToClipboard(tf);
+                            DeleteSelection(tf);
+                            break;
+                    }
+                    clipAction = KeyboardHookPatch.GetClipboardAction(out pasteText);
+                }
             }
             catch (Exception ex)
             {
@@ -341,6 +450,35 @@ namespace ChillPatcher
                     }
                     break;
             }
+        }
+
+        /// <summary>将 TextField 选中文本复制到系统剪贴板</summary>
+        private static void CopySelectionToClipboard(TextField tf)
+        {
+            var curText = tf.value ?? "";
+            int cursor = GetCursorIndex(tf, curText.Length);
+            int select = GetSelectIndex(tf, cursor);
+            if (cursor == select) return;
+
+            int start = Math.Min(cursor, select);
+            int end = Math.Max(cursor, select);
+            string selected = curText.Substring(start, end - start);
+            GUIUtility.systemCopyBuffer = selected;
+        }
+
+        /// <summary>删除 TextField 选中文本（不影响剪贴板）</summary>
+        private static void DeleteSelection(TextField tf)
+        {
+            var curText = tf.value ?? "";
+            int cursor = GetCursorIndex(tf, curText.Length);
+            int select = GetSelectIndex(tf, cursor);
+            if (cursor == select) return;
+
+            int start = Math.Min(cursor, select);
+            int end = Math.Max(cursor, select);
+            tf.value = curText.Remove(start, end - start);
+            tf.cursorIndex = start;
+            tf.selectIndex = start;
         }
 
         private static void DispatchReturnKeyEvent(TextField tf)

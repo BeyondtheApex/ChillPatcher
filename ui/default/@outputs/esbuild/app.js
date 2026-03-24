@@ -2519,20 +2519,30 @@ var IMECandidatePanel = () => {
   const [inputRect, setInputRect] = useState(null);
   const [cfg, setCfg] = useState(getIMEConfig);
   useEffect(() => {
-    const poll = () => {
-      try {
-        const ctxJson = chill.ime.getContext();
-        const ctx = parse(ctxJson);
-        setContext(ctx);
-        if (ctx) {
-          const rectJson = chill.ime.getInputRect();
-          setInputRect(parse(rectJson));
-        }
-      } catch (e) {
+    try {
+      const ctxJson = chill.ime.getContext();
+      const ctx = parse(ctxJson);
+      setContext(ctx);
+      if (ctx) {
+        setInputRect(parse(chill.ime.getInputRect()));
       }
-    };
-    const timer = setInterval(poll, 50);
-    poll();
+    } catch (e) {
+    }
+    let unsub;
+    if (typeof chill !== "undefined" && chill.events) {
+      unsub = chill.events.on("imeContextChanged", (data) => {
+        try {
+          const parsed = typeof data === "string" ? JSON.parse(data) : data;
+          const ctx = typeof parsed.context === "string" ? parse(parsed.context) : parsed.context;
+          setContext(ctx);
+          if (ctx) {
+            const rect = typeof parsed.inputRect === "string" ? parse(parsed.inputRect) : parsed.inputRect;
+            setInputRect(rect);
+          }
+        } catch (e) {
+        }
+      });
+    }
     const cfgTimer = setInterval(() => {
       try {
         setCfg(getIMEConfig());
@@ -2540,7 +2550,7 @@ var IMECandidatePanel = () => {
       }
     }, 2e3);
     return () => {
-      clearInterval(timer);
+      unsub?.();
       clearInterval(cfgTimer);
     };
   }, []);
@@ -2838,13 +2848,16 @@ var App = () => {
     if (typeof chill !== "undefined" && chill.ime) {
       setIsGameMode(chill.ime.getInputMode());
     }
-    const interval = setInterval(() => {
-      if (typeof chill !== "undefined" && chill.ime) {
-        const currentMode = chill.ime.getInputMode();
-        setIsGameMode(currentMode);
-      }
-    }, 200);
-    return () => clearInterval(interval);
+    if (typeof chill !== "undefined" && chill.events) {
+      const unsub = chill.events.on("inputModeChanged", (data) => {
+        try {
+          const parsed = typeof data === "string" ? JSON.parse(data) : data;
+          setIsGameMode(parsed.isGameMode);
+        } catch (e) {
+        }
+      });
+      return unsub;
+    }
   }, []);
   const toggleInputMode = () => {
     if (typeof chill !== "undefined" && chill.ime) {

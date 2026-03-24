@@ -16,6 +16,9 @@ namespace ChillPatcher.Patches
     {
         private static AchievementSyncManager _instance;
         private bool _syncAttempted = false;
+        private System.Threading.Timer _startupTimer; // 持有引用，防止 GC 提前回收
+        private System.Threading.Timer _retryTimer; // 重试计时器同样需要持有引用
+        private volatile bool _syncRequested = false; // Timer/外部 → 主线程旗标
 
         // 缓存基础目录（与AchievementCacheManager保持一致）
         private static readonly string CacheBaseDirectory = Path.Combine(
@@ -38,33 +41,24 @@ namespace ChillPatcher.Patches
 
         private void Awake()
         {
-            // 使用 C# 原生的 Timer，不依赖Unity的Update循环
-            var timer = new System.Threading.Timer(_ =>
-            {
-                try
-                {
-                    CheckAndSync();
-                }
-                catch (Exception ex)
-                {
-                    Plugin.Logger.LogError($"[AchievementSync] 同步检查出错: {ex.Message}");
-                }
-            }, null, 5000, System.Threading.Timeout.Infinite); // 5000ms = 5秒，只执行一次
+            // 延迟 5 秒后设旗标，由主线程 Update() 执行实际同步
+            // 存入字段避免被 GC 提前回收
+            _startupTimer = new System.Threading.Timer(
+                _ => { if (!_syncAttempted) _syncRequested = true; },
+                null, 5000, System.Threading.Timeout.Infinite);
         }
-        
-        private void CheckAndSync()
+
+        // 主线程每帧检查旗标，保证所有 Steamworks + 文件 IO 都在主线程执行
+        private void Update()
         {
-            if (!_syncAttempted)
-            {
-                _syncAttempted = true;
-                
-                if (!PluginConfig.EnableAchievementCache.Value)
-                {
-                    return;
-                }
-                
-                TrySyncCachedAchievements();
-            }
+            if (!_syncRequested) return;
+            _syncRequested = false;
+
+            if (_syncAttempted) return;
+            _syncAttempted = true;
+
+            if (!PluginConfig.EnableAchievementCache.Value) return;
+            TrySyncCachedAchievements();
         }
 
 
@@ -102,10 +96,29 @@ namespace ChillPatcher.Patches
                 {
                     Plugin.Logger.LogWarning("[AchievementSync] Steam未运行，10秒后重试");
                     
-                    // 使用 Timer 延迟重试
-                    var retryTimer = new System.Threading.Timer(_ => RetrySync(), 
-                        null, 10000, System.Threading.Timeout.Infinite);
+                    // 使用 Timer 延迟设旗标，实际同步仍由主线程 Update() 执行
+                    _retryTimer?.Dispose();
+                    _retryTimer = new System.Threading.Timer(
+                        _ => RetrySync(),
+                        null,
+                        10000,
+                        System.Threading.Timeout.Infinite);
                     
+                    return;
+                }
+
+                if (PluginConfig.EnableWallpaperEngineMode.Value &&
+                    !SteamConnectionState.IsSteamActuallyInitialized)
+                {
+                    Plugin.Logger.LogInfo("[AchievementSync] Steam 已运行但尚未完成重连，10秒后重试");
+
+                    _retryTimer?.Dispose();
+                    _retryTimer = new System.Threading.Timer(
+                        _ => RetrySync(),
+                        null,
+                        10000,
+                        System.Threading.Timeout.Infinite);
+
                     return;
                 }
 
@@ -179,12 +192,8 @@ namespace ChillPatcher.Patches
         /// </summary>
         private void RetrySync()
         {
-            string currentUserId = GetCurrentSteamUserId();
-            if (!string.IsNullOrEmpty(currentUserId) && AchievementCacheManager.HasPendingAchievements(currentUserId))
-            {
-                Plugin.Logger.LogInfo("[AchievementSync] 重试同步缓存的成就...");
-                TrySyncCachedAchievements();
-            }
+            if (!_syncAttempted)
+                _syncRequested = true;
         }
 
         /// <summary>
@@ -209,18 +218,22 @@ namespace ChillPatcher.Patches
         }
 
         /// <summary>
-        /// 手动触发同步（可以从UI或命令调用）
+        /// 请求同步（非阻塞，由主线程 Update() 在下一帧执行）
         /// </summary>
         public static void ManualSync()
         {
             if (_instance != null)
-            {
-                _instance.TrySyncCachedAchievements();
-            }
+                _instance._syncRequested = true; // 旗标，不阻塞调用方
             else
-            {
                 Plugin.Logger.LogWarning("[AchievementSync] 同步管理器未初始化");
-            }
+        }
+
+        private void OnDestroy()
+        {
+            _startupTimer?.Dispose();
+            _startupTimer = null;
+            _retryTimer?.Dispose();
+            _retryTimer = null;
         }
     }
 }

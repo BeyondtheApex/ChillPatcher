@@ -48,7 +48,7 @@ const loadPomodoroSettings = (): PomodoroSettings => {
 const savePomodoroSettings = (settings: PomodoroSettings) => {
   try {
     chill?.io?.writeText?.(SETTINGS_FILE, JSON.stringify(settings, null, 2))
-  } catch {}
+  } catch { }
 }
 
 const setNodeActive = (path: string, active: boolean) => {
@@ -229,13 +229,13 @@ const ParamCard = (props: {
       )}
 
       <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween" }}>
-    {editing
-      ? chip("OK", submit, "rgba(52,211,153,0.16)", OK)
-      : (<div style={{ display: 'flex', flexDirection: 'row'}}>
-          {chip("-", props.onMinus)}
-          <div style={{ width: 8 }} />
-          {chip("+", props.onPlus)}
-        </div>)}
+        {editing
+          ? chip("OK", submit, "rgba(52,211,153,0.16)", OK)
+          : (<div style={{ display: 'flex', flexDirection: 'row' }}>
+            {chip("-", props.onMinus)}
+            <div style={{ width: 8 }} />
+            {chip("+", props.onPlus)}
+          </div>)}
       </div>
     </div>
   )
@@ -364,7 +364,7 @@ const PomodoroPanel = () => {
             }}
           >
             {showSettingsPage ? "←" : ""}
-            <div style={{ width:12 }}></div>
+            <div style={{ width: 12 }}></div>
           </div>
         </div>
       </div>
@@ -414,7 +414,7 @@ const PomodoroPanel = () => {
       </div>
 
       <div style={{ display: showSettingsPage ? "None" : "Flex", flexDirection: "Column", backgroundColor: CARD, borderRadius: 12, padding: 12 }}>
-        <div style={{ fontSize: 11, color: DIM, marginBottom: 4 }}>{`${clock?.date || "----/--/--"}`}</div>
+        <div style={{ fontSize: 11, color: DIM, marginBottom: 4 }}>Player Level</div>
         <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 6 }}>
           <div style={{ fontSize: 16, color: TEXT, unityFontStyleAndWeight: "Bold" }}>{`Lv.${pg?.level || 0}`}</div>
           <div style={{ fontSize: 12, color: DIM }}>{`${Math.round(Number(pg?.exp || 0))}/${Math.round(Number(pg?.nextLevelExp || 0))}`}</div>
@@ -482,7 +482,7 @@ const PomodoroCompact = () => {
     // 初始化数据
     const bootState = json(chill?.game?.getPomodoroState?.(), state)
     syncCompactState(bootState, false)
-    
+
     const currentClock = json(chill?.game?.getGameClock?.(), clock)
     setClock(currentClock)
 
@@ -530,7 +530,26 @@ const PomodoroCompact = () => {
   const timerText = remain > 0 ? hhmmss(remain) : hhmmss(total)
   const compactClockText = formatClockDisplay(clock, settings.showSeconds)
   const cbtn = (t: string, on: () => void, bg = "rgba(125,211,252,0.15)", color = ACCENT) => (
-    <div onPointerDown={on} style={{ fontSize: 11, color, backgroundColor: bg, borderRadius: 6, paddingLeft: 8, paddingRight: 8, paddingTop: 4, paddingBottom: 4 }}>{t}</div>
+    <div
+      onPointerDown={on}
+      style={{
+        fontSize: 11,
+        color,
+        backgroundColor: bg,
+        borderRadius: 6,
+        paddingLeft: 6,
+        paddingRight: 6,
+        paddingTop: 4,
+        paddingBottom: 4,
+        unityTextAlign: "MiddleCenter",
+        flexGrow: 1,
+        flexBasis: 0,
+        marginLeft: 3,
+        marginRight: 3,
+      }}
+    >
+      {t}
+    </div>
   )
 
   return (
@@ -557,15 +576,15 @@ const PomodoroCompact = () => {
 
       <div style={{ flexGrow: 1 }} />
 
-      <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween" }}>
+      <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceEvenly" }}>
         {controlState === "idle" && cbtn("Reset", applyIdlePresetReset, "rgba(125,211,252,0.15)", ACCENT)}
         {controlState === "idle" && cbtn("Start", () => chill?.game?.startPomodoro?.(), "rgba(52,211,153,0.16)", OK)}
-        {controlState === "running" && cbtn("Pause ", () => chill?.game?.togglePomodoroPause?.())}
-        {controlState === "running" && cbtn(" Skip ", () => chill?.game?.skipPomodoroPhase?.())}
-        {controlState === "running" && cbtn(" Stop ", () => chill?.game?.resetPomodoro?.(), "rgba(245,158,11,0.16)", WARN)}
+        {controlState === "running" && cbtn("Pause", () => chill?.game?.togglePomodoroPause?.())}
+        {controlState === "running" && cbtn("Skip", () => chill?.game?.skipPomodoroPhase?.())}
+        {controlState === "running" && cbtn("Stop", () => chill?.game?.resetPomodoro?.(), "rgba(245,158,11,0.16)", WARN)}
         {controlState === "paused" && cbtn("Resume", () => chill?.game?.togglePomodoroPause?.(), "rgba(52,211,153,0.16)", OK)}
-        {controlState === "paused" && cbtn(" Skip ", () => chill?.game?.skipPomodoroPhase?.())}
-        {controlState === "paused" && cbtn(" Stop ", () => chill?.game?.resetPomodoro?.(), "rgba(245,158,11,0.16)", WARN)}
+        {controlState === "paused" && cbtn("Skip", () => chill?.game?.skipPomodoroPhase?.())}
+        {controlState === "paused" && cbtn("Stop", () => chill?.game?.resetPomodoro?.(), "rgba(245,158,11,0.16)", WARN)}
       </div>
     </div>
   )

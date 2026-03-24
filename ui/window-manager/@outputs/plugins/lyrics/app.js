@@ -1749,7 +1749,6 @@ var useLyricsPoller = () => {
   const currentSongRef = useRef("");
   const lastIdxRef = useRef(-1);
   const loadingRef = useRef(false);
-  const apiUnavailableRef = useRef({});
   useEffect(() => {
     const poll = () => {
       try {
@@ -1794,18 +1793,11 @@ var useLyricsPoller = () => {
             if (b64)
               lrcText = base64Decode(b64);
           } else if (info.source === "netease") {
-            if (apiUnavailableRef.current["netease"]) {
-              log("netease API unavailable, skipping");
-              lyricsCache[info.cacheKey] = [];
-              setStatusText("\u6682\u65E0\u6B4C\u8BCD");
-              return;
-            }
             const neteaseApi = chill.custom.get("lyric_netease");
             if (!neteaseApi) {
               log("lyric_netease API not available");
-              apiUnavailableRef.current["netease"] = true;
-              lyricsCache[info.cacheKey] = [];
-              setStatusText("\u6682\u65E0\u6B4C\u8BCD");
+              currentSongRef.current = "";
+              setStatusText("\u7B49\u5F85\u6B4C\u8BCD\u63A5\u53E3...");
               return;
             }
             loadingRef.current = true;

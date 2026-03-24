@@ -495,4 +495,39 @@ namespace ChillPatcher.SDK.Events
     }
 
     #endregion
+
+    #region Seek 事件
+
+    /// <summary>
+    /// 播放 Seek 事件（用户拖动进度条跳转）
+    /// </summary>
+    public class PlaySeekEvent : ModuleEventBase
+    {
+        /// <summary>
+        /// 正在播放的歌曲信息
+        /// </summary>
+        public MusicInfo Music { get; set; }
+
+        /// <summary>
+        /// Seek 目标进度（0~1）
+        /// </summary>
+        public float Progress { get; set; }
+
+        /// <summary>
+        /// Seek 目标时间（秒）
+        /// </summary>
+        public float TargetTime { get; set; }
+
+        /// <summary>
+        /// 是否为延迟 Seek（流媒体需要先下载缓存）
+        /// </summary>
+        public bool IsPending { get; set; }
+
+        /// <summary>
+        /// Seek 是否成功完成（IsPending=false 时才有意义）
+        /// </summary>
+        public bool IsCompleted { get; set; }
+    }
+
+    #endregion
 }
