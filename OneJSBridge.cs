@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using ChillPatcher.JSApi;
+using ChillPatcher.Native;
 using OneJS;
 using UnityEngine;
 
@@ -130,7 +130,8 @@ namespace ChillPatcher
 
         /// <summary>
         /// Ensures npm install is done and esbuild watch is running for each instance.
-        /// If Node.js is not available, gracefully skips (pre-built bundle still works).
+        /// Uses Go-based EsbuildBridge DLL (no Node.js dependency).
+        /// Falls back to pre-built bundles if DLL is not available.
         /// </summary>
         private static void EnsureBuildSetup()
         {
@@ -141,10 +142,16 @@ namespace ChillPatcher
                 return;
             }
 
-            // Check if Node.js is available once
-            if (!IsNodeAvailable())
+            if (!PluginConfig.EnableNpmAndEsbuild.Value)
             {
-                _log.LogInfo("[OneJS] Node.js not found, skipping build setup (using pre-built bundles)");
+                _log.LogInfo("[OneJS] npm/esbuild 已禁用，使用已编译的JS文件");
+                _buildSetupDone = true;
+                return;
+            }
+
+            if (!EsbuildBridge.IsLoaded)
+            {
+                _log.LogInfo("[OneJS] EsbuildBridge DLL not available, using pre-built bundles");
                 _buildSetupDone = true;
                 return;
             }
@@ -155,195 +162,131 @@ namespace ChillPatcher
                 var packageJson = Path.Combine(dir, "package.json");
                 if (!File.Exists(packageJson)) continue;
 
-                var nodeModules = Path.Combine(dir, "node_modules");
-                var esbuildOutput = Path.Combine(dir, "@outputs", "esbuild", "app.js");
-
-                // npm install
-                if (!Directory.Exists(nodeModules))
+                // npm install from lockfile (Go-based, no system npm needed)
+                bool npmFailed = false;
+                if (!Directory.Exists(Path.Combine(dir, "node_modules")))
                 {
-                    _log.LogInfo($"[OneJS:{entry.Id}] Running npm install...");
-                    RunNpmCommand(dir, "install", 60000);
+                    _log.LogInfo($"[OneJS:{entry.Id}] Installing npm packages...");
+                    var npmErr = EsbuildBridge.NpmInstall(dir, (pkgPath, status, msg) =>
+                    {
+                        switch (status)
+                        {
+                            case "download":
+                                if (string.IsNullOrEmpty(pkgPath))
+                                    _log.LogInfo($"[OneJS:{entry.Id}] npm: {msg}");
+                                else
+                                    _log.LogInfo($"[OneJS:{entry.Id}] npm: downloading {pkgPath}@{msg}");
+                                break;
+                            case "done":
+                                _log.LogInfo($"[OneJS:{entry.Id}] npm: installed {pkgPath}@{msg}");
+                                break;
+                            case "error":
+                                _log.LogWarning($"[OneJS:{entry.Id}] npm: FAILED {pkgPath}: {msg}");
+                                break;
+                        }
+                    });
+                    if (npmErr != null)
+                    {
+                        _log.LogWarning($"[OneJS:{entry.Id}] npm install error: {npmErr}");
+                        npmFailed = true;
+                    }
+                    else
+                    {
+                        _log.LogInfo($"[OneJS:{entry.Id}] npm install completed successfully");
+                    }
                 }
 
-                // esbuild once
+                // If npm install failed (e.g. network timeout), fall back to pre-built @outputs
+                if (npmFailed)
+                {
+                    var fallbackOutput = Path.Combine(dir, "@outputs", "esbuild", "app.js");
+                    if (File.Exists(fallbackOutput))
+                    {
+                        _log.LogWarning($"[OneJS:{entry.Id}] npm install failed, falling back to pre-built @outputs");
+                        continue; // skip build/watch, use existing @outputs
+                    }
+                    else
+                    {
+                        _log.LogError($"[OneJS:{entry.Id}] npm install failed and no pre-built @outputs found, UI may not load");
+                        continue;
+                    }
+                }
+
+                // Build framework entry once if output missing
+                var esbuildOutput = Path.Combine(dir, "@outputs", "esbuild", "app.js");
                 if (!File.Exists(esbuildOutput))
                 {
                     _log.LogInfo($"[OneJS:{entry.Id}] Building UI...");
-                    RunNpmCommand(dir, "run build", 30000);
+                    var buildErr = EsbuildBridge.Build(BuildEsbuildConfigJson(dir, "index.tsx", "@outputs/esbuild/app.js"));
+                    if (buildErr != null)
+                        _log.LogWarning($"[OneJS:{entry.Id}] Build failed: {buildErr}");
                 }
 
-                // esbuild watch
-                StartEsbuildWatch(dir, entry.Id);
+                // Start watch for framework
+                StartEsbuildWatchViaGo(dir, entry.Id, "index.tsx", "@outputs/esbuild/app.js");
+
+                // Discover and watch plugins
+                var pluginsDir = Path.Combine(dir, "plugins");
+                if (Directory.Exists(pluginsDir))
+                {
+                    foreach (var pluginPath in Directory.GetDirectories(pluginsDir))
+                    {
+                        var pluginName = Path.GetFileName(pluginPath);
+                        var pluginEntry = $"plugins/{pluginName}/index.tsx";
+                        if (!File.Exists(Path.Combine(dir, pluginEntry))) continue;
+
+                        var pluginOut = $"@outputs/plugins/{pluginName}/app.js";
+                        if (!File.Exists(Path.Combine(dir, pluginOut)))
+                        {
+                            var err = EsbuildBridge.Build(BuildEsbuildConfigJson(dir, pluginEntry, pluginOut));
+                            if (err != null)
+                                _log.LogWarning($"[OneJS:{entry.Id}] Plugin '{pluginName}' build error: {err}");
+                        }
+                        StartEsbuildWatchViaGo(dir, entry.Id, pluginEntry, pluginOut);
+                    }
+                }
             }
 
             _buildSetupDone = true;
         }
 
-        private static bool IsNodeAvailable()
+        private static readonly List<int> _esbuildWatchIds = new List<int>();
+
+        private static void StartEsbuildWatchViaGo(string workingDir, string instanceId, string entryPoint, string outfile)
         {
-            Process proc = null;
-            try
+            var configJson = BuildEsbuildConfigJson(workingDir, entryPoint, outfile);
+            var watchId = EsbuildBridge.Watch(configJson);
+            if (watchId > 0)
             {
-                proc = new Process();
-                proc.StartInfo = new ProcessStartInfo
-                {
-                    FileName = "node",
-                    Arguments = "--version",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                proc.Start();
-                if (!proc.WaitForExit(5000))
-                {
-                    try { KillProcessTree(proc.Id); } catch { }
-                    return false;
-                }
-                return proc.ExitCode == 0;
+                _esbuildWatchIds.Add(watchId);
+                _log.LogInfo($"[OneJS:{instanceId}] esbuild watch started (watchId={watchId}, entry={entryPoint})");
             }
-            catch
+            else
             {
-                if (proc != null)
-                {
-                    try { if (!proc.HasExited) KillProcessTree(proc.Id); } catch { }
-                }
-                return false;
+                _log.LogWarning($"[OneJS:{instanceId}] Failed to start esbuild watch for {entryPoint}");
             }
         }
 
-        private static readonly List<Process> _esbuildProcesses = new List<Process>();
-
-        private static void RunNpmCommand(string workingDir, string args, int timeoutMs)
+        private static string BuildEsbuildConfigJson(string workingDir, string entryPoint, string outfile)
         {
-            Process proc = null;
-            try
-            {
-                proc = new Process();
-                proc.StartInfo = new ProcessStartInfo
-                {
-                    FileName = "cmd.exe",
-                    Arguments = $"/c npm {args}",
-                    WorkingDirectory = workingDir,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                proc.Start();
-                if (!proc.WaitForExit(timeoutMs))
-                {
-                    // 超时：终止整个进程树
-                    _log.LogWarning($"[OneJS] npm {args} timed out ({timeoutMs}ms), killing...");
-                    try { KillProcessTree(proc.Id); } catch { }
-                    return;
-                }
-                if (proc.ExitCode != 0)
-                {
-                    var err = proc.StandardError.ReadToEnd();
-                    _log.LogWarning($"[OneJS] npm {args} failed in {workingDir}: {err}");
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning($"[OneJS] npm {args} error in {workingDir}: {ex.Message}");
-                if (proc != null)
-                {
-                    try { if (!proc.HasExited) KillProcessTree(proc.Id); } catch { }
-                }
-            }
-        }
-
-        private static void StartEsbuildWatch(string workingDir, string instanceId)
-        {
-            var esbuildMjs = Path.Combine(workingDir, "esbuild.mjs");
-            if (!File.Exists(esbuildMjs)) return;
-
-            // 先清理上次遗留的 esbuild 进程
-            KillOrphanedEsbuild(workingDir, instanceId);
-
-            try
-            {
-                var proc = new Process();
-                proc.StartInfo = new ProcessStartInfo
-                {
-                    FileName = "node",
-                    Arguments = "esbuild.mjs",
-                    WorkingDirectory = workingDir,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                proc.Start();
-                _esbuildProcesses.Add(proc);
-
-                // 写入 PID 文件，便于下次启动清理
-                WritePidFile(workingDir, proc.Id);
-
-                _log.LogInfo($"[OneJS:{instanceId}] esbuild watch started (pid={proc.Id})");
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning($"[OneJS:{instanceId}] Could not start esbuild watch: {ex.Message}");
-            }
-        }
-
-        private static readonly string PidFileName = ".esbuild.pid";
-
-        /// <summary>
-        /// 终止进程及其子进程树。
-        /// </summary>
-        private static void KillProcessTree(int pid)
-        {
-            try
-            {
-                var proc = Process.GetProcessById(pid);
-                proc.Kill();
-                proc.WaitForExit(5000);
-            }
-            catch (ArgumentException) { } // 进程已退出
-            catch { }
-        }
-
-        private static void WritePidFile(string workingDir, int pid)
-        {
-            try
-            {
-                File.WriteAllText(Path.Combine(workingDir, PidFileName), pid.ToString());
-            }
-            catch { }
-        }
-
-        /// <summary>
-        /// 根据 PID 文件清理上一次运行遗留的 esbuild 进程。
-        /// </summary>
-        private static void KillOrphanedEsbuild(string workingDir, string instanceId)
-        {
-            var pidFile = Path.Combine(workingDir, PidFileName);
-            if (!File.Exists(pidFile)) return;
-
-            try
-            {
-                var pidStr = File.ReadAllText(pidFile).Trim();
-                if (int.TryParse(pidStr, out var pid))
-                {
-                    KillProcessTree(pid);
-                    _log?.LogInfo($"[OneJS:{instanceId}] Killed orphaned esbuild process tree (pid={pid})");
-                }
-            }
-            catch (ArgumentException)
-            {
-                // 进程已不存在，正常
-            }
-            catch (Exception ex)
-            {
-                _log?.LogWarning($"[OneJS:{instanceId}] Error cleaning orphaned esbuild: {ex.Message}");
-            }
-            finally
-            {
-                try { File.Delete(pidFile); } catch { }
-            }
+            var escaped = workingDir.Replace("\\", "\\\\");
+            var entry = entryPoint.Replace("\\", "/");
+            return "{" +
+                "\"workingDir\":\"" + escaped + "\"," +
+                "\"entryPoints\":[\"" + entry + "\"]," +
+                "\"outfile\":\"" + outfile + "\"," +
+                "\"inject\":[\"node_modules/onejs-core/dist/index.js\"]," +
+                "\"alias\":{" +
+                    "\"onejs\":\"onejs-core\"," +
+                    "\"preact\":\"onejs-preact\"," +
+                    "\"react\":\"onejs-preact/compat\"," +
+                    "\"react-dom\":\"onejs-preact/compat\"" +
+                "}," +
+                "\"sourcemap\":true," +
+                "\"jsxFactory\":\"h\"," +
+                "\"jsxFragment\":\"Fragment\"," +
+                "\"platform\":\"node\"" +
+            "}";
         }
 
         private static void DoDeferredInit()
@@ -459,24 +402,9 @@ namespace ChillPatcher
 
             AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
 
-            // 终止所有 esbuild 进程并清理 PID 文件
-            foreach (var proc in _esbuildProcesses)
-            {
-                try
-                {
-                    if (!proc.HasExited)
-                        KillProcessTree(proc.Id);
-                }
-                catch { }
-            }
-            _esbuildProcesses.Clear();
-
-            // 清理所有实例的 PID 文件
-            foreach (var kv in _instances)
-            {
-                var pidFile = Path.Combine(kv.Value.WorkingDir, PidFileName);
-                try { if (File.Exists(pidFile)) File.Delete(pidFile); } catch { }
-            }
+            // Stop all esbuild watches (in-process Go goroutines, no child processes)
+            EsbuildBridge.StopAll();
+            _esbuildWatchIds.Clear();
 
             foreach (var kv in _instances)
             {

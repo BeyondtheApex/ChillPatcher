@@ -19,7 +19,8 @@ namespace ChillPatcher
             { "Rime", 1 },
             { "UI", 2 },        // v2: TagDropdownHeightOffset 默认值从50改为80
             { "Maintenance", 1 },
-            { "Audio", 1 }      // 音频自动静音功能
+            { "Audio", 1 },     // 音频自动静音功能
+            { "Build", 1 }      // npm/esbuild 构建开关
         };
         
         // 需要重置的分区集合
@@ -68,6 +69,9 @@ namespace ChillPatcher
 
         // 系统媒体控制设置
         public static ConfigEntry<bool> EnableSystemMediaTransport { get; private set; }
+
+        // npm/esbuild 构建开关
+        public static ConfigEntry<bool> EnableNpmAndEsbuild { get; private set; }
         
         // 配置文件引用（用于版本重置）
         private static ConfigFile _configFile;
@@ -357,6 +361,17 @@ namespace ChillPatcher
                 )
             );
 
+            // npm/esbuild 构建开关
+            EnableNpmAndEsbuild = config.Bind(
+                "Build",
+                "EnableNpmAndEsbuild",
+                false,
+                "是否启用npm安装和esbuild监听构建\n" +
+                "true = 启用npm自动安装依赖和esbuild实时监听构建\n" +
+                "false = 直接使用工作目录中已编译的JS文件（默认）\n" +
+                "注意：关闭时请确保@outputs目录中已有编译好的JS文件"
+            );
+
             // 系统媒体控制配置
             EnableSystemMediaTransport = config.Bind(
                 "Audio",
@@ -389,6 +404,7 @@ namespace ChillPatcher
                 Plugin.Logger.LogInfo($"    - 检测间隔: {AudioDetectionInterval.Value}秒");
             }
             Plugin.Logger.LogInfo($"  - 系统媒体控制: {EnableSystemMediaTransport.Value}");
+            Plugin.Logger.LogInfo($"  - npm/esbuild构建: {EnableNpmAndEsbuild.Value}");
         }
     }
 }

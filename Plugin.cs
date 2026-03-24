@@ -42,6 +42,9 @@ namespace ChillPatcher
 
         private void Awake()
         {
+            // Show native Win32 log overlay during initialization
+            BuildSetupOverlay.Show();
+
             Logger = base.Logger;
             Log = Logger; // 设置别名
             
@@ -153,6 +156,7 @@ namespace ChillPatcher
                 Logger.LogError($"Failed to install PlayerLoop injector: {ex}");
             }
 
+            // Overlay is hidden by LoadDirection_FadeInGame_Patch when loading screen fades out
         }
 
         private void EnsureSteamAppIdFile()
@@ -542,7 +546,7 @@ namespace ChillPatcher
         /// <summary>
         /// 将模块注册的音乐同步到游戏
         /// </summary>
-        private static async UniTask SyncMusicToGameAsync()
+        internal static async UniTask SyncMusicToGameAsync()
         {
             if (MusicService_RemoveLimit_Patch.CurrentInstance == null)
             {
@@ -639,8 +643,18 @@ namespace ChillPatcher
             if (allCustomTagBits != 0)
             {
                 var currentTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value;
-                SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = currentTag | allCustomTagBits;
-                Logger.LogInfo($"Updated CurrentAudioTag with custom tags: {allCustomTagBits}");
+                var newTag = currentTag | allCustomTagBits;
+                if (newTag == currentTag)
+                {
+                    // 值未变，ReactiveProperty 不会触发通知，需要强制刷新 CurrentPlayList
+                    SaveDataManager.Instance.MusicSetting.CurrentAudioTag.ForceNotify();
+                    Logger.LogInfo($"CurrentAudioTag unchanged ({currentTag}), forced playlist refresh");
+                }
+                else
+                {
+                    SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = newTag;
+                    Logger.LogInfo($"Updated CurrentAudioTag with custom tags: {allCustomTagBits}");
+                }
             }
 
             // 将自定义 Tag 添加到下拉菜单

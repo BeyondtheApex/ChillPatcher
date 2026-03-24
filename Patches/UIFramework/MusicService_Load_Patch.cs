@@ -20,7 +20,24 @@ namespace ChillPatcher.Patches.UIFramework
             MusicService_RemoveLimit_Patch.CurrentInstance = __instance;
             
             if (_modulesLoaded)
+            {
+                // 模块已加载，但场景重载后新 MusicService 需要重新同步歌曲
+                var resyncLogger = BepInEx.Logging.Logger.CreateLogSource("MusicService_Load_Patch");
+                UniTask.Void(async () =>
+                {
+                    try
+                    {
+                        resyncLogger.LogInfo("Re-syncing module songs to new MusicService...");
+                        await Plugin.SyncMusicToGameAsync();
+                        resyncLogger.LogInfo("✅ Module songs re-synced!");
+                    }
+                    catch (Exception ex)
+                    {
+                        resyncLogger.LogError($"❌ Module re-sync failed: {ex}");
+                    }
+                });
                 return;
+            }
             
             _modulesLoaded = true;
             

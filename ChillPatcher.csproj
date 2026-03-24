@@ -109,6 +109,8 @@
 
   <ItemGroup>
     <Reference Include="System.Net.Http" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
   </ItemGroup>
   <PropertyGroup>
     <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">$(CHILL_STEAM_LIBRARY)</SteamLibraryRoot>

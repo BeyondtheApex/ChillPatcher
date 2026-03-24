@@ -26,9 +26,12 @@ namespace ChillPatcher.UIFramework.Music
             if (item == null)
                 throw new ArgumentNullException(nameof(item));
 
-            if (_customTags.ContainsKey(tag))
+            if (_customTags.TryGetValue(tag, out var existing)
+                && existing.DisplayName == item.DisplayName
+                && existing.Priority == item.Priority
+                && existing.ShowInDropdown == item.ShowInDropdown)
             {
-                BepInEx.Logging.Logger.CreateLogSource("ChillUIFramework").LogWarning($"Tag {tag} already exists, replacing...");
+                return; // 数据未变，跳过
             }
 
             _customTags[tag] = item;

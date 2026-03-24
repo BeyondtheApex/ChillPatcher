@@ -9,6 +9,8 @@ import { ModulesPanel } from "./components/ModulesPanel"
 import { UIExplorerPanel } from "./components/UIExplorerPanel"
 import { IMESettingsPanel } from "./components/IMESettingsPanel"
 import { IMECandidatePanel } from "./components/IMECandidatePanel"
+import { GameApiTestPanel } from "./components/GameApiTestPanel"
+import { SaveProfilePanel } from "./components/SaveProfilePanel"
 
 // Error boundary to catch render errors and display them visually
 class ErrorBoundary extends Component<{ name: string }, { error: string | null }> {
@@ -175,6 +177,8 @@ const App = () => {
                         defaultTab="modules"
                         tabs={[
                             { id: "modules", label: "模块", content: () => <ErrorBoundary name="ModulesPanel"><ModulesPanel /></ErrorBoundary> },
+                            { id: "gameapi", label: "游戏API", content: () => <ErrorBoundary name="GameApiTestPanel"><GameApiTestPanel /></ErrorBoundary> },
+                            { id: "profiles", label: "存档", content: () => <ErrorBoundary name="SaveProfilePanel"><SaveProfilePanel /></ErrorBoundary> },
                             { id: "explorer", label: "场景树", content: () => <ErrorBoundary name="UIExplorerPanel"><UIExplorerPanel /></ErrorBoundary> },
                             { id: "ime", label: "输入法", content: () => <ErrorBoundary name="IMESettingsPanel"><IMESettingsPanel /></ErrorBoundary> },
                             { id: "settings", label: "设置", content: () => <ErrorBoundary name="SettingsPanel"><SettingsPanel /></ErrorBoundary> },
