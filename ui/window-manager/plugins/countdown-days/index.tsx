@@ -454,6 +454,35 @@ const areCompactConfigEqual = (a: CalendarWidgetConfig, b: CalendarWidgetConfig)
     )
 }
 
+const getAdaptiveCompactTitleFontSize = (
+    title: string,
+    baseFont: number,
+    compactCount: 1 | 2 | 4,
+    showDate: boolean
+) => {
+    const len = String(title ?? "").trim().length
+    let size = baseFont
+
+    if (compactCount === 4) {
+        if (len >= 14) size -= 3
+        else if (len >= 10) size -= 2
+        else if (len >= 7) size -= 1
+    } else if (compactCount === 2) {
+        if (len >= 20) size -= 4
+        else if (len >= 15) size -= 3
+        else if (len >= 11) size -= 2
+        else if (len >= 8) size -= 1
+    } else {
+        if (len >= 28) size -= 4
+        else if (len >= 22) size -= 3
+        else if (len >= 16) size -= 2
+        else if (len >= 12) size -= 1
+    }
+
+    if (showDate && compactCount !== 1) size -= 1
+    return Math.max(compactCount === 1 ? 12 : 10, size)
+}
+
 const normalizeEvent = (raw: any, index: number): CalendarEvent | null => {
     if (!raw || typeof raw !== "object") return null
 
@@ -2041,9 +2070,9 @@ const CountdownCompact = () => {
         return rows
     }, [compactEvents, autoCols])
 
-    const compactFont = config.compactCount === 4 ? 13 : 16
-    const titleFont = compactFont
-    const dayFont = compactFont
+    const compactFont = config.compactCount === 4 ? 13 : (config.compactCount === 1 ? 17 : 16)
+    const titleFont = config.compactCount === 1 ? 22 : compactFont
+    const dayFont = config.compactCount === 1 ? 18 : compactFont
     const showCompactDate = config.compactCount === 1 && compactEvents.length === 1
 
     return (
@@ -2130,14 +2159,18 @@ const CountdownCompact = () => {
                                     >
                                         <div
                                             style={{
-                                                fontSize: titleFont,
+                                                fontSize: getAdaptiveCompactTitleFontSize(item.title, titleFont, config.compactCount, showCompactDate),
                                                 color: config.titleColor,
                                                 unityFontStyleAndWeight: "Bold",
                                                 unityTextAlign: "MiddleCenter",
+                                                width: "100%",
+                                                whiteSpace: "NoWrap",
+                                                overflow: "Hidden",
+                                                textOverflow: "Ellipsis",
                                                 marginBottom: 2,
                                             }}
                                         >
-                                            {item.pinned ? "* " : ""}{item.title}
+                                            {item.title}
                                         </div>
                                         {showCompactDate ? (
                                             <div
