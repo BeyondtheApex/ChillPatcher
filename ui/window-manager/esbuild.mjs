@@ -35,6 +35,14 @@ let frameworkCtx = await esbuild.context({
 })
 
 // ---- Plugins ----
+// 插件单独使用 IIFE 格式，防止顶层变量（如 ActionButton 等组件名）
+// 泄漏到 OneJS 运行时的全局作用域，避免多插件间同名变量冲突。
+// 框架 (index.tsx) 仍使用默认格式以暴露 __registerPlugin 等全局函数。
+const pluginSharedOptions = {
+    ...sharedOptions,
+    format: "iife",
+}
+
 const pluginContexts = []
 const pluginsDir = "plugins"
 
@@ -45,7 +53,7 @@ if (existsSync(pluginsDir)) {
         if (!existsSync(entry)) continue
 
         const ctx = await esbuild.context({
-            ...sharedOptions,
+            ...pluginSharedOptions,
             entryPoints: [entry],
             outfile: `@outputs/plugins/${name.name}/app.js`,
         })
