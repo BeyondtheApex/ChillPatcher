@@ -23,10 +23,12 @@ type BuildConfig struct {
 	Outfile     string            `json:"outfile"`
 	Inject      []string          `json:"inject"`
 	Alias       map[string]string `json:"alias"`
+	External    []string          `json:"external"`
 	Sourcemap   bool              `json:"sourcemap"`
 	JsxFactory  string            `json:"jsxFactory"`
 	JsxFragment string            `json:"jsxFragment"`
 	Platform    string            `json:"platform"`
+	Format      string            `json:"format"`
 }
 
 func buildOptions(cfg BuildConfig) api.BuildOptions {
@@ -46,6 +48,14 @@ func buildOptions(cfg BuildConfig) api.BuildOptions {
 	if cfg.JsxFragment != "" {
 		fragment = cfg.JsxFragment
 	}
+	format := api.FormatDefault
+	if cfg.Format == "iife" {
+		format = api.FormatIIFE
+	} else if cfg.Format == "esm" {
+		format = api.FormatESModule
+	} else if cfg.Format == "cjs" {
+		format = api.FormatCommonJS
+	}
 
 	return api.BuildOptions{
 		EntryPoints:   cfg.EntryPoints,
@@ -53,7 +63,9 @@ func buildOptions(cfg BuildConfig) api.BuildOptions {
 		Outfile:       cfg.Outfile,
 		Inject:        cfg.Inject,
 		Alias:         cfg.Alias,
+		External:      cfg.External,
 		Platform:      plat,
+		Format:        format,
 		Sourcemap:     sm,
 		SourceRoot:    cfg.WorkingDir,
 		AbsWorkingDir: cfg.WorkingDir,

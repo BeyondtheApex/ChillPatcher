@@ -371,22 +371,29 @@ namespace ChillPatcher.Integration.StudyRoom
 
         private void OnLobbyCreated(CSteamID lobbyId)
         {
-            IsActive = true;
-            P2PTransport.StartListening();
-
-            // 创建主机子存档
-            _previousProfileName = SaveProfileService.ActiveProfileName;
-            var profileName = StudyRoomConfig.HostProfilePrefix
-                + System.Guid.NewGuid().ToString("N").Substring(0, 8);
-            _profileService.createProfile(profileName, _inheritFromPatterns);
-            _profileService.switchProfile(profileName);
-
-            Emit("roomCreated", new
+            try
             {
-                lobbyId = lobbyId.m_SteamID.ToString(),
-                inviteCode = lobbyId.m_SteamID.ToString()
-            });
-            _log?.LogInfo($"[StudyRoom] Room created, lobby={lobbyId}");
+                IsActive = true;
+                P2PTransport.StartListening();
+
+                // 创建主机子存档
+                _previousProfileName = SaveProfileService.ActiveProfileName;
+                var profileName = StudyRoomConfig.HostProfilePrefix
+                    + System.Guid.NewGuid().ToString("N").Substring(0, 8);
+                _profileService.createProfile(profileName, _inheritFromPatterns);
+                _profileService.switchProfile(profileName);
+
+                Emit("roomCreated", new
+                {
+                    lobbyId = lobbyId.m_SteamID.ToString(),
+                    inviteCode = lobbyId.m_SteamID.ToString()
+                });
+                _log?.LogInfo($"[StudyRoom] Room created, lobby={lobbyId}");
+            }
+            catch (System.Exception ex)
+            {
+                _log?.LogError($"[StudyRoom] OnLobbyCreated exception: {ex}");
+            }
         }
 
         private void OnLobbyJoined(CSteamID lobbyId, bool success)

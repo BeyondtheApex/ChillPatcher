@@ -1,6 +1,15 @@
-import { h, Fragment, render } from "preact"
-import { useState, useEffect, useRef, useErrorBoundary } from "preact/hooks"
+import * as preact from "preact"
+import * as preactHooks from "preact/hooks"
 import { Window } from "./components/Window"
+
+const { h, Fragment, render } = preact
+const { useState, useEffect, useRef, useErrorBoundary } = preactHooks
+
+// ---- 暴露 preact 运行时到 globalThis，供 IIFE 隔离的插件复用 ----
+// 这确保所有插件共享同一个 preact 实例（options、hooks 状态等），
+// 避免 IIFE 模式下每个插件 bundle 自带独立 preact 副本导致的渲染异常。
+;(globalThis as any).__preact = preact
+;(globalThis as any).__preactHooks = preactHooks
 
 declare const chill: any
 declare const CS: any

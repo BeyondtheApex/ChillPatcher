@@ -1,7 +1,10 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using BepInEx.Logging;
 using Steamworks;
+using UnityEngine;
 
 namespace ChillPatcher.Integration.StudyRoom
 {
@@ -26,15 +29,75 @@ namespace ChillPatcher.Integration.StudyRoom
         public event Action<CSteamID> OnMemberLeft;
 
         // ─── Steam Callbacks ───
-        private CallResult<LobbyCreated_t> _lobbyCreatedResult;
-        private CallResult<LobbyMatchList_t> _lobbyMatchListResult;
-        private CallResult<LobbyEnter_t> _lobbyEnterResult;
         private Callback<LobbyChatUpdate_t> _lobbyChatUpdateCallback;
 
         public SteamLobbyManager(ManualLogSource log)
         {
             _log = log;
             _lobbyChatUpdateCallback = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
+        }
+
+        // ─── 手动轮询辅助: 绕过游戏 CallbackDispatcher 不分发 CallResult 的问题 ───
+
+        /// <summary>
+        /// 协程: 每帧轮询 SteamUtils.IsAPICallCompleted，完成后用 SteamUtils.GetAPICallResult 取结果。
+        /// 不依赖 CallbackDispatcher.RunFrame 的分发，直接读取 Steam native 结果。
+        /// </summary>
+        private IEnumerator PollCallResult<T>(SteamAPICall_t call, Action<T, bool> callback) where T : struct
+        {
+            const float timeout = 30f;
+            float elapsed = 0f;
+
+            while (elapsed < timeout)
+            {
+                yield return null; // 每帧检查
+                elapsed += Time.unscaledDeltaTime;
+
+                bool ioFailed;
+                if (!SteamUtils.IsAPICallCompleted(call, out ioFailed))
+                    continue;
+
+                // API call 已完成
+                if (ioFailed)
+                {
+                    _log?.LogError($"[Lobby] API call IO failed (handle={call.m_SteamAPICall})");
+                    callback(default(T), true);
+                    yield break;
+                }
+
+                // 通过反射读取 k_iCallback 常量获取 callback ID
+                var kField = typeof(T).GetField("k_iCallback",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                int expectedCallback = kField != null ? (int)kField.GetValue(null) : 0;
+
+                // 手动读取结果
+                int size = Marshal.SizeOf(typeof(T));
+                IntPtr pData = Marshal.AllocHGlobal(size);
+                try
+                {
+                    bool pbFailed;
+                    bool ok = SteamUtils.GetAPICallResult(call, pData, size, expectedCallback, out pbFailed);
+
+                    if (!ok)
+                    {
+                        _log?.LogError($"[Lobby] GetAPICallResult returned false (handle={call.m_SteamAPICall}, expectedCb={expectedCallback})");
+                        callback(default(T), true);
+                        yield break;
+                    }
+
+                    var result = (T)Marshal.PtrToStructure(pData, typeof(T));
+                    _log?.LogInfo($"[Lobby] API call completed successfully (handle={call.m_SteamAPICall}, failed={pbFailed})");
+                    callback(result, pbFailed);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(pData);
+                }
+                yield break;
+            }
+
+            _log?.LogError($"[Lobby] API call timed out after {timeout}s (handle={call.m_SteamAPICall})");
+            callback(default(T), true);
         }
 
         /// <summary>
@@ -45,20 +108,29 @@ namespace ChillPatcher.Integration.StudyRoom
             _log?.LogInfo($"[Lobby] Creating lobby: {roomName}, max={maxMembers}");
             var call = SteamMatchmaking.CreateLobby(
                 ELobbyType.k_ELobbyTypePublic, maxMembers);
-            _lobbyCreatedResult = CallResult<LobbyCreated_t>.Create((result, failure) =>
-            {
-                if (failure || result.m_eResult != EResult.k_EResultOK)
-                {
-                    _log?.LogError($"[Lobby] CreateLobby failed: {result.m_eResult}");
-                    return;
-                }
+            _log?.LogInfo($"[Lobby] CreateLobby call handle: {call.m_SteamAPICall}");
 
-                LobbyId = new CSteamID(result.m_ulSteamIDLobby);
-                SetLobbyMetadata(roomName, hasPassword, maxMembers);
-                _log?.LogInfo($"[Lobby] Created lobby: {LobbyId}");
-                OnLobbyCreated?.Invoke(LobbyId);
-            });
-            _lobbyCreatedResult.Set(call);
+            Patches.CoroutineRunner.Instance.StartCoroutine(
+                PollCallResult<LobbyCreated_t>(call, (result, failure) =>
+                {
+                    if (failure || result.m_eResult != EResult.k_EResultOK)
+                    {
+                        _log?.LogError($"[Lobby] CreateLobby failed: {result.m_eResult}");
+                        return;
+                    }
+
+                    try
+                    {
+                        LobbyId = new CSteamID(result.m_ulSteamIDLobby);
+                        SetLobbyMetadata(roomName, hasPassword, maxMembers);
+                        _log?.LogInfo($"[Lobby] Created lobby: {LobbyId}");
+                        OnLobbyCreated?.Invoke(LobbyId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log?.LogError($"[Lobby] Exception in CreateLobby handler: {ex}");
+                    }
+                }));
         }
 
         /// <summary>
@@ -68,28 +140,29 @@ namespace ChillPatcher.Integration.StudyRoom
         {
             _log?.LogInfo($"[Lobby] Joining lobby: {lobbyId}");
             var call = SteamMatchmaking.JoinLobby(lobbyId);
-            _lobbyEnterResult = CallResult<LobbyEnter_t>.Create((result, failure) =>
-            {
-                if (failure)
-                {
-                    _log?.LogError("[Lobby] JoinLobby failed (IO failure)");
-                    OnLobbyJoined?.Invoke(lobbyId, false);
-                    return;
-                }
 
-                var response = (EChatRoomEnterResponse)result.m_EChatRoomEnterResponse;
-                if (response != EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+            Patches.CoroutineRunner.Instance.StartCoroutine(
+                PollCallResult<LobbyEnter_t>(call, (result, failure) =>
                 {
-                    _log?.LogError($"[Lobby] JoinLobby failed: {response}");
-                    OnLobbyJoined?.Invoke(lobbyId, false);
-                    return;
-                }
+                    if (failure)
+                    {
+                        _log?.LogError("[Lobby] JoinLobby failed (IO failure)");
+                        OnLobbyJoined?.Invoke(lobbyId, false);
+                        return;
+                    }
 
-                LobbyId = new CSteamID(result.m_ulSteamIDLobby);
-                _log?.LogInfo($"[Lobby] Joined lobby: {LobbyId}");
-                OnLobbyJoined?.Invoke(LobbyId, true);
-            });
-            _lobbyEnterResult.Set(call);
+                    var response = (EChatRoomEnterResponse)result.m_EChatRoomEnterResponse;
+                    if (response != EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
+                    {
+                        _log?.LogError($"[Lobby] JoinLobby failed: {response}");
+                        OnLobbyJoined?.Invoke(lobbyId, false);
+                        return;
+                    }
+
+                    LobbyId = new CSteamID(result.m_ulSteamIDLobby);
+                    _log?.LogInfo($"[Lobby] Joined lobby: {LobbyId}");
+                    OnLobbyJoined?.Invoke(LobbyId, true);
+                }));
         }
 
         /// <summary>
@@ -119,8 +192,9 @@ namespace ChillPatcher.Integration.StudyRoom
                 ELobbyDistanceFilter.k_ELobbyDistanceFilterWorldwide);
 
             var call = SteamMatchmaking.RequestLobbyList();
-            _lobbyMatchListResult = CallResult<LobbyMatchList_t>.Create(OnLobbyMatchList);
-            _lobbyMatchListResult.Set(call);
+
+            Patches.CoroutineRunner.Instance.StartCoroutine(
+                PollCallResult<LobbyMatchList_t>(call, OnLobbyMatchList));
         }
 
         private void OnLobbyMatchList(LobbyMatchList_t result, bool failure)

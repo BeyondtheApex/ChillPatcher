@@ -238,11 +238,11 @@ namespace ChillPatcher
                         var pluginOut = $"@outputs/plugins/{pluginName}/app.js";
                         if (!File.Exists(Path.Combine(dir, pluginOut)))
                         {
-                            var err = EsbuildBridge.Build(BuildEsbuildConfigJson(dir, pluginEntry, pluginOut));
+                            var err = EsbuildBridge.Build(BuildPluginEsbuildConfigJson(dir, pluginEntry, pluginOut));
                             if (err != null)
                                 _log.LogWarning($"[OneJS:{entry.Id}] Plugin '{pluginName}' build error: {err}");
                         }
-                        StartEsbuildWatchViaGo(dir, entry.Id, pluginEntry, pluginOut);
+                        StartEsbuildWatchViaGo(dir, entry.Id, pluginEntry, pluginOut, isPlugin: true);
                     }
                 }
             }
@@ -252,9 +252,11 @@ namespace ChillPatcher
 
         private static readonly List<int> _esbuildWatchIds = new List<int>();
 
-        private static void StartEsbuildWatchViaGo(string workingDir, string instanceId, string entryPoint, string outfile)
+        private static void StartEsbuildWatchViaGo(string workingDir, string instanceId, string entryPoint, string outfile, bool isPlugin = false)
         {
-            var configJson = BuildEsbuildConfigJson(workingDir, entryPoint, outfile);
+            var configJson = isPlugin
+                ? BuildPluginEsbuildConfigJson(workingDir, entryPoint, outfile)
+                : BuildEsbuildConfigJson(workingDir, entryPoint, outfile);
             var watchId = EsbuildBridge.Watch(configJson);
             if (watchId > 0)
             {
@@ -286,6 +288,37 @@ namespace ChillPatcher
                 "\"jsxFactory\":\"h\"," +
                 "\"jsxFragment\":\"Fragment\"," +
                 "\"platform\":\"node\"" +
+            "}";
+        }
+
+        /// <summary>
+        /// Plugin 使用 IIFE 格式隔离变量，通过 alias 将 preact 导入重定向到
+        /// shim 文件，从 framework 的 globalThis.__preact / __preactHooks
+        /// 获取共享的 preact 实例，避免每个 plugin bundle 独立 preact 副本。
+        /// </summary>
+        private static string BuildPluginEsbuildConfigJson(string workingDir, string entryPoint, string outfile)
+        {
+            var escaped = workingDir.Replace("\\", "\\\\");
+            var entry = entryPoint.Replace("\\", "/");
+            return "{" +
+                "\"workingDir\":\"" + escaped + "\"," +
+                "\"entryPoints\":[\"" + entry + "\"]," +
+                "\"outfile\":\"" + outfile + "\"," +
+                "\"inject\":[" +
+                    "\"plugin-shims/onejs-core.js\"" +
+                "]," +
+                "\"alias\":{" +
+                    "\"onejs\":\"onejs-core\"," +
+                    "\"preact\":\"./plugin-shims/preact-module.js\"," +
+                    "\"preact/hooks\":\"./plugin-shims/preact-hooks-module.js\"," +
+                    "\"react\":\"./plugin-shims/preact-module.js\"," +
+                    "\"react-dom\":\"./plugin-shims/preact-module.js\"" +
+                "}," +
+                "\"sourcemap\":true," +
+                "\"jsxFactory\":\"h\"," +
+                "\"jsxFragment\":\"Fragment\"," +
+                "\"platform\":\"node\"," +
+                "\"format\":\"iife\"" +
             "}";
         }
 

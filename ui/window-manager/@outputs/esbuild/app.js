@@ -1,3 +1,9 @@
+var __defProp = Object.defineProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
 // node_modules/onejs-core/dist/dom/dom-style.js
 var DomStyleWrapper = class {
   _domStyle;
@@ -40,9 +46,9 @@ var DomWrapper = class _DomWrapper {
     if (this.cachedChildNodes)
       return this.cachedChildNodes;
     this.cachedChildNodes = new Array(this.dom.childNodes.Length);
-    var i = this.dom.childNodes.Length;
-    while (i--) {
-      this.cachedChildNodes[i] = new _DomWrapper(this.dom.childNodes.get_Item(i));
+    var i2 = this.dom.childNodes.Length;
+    while (i2--) {
+      this.cachedChildNodes[i2] = new _DomWrapper(this.dom.childNodes.get_Item(i2));
     }
     return this.cachedChildNodes;
   }
@@ -349,8 +355,8 @@ var DocumentWrapper = class {
   querySelectorAll(selector) {
     let doms = this.#doc.querySelectorAll(selector);
     let res = [];
-    for (let i = 0; i < doms.Length; i++) {
-      res.push(new DomWrapper(doms.get_Item(i)));
+    for (let i2 = 0; i2 < doms.Length; i2++) {
+      res.push(new DomWrapper(doms.get_Item(i2)));
     }
     return res;
   }
@@ -361,8 +367,8 @@ var DocumentWrapper = class {
     const hitTest = (node) => {
       if (!node.ve.worldBound.Contains(new Vector2(x, y)))
         return null;
-      for (let i = node.childNodes.length - 1; i >= 0; i--) {
-        const hit = hitTest(node.childNodes[i]);
+      for (let i2 = node.childNodes.length - 1; i2 >= 0; i2--) {
+        const hit = hitTest(node.childNodes[i2]);
         if (hit)
           return hit;
       }
@@ -378,8 +384,8 @@ var DocumentWrapper = class {
     const collect = (node) => {
       if (!node.ve.worldBound.Contains(new Vector2(x, y)))
         return;
-      for (let i = node.childNodes.length - 1; i >= 0; i--) {
-        collect(node.childNodes[i]);
+      for (let i2 = node.childNodes.length - 1; i2 >= 0; i2--) {
+        collect(node.childNodes[i2]);
       }
       hits.push(node);
     };
@@ -409,6 +415,23 @@ if (typeof globalThis.___document != "undefined") {
   }
 }
 
+// node_modules/onejs-preact/index.js
+var onejs_preact_exports = {};
+__export(onejs_preact_exports, {
+  Component: () => BaseComponent,
+  Fragment: () => Fragment,
+  cloneElement: () => cloneElement,
+  createContext: () => createContext,
+  createElement: () => createElement,
+  createRef: () => createRef,
+  h: () => createElement,
+  hydrate: () => hydrate,
+  isValidElement: () => isValidElement,
+  options: () => options_default,
+  render: () => render,
+  toChildArray: () => toChildArray
+});
+
 // node_modules/onejs-preact/constants.js
 var MODE_HYDRATE = 1 << 5;
 var MODE_SUSPENDED = 1 << 7;
@@ -425,8 +448,8 @@ var IS_NON_DIMENSIONAL = /acit|ex(?:s|g|n|p|$)|rph|grid|ows|mnc|ntw|ine[ch]|zoo|
 // node_modules/onejs-preact/util.js
 var isArray = Array.isArray;
 function assign(obj, props) {
-  for (let i in props)
-    obj[i] = props[i];
+  for (let i2 in props)
+    obj[i2] = props[i2];
   return (
     /** @type {O & P} */
     obj
@@ -474,22 +497,22 @@ var options_default = options;
 // node_modules/onejs-preact/create-element.js
 var vnodeId = 0;
 function createElement(type, props, children) {
-  let normalizedProps = {}, key, ref, i;
-  for (i in props) {
-    if (i == "key")
-      key = props[i];
-    else if (i == "ref")
-      ref = props[i];
+  let normalizedProps = {}, key, ref, i2;
+  for (i2 in props) {
+    if (i2 == "key")
+      key = props[i2];
+    else if (i2 == "ref")
+      ref = props[i2];
     else
-      normalizedProps[i] = props[i];
+      normalizedProps[i2] = props[i2];
   }
   if (arguments.length > 2) {
     normalizedProps.children = arguments.length > 3 ? slice.call(arguments, 2) : children;
   }
   if (typeof type == "function" && type.defaultProps != null) {
-    for (i in type.defaultProps) {
-      if (normalizedProps[i] === void 0) {
-        normalizedProps[i] = type.defaultProps[i];
+    for (i2 in type.defaultProps) {
+      if (normalizedProps[i2] === void 0) {
+        normalizedProps[i2] = type.defaultProps[i2];
       }
     }
   }
@@ -520,9 +543,13 @@ function createVNode(type, props, key, ref, original) {
     options_default.vnode(vnode);
   return vnode;
 }
+function createRef() {
+  return { current: null };
+}
 function Fragment(props) {
   return props.children;
 }
+var isValidElement = (vnode) => vnode != null && vnode.constructor == void 0;
 
 // node_modules/onejs-preact/component.js
 function BaseComponent(props, context) {
@@ -603,8 +630,8 @@ function renderComponent(component) {
 function updateParentDomPointers(vnode) {
   if ((vnode = vnode._parent) != null && vnode._component != null) {
     vnode._dom = vnode._component.base = null;
-    for (let i = 0; i < vnode._children.length; i++) {
-      let child = vnode._children[i];
+    for (let i2 = 0; i2 < vnode._children.length; i2++) {
+      let child = vnode._children[i2];
       if (child != null && child._dom != null) {
         vnode._dom = vnode._component.base = child._dom;
         break;
@@ -641,14 +668,14 @@ process._rerenderCount = 0;
 
 // node_modules/onejs-preact/diff/children.js
 function diffChildren(parentDom, renderResult, newParentVNode, oldParentVNode, globalContext, namespace, excessDomChildren, commitQueue, oldDom, isHydrating, refQueue) {
-  let i, oldVNode, childVNode, newDom, firstChildDom;
+  let i2, oldVNode, childVNode, newDom, firstChildDom;
   let oldChildren = oldParentVNode && oldParentVNode._children || EMPTY_ARR;
   let newChildrenLength = renderResult.length;
   newParentVNode._nextDom = oldDom;
   constructNewChildrenArray(newParentVNode, renderResult, oldChildren);
   oldDom = newParentVNode._nextDom;
-  for (i = 0; i < newChildrenLength; i++) {
-    childVNode = newParentVNode._children[i];
+  for (i2 = 0; i2 < newChildrenLength; i2++) {
+    childVNode = newParentVNode._children[i2];
     if (childVNode == null || typeof childVNode == "boolean" || typeof childVNode == "function") {
       continue;
     }
@@ -657,7 +684,7 @@ function diffChildren(parentDom, renderResult, newParentVNode, oldParentVNode, g
     } else {
       oldVNode = oldChildren[childVNode._index] || EMPTY_OBJ;
     }
-    childVNode._index = i;
+    childVNode._index = i2;
     diff(
       parentDom,
       childVNode,
@@ -698,20 +725,20 @@ function diffChildren(parentDom, renderResult, newParentVNode, oldParentVNode, g
   newParentVNode._dom = firstChildDom;
 }
 function constructNewChildrenArray(newParentVNode, renderResult, oldChildren) {
-  let i;
+  let i2;
   let childVNode;
   let oldVNode;
   const newChildrenLength = renderResult.length;
   let oldChildrenLength = oldChildren.length, remainingOldChildren = oldChildrenLength;
   let skew = 0;
   newParentVNode._children = [];
-  for (i = 0; i < newChildrenLength; i++) {
-    childVNode = renderResult[i];
+  for (i2 = 0; i2 < newChildrenLength; i2++) {
+    childVNode = renderResult[i2];
     if (childVNode == null || typeof childVNode == "boolean" || typeof childVNode == "function") {
-      childVNode = newParentVNode._children[i] = null;
+      childVNode = newParentVNode._children[i2] = null;
     } else if (typeof childVNode == "string" || typeof childVNode == "number" || // eslint-disable-next-line valid-typeof
     typeof childVNode == "bigint" || childVNode.constructor == String) {
-      childVNode = newParentVNode._children[i] = createVNode(
+      childVNode = newParentVNode._children[i2] = createVNode(
         null,
         childVNode,
         null,
@@ -719,7 +746,7 @@ function constructNewChildrenArray(newParentVNode, renderResult, oldChildren) {
         null
       );
     } else if (isArray(childVNode)) {
-      childVNode = newParentVNode._children[i] = createVNode(
+      childVNode = newParentVNode._children[i2] = createVNode(
         Fragment,
         { children: childVNode },
         null,
@@ -727,7 +754,7 @@ function constructNewChildrenArray(newParentVNode, renderResult, oldChildren) {
         null
       );
     } else if (childVNode.constructor === void 0 && childVNode._depth > 0) {
-      childVNode = newParentVNode._children[i] = createVNode(
+      childVNode = newParentVNode._children[i2] = createVNode(
         childVNode.type,
         childVNode.props,
         childVNode.key,
@@ -735,9 +762,9 @@ function constructNewChildrenArray(newParentVNode, renderResult, oldChildren) {
         childVNode._original
       );
     } else {
-      childVNode = newParentVNode._children[i] = childVNode;
+      childVNode = newParentVNode._children[i2] = childVNode;
     }
-    const skewedIndex = i + skew;
+    const skewedIndex = i2 + skew;
     if (childVNode == null) {
       oldVNode = oldChildren[skewedIndex];
       if (oldVNode && oldVNode.key == null && oldVNode._dom && (oldVNode._flags & MATCHED) === 0) {
@@ -789,14 +816,14 @@ function constructNewChildrenArray(newParentVNode, renderResult, oldChildren) {
       } else if (matchingIndex < skewedIndex) {
         skew++;
       }
-      if (matchingIndex !== i + skew) {
+      if (matchingIndex !== i2 + skew) {
         childVNode._flags |= INSERT_VNODE;
       }
     }
   }
   if (remainingOldChildren) {
-    for (i = 0; i < oldChildrenLength; i++) {
-      oldVNode = oldChildren[i];
+    for (i2 = 0; i2 < oldChildrenLength; i2++) {
+      oldVNode = oldChildren[i2];
       if (oldVNode != null && (oldVNode._flags & MATCHED) === 0) {
         if (oldVNode._dom == newParentVNode._nextDom) {
           newParentVNode._nextDom = getDomSibling(oldVNode);
@@ -809,10 +836,10 @@ function constructNewChildrenArray(newParentVNode, renderResult, oldChildren) {
 function insert(parentVNode, oldDom, parentDom) {
   if (typeof parentVNode.type == "function") {
     let children = parentVNode._children;
-    for (let i = 0; children && i < children.length; i++) {
-      if (children[i]) {
-        children[i]._parent = parentVNode;
-        oldDom = insert(children[i], oldDom, parentDom);
+    for (let i2 = 0; children && i2 < children.length; i2++) {
+      if (children[i2]) {
+        children[i2]._parent = parentVNode;
+        oldDom = insert(children[i2], oldDom, parentDom);
       }
     }
     return oldDom;
@@ -828,6 +855,18 @@ function insert(parentVNode, oldDom, parentDom) {
     oldDom = oldDom && oldDom.nextSibling;
   } while (oldDom != null && oldDom.nodeType === 8);
   return oldDom;
+}
+function toChildArray(children, out) {
+  out = out || [];
+  if (children == null || typeof children == "boolean") {
+  } else if (isArray(children)) {
+    children.some((child) => {
+      toChildArray(child, out);
+    });
+  } else {
+    out.push(children);
+  }
+  return out;
 }
 function findMatchingIndex(childVNode, oldChildren, skewedIndex, remainingOldChildren) {
   const key = childVNode.key;
@@ -1060,8 +1099,8 @@ function diff(parentDom, newVNode, oldVNode, globalContext, namespace, excessDom
               if (vnode)
                 vnode._parent = newVNode;
             });
-            for (let i = 0; i < c._stateCallbacks.length; i++) {
-              c._renderCallbacks.push(c._stateCallbacks[i]);
+            for (let i2 = 0; i2 < c._stateCallbacks.length; i2++) {
+              c._renderCallbacks.push(c._stateCallbacks[i2]);
             }
             c._stateCallbacks = [];
             if (c._renderCallbacks.length) {
@@ -1089,8 +1128,8 @@ function diff(parentDom, newVNode, oldVNode, globalContext, namespace, excessDom
           if (renderHook)
             renderHook(newVNode);
           tmp = c.render(c.props, c.state, c.context);
-          for (let i = 0; i < c._stateCallbacks.length; i++) {
-            c._renderCallbacks.push(c._stateCallbacks[i]);
+          for (let i2 = 0; i2 < c._stateCallbacks.length; i2++) {
+            c._renderCallbacks.push(c._stateCallbacks[i2]);
           }
           c._stateCallbacks = [];
         } else {
@@ -1168,8 +1207,8 @@ function diff(parentDom, newVNode, oldVNode, globalContext, namespace, excessDom
 }
 function commitRoot(commitQueue, root, refQueue) {
   root._nextDom = void 0;
-  for (let i = 0; i < refQueue.length; i++) {
-    applyRef(refQueue[i], refQueue[++i], refQueue[++i]);
+  for (let i2 = 0; i2 < refQueue.length; i2++) {
+    applyRef(refQueue[i2], refQueue[++i2], refQueue[++i2]);
   }
   if (options_default._commit)
     options_default._commit(root, commitQueue);
@@ -1192,7 +1231,7 @@ function diffElementNodes(dom, newVNode, oldVNode, globalContext, namespace, exc
     /** @type {string} */
     newVNode.type
   );
-  let i;
+  let i2;
   let newHtml;
   let oldHtml;
   let newChildren;
@@ -1206,11 +1245,11 @@ function diffElementNodes(dom, newVNode, oldVNode, globalContext, namespace, exc
   else if (!namespace)
     namespace = "http://www.w3.org/1999/xhtml";
   if (excessDomChildren != null) {
-    for (i = 0; i < excessDomChildren.length; i++) {
-      value = excessDomChildren[i];
+    for (i2 = 0; i2 < excessDomChildren.length; i2++) {
+      value = excessDomChildren[i2];
       if (value && "setAttribute" in value === !!nodeType && (nodeType ? value.localName === nodeType : value.nodeType === 3)) {
         dom = value;
-        excessDomChildren[i] = null;
+        excessDomChildren[i2] = null;
         break;
       }
     }
@@ -1237,35 +1276,35 @@ function diffElementNodes(dom, newVNode, oldVNode, globalContext, namespace, exc
     oldProps = oldVNode.props || EMPTY_OBJ;
     if (!isHydrating && excessDomChildren != null) {
       oldProps = {};
-      for (i = 0; i < dom.attributes.length; i++) {
-        value = dom.attributes[i];
+      for (i2 = 0; i2 < dom.attributes.length; i2++) {
+        value = dom.attributes[i2];
         oldProps[value.name] = value.value;
       }
     }
-    for (i in oldProps) {
-      value = oldProps[i];
-      if (i == "children") {
-      } else if (i == "dangerouslySetInnerHTML") {
+    for (i2 in oldProps) {
+      value = oldProps[i2];
+      if (i2 == "children") {
+      } else if (i2 == "dangerouslySetInnerHTML") {
         oldHtml = value;
-      } else if (i !== "key" && !(i in newProps)) {
-        if (i == "value" && "defaultValue" in newProps || i == "checked" && "defaultChecked" in newProps) {
+      } else if (i2 !== "key" && !(i2 in newProps)) {
+        if (i2 == "value" && "defaultValue" in newProps || i2 == "checked" && "defaultChecked" in newProps) {
           continue;
         }
-        setProperty(dom, i, null, value, namespace);
+        setProperty(dom, i2, null, value, namespace);
       }
     }
-    for (i in newProps) {
-      value = newProps[i];
-      if (i == "children") {
+    for (i2 in newProps) {
+      value = newProps[i2];
+      if (i2 == "children") {
         newChildren = value;
-      } else if (i == "dangerouslySetInnerHTML") {
+      } else if (i2 == "dangerouslySetInnerHTML") {
         newHtml = value;
-      } else if (i == "value") {
+      } else if (i2 == "value") {
         inputValue = value;
-      } else if (i == "checked") {
+      } else if (i2 == "checked") {
         checked = value;
-      } else if (i !== "key" && (!isHydrating || typeof value == "function") && oldProps[i] !== value) {
-        setProperty(dom, i, value, oldProps[i], namespace);
+      } else if (i2 !== "key" && (!isHydrating || typeof value == "function") && oldProps[i2] !== value) {
+        setProperty(dom, i2, value, oldProps[i2], namespace);
       }
     }
     if (newHtml) {
@@ -1290,27 +1329,27 @@ function diffElementNodes(dom, newVNode, oldVNode, globalContext, namespace, exc
         refQueue
       );
       if (excessDomChildren != null) {
-        for (i = excessDomChildren.length; i--; ) {
-          if (excessDomChildren[i] != null)
-            removeNode(excessDomChildren[i]);
+        for (i2 = excessDomChildren.length; i2--; ) {
+          if (excessDomChildren[i2] != null)
+            removeNode(excessDomChildren[i2]);
         }
       }
     }
     if (!isHydrating) {
-      i = "value";
+      i2 = "value";
       if (inputValue !== void 0 && // #2756 For the <progress>-element the initial value is 0,
       // despite the attribute not being present. When the attribute
       // is missing the progress bar is treated as indeterminate.
       // To fix that we'll always update it when it is 0 for progress elements
-      (inputValue !== dom[i] || nodeType === "progress" && !inputValue || // This is only for IE 11 to fix <select> value not being updated.
+      (inputValue !== dom[i2] || nodeType === "progress" && !inputValue || // This is only for IE 11 to fix <select> value not being updated.
       // To avoid a stale select value we need to set the option.value
       // again, which triggers IE11 to re-evaluate the select value
-      nodeType === "option" && inputValue !== oldProps[i])) {
-        setProperty(dom, i, inputValue, oldProps[i], namespace);
+      nodeType === "option" && inputValue !== oldProps[i2])) {
+        setProperty(dom, i2, inputValue, oldProps[i2], namespace);
       }
-      i = "checked";
-      if (checked !== void 0 && checked !== dom[i]) {
-        setProperty(dom, i, checked, oldProps[i], namespace);
+      i2 = "checked";
+      if (checked !== void 0 && checked !== dom[i2]) {
+        setProperty(dom, i2, checked, oldProps[i2], namespace);
       }
     }
   }
@@ -1352,10 +1391,10 @@ function unmount(vnode, parentVNode, skipRemove) {
     r.base = r._parentDom = null;
   }
   if (r = vnode._children) {
-    for (let i = 0; i < r.length; i++) {
-      if (r[i]) {
+    for (let i2 = 0; i2 < r.length; i2++) {
+      if (r[i2]) {
         unmount(
-          r[i],
+          r[i2],
           parentVNode,
           skipRemove || typeof vnode.type != "function"
         );
@@ -1402,6 +1441,126 @@ function render(vnode, parentDom, replaceNode) {
     refQueue
   );
   commitRoot(commitQueue, vnode, refQueue);
+}
+function hydrate(vnode, parentDom) {
+  render(vnode, parentDom, hydrate);
+}
+
+// node_modules/onejs-preact/clone-element.js
+function cloneElement(vnode, props, children) {
+  let normalizedProps = assign({}, vnode.props), key, ref, i2;
+  let defaultProps;
+  if (vnode.type && vnode.type.defaultProps) {
+    defaultProps = vnode.type.defaultProps;
+  }
+  for (i2 in props) {
+    if (i2 == "key")
+      key = props[i2];
+    else if (i2 == "ref")
+      ref = props[i2];
+    else if (props[i2] === void 0 && defaultProps !== void 0) {
+      normalizedProps[i2] = defaultProps[i2];
+    } else {
+      normalizedProps[i2] = props[i2];
+    }
+  }
+  if (arguments.length > 2) {
+    normalizedProps.children = arguments.length > 3 ? slice.call(arguments, 2) : children;
+  }
+  return createVNode(
+    vnode.type,
+    normalizedProps,
+    key || vnode.key,
+    ref || vnode.ref,
+    null
+  );
+}
+
+// node_modules/onejs-preact/create-context.js
+var i = 0;
+function createContext(defaultValue, contextId) {
+  contextId = "__cC" + i++;
+  const context = {
+    _id: contextId,
+    _defaultValue: defaultValue,
+    /** @type {FunctionComponent} */
+    Consumer(props, contextValue) {
+      return props.children(contextValue);
+    },
+    /** @type {FunctionComponent} */
+    Provider(props) {
+      if (!this.getChildContext) {
+        let subs = [];
+        let ctx = {};
+        ctx[contextId] = this;
+        this.getChildContext = () => ctx;
+        this.componentWillUnmount = () => {
+          subs = null;
+        };
+        this.shouldComponentUpdate = function(_props) {
+          if (this.props.value !== _props.value) {
+            subs.some((c) => {
+              c._force = true;
+              enqueueRender(c);
+            });
+          }
+        };
+        this.sub = (c) => {
+          subs.push(c);
+          let old = c.componentWillUnmount;
+          c.componentWillUnmount = () => {
+            if (subs) {
+              subs.splice(subs.indexOf(c), 1);
+            }
+            if (old)
+              old.call(c);
+          };
+        };
+      }
+      return props.children;
+    }
+  };
+  return context.Provider._contextRef = context.Consumer.contextType = context;
+}
+
+// node_modules/onejs-preact/hooks/index.js
+var hooks_exports = {};
+__export(hooks_exports, {
+  useCallback: () => useCallback,
+  useContext: () => useContext,
+  useDebugValue: () => useDebugValue,
+  useEffect: () => useEffect,
+  useErrorBoundary: () => useErrorBoundary,
+  useEventfulState: () => useEventfulState,
+  useId: () => useId,
+  useImperativeHandle: () => useImperativeHandle,
+  useLayoutEffect: () => useLayoutEffect,
+  useMemo: () => useMemo,
+  useReducer: () => useReducer,
+  useRef: () => useRef,
+  useState: () => useState
+});
+
+// node_modules/onejs-preact/hooks/eventful.js
+function useEventfulState(obj, propertyName, eventName) {
+  const [state, setState] = useState({ value: obj?.[propertyName] });
+  const setValue = useCallback((value) => setState({ value }), []);
+  useEffect(() => {
+    if (obj == null)
+      return;
+    eventName ??= `On${propertyName}Changed`;
+    setValue(obj[propertyName]);
+    return onejs.subscribe(obj, eventName, setValue);
+  }, [obj]);
+  const setValWrapper = useCallback(
+    (v) => {
+      if (obj == null)
+        return;
+      obj[propertyName] = v;
+    },
+    [obj]
+  );
+  return [state.value, setValWrapper];
 }
 
 // node_modules/onejs-preact/hooks/index.js
@@ -1594,9 +1753,32 @@ function useEffect(callback, args) {
     currentComponent.__hooks._pendingEffects.push(state);
   }
 }
+function useLayoutEffect(callback, args) {
+  const state = getHookState(currentIndex++, 4);
+  if (!options2._skipEffects && argsChanged(state._args, args)) {
+    state._value = callback;
+    state._pendingArgs = args;
+    currentComponent._renderCallbacks.push(state);
+  }
+}
 function useRef(initialValue) {
   currentHook = 5;
   return useMemo(() => ({ current: initialValue }), []);
+}
+function useImperativeHandle(ref, createHandle, args) {
+  currentHook = 6;
+  useLayoutEffect(
+    () => {
+      if (typeof ref == "function") {
+        ref(createHandle());
+        return () => ref(null);
+      } else if (ref) {
+        ref.current = createHandle();
+        return () => ref.current = null;
+      }
+    },
+    args == null ? args : args.concat(ref)
+  );
 }
 function useMemo(factory, args) {
   const state = getHookState(currentIndex++, 7);
@@ -1606,6 +1788,32 @@ function useMemo(factory, args) {
     state._factory = factory;
   }
   return state._value;
+}
+function useCallback(callback, args) {
+  currentHook = 8;
+  return useMemo(() => callback, args);
+}
+function useContext(context) {
+  const provider = currentComponent.context[context._id];
+  const state = getHookState(currentIndex++, 9);
+  state._context = context;
+  if (!provider)
+    return context._defaultValue;
+  if (state._value == null) {
+    state._value = true;
+    provider.sub(currentComponent);
+  }
+  return provider.props.value;
+}
+function useDebugValue(value, formatter) {
+  if (options2.useDebugValue) {
+    options2.useDebugValue(
+      formatter ? formatter(value) : (
+        /** @type {any}*/
+        value
+      )
+    );
+  }
 }
 function useErrorBoundary(cb) {
   const state = getHookState(currentIndex++, 10);
@@ -1624,6 +1832,18 @@ function useErrorBoundary(cb) {
       errState[1](void 0);
     }
   ];
+}
+function useId() {
+  const state = getHookState(currentIndex++, 11);
+  if (!state._value) {
+    let root = currentComponent._vnode;
+    while (root !== null && !root._mask && root._parent !== null) {
+      root = root._parent;
+    }
+    let mask = root._mask || (root._mask = [0, 0]);
+    state._value = "P" + mask[0] + "-" + mask[1]++;
+  }
+  return state._value;
 }
 function flushAfterPaintEffects() {
   let component;
@@ -2336,6 +2556,10 @@ var Window = ({
 };
 
 // index.tsx
+var { h: h2, Fragment: Fragment2, render: render2 } = onejs_preact_exports;
+var { useState: useState2, useEffect: useEffect2, useRef: useRef2, useErrorBoundary: useErrorBoundary2 } = hooks_exports;
+globalThis.__preact = onejs_preact_exports;
+globalThis.__preactHooks = hooks_exports;
 if (typeof globalThis.requestAnimationFrame === "undefined") {
   ;
   globalThis.requestAnimationFrame = (cb) => setTimeout(
@@ -2387,11 +2611,11 @@ function loadPlugins() {
   }
 }
 var ErrorBoundary = ({ children }) => {
-  const [error, resetError] = useErrorBoundary((err) => {
+  const [error, resetError] = useErrorBoundary2((err) => {
     console.error("[WindowManager] Error boundary caught:", err);
   });
   if (error) {
-    return /* @__PURE__ */ createElement(
+    return /* @__PURE__ */ h2(
       "div",
       {
         style: {
@@ -2405,8 +2629,8 @@ var ErrorBoundary = ({ children }) => {
           paddingRight: 20
         }
       },
-      /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: "#f87171", marginBottom: 8 } }, "\u63D2\u4EF6\u6E32\u67D3\u51FA\u9519"),
-      /* @__PURE__ */ createElement(
+      /* @__PURE__ */ h2("div", { style: { fontSize: 14, color: "#f87171", marginBottom: 8 } }, "\u63D2\u4EF6\u6E32\u67D3\u51FA\u9519"),
+      /* @__PURE__ */ h2(
         "div",
         {
           style: {
@@ -2418,7 +2642,7 @@ var ErrorBoundary = ({ children }) => {
         },
         String(error)
       ),
-      /* @__PURE__ */ createElement(
+      /* @__PURE__ */ h2(
         "div",
         {
           style: {
@@ -2486,10 +2710,10 @@ function notifyVisibilitySubscribers() {
     fn();
 }
 var App = () => {
-  const [plugins, setPlugins] = useState([]);
-  const [visibility, setVisibility] = useState({});
-  const visibilityRef = useRef({});
-  useEffect(() => {
+  const [plugins, setPlugins] = useState2([]);
+  const [visibility, setVisibility] = useState2({});
+  const visibilityRef = useRef2({});
+  useEffect2(() => {
     loadPlugins();
     const vis = loadVisibilityState();
     visibilityRef.current = vis;
@@ -2512,16 +2736,16 @@ var App = () => {
     setVisibility(next);
     saveVisibilityState(next);
   };
-  useEffect(() => {
+  useEffect2(() => {
     _controlRef = { isVisible, toggleVisible };
     notifyVisibilitySubscribers();
     return () => {
       _controlRef = null;
     };
   }, [visibility]);
-  return /* @__PURE__ */ createElement(Fragment, null, plugins.map((p) => {
+  return /* @__PURE__ */ h2(Fragment2, null, plugins.map((p) => {
     const visible = isVisible(p.id);
-    return /* @__PURE__ */ createElement(
+    return /* @__PURE__ */ h2(
       Window,
       {
         key: p.id,
@@ -2540,9 +2764,9 @@ var App = () => {
         visible,
         onClose: () => toggleVisible(p.id)
       },
-      /* @__PURE__ */ createElement(ErrorBoundary, null, /* @__PURE__ */ createElement(p.component, null))
+      /* @__PURE__ */ h2(ErrorBoundary, null, /* @__PURE__ */ h2(p.component, null))
     );
   }));
 };
-render(/* @__PURE__ */ createElement(App, null), document.body);
+render2(/* @__PURE__ */ h2(App, null), document.body);
 //# sourceMappingURL=app.js.map
