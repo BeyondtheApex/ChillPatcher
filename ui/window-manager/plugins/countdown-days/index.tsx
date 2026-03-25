@@ -647,7 +647,7 @@ const buildCalendarCells = (year: number, month: number): CalendarCell[] => {
     return cells
 }
 
-const ActionButton = ({
+const CountdownActionButton = ({
     text,
     onClick,
     color,
@@ -683,6 +683,9 @@ const ActionButton = ({
             borderRadius: 6,
             minHeight: compact ? 20 : 22,
             width: fullWidth ? "100%" : undefined,
+            whiteSpace: "NoWrap",
+            overflow: "Hidden",
+            textOverflow: "Ellipsis",
             unityTextAlign: "MiddleCenter",
         }}
     >
@@ -1012,14 +1015,14 @@ const CountdownPanel = () => {
         return rows
     }, [calendarCells])
 
-    const textColor = config.textColor
-    const mutedText = hexToRgba(config.textColor, 0.72)
-    const subtleText = mixHex(config.textColor, config.backgroundColor, 0.48)
-    const panelBorder = mixHex(config.textColor, config.backgroundColor, 0.74)
-    const panelInnerBg = mixHex(config.backgroundColor, "#000000", 0.22)
-    const softActionBg = mixHex(config.backgroundColor, "#000000", 0.15)
-    const inputBg = mixHex(config.backgroundColor, "#000000", 0.36)
-    const inputBorder = mixHex(config.textColor, config.backgroundColor, 0.65)
+    const textColor = config.titleColor
+    const mutedText = hexToRgba(textColor, 0.72)
+    const subtleText = mixHex(textColor, config.rightPanelBgColor, 0.48)
+    const panelBorder = mixHex(textColor, config.rightPanelBgColor, 0.74)
+    const panelInnerBg = mixHex(config.rightPanelBgColor, "#000000", 0.22)
+    const softActionBg = mixHex(config.rightPanelBgColor, "#000000", 0.15)
+    const inputBg = mixHex(config.rightPanelBgColor, "#000000", 0.36)
+    const inputBorder = mixHex(textColor, config.rightPanelBgColor, 0.65)
     const calendarCellBg = mixHex(config.leftPanelBgColor, "#000000", 0.2)
     const calendarCellMutedBg = mixHex(config.leftPanelBgColor, "#000000", 0.32)
     const selectedCellBg = mixHex(config.daysColor, "#000000", 0.06)
@@ -1311,8 +1314,8 @@ const CountdownPanel = () => {
                         <div style={{ fontSize: 9, color: subtleText }}>{item.targetDate}</div>
 
                         <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                            <div style={{ width: 34 }}>
-                                <ActionButton
+                            <div style={{ width: 40 }}>
+                                <CountdownActionButton
                                     text={item.pinned ? "UNP" : "PIN"}
                                     onClick={() => togglePinned(item.id)}
                                     color={item.pinned ? mixHex("#0b1120", config.textColor, 0.2) : textColor}
@@ -1321,12 +1324,12 @@ const CountdownPanel = () => {
                                 />
                             </div>
                             <div style={{ width: 4 }} />
-                            <div style={{ width: 34 }}>
-                                <ActionButton text="EDT" onClick={() => startEdit(item)} color={textColor} bg={actionBaseBg} compact />
+                            <div style={{ width: 40 }}>
+                                <CountdownActionButton text="EDT" onClick={() => startEdit(item)} color={textColor} bg={actionBaseBg} compact />
                             </div>
                             <div style={{ width: 4 }} />
-                            <div style={{ width: 34 }}>
-                                <ActionButton text="DEL" onClick={() => setDeleteConfirmId(item.id)} color="#fecaca" bg={actionDeleteBg} compact />
+                            <div style={{ width: 40 }}>
+                                <CountdownActionButton text="DEL" onClick={() => setDeleteConfirmId(item.id)} color="#fecaca" bg={actionDeleteBg} compact />
                             </div>
                         </div>
                     </div>
@@ -1372,11 +1375,11 @@ const CountdownPanel = () => {
                         </div>
                         <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
                             <div style={{ width: 36 }}>
-                                <ActionButton text="YES" onClick={() => removeEvent(item.id)} color="#dcfce7" bg="#14532d" compact />
+                                <CountdownActionButton text="YES" onClick={() => removeEvent(item.id)} color="#dcfce7" bg="#14532d" compact />
                             </div>
                             <div style={{ width: 4 }} />
                             <div style={{ width: 36 }}>
-                                <ActionButton text="NO" onClick={() => setDeleteConfirmId(null)} color={textColor} bg={actionBaseBg} compact />
+                                <CountdownActionButton text="NO" onClick={() => setDeleteConfirmId(null)} color={textColor} bg={actionBaseBg} compact />
                             </div>
                         </div>
                     </div>
@@ -1428,13 +1431,13 @@ const CountdownPanel = () => {
 
             <div ref={pagerRowRef} style={{ display: "Flex", justifyContent: "Center", alignItems: "Center", marginTop: 4 }}>
                 <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                    <ActionButton text="<<" onClick={() => setEventPage(1)} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact />
+                    <CountdownActionButton text="<<" onClick={() => setEventPage(1)} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact />
                     <div style={{ width: 4 }} />
-                    <ActionButton text="<" onClick={() => setEventPage((page) => Math.max(1, page - 1))} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact />
+                    <CountdownActionButton text="<" onClick={() => setEventPage((page) => Math.max(1, page - 1))} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact />
                     <div style={{ width: 4 }} />
                     {visiblePageNumbers.map((pageNumber) => (
                         <div key={`page-${pageNumber}`} style={{ marginRight: 4 }}>
-                            <ActionButton
+                            <CountdownActionButton
                                 text={`${pageNumber}`}
                                 onClick={() => setEventPage(pageNumber)}
                                 color={textColor}
@@ -1443,7 +1446,7 @@ const CountdownPanel = () => {
                             />
                         </div>
                     ))}
-                    <ActionButton
+                    <CountdownActionButton
                         text=">"
                         onClick={() => setEventPage((page) => Math.min(totalEventPages, page + 1))}
                         disabled={eventPage >= totalEventPages}
@@ -1452,7 +1455,7 @@ const CountdownPanel = () => {
                         compact
                     />
                     <div style={{ width: 4 }} />
-                    <ActionButton
+                    <CountdownActionButton
                         text=">>"
                         onClick={() => setEventPage(totalEventPages)}
                         disabled={eventPage >= totalEventPages}
@@ -1484,7 +1487,7 @@ const CountdownPanel = () => {
             {middleMode ? (
                 <div style={{ flexGrow: 1, display: "Flex", flexDirection: "Column", minHeight: 0, alignItems: "FlexStart" }}>
                     <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", marginBottom: 6 }}>
-                        <ActionButton text="展开" onClick={exitMiddleMode} color={textColor} bg={accentButtonBg} compact />
+                        <CountdownActionButton text="展开" onClick={exitMiddleMode} color={textColor} bg={accentButtonBg} compact />
                     </div>
 
                     <div
@@ -1513,7 +1516,7 @@ const CountdownPanel = () => {
                 <>
                     <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", alignItems: "Center", marginBottom: 6 }}>
                         <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                            <ActionButton text="收起" onClick={enterMiddleMode} color={textColor} bg={softActionBg} compact />
+                            <CountdownActionButton text="收起" onClick={enterMiddleMode} color={textColor} bg={softActionBg} compact />
                             <div style={{ width: 6 }} />
                             <div style={{ fontSize: 12, color: textColor, unityFontStyleAndWeight: "Bold" }}>日历计时</div>
                         </div>
@@ -1521,7 +1524,7 @@ const CountdownPanel = () => {
                             <div style={{ fontSize: 9, color: subtleText, marginRight: 4 }}>小卡</div>
                             {[1, 2, 4].map((countValue) => (
                                 <div key={`compact-count-${countValue}`} style={{ marginRight: 3 }}>
-                                    <ActionButton
+                                    <CountdownActionButton
                                         text={`${countValue}`}
                                         onClick={() => setCompactCount(countValue as 1 | 2 | 4)}
                                         color={textColor}
@@ -1530,7 +1533,7 @@ const CountdownPanel = () => {
                                     />
                                 </div>
                             ))}
-                            <ActionButton text="设置" onClick={openSettings} bg={accentButtonBg} color={textColor} compact />
+                            <CountdownActionButton text="设置" onClick={openSettings} bg={accentButtonBg} color={textColor} compact />
                         </div>
                     </div>
 
@@ -1553,9 +1556,9 @@ const CountdownPanel = () => {
                             <div style={{ width: "100%", maxWidth: 360, marginLeft: "Auto", marginRight: "Auto" }}>
                                 <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", marginBottom: 6, minWidth: 0, width: "100%" }}>
                                     <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                                        <ActionButton text="今天" onClick={goToToday} color={textColor} bg={softActionBg} compact />
+                                        <CountdownActionButton text="今天" onClick={goToToday} color={textColor} bg={softActionBg} compact />
                                         <div style={{ width: 3 }} />
-                                        <ActionButton text="<" onClick={() => shiftView(-1)} color={textColor} bg={softActionBg} compact />
+                                        <CountdownActionButton text="<" onClick={() => shiftView(-1)} color={textColor} bg={softActionBg} compact />
                                     </div>
                                     <div style={{ flexGrow: 1, minWidth: 0, paddingLeft: 4, paddingRight: 4, display: "Flex", justifyContent: "Center" }}>
                                         <div
@@ -1582,7 +1585,7 @@ const CountdownPanel = () => {
                                             {monthTitle(viewYear, viewMonth)}
                                         </div>
                                     </div>
-                                    <ActionButton text=">" onClick={() => shiftView(1)} color={textColor} bg={softActionBg} compact />
+                                    <CountdownActionButton text=">" onClick={() => shiftView(1)} color={textColor} bg={softActionBg} compact />
                                 </div>
 
                                 <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 3, width: "100%" }}>
@@ -1696,7 +1699,7 @@ const CountdownPanel = () => {
                                 />
 
                                 <div style={{ display: "Flex", flexDirection: "Row" }}>
-                                    <ActionButton text="添加到选中日期" onClick={saveEventForSelectedDate} color={textColor} bg={accentButtonBg} compact />
+                                    <CountdownActionButton text="添加到选中日期" onClick={saveEventForSelectedDate} color={textColor} bg={accentButtonBg} compact />
                                 </div>
                             </div>
 
@@ -1741,25 +1744,25 @@ const CountdownPanel = () => {
                     >
                         <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", alignItems: "Center", marginBottom: 8 }}>
                             <div style={{ fontSize: 12, color: textColor, unityFontStyleAndWeight: "Bold" }}>选择年月</div>
-                            <ActionButton text="关闭" onClick={() => setMonthPickerOpen(false)} color={textColor} bg={softActionBg} compact />
+                            <CountdownActionButton text="关闭" onClick={() => setMonthPickerOpen(false)} color={textColor} bg={softActionBg} compact />
                         </div>
 
                         <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "Center", alignItems: "Center", marginBottom: 8 }}>
-                            <ActionButton text="-10" onClick={() => setYearCursor((y) => y - 10)} color={textColor} bg={softActionBg} compact />
+                            <CountdownActionButton text="-10" onClick={() => setYearCursor((y) => y - 10)} color={textColor} bg={softActionBg} compact />
                             <div style={{ width: 3 }} />
-                            <ActionButton text="-1" onClick={() => setYearCursor((y) => y - 1)} color={textColor} bg={softActionBg} compact />
+                            <CountdownActionButton text="-1" onClick={() => setYearCursor((y) => y - 1)} color={textColor} bg={softActionBg} compact />
                             <div style={{ width: 8 }} />
                             <div style={{ fontSize: 12, color: textColor, width: 70, unityTextAlign: "MiddleCenter" }}>{yearCursor}年</div>
                             <div style={{ width: 8 }} />
-                            <ActionButton text="+1" onClick={() => setYearCursor((y) => y + 1)} color={textColor} bg={softActionBg} compact />
+                            <CountdownActionButton text="+1" onClick={() => setYearCursor((y) => y + 1)} color={textColor} bg={softActionBg} compact />
                             <div style={{ width: 3 }} />
-                            <ActionButton text="+10" onClick={() => setYearCursor((y) => y + 10)} color={textColor} bg={softActionBg} compact />
+                            <CountdownActionButton text="+10" onClick={() => setYearCursor((y) => y + 10)} color={textColor} bg={softActionBg} compact />
                         </div>
 
                         <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "Center", marginBottom: 8 }}>
                             {Array.from({ length: 5 }, (_, i) => yearCursor - 2 + i).map((year, i) => (
                                 <div key={`year-select-${year}`} style={{ marginRight: i === 4 ? 0 : 4 }}>
-                                    <ActionButton
+                                    <CountdownActionButton
                                         text={`${year}`}
                                         onClick={() => setYearCursor(year)}
                                         color={textColor}
@@ -1773,7 +1776,7 @@ const CountdownPanel = () => {
                         <div style={{ display: "Flex", flexDirection: "Row", flexWrap: "Wrap", justifyContent: "Center" }}>
                             {MONTH_LABELS.map((label, monthIndex) => (
                                 <div key={`month-${monthIndex}`} style={{ width: 76, marginRight: 4, marginBottom: 4 }}>
-                                    <ActionButton
+                                    <CountdownActionButton
                                         text={label}
                                         onClick={() => {
                                             setViewYear(yearCursor)
@@ -1827,7 +1830,7 @@ const CountdownPanel = () => {
                     >
                         <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", alignItems: "Center", marginBottom: 8 }}>
                             <div style={{ fontSize: 12, color: textColor, unityFontStyleAndWeight: "Bold" }}>编辑事件</div>
-                            <ActionButton text="关闭" onClick={closeEditDialog} color={textColor} bg={softActionBg} compact />
+                            <CountdownActionButton text="关闭" onClick={closeEditDialog} color={textColor} bg={softActionBg} compact />
                         </div>
 
                         <div style={{ marginBottom: 8 }}>
@@ -1874,9 +1877,9 @@ const CountdownPanel = () => {
 
                         <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "FlexEnd", alignItems: "Center" }}>
                             <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                                <ActionButton text="保存" onClick={saveEditedEvent} color={textColor} bg={accentButtonBg} compact />
+                                <CountdownActionButton text="保存" onClick={saveEditedEvent} color={textColor} bg={accentButtonBg} compact />
                                 <div style={{ width: 4 }} />
-                                <ActionButton text="取消" onClick={closeEditDialog} color={textColor} bg={softActionBg} compact />
+                                <CountdownActionButton text="取消" onClick={closeEditDialog} color={textColor} bg={softActionBg} compact />
                             </div>
                         </div>
                     </div>
@@ -1924,11 +1927,11 @@ const CountdownPanel = () => {
                             <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
                                 {settingsMenu === "colors" ? (
                                     <>
-                                        <ActionButton text="返回" onClick={() => setSettingsMenu("main")} color={textColor} bg={softActionBg} compact />
+                                        <CountdownActionButton text="返回" onClick={() => setSettingsMenu("main")} color={textColor} bg={softActionBg} compact />
                                         <div style={{ width: 4 }} />
                                     </>
                                 ) : null}
-                                <ActionButton text="关闭" onClick={() => setSettingsOpen(false)} color={textColor} bg={softActionBg} compact />
+                                <CountdownActionButton text="关闭" onClick={() => setSettingsOpen(false)} color={textColor} bg={softActionBg} compact />
                             </div>
                         </div>
 
@@ -1950,14 +1953,14 @@ const CountdownPanel = () => {
                                 <div key="settings-main-color-entry" style={{ marginBottom: 10, display: "Flex", flexDirection: "Column", alignItems: "Stretch" }}>
                                     <div style={{ fontSize: 10, color: textColor, marginBottom: 4 }}>颜色</div>
                                     <div style={{ width: "100%" }}>
-                                        <ActionButton text="自定义颜色" onClick={() => setSettingsMenu("colors")} color={textColor} bg={accentButtonBg} compact fullWidth />
+                                        <CountdownActionButton text="自定义颜色" onClick={() => setSettingsMenu("colors")} color={textColor} bg={accentButtonBg} compact fullWidth />
                                     </div>
                                 </div>
 
                                 <div style={{ marginBottom: 10 }}>
                                     <div style={{ fontSize: 10, color: textColor, marginBottom: 4 }}>卡片信息密度</div>
                                     <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                                        <ActionButton
+                                        <CountdownActionButton
                                             text="简洁"
                                             onClick={() => setSettingsDraft((prev) => ({ ...prev, cardDensity: "simple" }))}
                                             color={textColor}
@@ -1965,7 +1968,7 @@ const CountdownPanel = () => {
                                             compact
                                         />
                                         <div style={{ width: 6 }} />
-                                        <ActionButton
+                                        <CountdownActionButton
                                             text="标准"
                                             onClick={() => setSettingsDraft((prev) => ({ ...prev, cardDensity: "standard" }))}
                                             color={textColor}
@@ -1984,7 +1987,7 @@ const CountdownPanel = () => {
                                 <div style={{ display: "Flex", flexDirection: "Row", flexWrap: "Wrap", marginBottom: 8 }}>
                                     {THEME_PRESETS.map((preset) => (
                                         <div key={preset.id} style={{ marginRight: 4, marginBottom: 4 }}>
-                                            <ActionButton
+                                            <CountdownActionButton
                                                 text={preset.name}
                                                 onClick={() => applyThemePreset(preset.id)}
                                                 color={textColor}
@@ -2012,11 +2015,11 @@ const CountdownPanel = () => {
 
                         {settingsMenu === "main" ? (
                             <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "FlexEnd" }}>
-                                <ActionButton text="应用设置" onClick={applySettings} color={textColor} bg={accentButtonBg} />
+                                <CountdownActionButton text="应用设置" onClick={applySettings} color={textColor} bg={accentButtonBg} />
                             </div>
                         ) : (
                             <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "FlexEnd" }}>
-                                <ActionButton text="应用颜色" onClick={applySettings} color={textColor} bg={accentButtonBg} compact />
+                                <CountdownActionButton text="应用颜色" onClick={applySettings} color={textColor} bg={accentButtonBg} compact />
                             </div>
                         )}
                     </div>
@@ -2229,7 +2232,7 @@ __registerPlugin({
         component: CountdownCompact,
     },
     launcher: {
-        text: "DD",
+        text: "",
         background: "#0ea5e9",
     },
     component: CountdownPanel,
