@@ -2232,7 +2232,7 @@ __registerPlugin({
         component: CountdownCompact,
     },
     launcher: {
-        text: "DD",
+        text: "",
         background: "#0ea5e9",
     },
     component: CountdownPanel,
