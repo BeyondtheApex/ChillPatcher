@@ -134,34 +134,34 @@ namespace ChillPatcher.Patches
             [HarmonyPostfix]
             [HarmonyPatch(typeof(HeroineVoiceController), "PlayVoice")]
             static void OnVoicePlay(
-                string voice, bool isMoveMouse, bool isStory)
+                string voiceName, bool isMoveMouse, bool isStory)
             {
                 if (!Integration.StudyRoom.StudyRoomService.IsHost) return;
                 if (isStory) return; // 故事语音由 ScenarioPlay 同步
                 Integration.StudyRoom.StudyRoomService.Instance?.HostSync
-                    .BroadcastVoicePlay(voice, isMoveMouse);
+                    .BroadcastVoicePlay(voiceName, isMoveMouse);
             }
 
             // ─── 存档保存捕获 → 广播给客户端 ───
 
             [HarmonyPostfix]
             [HarmonyPatch(typeof(SaveDataManager), "SaveTodoList")]
-            static void OnHostTodoSaved(object todoListData)
+            static void OnHostTodoSaved(object todoList)
             {
                 if (!Integration.StudyRoom.StudyRoomService.IsHost) return;
                 if (Integration.StudyRoom.SaveDataSyncManager.IsSyncing) return;
                 Integration.StudyRoom.SaveDataSyncManager.BroadcastSaveDataChanged(
-                    SaveDataOpType.TodoItemUpdate, todoListData);
+                    SaveDataOpType.TodoItemUpdate, todoList);
             }
 
             [HarmonyPostfix]
-            [HarmonyPatch(typeof(SaveDataManager), "SaveCalenderData")]
-            static void OnHostCalendarSaved(object calenderMonthlyData)
+            [HarmonyPatch(typeof(SaveDataManager), "SaveCalenderData", new Type[] { typeof(CalenderMonthlyData) })]
+            static void OnHostCalendarSaved(object data)
             {
                 if (!Integration.StudyRoom.StudyRoomService.IsHost) return;
                 if (Integration.StudyRoom.SaveDataSyncManager.IsSyncing) return;
                 Integration.StudyRoom.SaveDataSyncManager.BroadcastSaveDataChanged(
-                    SaveDataOpType.CalendarDiaryEdit, calenderMonthlyData);
+                    SaveDataOpType.CalendarDiaryEdit, data);
             }
 
             [HarmonyPostfix]
@@ -177,12 +177,12 @@ namespace ChillPatcher.Patches
 
             [HarmonyPostfix]
             [HarmonyPatch(typeof(SaveDataManager), "SavePageData")]
-            static void OnHostPageSaved(object pageDataV2)
+            static void OnHostPageSaved(object pageData)
             {
                 if (!Integration.StudyRoom.StudyRoomService.IsHost) return;
                 if (Integration.StudyRoom.SaveDataSyncManager.IsSyncing) return;
                 Integration.StudyRoom.SaveDataSyncManager.BroadcastSaveDataChanged(
-                    SaveDataOpType.NotePageUpdate, pageDataV2);
+                    SaveDataOpType.NotePageUpdate, pageData);
             }
 
             [HarmonyPostfix]
@@ -377,25 +377,25 @@ namespace ChillPatcher.Patches
 
             [HarmonyPrefix]
             [HarmonyPatch(typeof(SaveDataManager), "SaveTodoList")]
-            static bool OnClientTodoSave(object todoListData)
+            static bool OnClientTodoSave(object todoList)
             {
                 if (!Integration.StudyRoom.StudyRoomService.IsClient) return true;
                 if (Integration.StudyRoom.SaveDataSyncManager.IsSyncing) return true;
                 _log?.LogInfo("[StudyRoomPatch] Client: TodoList save intercepted → forwarding");
                 Integration.StudyRoom.SaveDataSyncManager.ForwardSaveToHost(
-                    SaveDataOpType.TodoItemUpdate, todoListData);
+                    SaveDataOpType.TodoItemUpdate, todoList);
                 return false;
             }
 
             [HarmonyPrefix]
-            [HarmonyPatch(typeof(SaveDataManager), "SaveCalenderData")]
-            static bool OnClientCalendarSave(object calenderMonthlyData)
+            [HarmonyPatch(typeof(SaveDataManager), "SaveCalenderData", new Type[] { typeof(CalenderMonthlyData) })]
+            static bool OnClientCalendarSave(object data)
             {
                 if (!Integration.StudyRoom.StudyRoomService.IsClient) return true;
                 if (Integration.StudyRoom.SaveDataSyncManager.IsSyncing) return true;
                 _log?.LogInfo("[StudyRoomPatch] Client: Calendar save intercepted → forwarding");
                 Integration.StudyRoom.SaveDataSyncManager.ForwardSaveToHost(
-                    SaveDataOpType.CalendarDiaryEdit, calenderMonthlyData);
+                    SaveDataOpType.CalendarDiaryEdit, data);
                 return false;
             }
 
@@ -414,13 +414,13 @@ namespace ChillPatcher.Patches
 
             [HarmonyPrefix]
             [HarmonyPatch(typeof(SaveDataManager), "SavePageData")]
-            static bool OnClientPageSave(object pageDataV2)
+            static bool OnClientPageSave(object pageData)
             {
                 if (!Integration.StudyRoom.StudyRoomService.IsClient) return true;
                 if (Integration.StudyRoom.SaveDataSyncManager.IsSyncing) return true;
                 _log?.LogInfo("[StudyRoomPatch] Client: PageData save intercepted → forwarding");
                 Integration.StudyRoom.SaveDataSyncManager.ForwardSaveToHost(
-                    SaveDataOpType.NotePageUpdate, pageDataV2);
+                    SaveDataOpType.NotePageUpdate, pageData);
                 return false;
             }
 

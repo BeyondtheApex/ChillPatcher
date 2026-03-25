@@ -35,11 +35,30 @@ let frameworkCtx = await esbuild.context({
 })
 
 // ---- Plugins ----
-// 插件单独使用 IIFE 格式，防止顶层变量（如 ActionButton 等组件名）
-// 泄漏到 OneJS 运行时的全局作用域，避免多插件间同名变量冲突。
-// 框架 (index.tsx) 仍使用默认格式以暴露 __registerPlugin 等全局函数。
+// 插件使用 IIFE 格式防止顶层变量泄漏到全局作用域，避免多插件间同名变量冲突。
+// 但 IIFE 会导致 preact/onejs-core 被重复 bundle，产生独立实例，
+// 与 framework 的 preact 不共享 hooks 状态，导致渲染异常。
+// 解决方案：plugin 不 inject onejs-core，不 bundle preact，
+// 而是通过 shim 文件从 framework 暴露的 globalThis.__preact 获取共享实例。
 const pluginSharedOptions = {
-    ...sharedOptions,
+    bundle: true,
+    plugins: [importTransformationPlugin()],
+    inject: [
+        "plugin-shims/onejs-core.js",   // 空 shim（framework 已初始化 document）
+    ],
+    platform: "node",
+    sourcemap: true,
+    sourceRoot: process.cwd(),
+    alias: {
+        "onejs": "onejs-core",
+        "preact": "./plugin-shims/preact-module.js",
+        "preact/hooks": "./plugin-shims/preact-hooks-module.js",
+        "react": "./plugin-shims/preact-module.js",
+        "react-dom": "./plugin-shims/preact-module.js",
+    },
+    jsx: "transform",
+    jsxFactory: "h",
+    jsxFragment: "Fragment",
     format: "iife",
 }
 
