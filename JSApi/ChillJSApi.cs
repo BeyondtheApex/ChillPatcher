@@ -101,6 +101,11 @@ namespace ChillPatcher.JSApi
         public ChillSteamApi steam { get; }
 
         /// <summary>
+        /// 自习室 API
+        /// </summary>
+        public ChillStudyRoomApi studyRoom { get; }
+
+        /// <summary>
         /// 存档 Profile 管理 API
         /// </summary>
         public ChillSaveProfileApi saveProfile { get; }
@@ -172,6 +177,7 @@ namespace ChillPatcher.JSApi
             game = new ChillGameApi(logger);
             steam = new ChillSteamApi(logger);
             saveProfile = new ChillSaveProfileApi(logger);
+            studyRoom = new ChillStudyRoomApi(logger);
             custom = new CustomApiContainer();
 
             // 初始化事件订阅

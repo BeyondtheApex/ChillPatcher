@@ -20,11 +20,14 @@ namespace ChillPatcher.Integration
         private CompositeDisposable _subscriptions = new CompositeDisposable();
         private bool _eventsSubscribed;
 
+        public static GameApiService Instance { get; private set; }
+
         public event Action<string, object> OnGameEvent;
 
         public GameApiService(ManualLogSource logger)
         {
             _logger = logger;
+            Instance = this;
         }
 
         public bool ensureEventBridge()

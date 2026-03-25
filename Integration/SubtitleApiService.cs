@@ -18,6 +18,8 @@ namespace ChillPatcher.Integration
         private bool _isShowingCustom;
         private float _hideTime;
 
+        public static SubtitleApiService Instance { get; private set; }
+
         /// <summary>
         /// 为 true 时，游戏侧不可自动播放对话/字幕，但本 API 仍可操作。
         /// </summary>
@@ -28,6 +30,7 @@ namespace ChillPatcher.Integration
         public SubtitleApiService(ManualLogSource logger)
         {
             _logger = logger;
+            Instance = this;
         }
 
         /// <summary>

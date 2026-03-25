@@ -97,6 +97,14 @@ namespace ChillPatcher.Integration
             return Path.Combine(GetProfilesDirectory(), SanitizeName(name));
         }
 
+        /// <summary>获取当前活跃存档的绝对路径 (主存档或子存档)</summary>
+        public string GetActiveProfileAbsolutePath()
+        {
+            if (string.IsNullOrEmpty(ActiveProfileName))
+                return GetMainSaveAbsolutePath();
+            return GetProfileAbsolutePath(ActiveProfileName);
+        }
+
         /// <summary>
         /// 拿到当前活跃存档的 ES3 相对路径（供 BulbulConstantPatch 使用）。
         /// </summary>

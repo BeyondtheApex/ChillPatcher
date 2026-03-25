@@ -262,6 +262,22 @@ namespace ChillPatcher
                     Logger.LogError($"Error removing music from game: {ex}");
                 }
             };
+
+            // 当歌曲信息更新时（标题、Tag 等变化），同步到游戏
+            MusicRegistry.Instance.OnMusicUpdated += (musicInfo) =>
+            {
+                try
+                {
+                    UIFramework.Audio.MainThreadDispatcher.Instance?.Enqueue(() =>
+                    {
+                        SyncMusicUpdateToGameService(musicInfo);
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"Error updating music in game: {ex}");
+                }
+            };
         }
 
         /// <summary>
@@ -486,6 +502,107 @@ namespace ChillPatcher
             catch (Exception ex)
             {
                 Logger.LogError($"[MusicSync] Error removing music: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// 同步歌曲信息更新到游戏的 MusicService（标题、Tag、收藏状态等变化）
+        /// </summary>
+        private static void SyncMusicUpdateToGameService(SDK.Models.MusicInfo musicInfo)
+        {
+            try
+            {
+                var musicService = Patches.UIFramework.MusicService_RemoveLimit_Patch.CurrentInstance;
+                if (musicService == null) return;
+
+                var allMusicList = Traverse.Create(musicService)
+                    .Field("_allMusicList")
+                    .GetValue<List<GameAudioInfo>>();
+                if (allMusicList == null) return;
+
+                var existing = allMusicList.FirstOrDefault(a => a.UUID == musicInfo.UUID);
+                if (existing == null)
+                {
+                    // 不在列表中，当作新增处理
+                    SyncMusicToGameService(musicInfo, isAdd: true);
+                    return;
+                }
+
+                // 更新字段
+                existing.Title = musicInfo.Title ?? "";
+                existing.Credit = musicInfo.Artist ?? "";
+                existing.LocalPath = musicInfo.SourcePath ?? "";
+
+                // 重新计算 Tag
+                AudioTag newTag = 0;
+                if (musicInfo.TagIds != null)
+                {
+                    foreach (var tagId in musicInfo.TagIds)
+                    {
+                        var tagInfo = TagRegistry.Instance?.GetTag(tagId);
+                        if (tagInfo != null)
+                            newTag |= (AudioTag)tagInfo.BitValue;
+                    }
+                }
+                if (musicInfo.IsFavorite)
+                    newTag |= AudioTag.Favorite;
+
+                existing.Tag = newTag;
+
+                // 检查是否需要从当前播放列表中添加/移除
+                var currentAudioTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag.CurrentValue;
+                bool shouldBeInPlaylist = false;
+                if (musicInfo.TagIds != null)
+                {
+                    foreach (var tagId in musicInfo.TagIds)
+                    {
+                        var tagInfo = TagRegistry.Instance?.GetTag(tagId);
+                        if (tagInfo != null && currentAudioTag.HasFlagFast((AudioTag)tagInfo.BitValue))
+                        {
+                            shouldBeInPlaylist = true;
+                            break;
+                        }
+                    }
+                }
+
+                var currentPlayList = musicService.CurrentPlayList;
+                if (currentPlayList != null)
+                {
+                    // 查找在播放列表中的索引（用于触发 UI 更新）
+                    int playlistIndex = -1;
+                    for (int i = 0; i < currentPlayList.Count; i++)
+                    {
+                        if (currentPlayList[i].UUID == musicInfo.UUID)
+                        {
+                            playlistIndex = i;
+                            break;
+                        }
+                    }
+                    bool isInPlaylist = playlistIndex >= 0;
+
+                    if (shouldBeInPlaylist && !isInPlaylist)
+                    {
+                        currentPlayList.Add(existing);
+                        Logger.LogDebug($"[MusicSync] Updated song added to CurrentPlayList: {musicInfo.Title}");
+                    }
+                    else if (!shouldBeInPlaylist && isInPlaylist)
+                    {
+                        currentPlayList.Remove(currentPlayList[playlistIndex]);
+                        Logger.LogDebug($"[MusicSync] Updated song removed from CurrentPlayList: {musicInfo.Title}");
+                    }
+                    else if (isInPlaylist)
+                    {
+                        // 就地替换触发 ObservableList 的 Replace 通知 → UI 自动刷新
+                        currentPlayList[playlistIndex] = existing;
+                        Logger.LogDebug($"[MusicSync] Refreshed playlist UI for: {musicInfo.Title}");
+                    }
+                }
+
+                Logger.LogDebug($"[MusicSync] Updated music info: {musicInfo.Title} (Tag: {newTag})");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"[MusicSync] Error updating music: {ex}");
             }
         }
 

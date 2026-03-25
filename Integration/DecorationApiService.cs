@@ -16,6 +16,8 @@ namespace ChillPatcher.Integration
     {
         private readonly ManualLogSource _logger;
 
+        public static DecorationApiService Instance { get; private set; }
+
         /// <summary>
         /// 为 true 时，游戏侧 UI 不可切换装饰，但本 API 仍可操作。
         /// </summary>
@@ -26,6 +28,7 @@ namespace ChillPatcher.Integration
         public DecorationApiService(ManualLogSource logger)
         {
             _logger = logger;
+            Instance = this;
         }
 
         /// <summary>

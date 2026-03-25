@@ -141,6 +141,7 @@ namespace ChillPatcher
             BuildSetupOverlay.Tick();
             ChillPatcher.Patches.SteamReconnectManager.Tick();
             OneJSBridge.Tick();
+            ChillPatcher.Integration.StudyRoom.StudyRoomService.Tick();
         }
     }
 }

@@ -17,6 +17,8 @@ namespace ChillPatcher.Integration
     {
         private readonly ManualLogSource _logger;
 
+        public static VoiceApiService Instance { get; private set; }
+
         /// <summary>
         /// 为 true 时，游戏侧不可自动播放语音，但本 API 仍可操作。
         /// </summary>
@@ -27,6 +29,7 @@ namespace ChillPatcher.Integration
         public VoiceApiService(ManualLogSource logger)
         {
             _logger = logger;
+            Instance = this;
         }
 
         /// <summary>

@@ -14,6 +14,8 @@ namespace ChillPatcher.Integration
     {
         private readonly ManualLogSource _logger;
 
+        public static CharacterApiService Instance { get; private set; }
+
         /// <summary>
         /// 为 true 时，游戏侧 AI 不可自动切换角色状态，但本 API 仍可操作。
         /// </summary>
@@ -24,6 +26,7 @@ namespace ChillPatcher.Integration
         public CharacterApiService(ManualLogSource logger)
         {
             _logger = logger;
+            Instance = this;
         }
 
         /// <summary>
@@ -58,6 +61,17 @@ namespace ChillPatcher.Integration
                 ["isSleeping"] = ai.IsSleeping,
                 ["canChange"] = ai.IsPossibleChangeAction()
             };
+        }
+
+        /// <summary>
+        /// 启用或禁用 AI 自动行为 (客户端同步时需禁用)。
+        /// </summary>
+        public bool setAIEnabled(bool enabled)
+        {
+            var ai = FindHeroineAI();
+            if (ai == null) return false;
+            ai.SetIsUse(enabled);
+            return true;
         }
 
         /// <summary>

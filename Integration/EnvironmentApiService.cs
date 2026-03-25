@@ -15,6 +15,8 @@ namespace ChillPatcher.Integration
     {
         private readonly ManualLogSource _logger;
 
+        public static EnvironmentApiService Instance { get; private set; }
+
         /// <summary>
         /// 为 true 时，游戏侧 UI 不可切换环境，但本 API 仍可操作。
         /// </summary>
@@ -25,6 +27,7 @@ namespace ChillPatcher.Integration
         public EnvironmentApiService(ManualLogSource logger)
         {
             _logger = logger;
+            Instance = this;
         }
 
         /// <summary>
@@ -209,6 +212,22 @@ namespace ChillPatcher.Integration
         {
             var svc = ResolveEnvironmentDataService();
             return svc?.GetCurrentPresetIndex() ?? -1;
+        }
+
+        /// <summary>
+        /// 从存档重新应用所有环境状态（窗景 + 音效）。
+        /// </summary>
+        public bool reloadFromSave()
+        {
+            try { ResolveApplyController()?.ApplyWindowBySavedata(); } catch { return false; }
+            try
+            {
+                var dataSvc = ResolveEnvironmentDataService();
+                if (dataSvc != null) ApplyAllSounds(dataSvc);
+            }
+            catch { }
+            Emit("reloaded", null);
+            return true;
         }
 
         public void Dispose() { }
