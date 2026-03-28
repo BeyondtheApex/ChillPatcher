@@ -60,6 +60,7 @@ type SettingsDraft = {
 type LayoutHint = {
     windowWidth: number
     windowHeight: number
+    listWidth: number
     listHeight: number
 }
 
@@ -70,12 +71,14 @@ const DEFAULT_PAGE_LABEL_COUNT = 5
 const DEFAULT_LAYOUT_HINT: LayoutHint = {
     windowWidth: 0,
     windowHeight: 0,
+    listWidth: 0,
     listHeight: 0,
 }
 const EVENT_CARD_ROW_HEIGHT_STANDARD = 90
 const EVENT_CARD_ROW_HEIGHT_SIMPLE = 74
 const PAGER_SLOT_WIDTH = 34
-const PAGER_SIDE_GROUP_WIDTH = PAGER_SLOT_WIDTH * 2 + 4
+const PAGER_BUTTON_GAP = 4
+const PAGER_SIDE_GROUP_WIDTH = PAGER_SLOT_WIDTH * 2 + PAGER_BUTTON_GAP
 const COMPACT_CARD_GAP = 4
 const LAYOUT_HINT_SETTLE_DELAY_MS = 140
 const LAYOUT_HINT_JITTER_PX = 2
@@ -761,6 +764,15 @@ const clampConfiguredByLayout = (configured: number, layoutLimit: number, min: n
     return Math.max(min, Math.min(max, Math.min(boundedConfigured, Math.round(layoutLimit))))
 }
 
+const getMaxPageLabelsByWidth = (listWidth: number) => {
+    if (!Number.isFinite(listWidth) || listWidth <= 0) return 0
+
+    const centerWidth = Math.max(0, listWidth - PAGER_SIDE_GROUP_WIDTH * 2)
+    if (centerWidth <= 0) return 1
+
+    return Math.max(1, Math.floor((centerWidth + PAGER_BUTTON_GAP) / (PAGER_SLOT_WIDTH + PAGER_BUTTON_GAP)))
+}
+
 const buildPageNumbers = (currentPage: number, totalPages: number, labelCount: number) => {
     if (totalPages <= labelCount) {
         return Array.from({ length: totalPages }, (_, index) => index + 1)
@@ -990,15 +1002,24 @@ const useWindowLayoutHint = (eventListRef: any, enabled: boolean = true, measure
             return Number.isFinite(rectHeight) && rectHeight > 0 ? Math.round(rectHeight) : 0
         }
 
+        const readNodeWidth = (node: any) => {
+            const measured = getMeasuredNode(node)
+            const veWidth = Number(node?.ve?.layout?.width ?? measured?.ve?.layout?.width ?? 0)
+            if (Number.isFinite(veWidth) && veWidth > 0) return Math.round(veWidth)
+            const rectWidth = Number(measured?.getBoundingClientRect?.().width ?? measured?.offsetWidth ?? 0)
+            return Number.isFinite(rectWidth) && rectWidth > 0 ? Math.round(rectWidth) : 0
+        }
 
         const applyLayout = () => {
             animationLocked = false
+            const nextListWidth = Math.max(0, readNodeWidth(eventListRef.current))
             const nextListHeight = Math.max(0, readNodeHeight(eventListRef.current))
             const nextWindowWidth = Math.max(0, Math.round(Number((globalThis as any)?.innerWidth ?? 0)))
             const nextWindowHeight = Math.max(0, Math.round(Number((globalThis as any)?.innerHeight ?? 0)))
 
             setLayoutHint((prev) => {
                 const same =
+                    Math.abs(prev.listWidth - nextListWidth) <= LAYOUT_HINT_JITTER_PX &&
                     Math.abs(prev.listHeight - nextListHeight) <= LAYOUT_HINT_JITTER_PX &&
                     prev.windowWidth === nextWindowWidth &&
                     prev.windowHeight === nextWindowHeight
@@ -1008,6 +1029,7 @@ const useWindowLayoutHint = (eventListRef: any, enabled: boolean = true, measure
                 return {
                     windowWidth: nextWindowWidth,
                     windowHeight: nextWindowHeight,
+                    listWidth: nextListWidth,
                     listHeight: nextListHeight,
                 }
             })
@@ -1265,7 +1287,7 @@ const EventListSection = ({ showCountLabel, allEventsLength, mutedText, panelInn
         </div>
         <div style={{ display: "Flex", justifyContent: "Center", alignItems: "Center", marginTop: 4, width: "100%" }}>
             <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "Center", width: "100%", minWidth: 0 }}>
-                <div style={{ width: PAGER_SIDE_GROUP_WIDTH, minWidth: PAGER_SIDE_GROUP_WIDTH, flexShrink: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "FlexStart", gap: 4 }}>
+                <div style={{ width: PAGER_SIDE_GROUP_WIDTH, minWidth: PAGER_SIDE_GROUP_WIDTH, flexShrink: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "FlexStart", gap: PAGER_BUTTON_GAP }}>
                     <div style={{ width: PAGER_SLOT_WIDTH, flexShrink: 0 }}>
                         <CountdownActionButton text="<<" onClick={() => setEventPage(1)} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact fullWidth />
                     </div>
@@ -1273,14 +1295,14 @@ const EventListSection = ({ showCountLabel, allEventsLength, mutedText, panelInn
                         <CountdownActionButton text="<" onClick={() => setEventPage((page: number) => Math.max(1, page - 1))} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact fullWidth />
                     </div>
                 </div>
-                <div style={{ flexGrow: 1, minWidth: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "Center", gap: 4 }}>
+                <div style={{ flexGrow: 1, minWidth: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "Center", gap: PAGER_BUTTON_GAP }}>
                     {visiblePageNumbers.map((pageNumber) => (
                         <div key={`page-${pageNumber}`} style={{ width: PAGER_SLOT_WIDTH, flexShrink: 0 }}>
                             <CountdownActionButton text={`${pageNumber}`} onClick={() => setEventPage(pageNumber)} color={textColor} bg={eventPage === pageNumber ? accentButtonBg : softActionBg} compact fullWidth />
                         </div>
                     ))}
                 </div>
-                <div style={{ width: PAGER_SIDE_GROUP_WIDTH, minWidth: PAGER_SIDE_GROUP_WIDTH, flexShrink: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "FlexEnd", gap: 4 }}>
+                <div style={{ width: PAGER_SIDE_GROUP_WIDTH, minWidth: PAGER_SIDE_GROUP_WIDTH, flexShrink: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "FlexEnd", gap: PAGER_BUTTON_GAP }}>
                     <div style={{ width: PAGER_SLOT_WIDTH, flexShrink: 0 }}>
                         <CountdownActionButton text=">" onClick={() => setEventPage((page: number) => Math.min(totalEventPages, page + 1))} disabled={eventPage >= totalEventPages} color={textColor} bg={softActionBg} compact fullWidth />
                     </div>
@@ -1358,6 +1380,7 @@ const useEventSectionModel = ({
     daysColor,
     configuredEventsPerPage,
     configuredPageLabelCount,
+    listWidth,
     listHeight,
     eventPage,
 }: {
@@ -1368,6 +1391,7 @@ const useEventSectionModel = ({
     daysColor: string
     configuredEventsPerPage: number
     configuredPageLabelCount: number
+    listWidth: number
     listHeight: number
     eventPage: number
 }): EventSectionModel => {
@@ -1389,7 +1413,10 @@ const useEventSectionModel = ({
         : configuredEventsPerPage
     const eventsPerPage = clampConfiguredByLayout(configuredEventsPerPage, measuredRowsPerPage, 1, 20)
 
-    const pageLabelCount = normalizeIntInRange(configuredPageLabelCount, DEFAULT_PAGE_LABEL_COUNT, 3, 9)
+    const measuredPageLabelCount = listWidth > 0
+        ? getMaxPageLabelsByWidth(listWidth)
+        : configuredPageLabelCount
+    const pageLabelCount = clampConfiguredByLayout(configuredPageLabelCount, measuredPageLabelCount, 1, 9)
 
     const totalEventPages = useMemo(
         () => Math.max(1, Math.ceil(allEvents.length / eventsPerPage)),
@@ -1476,6 +1503,7 @@ const CountdownPanel = () => {
         daysColor: config.daysColor,
         configuredEventsPerPage,
         configuredPageLabelCount,
+        listWidth: layoutHint.listWidth,
         listHeight: layoutHint.listHeight,
         eventPage,
     })
