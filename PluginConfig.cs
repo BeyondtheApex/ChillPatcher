@@ -66,6 +66,7 @@ namespace ChillPatcher
         public static ConfigEntry<float> AudioDetectionInterval { get; private set; }
         public static ConfigEntry<float> AudioResumeFadeInDuration { get; private set; }
         public static ConfigEntry<float> AudioMuteFadeOutDuration { get; private set; }
+        public static ConfigEntry<float> AudioPeakThreshold { get; private set; }
 
         // 系统媒体控制设置
         public static ConfigEntry<bool> EnableSystemMediaTransport { get; private set; }
@@ -358,6 +359,20 @@ namespace ChillPatcher
                     "当检测到其他音频时，游戏音乐会在此时间内逐渐降低音量\n" +
                     "默认：0.3秒（快速响应）",
                     new AcceptableValueRange<float>(0f, 3f)
+                )
+            );
+
+            AudioPeakThreshold = config.Bind(
+                "Audio",
+                "AudioPeakThreshold",
+                0.001f,
+                new ConfigDescription(
+                    "音频检测音量阈值（0-1）\n" +
+                    "低于此阈值的音频信号将被忽略，不会触发降低音量\n" +
+                    "默认：0.001（极低阈值，几乎任何声音都会触发）\n" +
+                    "较高值：可忽略轻微的背景噪音\n" +
+                    "建议范围：0.001-0.1",
+                    new AcceptableValueRange<float>(0f, 1f)
                 )
             );
 
