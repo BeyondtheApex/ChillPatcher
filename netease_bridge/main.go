@@ -27,11 +27,12 @@ import (
 )
 
 var (
-	initialized  bool
-	initMutex    sync.Mutex
-	currentUser  *structs.User
-	lastError    string
-	dataDir      string
+	initialized    bool
+	initMutex      sync.Mutex
+	currentUser    *structs.User
+	lastError      string
+	dataDir        string
+	currentVipType int
 )
 
 // SongInfo 导出给 C# 的歌曲信息结构
@@ -47,17 +48,19 @@ type SongInfo struct {
 
 // UserInfo 用户信息
 type UserInfo struct {
-	UserID   int64  `json:"userId"`
-	Nickname string `json:"nickname"`
+	UserID    int64  `json:"userId"`
+	Nickname  string `json:"nickname"`
 	AvatarURL string `json:"avatarUrl"`
+	VipType   int    `json:"vipType"`
 }
 
 // SongURL 歌曲播放地址
 type SongURL struct {
-	ID   int64  `json:"id"`
-	URL  string `json:"url"`
-	Size int64  `json:"size"`
-	Type string `json:"type"` // mp3, flac, etc.
+	ID      int64  `json:"id"`
+	URL     string `json:"url"`
+	Size    int64  `json:"size"`
+	Type    string `json:"type"` // mp3, flac, etc.
+	IsTrial bool   `json:"isTrial"`
 }
 
 //export NeteaseInit
@@ -132,6 +135,7 @@ func NeteaseGetUserInfo() *C.char {
 		UserID:    currentUser.UserId,
 		Nickname:  currentUser.Nickname,
 		AvatarURL: currentUser.AvatarUrl,
+		VipType:   currentVipType,
 	}
 
 	jsonBytes, err := json.Marshal(info)
@@ -157,21 +161,39 @@ func NeteaseRefreshLogin() C.int {
 	// 获取账户信息
 	code, resp := (&service.UserAccountService{}).AccountInfo()
 	if code != 200 {
+		// 区分网络错误和认证错误
+		if resp == nil {
+			log.Printf("[NeteaseRefreshLogin] Network error: no response")
+			lastError = "Network error: no response from server"
+			return -1
+		}
+		log.Printf("[NeteaseRefreshLogin] Auth failed, code: %v", code)
 		lastError = "Failed to get account info, code: " + strconv.FormatFloat(code, 'f', 0, 64)
 		return 0
 	}
 
 	user, err := structs.NewUserFromJsonForLogin(resp)
 	if err != nil {
+		log.Printf("[NeteaseRefreshLogin] Failed to parse user info: %s", err.Error())
 		lastError = "Failed to parse user info: " + err.Error()
 		return 0
 	}
 	currentUser = &user
 
+	// 提取 VIP 类型
+	if vipType, err := jsonparser.GetInt(resp, "profile", "vipType"); err == nil {
+		currentVipType = int(vipType)
+		log.Printf("[NeteaseRefreshLogin] VipType: %d", currentVipType)
+	} else {
+		currentVipType = 0
+		log.Printf("[NeteaseRefreshLogin] Could not extract vipType: %s", err.Error())
+	}
+
 	// 保存用户信息
 	table := storage.NewTable()
 	_ = table.SetByKVModel(storage.User{}, user)
 
+	log.Printf("[NeteaseRefreshLogin] Success, user: %s (ID: %d, VIP: %d)", user.Nickname, user.UserId, currentVipType)
 	return 1
 }
 
@@ -258,6 +280,7 @@ func NeteaseGetSongURL(songId C.longlong, quality *C.char) *C.char {
 	}
 
 	needFallback := false
+	isTrial := false
 	var url string
 	var size int64
 	var musicType string
@@ -269,7 +292,12 @@ func NeteaseGetSongURL(songId C.longlong, quality *C.char) *C.char {
 				size = v1Response.Data[0].Size
 				musicType = v1Response.Data[0].Type
 				// 检查是否是试听歌曲（需要会员）
-				if url == "" || v1Response.Data[0].FreeTrialInfo != nil {
+				if v1Response.Data[0].FreeTrialInfo != nil {
+					isTrial = true
+					if url == "" {
+						needFallback = true
+					}
+				} else if url == "" {
 					needFallback = true
 				}
 			} else {
@@ -310,10 +338,11 @@ func NeteaseGetSongURL(songId C.longlong, quality *C.char) *C.char {
 
 		var fallbackResponse struct {
 			Data []struct {
-				ID   int64  `json:"id"`
-				URL  string `json:"url"`
-				Size int64  `json:"size"`
-				Type string `json:"type"`
+				ID            int64       `json:"id"`
+				URL           string      `json:"url"`
+				Size          int64       `json:"size"`
+				Type          string      `json:"type"`
+				FreeTrialInfo interface{} `json:"freeTrialInfo"`
 			} `json:"data"`
 		}
 
@@ -326,6 +355,9 @@ func NeteaseGetSongURL(songId C.longlong, quality *C.char) *C.char {
 			url = fallbackResponse.Data[0].URL
 			size = fallbackResponse.Data[0].Size
 			musicType = fallbackResponse.Data[0].Type
+			if fallbackResponse.Data[0].FreeTrialInfo != nil {
+				isTrial = true
+			}
 		}
 	}
 
@@ -339,11 +371,14 @@ func NeteaseGetSongURL(songId C.longlong, quality *C.char) *C.char {
 		musicType = "mp3"
 	}
 
+	log.Printf("[NeteaseGetSongURL] songId=%d, isTrial=%v, url=%s", int64(songId), isTrial, url[:min(50, len(url))])
+
 	result := SongURL{
-		ID:   int64(songId),
-		URL:  url,
-		Size: size,
-		Type: musicType,
+		ID:      int64(songId),
+		URL:     url,
+		Size:    size,
+		Type:    musicType,
+		IsTrial: isTrial,
 	}
 
 	jsonBytes, err := json.Marshal(result)
@@ -634,6 +669,39 @@ func fixStrategyCookies(jar http.CookieJar) {
 	jar.SetCookies(u, []*http.Cookie{
 		{Name: "NMTID", Value: realNMTID},
 	})
+}
+
+//export NeteaseLogout
+func NeteaseLogout() C.int {
+	if !initialized {
+		lastError = "Not initialized"
+		return 0
+	}
+
+	log.Printf("[NeteaseLogout] Logging out, clearing cookies and user data")
+
+	// 清除内存中的用户状态
+	currentUser = nil
+	currentVipType = 0
+
+	// 删除 cookie 文件
+	cookiePath := filepath.Join(dataDir, "cookie")
+	if err := os.Remove(cookiePath); err != nil {
+		log.Printf("[NeteaseLogout] Cookie file removal: %s", err.Error())
+	} else {
+		log.Printf("[NeteaseLogout] Cookie file removed: %s", cookiePath)
+	}
+
+	// 创建空的 cookie jar 替换当前的
+	emptyJar, _ := cookiejar.NewEntriesJar(nil)
+	util.SetGlobalCookieJar(emptyJar)
+
+	// 清除本地 DB 中的用户信息（用零值覆盖）
+	table := storage.NewTable()
+	_ = table.SetByKVModel(storage.User{}, structs.User{})
+	log.Printf("[NeteaseLogout] User data cleared from local DB")
+
+	return 1
 }
 
 func main() {
