@@ -89,7 +89,22 @@ namespace ChillPatcher.Patches.UIFramework
                 // 开始恢复状态 - 阻止事件覆盖保存的 UUID
                 PlaybackStateManager.Instance.BeginRestore();
 
-                // 首先恢复队列和历史
+                // 恢复播放模式（随机/单曲循环）
+                var savedShuffle = PlaybackStateManager.Instance.GetSavedShuffleState();
+                if (savedShuffle.HasValue)
+                {
+                    musicService.SetShuffle(savedShuffle.Value);
+                    Plugin.Log.LogInfo($"[PlaybackState] Restored shuffle mode: {savedShuffle.Value}");
+                }
+
+                var savedRepeatOne = PlaybackStateManager.Instance.GetSavedRepeatOneState();
+                if (savedRepeatOne.HasValue)
+                {
+                    musicService.SetRepeat(savedRepeatOne.Value);
+                    Plugin.Log.LogInfo($"[PlaybackState] Restored repeat-one mode: {savedRepeatOne.Value}");
+                }
+
+                // 恢复队列和历史
                 var allMusic = musicService.AllMusicList;
                 if (PlaybackStateManager.Instance.TryRestoreQueueAndHistory(allMusic))
                 {
