@@ -30,7 +30,9 @@ namespace ChillPatcher.Module.Netease
         private NeteaseFavoriteManager _favoriteManager;
         private NeteaseSongRegistry _songRegistry;
         private QRLoginManager _qrLoginManager;
-        
+        private NeteaseSessionManager _sessionManager;
+        private NeteaseAccountApi _accountApi;
+
         private List<MusicInfo> _musicList = new List<MusicInfo>();
         private List<MusicInfo> _fmMusicList = new List<MusicInfo>();
         private Dictionary<string, NeteaseBridge.SongInfo> _songInfoMap = new Dictionary<string, NeteaseBridge.SongInfo>();
@@ -119,7 +121,11 @@ namespace ChillPatcher.Module.Netease
                 _qrLoginManager.OnLoginSuccess += OnQRLoginSuccess;
                 _qrLoginManager.OnStatusChanged += OnQRLoginStatusChanged;
                 _qrLoginManager.OnQRCodeUpdated += OnQRCodeUpdated;
-                
+
+                // 初始化会话管理器（未登录状态，绑定 QR 登录）
+                _sessionManager = new NeteaseSessionManager(_bridge, context.Logger);
+                _sessionManager.SetQRLoginManager(_qrLoginManager);
+
                 // 注册收藏专辑（包含登录歌曲）
                 RegisterLoginSongAlbum();
                 
@@ -129,12 +135,21 @@ namespace ChillPatcher.Module.Netease
                 // 监听播放事件：切换到其他歌曲时取消 QR 等待
                 _playStartedSubscription = _context.EventBus.Subscribe<PlayStartedEvent>(OnPlayStartedBeforeLogin);
 
+                // 注册账户 API（未登录模式也需要，供 UI 触发登录）
+                _accountApi = new NeteaseAccountApi(_sessionManager, context.Logger);
+                _accountApi.SetQRLoginManager(_qrLoginManager);
+                RegisterAccountApi();
+
                 _isReady = true;
                 OnReadyStateChanged?.Invoke(_isReady);
-                
+
                 context.Logger.LogInfo($"[{DisplayName}] ✅ 初始化完成（未登录模式）");
                 return;
             }
+
+            // 初始化会话管理器（已登录状态，验证会话并获取 VIP 信息）
+            _sessionManager = new NeteaseSessionManager(_bridge, context.Logger);
+            await _sessionManager.ValidateAndRefreshAsync();
 
             // 获取用户信息
             var userInfo = _bridge.GetUserInfo();
@@ -179,8 +194,10 @@ namespace ChillPatcher.Module.Netease
             // 订阅收藏变化事件
             SubscribeToFavoriteEvents();
 
-            // 注册歌词 API
+            // 注册歌词 API 和账户 API
             RegisterLyricApi();
+            _accountApi = new NeteaseAccountApi(_sessionManager, context.Logger);
+            RegisterAccountApi();
 
             _isReady = true;
             OnReadyStateChanged?.Invoke(_isReady);
@@ -210,6 +227,8 @@ namespace ChillPatcher.Module.Netease
             _qrLoginManager?.CancelLogin();
             _playStartedSubscription?.Dispose();
             _playStartedSubscription = null;
+            _sessionManager = null;
+            _accountApi = null;
             _musicList.Clear();
             _fmMusicList.Clear();
             _songInfoMap.Clear();
@@ -301,6 +320,26 @@ namespace ChillPatcher.Module.Netease
                         continue;
                     }
                     return null;
+                }
+
+                // 试听检测：IsTrial 由 bridge 层标记，触发会话恢复流程
+                if (songUrl.IsTrial && _sessionManager != null)
+                {
+                    _context.Logger.LogWarning($"[{DisplayName}] Trial song detected: {songInfo.Name}, attempting recovery...");
+                    var recoveryResult = await _sessionManager.HandleTrialAsync(songInfo.Id, bridgeQuality, cancellationToken);
+                    switch (recoveryResult)
+                    {
+                        case TrialRecoveryResult.Recovered:
+                            songUrl = _sessionManager.RecoveredSongUrl;
+                            _context.Logger.LogInfo($"[{DisplayName}] Recovery succeeded for: {songInfo.Name}");
+                            break;
+                        case TrialRecoveryResult.VipRestricted:
+                            _context.Logger.LogWarning($"[{DisplayName}] Song requires VIP: {songInfo.Name}, skipping");
+                            return null;
+                        case TrialRecoveryResult.NetworkError:
+                            _context.Logger.LogWarning($"[{DisplayName}] Network error during recovery for: {songInfo.Name}, skipping");
+                            return null;
+                    }
                 }
 
                 // 确定格式
@@ -685,6 +724,9 @@ namespace ChillPatcher.Module.Netease
             _context.Logger.LogInfo($"[{DisplayName}] 二维码登录成功！");
             _isLoggedIn = true;
 
+            // 通知会话管理器登录成功
+            _sessionManager?.NotifyLoginSuccess();
+
             // 停止登录前的播放监听
             _playStartedSubscription?.Dispose();
             _playStartedSubscription = null;
@@ -732,8 +774,9 @@ namespace ChillPatcher.Module.Netease
             // 订阅收藏变化事件
             SubscribeToFavoriteEvents();
 
-            // 注册歌词 API
+            // 注册歌词 API 和账户 API
             RegisterLyricApi();
+            RegisterAccountApi();
 
             // 统计自定义歌单歌曲数
             var customSongCount = _customPlaylistMusicLists.Values.Sum(list => list.Count);
@@ -790,6 +833,12 @@ namespace ChillPatcher.Module.Netease
             EnsureLyricApiRegistrationLoop();
         }
 
+        private void RegisterAccountApi()
+        {
+            // 账户 API 注册已集成到同一个循环中，确保循环正在运行
+            EnsureLyricApiRegistrationLoop();
+        }
+
         private void EnsureLyricApiRegistrationLoop()
         {
             if (_lyricApiRegistrationTask != null && !_lyricApiRegistrationTask.IsCompleted) return;
@@ -840,18 +889,32 @@ namespace ChillPatcher.Module.Netease
                         withJsApi++;
 
                         var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
-                        var existing = getMethod?.Invoke(jsApi, new object[] { "lyric_netease" });
-                        if (existing != null) continue;
-
-                        var lyricApi = new NeteaseLyricApi(_bridge, _songInfoMap, _context.Logger);
                         var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
-                        registerMethod?.Invoke(jsApi, new object[] { "lyric_netease", lyricApi });
-                        newlyRegistered++;
+
+                        // 注册歌词 API
+                        var existingLyric = getMethod?.Invoke(jsApi, new object[] { "lyric_netease" });
+                        if (existingLyric == null)
+                        {
+                            var lyricApi = new NeteaseLyricApi(_bridge, _songInfoMap, _context.Logger);
+                            registerMethod?.Invoke(jsApi, new object[] { "lyric_netease", lyricApi });
+                            newlyRegistered++;
+                        }
+
+                        // 注册账户 API
+                        if (_accountApi != null)
+                        {
+                            var existingAccount = getMethod?.Invoke(jsApi, new object[] { "netease_account" });
+                            if (existingAccount == null)
+                            {
+                                registerMethod?.Invoke(jsApi, new object[] { "netease_account", _accountApi });
+                                newlyRegistered++;
+                            }
+                        }
                     }
 
                     if (newlyRegistered > 0)
                     {
-                        _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease) registered on {withJsApi} ready instance(s), newly attached to {newlyRegistered} instance(s)");
+                        _context.Logger.LogInfo($"[{DisplayName}] Custom APIs registered on {withJsApi} ready instance(s), newly attached {newlyRegistered} registration(s)");
                     }
                 }
                 catch (OperationCanceledException)
@@ -860,7 +923,7 @@ namespace ChillPatcher.Module.Netease
                 }
                 catch (Exception ex)
                 {
-                    _context.Logger.LogError($"[{DisplayName}] Lyric API (netease) registration loop failed: {ex.Message}");
+                    _context.Logger.LogError($"[{DisplayName}] Custom API registration loop failed: {ex.Message}");
                 }
 
                 await Task.Delay(1000, cancellationToken);
