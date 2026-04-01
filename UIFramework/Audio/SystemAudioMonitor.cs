@@ -33,6 +33,7 @@ namespace ChillPatcher.UIFramework.Audio
         private float _detectionInterval;
         private float _fadeInDuration;
         private float _fadeOutDuration;
+        private float _peakThreshold;
 
         // AudioMixer 引用
         private AudioMixer _musicMixer;
@@ -66,6 +67,7 @@ namespace ChillPatcher.UIFramework.Audio
             _detectionInterval = PluginConfig.AudioDetectionInterval.Value;
             _fadeInDuration = PluginConfig.AudioResumeFadeInDuration.Value;
             _fadeOutDuration = PluginConfig.AudioMuteFadeOutDuration.Value;
+            _peakThreshold = PluginConfig.AudioPeakThreshold.Value;
 
             // 获取初始音量
             if (_musicMixer != null && _musicMixer.GetFloat("MusicVolume", out float vol))
@@ -92,6 +94,7 @@ namespace ChillPatcher.UIFramework.Audio
             _detectionInterval = PluginConfig.AudioDetectionInterval.Value;
             _fadeInDuration = PluginConfig.AudioResumeFadeInDuration.Value;
             _fadeOutDuration = PluginConfig.AudioMuteFadeOutDuration.Value;
+            _peakThreshold = PluginConfig.AudioPeakThreshold.Value;
 
             Start();
         }
@@ -183,7 +186,7 @@ namespace ChillPatcher.UIFramework.Audio
                         {
                             // 检查是否真的有声音（峰值电平 > 0）
                             float peakValue = session.AudioMeterInformation.MasterPeakValue;
-                            if (peakValue > 0.001f) // 有实际音频输出
+                            if (peakValue > _peakThreshold) // 超过检测阈值
                             {
                                 return true;
                             }
