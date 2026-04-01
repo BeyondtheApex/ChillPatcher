@@ -102,14 +102,16 @@ namespace ChillPatcher
                 foreach (var dir in Directory.GetDirectories(uiBaseDir))
                 {
                     var dirName = Path.GetFileName(dir);
+                    // 使用 uiBaseDir + dirName 构造路径，避免 NTFS junction 未解析的路径被传入
+                    var dirPath = Path.Combine(uiBaseDir, dirName);
 
                     // 跳过没有入口文件或 package.json 的目录
-                    var hasEntry = File.Exists(Path.Combine(dir, "@outputs", "esbuild", "app.js"));
-                    var hasPkg = File.Exists(Path.Combine(dir, "package.json"));
+                    var hasEntry = File.Exists(Path.Combine(dirPath, "@outputs", "esbuild", "app.js"));
+                    var hasPkg = File.Exists(Path.Combine(dirPath, "package.json"));
                     if (!hasEntry && !hasPkg) continue;
 
                     var isDefault = dirName == "default";
-                    var entry = BindInstance(dirName, dir,
+                    var entry = BindInstance(dirName, dirPath,
                         defaultSortingOrder: isDefault ? 1000 : nextOrder,
                         defaultEnabled: true,
                         defaultInteractive: true);
@@ -176,8 +178,10 @@ namespace ChillPatcher
                 _log.LogInfo($"[UIInstanceConfig] 已覆盖默认值: UIInstance.{id} (sortOrder={defaultSortingOrder}, interactive={defaultInteractive})");
             }
 
-            // 从 config 读取实际值
-            entry.WorkingDir = entry.CfgWorkingDir.Value;
+            // WorkingDir 始终使用运行时检测的路径，不从 config 缓存读取
+            // 避免 NTFS junction 未解析的路径被持久化导致 IO 沙箱路径不匹配
+            entry.CfgWorkingDir.Value = workingDir;
+            entry.WorkingDir = workingDir;
             entry.Enabled = entry.CfgEnabled.Value;
             entry.SortingOrder = entry.CfgSortingOrder.Value;
             entry.Interactive = entry.CfgInteractive.Value;
