@@ -168,7 +168,13 @@ namespace ChillPatcher.Patches.UIFramework
                 if (!string.IsNullOrEmpty(playingMusic?.UUID))
                     musicInfo = MusicRegistry.Instance?.GetMusic(playingMusic.UUID);
 
-                float totalTime = playingMusic?.AudioClip != null ? playingMusic.AudioClip.length : 0f;
+                // 优先使用 PCM reader 的真实时长（AudioClip.length 包含 30 分钟余量）
+                float totalTime;
+                var reader = MusicService_SetProgress_Patch.ActivePcmReader;
+                if (reader != null && reader.Info.Duration > 0)
+                    totalTime = reader.Info.Duration;
+                else
+                    totalTime = playingMusic?.AudioClip != null ? playingMusic.AudioClip.length : 0f;
                 float currentTime = totalTime * progress;
 
                 eventBus.Publish(new PlayProgressEvent
