@@ -39,9 +39,12 @@ static std::string g_lastError;
 // 回调函数指针
 static SmtcButtonPressedCallback g_buttonCallback = nullptr;
 static SmtcPositionChangeRequestedCallback g_positionCallback = nullptr;
+static SmtcShuffleChangeCallback g_shuffleCallback = nullptr;
 
 // 事件令牌
 static winrt::event_token g_buttonPressedToken;
+static winrt::event_token g_positionChangeToken;
+static winrt::event_token g_shuffleChangeToken;
 
 // ========== 辅助函数 ==========
 
@@ -138,9 +141,36 @@ SMTC_API int SmtcInitialize(void) {
             }
         });
         
+        // 注册进度拖动事件
+        g_positionChangeToken = g_smtc.PlaybackPositionChangeRequested([](
+            wm::SystemMediaTransportControls const& sender,
+            wm::PlaybackPositionChangeRequestedEventArgs const& args) {
+
+            if (g_positionCallback) {
+                auto position = args.RequestedPlaybackPosition();
+                long long positionMs = std::chrono::duration_cast<std::chrono::milliseconds>(position).count();
+                g_positionCallback(positionMs);
+            }
+        });
+
+        // 注册随机播放状态变更事件（ISystemMediaTransportControls2）
+        try {
+            auto smtc2 = g_smtc.as<wm::ISystemMediaTransportControls2>();
+            g_shuffleChangeToken = smtc2.ShuffleEnabledChangeRequested([](
+                wm::SystemMediaTransportControls const& sender,
+                wm::ShuffleEnabledChangeRequestedEventArgs const& args) {
+
+                if (g_shuffleCallback) {
+                    g_shuffleCallback(args.RequestedShuffleEnabled() ? 1 : 0);
+                }
+            });
+        } catch (...) {
+            // ISystemMediaTransportControls2 not available
+        }
+
         // 启用 SMTC
         g_smtc.IsEnabled(true);
-        
+
         g_initialized = true;
         g_lastError.clear();
         return 0;
@@ -169,6 +199,13 @@ SMTC_API void SmtcShutdown(void) {
                 g_smtc.ButtonPressed(g_buttonPressedToken);
             } catch (...) {}
             try {
+                g_smtc.PlaybackPositionChangeRequested(g_positionChangeToken);
+            } catch (...) {}
+            try {
+                auto smtc2 = g_smtc.as<wm::ISystemMediaTransportControls2>();
+                smtc2.ShuffleEnabledChangeRequested(g_shuffleChangeToken);
+            } catch (...) {}
+            try {
                 g_smtc.IsEnabled(false);
             } catch (...) {}
         }
@@ -192,6 +229,7 @@ SMTC_API void SmtcShutdown(void) {
         // 清理回调
         g_buttonCallback = nullptr;
         g_positionCallback = nullptr;
+        g_shuffleCallback = nullptr;
         
         g_initialized = false;
         
@@ -554,6 +592,53 @@ SMTC_API void SmtcSetButtonPressedCallback(SmtcButtonPressedCallback callback) {
 SMTC_API void SmtcSetPositionChangeRequestedCallback(SmtcPositionChangeRequestedCallback callback) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_positionCallback = callback;
+}
+
+// ========== 随机播放控制 ==========
+
+SMTC_API int SmtcSetShuffleEnabled(int enabled) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (!g_initialized || !g_smtc) {
+        SetError("Not initialized");
+        return -1;
+    }
+
+    try {
+        auto smtc2 = g_smtc.as<wm::ISystemMediaTransportControls2>();
+        smtc2.ShuffleEnabled(enabled != 0);
+        return 0;
+    }
+    catch (const winrt::hresult_error& ex) {
+        SetError("WinRT error: " + winrt::to_string(ex.message()));
+        return -2;
+    }
+}
+
+SMTC_API int SmtcSetShuffleActive(int active) {
+    // ShuffleEnabled 即 ShuffleActive（WinRT API 只有一个属性）
+    return SmtcSetShuffleEnabled(active);
+}
+
+SMTC_API int SmtcGetShuffleActive(void) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (!g_initialized || !g_smtc) {
+        return 0;
+    }
+
+    try {
+        auto smtc2 = g_smtc.as<wm::ISystemMediaTransportControls2>();
+        return smtc2.ShuffleEnabled() ? 1 : 0;
+    }
+    catch (...) {
+        return 0;
+    }
+}
+
+SMTC_API void SmtcSetShuffleChangeCallback(SmtcShuffleChangeCallback callback) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_shuffleCallback = callback;
 }
 
 // ========== 错误处理 ==========

@@ -32,6 +32,8 @@ namespace ChillPatcher.UIFramework.Audio
         private string _currentAlbum;
         private string _currentMusicUuid; // 当前播放的歌曲 UUID
         private bool _isPlaying;
+        private long _currentDurationMs; // 当前歌曲时长（用于 seek 换算）
+        private bool _lastShuffleState; // 上次同步的随机播放状态
 
         // 游戏服务引用
         private MusicService _musicService;
@@ -64,9 +66,14 @@ namespace ChillPatcher.UIFramework.Audio
                     return;
                 }
 
-                // 注册按钮事件
+                // 注册按钮事件、进度拖动事件和随机播放事件
                 SmtcBridge.OnButtonPressed += OnButtonPressed;
-                
+                SmtcBridge.OnPositionChangeRequested += OnPositionChangeRequested;
+                SmtcBridge.OnShuffleChangeRequested += OnShuffleChangeRequested;
+
+                // 启用随机播放按钮
+                SmtcBridge.SetShuffleEnabled(true);
+
                 // 订阅封面加载完成事件（用于异步更新封面）
                 CoverService.Instance.OnMusicCoverLoaded += OnMusicCoverLoaded;
                 
@@ -117,6 +124,9 @@ namespace ChillPatcher.UIFramework.Audio
         {
             _musicService = musicService;
             _facilityMusic = facilityMusic;
+
+            // 同步游戏当前的随机播放状态到 SMTC
+            SyncShuffleState();
         }
 
         /// <summary>
@@ -325,7 +335,96 @@ namespace ChillPatcher.UIFramework.Audio
         public void UpdateTimeline(long durationMs, long positionMs)
         {
             if (!_initialized) return;
+            _currentDurationMs = durationMs;
             SmtcBridge.SetTimelineProperties(0, durationMs, positionMs);
+
+            // 顺便检查随机播放状态是否从游戏侧变更
+            if (_musicService != null)
+            {
+                bool currentShuffle = _musicService.IsShuffle;
+                if (currentShuffle != _lastShuffleState)
+                {
+                    _lastShuffleState = currentShuffle;
+                    SmtcBridge.SetShuffleActive(currentShuffle);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 处理 SMTC 进度拖动事件
+        /// </summary>
+        private void OnPositionChangeRequested(long positionMs)
+        {
+            _log.LogDebug($"SMTC 进度拖动: {positionMs}ms");
+            MainThreadDispatcher.Instance?.Enqueue(() => HandlePositionChange(positionMs));
+        }
+
+        private void HandlePositionChange(long positionMs)
+        {
+            try
+            {
+                if (_musicService == null || _currentDurationMs <= 0) return;
+
+                float progress = (float)positionMs / _currentDurationMs;
+                progress = UnityEngine.Mathf.Clamp01(progress);
+                _musicService.SetMusicProgress(progress);
+
+                // 立即更新 SMTC 时间线，让进度条跟上
+                SmtcBridge.SetTimelineProperties(0, _currentDurationMs, positionMs);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError($"处理进度拖动失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 处理 SMTC 随机播放按钮切换
+        /// </summary>
+        private void OnShuffleChangeRequested(bool active)
+        {
+            _log.LogDebug($"SMTC 随机播放: {active}");
+            MainThreadDispatcher.Instance?.Enqueue(() => HandleShuffleChange(active));
+        }
+
+        private void HandleShuffleChange(bool active)
+        {
+            try
+            {
+                if (_facilityMusic == null || _musicService == null) return;
+
+                // 只在状态不一致时才 toggle（游戏的 OnClickButtonShuffleChange 是 toggle）
+                if (_musicService.IsShuffle != active)
+                {
+                    _facilityMusic.OnClickButtonShuffleChange();
+                }
+                SmtcBridge.SetShuffleActive(active);
+                _lastShuffleState = active;
+                _log.LogInfo($"随机播放已{(active ? "开启" : "关闭")}");
+            }
+            catch (Exception ex)
+            {
+                _log.LogError($"处理随机播放切换失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 同步游戏的随机播放状态到 SMTC
+        /// </summary>
+        public void SyncShuffleState()
+        {
+            if (!_initialized || _musicService == null) return;
+            try
+            {
+                bool isShuffle = _musicService.IsShuffle;
+                _lastShuffleState = isShuffle;
+                SmtcBridge.SetShuffleActive(isShuffle);
+                _log.LogDebug($"同步随机播放状态: {isShuffle}");
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning($"同步随机播放状态失败: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -400,6 +499,8 @@ namespace ChillPatcher.UIFramework.Audio
             try
             {
                 SmtcBridge.OnButtonPressed -= OnButtonPressed;
+                SmtcBridge.OnPositionChangeRequested -= OnPositionChangeRequested;
+                SmtcBridge.OnShuffleChangeRequested -= OnShuffleChangeRequested;
                 CoverService.Instance.OnMusicCoverLoaded -= OnMusicCoverLoaded;
                 SmtcBridge.SetPlaybackStatus(SmtcBridge.PlaybackStatus.Closed);
                 SmtcBridge.Shutdown();

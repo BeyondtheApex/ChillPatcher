@@ -17,6 +17,7 @@ namespace ChillPatcher.Patches
     {
         private static IDisposable _playMusicSubscription;
         private static IDisposable _changeMusicSubscription;
+        private static IDisposable _progressEventSubscription;
 
         /// <summary>
         /// 在 FacilityMusic.Setup 之后初始化 SMTC 服务
@@ -42,10 +43,18 @@ namespace ChillPatcher.Patches
                 // 释放旧订阅，防止场景重载后泄漏
                 _playMusicSubscription?.Dispose();
                 _changeMusicSubscription?.Dispose();
+                _progressEventSubscription?.Dispose();
 
                 // 订阅播放事件
                 _playMusicSubscription = __instance.MusicService.onPlayMusic.Subscribe(OnPlayMusic);
                 _changeMusicSubscription = __instance.MusicService.onChangeMusic.Subscribe(OnChangeMusic);
+
+                // 订阅进度事件，持续更新 SMTC 时间线
+                var eventBus = EventBus.Instance;
+                if (eventBus != null)
+                {
+                    _progressEventSubscription = eventBus.Subscribe<PlayProgressEvent>(OnPlayProgress);
+                }
                 
                 Plugin.Log.LogInfo("[SMTC] 服务已初始化并绑定到游戏");
             }
@@ -67,8 +76,14 @@ namespace ChillPatcher.Patches
                 SystemMediaTransportService.Instance.UpdateMediaInfo(audioInfo);
                 SystemMediaTransportService.Instance.SetPlaybackStatus(true);
                 
-                // 更新时间线（如果有音频长度）
-                if (audioInfo.AudioClip != null)
+                // 更新时间线：优先使用 PCM reader 的真实时长
+                var reader = MusicService_SetProgress_Patch.ActivePcmReader;
+                if (reader != null && reader.Info.Duration > 0)
+                {
+                    long durationMs = (long)(reader.Info.Duration * 1000);
+                    SystemMediaTransportService.Instance.UpdateTimeline(durationMs, 0);
+                }
+                else if (audioInfo.AudioClip != null)
                 {
                     long durationMs = (long)(audioInfo.AudioClip.length * 1000);
                     SystemMediaTransportService.Instance.UpdateTimeline(durationMs, 0);
@@ -87,6 +102,25 @@ namespace ChillPatcher.Patches
         {
             // 切换时状态会短暂变为 Changing
             // 实际信息由 OnPlayMusic 更新
+        }
+
+        /// <summary>
+        /// 每秒更新 SMTC 时间线位置
+        /// </summary>
+        private static void OnPlayProgress(PlayProgressEvent e)
+        {
+            try
+            {
+                if (e.TotalTime <= 0) return;
+
+                long durationMs = (long)(e.TotalTime * 1000);
+                long positionMs = (long)(e.CurrentTime * 1000);
+                SystemMediaTransportService.Instance.UpdateTimeline(durationMs, positionMs);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"[SMTC] OnPlayProgress 异常: {ex.Message}");
+            }
         }
 
         /// <summary>
