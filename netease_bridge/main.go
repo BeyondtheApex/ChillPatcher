@@ -59,8 +59,8 @@ type SongURL struct {
 	ID      int64  `json:"id"`
 	URL     string `json:"url"`
 	Size    int64  `json:"size"`
-	Type    string `json:"type"` // mp3, flac, etc.
-	IsTrial bool   `json:"isTrial"`
+	Type    string `json:"type"`    // mp3, flac, etc.
+	IsTrial bool   `json:"isTrial"` // 是否试听（FreeTrialInfo 非空）
 }
 
 //export NeteaseInit

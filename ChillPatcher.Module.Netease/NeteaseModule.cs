@@ -348,7 +348,29 @@ namespace ChillPatcher.Module.Netease
                     ? AudioFormat.Flac
                     : AudioFormat.Mp3;
 
-                _context.Logger.LogInfo($"[{DisplayName}] 获取到歌曲 URL: {songInfo.Name} [format={format}, size={songUrl.Size}]");
+                _context.Logger.LogInfo($"[{DisplayName}] 获取到歌曲 URL: {songInfo.Name} [format={format}, size={songUrl.Size}, isTrial={songUrl.IsTrial}]");
+
+                // 校验缓存：如果 API 返回的文件大小远大于缓存文件，说明缓存是试听片段
+                var cacheKey = $"netease_{songInfo.Id}";
+                var cachePath = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), "chillpatcher_audio_cache",
+                    $"{cacheKey}.{format}");
+                if (System.IO.File.Exists(cachePath) && songUrl.Size > 0)
+                {
+                    var cachedSize = new System.IO.FileInfo(cachePath).Length;
+                    if (cachedSize < songUrl.Size * 8 / 10) // 缓存不到预期的 80%
+                    {
+                        _context.Logger.LogWarning($"[{DisplayName}] 缓存文件过小 ({cachedSize} < {songUrl.Size}), 可能是试听片段, 删除重下: {songInfo.Name}");
+                        System.IO.File.Delete(cachePath);
+                    }
+                }
+
+                // 如果当前 URL 是试听，跳过缓存（避免写入无效缓存）
+                if (songUrl.IsTrial)
+                {
+                    _context.Logger.LogWarning($"[{DisplayName}] 歌曲为试听版本, 跳过: {songInfo.Name}");
+                    return null;
+                }
 
                 // 使用主插件流式服务创建 PCM 流
                 if (!_context.StreamingService.IsAvailable)
