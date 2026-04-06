@@ -67,6 +67,19 @@ namespace ChillPatcher.SDK.Interfaces
             CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// 创建流并异步等待就绪（指定完整缓存路径）
+        /// </summary>
+        Task<IPcmStreamReader> CreateStreamAndWaitAsync(
+            string url,
+            string format,
+            float durationSeconds,
+            string cachePath,
+            int timeoutMs,
+            Dictionary<string, string> headers,
+            CancellationToken cancellationToken,
+            bool useCachePath);
+
+        /// <summary>
         /// 异步等待读取器就绪（不阻塞主线程）
         /// </summary>
         Task<bool> WaitForReadyAsync(IPcmStreamReader reader, int timeoutMs, CancellationToken cancellationToken = default);
