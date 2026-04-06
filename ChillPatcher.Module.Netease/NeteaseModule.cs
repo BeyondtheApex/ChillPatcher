@@ -58,6 +58,11 @@ namespace ChillPatcher.Module.Netease
         private ConfigEntry<int> _streamReadyTimeoutMs;  // PCM 流就绪超时
         private ConfigEntry<int> _streamMaxRetries;  // PCM 流最大重试次数
         private ConfigEntry<bool> _enablePersonalFM;  // 是否启用个人FM
+        private ConfigEntry<string> _musicCacheDirectory;  // 音乐缓存目录
+        private ConfigEntry<bool> _musicCacheReadableName;  // 使用可读文件名
+
+        // 文件缓存管理器
+        private NeteaseFileCache _fileCache;
 
         // 自定义歌单
         private Dictionary<long, List<MusicInfo>> _customPlaylistMusicLists = new Dictionary<long, List<MusicInfo>>();
@@ -87,6 +92,13 @@ namespace ChillPatcher.Module.Netease
 
             // 注册配置项
             RegisterConfig();
+
+            // 初始化文件缓存管理器
+            _fileCache = new NeteaseFileCache(context.Logger);
+            _fileCache.CacheDirectory = _musicCacheDirectory.Value;
+            _fileCache.UseReadableName = _musicCacheReadableName.Value;
+            _musicCacheDirectory.SettingChanged += (s, e) => { if (_fileCache != null) _fileCache.CacheDirectory = _musicCacheDirectory.Value; };
+            _musicCacheReadableName.SettingChanged += (s, e) => { if (_fileCache != null) _fileCache.UseReadableName = _musicCacheReadableName.Value; };
 
             // 使用 DependencyLoader 加载原生 DLL
             var loaded = context.DependencyLoader.LoadNativeLibraryFromModulePath(
@@ -307,6 +319,10 @@ namespace ChillPatcher.Module.Netease
             int maxRetries = _streamMaxRetries?.Value ?? 3;
             int readyTimeoutMs = _streamReadyTimeoutMs?.Value ?? 20000;
 
+            // 歌曲元信息（用于缓存文件名）
+            string artist = songInfo.ArtistName ?? "Unknown";
+            string songName = songInfo.Name ?? "Unknown";
+
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
                 // 在线程池执行 P/Invoke（GetSongUrl 调用 Go DLL 发 HTTP 请求，会阻塞调用线程）
@@ -322,26 +338,6 @@ namespace ChillPatcher.Module.Netease
                     return null;
                 }
 
-                // 试听检测：IsTrial 由 bridge 层标记，触发会话恢复流程
-                if (songUrl.IsTrial && _sessionManager != null)
-                {
-                    _context.Logger.LogWarning($"[{DisplayName}] Trial song detected: {songInfo.Name}, attempting recovery...");
-                    var recoveryResult = await _sessionManager.HandleTrialAsync(songInfo.Id, bridgeQuality, cancellationToken);
-                    switch (recoveryResult)
-                    {
-                        case TrialRecoveryResult.Recovered:
-                            songUrl = _sessionManager.RecoveredSongUrl;
-                            _context.Logger.LogInfo($"[{DisplayName}] Recovery succeeded for: {songInfo.Name}");
-                            break;
-                        case TrialRecoveryResult.VipRestricted:
-                            _context.Logger.LogWarning($"[{DisplayName}] Song requires VIP: {songInfo.Name}, skipping");
-                            return null;
-                        case TrialRecoveryResult.NetworkError:
-                            _context.Logger.LogWarning($"[{DisplayName}] Network error during recovery for: {songInfo.Name}, skipping");
-                            return null;
-                    }
-                }
-
                 // 确定格式
                 var format = !string.IsNullOrEmpty(songUrl.Type) ? songUrl.Type.ToLowerInvariant() : "mp3";
                 var audioFormat = string.Equals(format, "flac", StringComparison.OrdinalIgnoreCase)
@@ -350,27 +346,50 @@ namespace ChillPatcher.Module.Netease
 
                 _context.Logger.LogInfo($"[{DisplayName}] 获取到歌曲 URL: {songInfo.Name} [format={format}, size={songUrl.Size}, isTrial={songUrl.IsTrial}]");
 
-                // 校验缓存：如果 API 返回的文件大小远大于缓存文件，说明缓存是试听片段
-                var cacheKey = $"netease_{songInfo.Id}";
-                var cachePath = System.IO.Path.Combine(
-                    System.IO.Path.GetTempPath(), "chillpatcher_audio_cache",
-                    $"{cacheKey}.{format}");
-                if (System.IO.File.Exists(cachePath) && songUrl.Size > 0)
+                // 检查本地缓存（大小验证 + 懒迁移）
+                string localPath = _fileCache != null
+                    ? _fileCache.FindValidCache(songInfo.Id, artist, songName, format, songUrl.Size)
+                    : null;
+
+                if (localPath != null)
                 {
-                    var cachedSize = new System.IO.FileInfo(cachePath).Length;
-                    if (cachedSize < songUrl.Size * 8 / 10) // 缓存不到预期的 80%
+                    _context.Logger.LogInfo($"[{DisplayName}] 使用本地缓存: {songInfo.Name} [{localPath}]");
+                }
+                else
+                {
+                    // 无本地缓存时才做试听检测和会话恢复
+                    if (songUrl.IsTrial && _sessionManager != null)
                     {
-                        _context.Logger.LogWarning($"[{DisplayName}] 缓存文件过小 ({cachedSize} < {songUrl.Size}), 可能是试听片段, 删除重下: {songInfo.Name}");
-                        System.IO.File.Delete(cachePath);
+                        _context.Logger.LogWarning($"[{DisplayName}] Trial song detected: {songInfo.Name}, attempting recovery...");
+                        var recoveryResult = await _sessionManager.HandleTrialAsync(songInfo.Id, bridgeQuality, cancellationToken);
+                        switch (recoveryResult)
+                        {
+                            case TrialRecoveryResult.Recovered:
+                                songUrl = _sessionManager.RecoveredSongUrl;
+                                _context.Logger.LogInfo($"[{DisplayName}] Recovery succeeded for: {songInfo.Name}");
+                                break;
+                            case TrialRecoveryResult.VipRestricted:
+                                _context.Logger.LogWarning($"[{DisplayName}] Song requires VIP: {songInfo.Name}, skipping");
+                                return null;
+                            case TrialRecoveryResult.NetworkError:
+                                _context.Logger.LogWarning($"[{DisplayName}] Network error during recovery for: {songInfo.Name}, skipping");
+                                return null;
+                        }
+                    }
+
+                    // 恢复后仍为试听版本，跳过
+                    if (songUrl.IsTrial)
+                    {
+                        _context.Logger.LogWarning($"[{DisplayName}] 歌曲为试听版本, 跳过: {songInfo.Name}");
+                        return null;
                     }
                 }
 
-                // 如果当前 URL 是试听，跳过缓存（避免写入无效缓存）
-                if (songUrl.IsTrial)
-                {
-                    _context.Logger.LogWarning($"[{DisplayName}] 歌曲为试听版本, 跳过: {songInfo.Name}");
-                    return null;
-                }
+                // 确定缓存路径（本地已有则复用，否则生成新路径）
+                string cachePath = localPath
+                    ?? (_fileCache != null
+                        ? _fileCache.GetCachePath(songInfo.Id, artist, songName, format)
+                        : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "chillpatcher_audio_cache", $"netease_{songInfo.Id}.{format}"));
 
                 // 使用主插件流式服务创建 PCM 流
                 if (!_context.StreamingService.IsAvailable)
@@ -380,13 +399,14 @@ namespace ChillPatcher.Module.Netease
                 }
 
                 var reader = await _context.StreamingService.CreateStreamAndWaitAsync(
-                    songUrl.Url,
+                    localPath != null ? "" : songUrl.Url,
                     format,
                     (float)songInfo.Duration,
-                    $"netease_{songInfo.Id}",
+                    cachePath,
                     readyTimeoutMs,
                     new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" },
-                    cancellationToken);
+                    cancellationToken,
+                    useCachePath: true);
 
                 if (reader == null)
                 {
@@ -613,6 +633,18 @@ namespace ChillPatcher.Module.Netease
                 "EnablePersonalFM",
                 false,
                 "是否启用个人FM Tag和歌曲加载 (true=启用, false=关闭)");
+
+            _musicCacheDirectory = configManager.Bind(
+                "",  // 使用默认 section
+                "MusicCacheDirectory",
+                "",
+                "音乐缓存目录（空=使用默认临时目录）");
+
+            _musicCacheReadableName = configManager.Bind(
+                "",  // 使用默认 section
+                "MusicCacheReadableName",
+                false,
+                "使用可读文件名（艺术家 - 歌名）");
         }
 
         private bool IsPersonalFMEnabled => _enablePersonalFM?.Value ?? false;

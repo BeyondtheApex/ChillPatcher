@@ -103,6 +103,57 @@ namespace ChillPatcher.ModuleSystem.Services.Streaming
             return reader;
         }
 
+        /// <summary>
+        /// 创建流式读取器（指定完整缓存路径）
+        /// </summary>
+        public IPcmStreamReader CreateStream(
+            string url,
+            string format,
+            float durationSeconds,
+            string cachePath,
+            Dictionary<string, string> headers,
+            bool useCachePath)
+        {
+            if (!AudioDecoder.IsAvailable)
+            {
+                Logger.LogError("AudioDecoder native plugin is not available!");
+                return null;
+            }
+
+            Logger.LogInfo($"Creating stream: format={format}, " +
+                           $"duration={durationSeconds:F1}s, cachePath={cachePath}");
+
+            return new CorePcmStreamReader(
+                url, format, durationSeconds, cachePath, headers, useCachePath);
+        }
+
+        /// <summary>
+        /// 创建流式读取器并等待就绪（指定完整缓存路径）
+        /// </summary>
+        public async Task<IPcmStreamReader> CreateStreamAndWaitAsync(
+            string url,
+            string format,
+            float durationSeconds,
+            string cachePath,
+            int timeoutMs,
+            Dictionary<string, string> headers,
+            CancellationToken cancellationToken,
+            bool useCachePath)
+        {
+            var reader = CreateStream(url, format, durationSeconds,
+                                      cachePath, headers, useCachePath);
+            if (reader == null) return null;
+
+            if (!await WaitForReadyAsync(reader, timeoutMs, cancellationToken))
+            {
+                Logger.LogWarning($"Stream not ready within {timeoutMs}ms, disposing");
+                reader.Dispose();
+                return null;
+            }
+
+            return reader;
+        }
+
         public async Task<bool> WaitForReadyAsync(IPcmStreamReader reader, int timeoutMs, CancellationToken cancellationToken = default)
         {
             int elapsed = 0;
