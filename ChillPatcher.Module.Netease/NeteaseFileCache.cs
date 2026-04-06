@@ -39,7 +39,7 @@ namespace ChillPatcher.Module.Netease
             var dir = GetEffectiveCacheDirectory();
 
             var fileName = UseReadableName
-                ? SanitizeFileName(artist + " - " + songName) + "." + format
+                ? SanitizeFileName(artist.Replace(", ", ",") + " - " + songName) + "." + format
                 : "netease_" + songId + "." + format;
 
             return Path.Combine(dir, fileName);
@@ -121,8 +121,8 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
-        /// 验证文件大小是否合理
-        /// 文件大小应不低于预期大小的 80%
+        /// 验证文件大小是否完整
+        /// 文件大小应不低于预期大小
         /// </summary>
         private bool ValidateFileSize(string path, long expectedSize)
         {
@@ -131,9 +131,8 @@ namespace ChillPatcher.Module.Netease
 
             var fileInfo = new FileInfo(path);
             var actualSize = fileInfo.Length;
-            var threshold = (long)(expectedSize * 0.8);
 
-            if (actualSize >= threshold)
+            if (actualSize >= expectedSize)
                 return true;
 
             _logger.LogWarning(LogTag + " 缓存文件过小，已删除: " + path

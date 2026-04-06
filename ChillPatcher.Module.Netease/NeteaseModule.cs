@@ -63,6 +63,10 @@ namespace ChillPatcher.Module.Netease
 
         // 文件缓存管理器
         private NeteaseFileCache _fileCache;
+        // 待写标签队列：UUID → (cachePath, songInfo, expectedSize)
+        private readonly Dictionary<string, (string cachePath, NeteaseBridge.SongInfo songInfo, long expectedSize)> _pendingTags
+            = new Dictionary<string, (string, NeteaseBridge.SongInfo, long)>();
+        private IDisposable _resourcesReleasedSubscription;
 
         // 自定义歌单
         private Dictionary<long, List<MusicInfo>> _customPlaylistMusicLists = new Dictionary<long, List<MusicInfo>>();
@@ -99,6 +103,9 @@ namespace ChillPatcher.Module.Netease
             _fileCache.UseReadableName = _musicCacheReadableName.Value;
             _musicCacheDirectory.SettingChanged += (s, e) => { if (_fileCache != null) _fileCache.CacheDirectory = _musicCacheDirectory.Value; };
             _musicCacheReadableName.SettingChanged += (s, e) => { if (_fileCache != null) _fileCache.UseReadableName = _musicCacheReadableName.Value; };
+
+            // 订阅资源释放事件，在文件锁释放后写入 ID3 标签和歌词
+            _resourcesReleasedSubscription = context.EventBus.Subscribe<MusicResourcesReleasedEvent>(OnMusicResourcesReleased);
 
             // 使用 DependencyLoader 加载原生 DLL
             var loaded = context.DependencyLoader.LoadNativeLibraryFromModulePath(
@@ -241,6 +248,9 @@ namespace ChillPatcher.Module.Netease
             _playStartedSubscription = null;
             _sessionManager = null;
             _accountApi = null;
+            _resourcesReleasedSubscription?.Dispose();
+            _resourcesReleasedSubscription = null;
+            _pendingTags.Clear();
             _musicList.Clear();
             _fmMusicList.Clear();
             _songInfoMap.Clear();
@@ -420,6 +430,9 @@ namespace ChillPatcher.Module.Netease
                 }
 
                 _context.Logger.LogInfo($"[{DisplayName}] PCM 流已就绪: {songInfo.Name} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch, {reader.Info.Format ?? format}]");
+
+                // 记录待写标签信息，在歌曲资源释放后异步写入
+                _pendingTags[uuid] = (cachePath, songInfo, songUrl.Size);
 
                 // 返回 PCM 流源
                 return PlayableSource.FromPcmStream(uuid, reader, audioFormat);
@@ -768,6 +781,46 @@ namespace ChillPatcher.Module.Netease
                 _currentLoginSongUuid = null;
                 _context.Logger.LogInfo($"[{DisplayName}] 已删除登录歌曲");
             }
+        }
+
+        /// <summary>
+        /// 歌曲资源释放回调：文件锁已释放，异步写入 ID3 标签和歌词
+        /// </summary>
+        private void OnMusicResourcesReleased(MusicResourcesReleasedEvent evt)
+        {
+            var uuid = evt?.Music?.UUID;
+            if (string.IsNullOrEmpty(uuid)) return;
+
+            if (!_pendingTags.TryGetValue(uuid, out var pending)) return;
+            _pendingTags.Remove(uuid);
+
+            var cachePath = pending.cachePath;
+            var songInfo = pending.songInfo;
+            var expectedSize = pending.expectedSize;
+            var bridge = _bridge;
+            var logger = _context.Logger;
+
+            Task.Run(() =>
+            {
+                // 校验文件完整性：残缺文件直接删除
+                if (System.IO.File.Exists(cachePath) && expectedSize > 0)
+                {
+                    var actualSize = new System.IO.FileInfo(cachePath).Length;
+                    if (actualSize < expectedSize)
+                    {
+                        logger.LogWarning($"[{DisplayName}] 缓存文件不完整 ({actualSize}/{expectedSize}), 删除: {songInfo.Name}");
+                        try { System.IO.File.Delete(cachePath); } catch { }
+                        return;
+                    }
+                }
+
+                // 获取歌词（同时用于嵌入 ID3 和保存 .lrc）
+                string lyricText = null;
+                try { lyricText = bridge?.GetSongLyric(songInfo.Id); } catch { }
+
+                NeteaseMediaTagger.EnsureTags(cachePath, songInfo, logger, lyricText);
+                NeteaseMediaTagger.EnsureLyrics(cachePath, songInfo.Id, bridge, logger, lyricText);
+            });
         }
 
         /// <summary>

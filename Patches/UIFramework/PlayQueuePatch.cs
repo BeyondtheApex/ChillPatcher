@@ -1234,6 +1234,25 @@ namespace ChillPatcher.Patches.UIFramework
                 previousMusic.AudioClip = null;
                 Plugin.Log.LogDebug($"[PlayQueuePatch] Destroyed AudioClip for: {previousMusic.Title}");
             }
+
+            // 发布资源释放事件（文件锁已释放，可安全写入标签等）
+            try
+            {
+                var eventBus = EventBus.Instance;
+                if (eventBus != null)
+                {
+                    MusicInfo releasedInfo = null;
+                    if (!string.IsNullOrEmpty(uuid))
+                        releasedInfo = MusicRegistry.Instance?.GetMusic(uuid);
+                    if (releasedInfo == null)
+                        releasedInfo = new MusicInfo { UUID = uuid ?? string.Empty, Title = previousMusic.Title ?? previousMusic.AudioClipName };
+                    eventBus.Publish(new MusicResourcesReleasedEvent { Music = releasedInfo });
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[PlayQueuePatch] MusicResourcesReleasedEvent publish failed: {ex.Message}");
+            }
         }
         
         /// <summary>
