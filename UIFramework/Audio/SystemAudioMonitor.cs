@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using NAudio.CoreAudioApi;
@@ -34,6 +38,7 @@ namespace ChillPatcher.UIFramework.Audio
         private float _fadeInDuration;
         private float _fadeOutDuration;
         private float _peakThreshold;
+        private HashSet<string> _excludedProcessNames;
 
         // AudioMixer 引用
         private AudioMixer _musicMixer;
@@ -68,6 +73,7 @@ namespace ChillPatcher.UIFramework.Audio
             _fadeInDuration = PluginConfig.AudioResumeFadeInDuration.Value;
             _fadeOutDuration = PluginConfig.AudioMuteFadeOutDuration.Value;
             _peakThreshold = PluginConfig.AudioPeakThreshold.Value;
+            _excludedProcessNames = ParseExcludedProcesses(PluginConfig.AudioExcludedProcesses.Value);
 
             // 获取初始音量
             if (_musicMixer != null && _musicMixer.GetFloat("MusicVolume", out float vol))
@@ -95,6 +101,7 @@ namespace ChillPatcher.UIFramework.Audio
             _fadeInDuration = PluginConfig.AudioResumeFadeInDuration.Value;
             _fadeOutDuration = PluginConfig.AudioMuteFadeOutDuration.Value;
             _peakThreshold = PluginConfig.AudioPeakThreshold.Value;
+            _excludedProcessNames = ParseExcludedProcesses(PluginConfig.AudioExcludedProcesses.Value);
 
             Start();
         }
@@ -105,12 +112,12 @@ namespace ChillPatcher.UIFramework.Audio
         public void Start()
         {
             if (_isRunning) return;
-            
+
             _cts = new CancellationTokenSource();
             _isRunning = true;
             _monitorTask = Task.Run(() => MonitorLoop(_cts.Token));
-            
-            _log.LogInfo($"系统音频监控已启动 (检测间隔: {_detectionInterval}秒, 目标音量: {_targetVolume})");
+
+            _log.LogInfo($"系统音频监控已启动 (检测间隔: {_detectionInterval}秒, 目标音量: {_targetVolume}, 排除进程: [{string.Join(",", _excludedProcessNames)}])");
         }
 
         /// <summary>
@@ -119,13 +126,13 @@ namespace ChillPatcher.UIFramework.Audio
         public void Stop()
         {
             if (!_isRunning) return;
-            
+
             _cts?.Cancel();
             _isRunning = false;
-            
+
             // 恢复音量
             _currentVolumeMultiplier = 1f;
-            
+
             _log.LogInfo("系统音频监控已停止");
         }
 
@@ -139,7 +146,7 @@ namespace ChillPatcher.UIFramework.Audio
                 while (!token.IsCancellationRequested)
                 {
                     bool hasOtherAudio = CheckOtherAudioPlaying();
-                    
+
                     if (hasOtherAudio != _otherAudioPlaying)
                     {
                         _otherAudioPlaying = hasOtherAudio;
@@ -180,6 +187,14 @@ namespace ChillPatcher.UIFramework.Audio
                         uint processId = session.GetProcessID;
                         if (processId == _currentProcessId || processId == 0)
                             continue;
+
+                        // 跳过排除列表中的进程
+                        if (_excludedProcessNames.Count > 0)
+                        {
+                            var fileName = ResolveProcessFileName((int)processId, session);
+                            if (fileName != null && _excludedProcessNames.Contains(fileName))
+                                continue;
+                        }
 
                         // 检查会话状态
                         if (session.State == NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateActive)
@@ -297,6 +312,96 @@ namespace ChillPatcher.UIFramework.Audio
         /// </summary>
         public bool IsRunning => _isRunning;
 
+        #region Process Name Resolution
+
+        private static HashSet<string> ParseExcludedProcesses(string config)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(config)) return set;
+            foreach (var name in config.Split(','))
+            {
+                var trimmed = name.Trim();
+                if (trimmed.Length > 0) set.Add(trimmed);
+            }
+            return set;
+        }
+
+        /// <summary>
+        /// 解析进程文件名（含扩展名），三层 fallback:
+        /// 1. P/Invoke QueryFullProcessImageName（大部分进程可用）
+        /// 2. Process.GetProcesses() 快照 + ".exe"（NtQuerySystemInformation，不需要打开句柄）
+        /// 3. WASAPI session identifier 解析（从会话属性提取 exe 路径，适用于受保护的服务进程）
+        /// </summary>
+        private static string ResolveProcessFileName(int processId, NAudio.CoreAudioApi.AudioSessionControl session)
+        {
+            // 1. P/Invoke
+            var handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+            if (handle != IntPtr.Zero)
+            {
+                try
+                {
+                    var sb = new StringBuilder(1024);
+                    int size = sb.Capacity;
+                    if (QueryFullProcessImageName(handle, 0, sb, ref size))
+                        return Path.GetFileName(sb.ToString());
+                }
+                finally
+                {
+                    CloseHandle(handle);
+                }
+            }
+
+            // 2. GetProcesses fallback
+            try
+            {
+                foreach (var proc in Process.GetProcesses())
+                {
+                    try
+                    {
+                        if (proc.Id == processId)
+                            return proc.ProcessName + ".exe";
+                    }
+                    finally { proc.Dispose(); }
+                }
+            }
+            catch { }
+
+            // 3. WASAPI session identifier fallback
+            try
+            {
+                var sid = session.GetSessionIdentifier;
+                if (!string.IsNullOrEmpty(sid))
+                {
+                    int lastPipe = sid.LastIndexOf('|');
+                    if (lastPipe >= 0 && lastPipe < sid.Length - 1)
+                    {
+                        var exePath = sid.Substring(lastPipe + 1);
+                        // 截断 %b{...} 等后缀
+                        int pct = exePath.IndexOf('%');
+                        if (pct > 0) exePath = exePath.Substring(0, pct);
+                        if (exePath.IndexOf('\\') >= 0 || exePath.IndexOf('/') >= 0)
+                            return Path.GetFileName(exePath);
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool QueryFullProcessImageName(IntPtr hProcess, int dwFlags, StringBuilder lpExeName, ref int lpdwSize);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+        #endregion
+
         public void Dispose()
         {
             if (_disposed) return;
@@ -316,7 +421,7 @@ namespace ChillPatcher.UIFramework.Audio
         private static MainThreadDispatcher _instance;
         public static MainThreadDispatcher Instance => _instance;
 
-        private readonly System.Collections.Generic.Queue<Action> _executionQueue = 
+        private readonly System.Collections.Generic.Queue<Action> _executionQueue =
             new System.Collections.Generic.Queue<Action>();
 
         private static readonly object _lock = new object();

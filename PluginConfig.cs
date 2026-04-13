@@ -67,6 +67,7 @@ namespace ChillPatcher
         public static ConfigEntry<float> AudioResumeFadeInDuration { get; private set; }
         public static ConfigEntry<float> AudioMuteFadeOutDuration { get; private set; }
         public static ConfigEntry<float> AudioPeakThreshold { get; private set; }
+        public static ConfigEntry<string> AudioExcludedProcesses { get; private set; }
 
         // 系统媒体控制设置
         public static ConfigEntry<bool> EnableSystemMediaTransport { get; private set; }
@@ -374,6 +375,16 @@ namespace ChillPatcher
                     "建议范围：0.001-0.1",
                     new AcceptableValueRange<float>(0f, 1f)
                 )
+            );
+
+            AudioExcludedProcesses = config.Bind(
+                "Audio",
+                "AudioExcludedProcesses",
+                "",
+                "音频检测排除的进程文件名列表（逗号分隔，不区分大小写，含扩展名）\n" +
+                "这些进程的音频会话将被忽略，不会触发降低音量\n" +
+                "典型用途：排除远程桌面音频转发避免反馈环\n" +
+                "示例：parsecd.exe"
             );
 
             // npm/esbuild 构建开关
