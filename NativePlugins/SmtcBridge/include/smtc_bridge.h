@@ -195,6 +195,40 @@ typedef void (*SmtcPositionChangeRequestedCallback)(long long positionMs);
  */
 SMTC_API void SmtcSetPositionChangeRequestedCallback(SmtcPositionChangeRequestedCallback callback);
 
+// ========== 随机播放控制 ==========
+
+/**
+ * 启用/禁用随机播放按钮
+ * @param enabled 1 启用, 0 禁用
+ * @return 0 成功
+ */
+SMTC_API int SmtcSetShuffleEnabled(int enabled);
+
+/**
+ * 设置随机播放状态
+ * @param active 1 开启, 0 关闭
+ * @return 0 成功
+ */
+SMTC_API int SmtcSetShuffleActive(int active);
+
+/**
+ * 获取随机播放状态
+ * @return 1 开启, 0 关闭
+ */
+SMTC_API int SmtcGetShuffleActive(void);
+
+/**
+ * 随机播放状态改变回调函数类型
+ * @param active 新的随机播放状态（1 开启, 0 关闭）
+ */
+typedef void (*SmtcShuffleChangeCallback)(int active);
+
+/**
+ * 设置随机播放状态改变回调
+ * @param callback 回调函数指针，NULL 取消回调
+ */
+SMTC_API void SmtcSetShuffleChangeCallback(SmtcShuffleChangeCallback callback);
+
 // ========== 错误处理 ==========
 
 /**

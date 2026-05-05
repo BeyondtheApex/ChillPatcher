@@ -171,6 +171,22 @@ namespace ChillPatcher.Native
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         private static extern void SmtcSetPositionChangeRequestedCallback(PositionChangeRequestedCallbackDelegate callback);
 
+        // 随机播放
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int SmtcSetShuffleEnabled(int enabled);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int SmtcSetShuffleActive(int active);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int SmtcGetShuffleActive();
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void ShuffleChangeCallbackDelegate(int active);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SmtcSetShuffleChangeCallback(ShuffleChangeCallbackDelegate callback);
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr SmtcGetLastError();
 
@@ -184,6 +200,7 @@ namespace ChillPatcher.Native
         private static bool _dllLoaded = false;
         private static ButtonPressedCallbackDelegate _buttonCallbackDelegate;
         private static PositionChangeRequestedCallbackDelegate _positionCallbackDelegate;
+        private static ShuffleChangeCallbackDelegate _shuffleCallbackDelegate;
 
         /// <summary>
         /// 按钮按下事件
@@ -194,6 +211,11 @@ namespace ChillPatcher.Native
         /// 位置改变请求事件
         /// </summary>
         public static event Action<long> OnPositionChangeRequested;
+
+        /// <summary>
+        /// 随机播放状态改变请求事件（参数为新状态：true=开启）
+        /// </summary>
+        public static event Action<bool> OnShuffleChangeRequested;
 
         #endregion
 
@@ -224,11 +246,23 @@ namespace ChillPatcher.Native
                     return false;
                 }
 
-                // 设置回调
+                // 设置核心回调
                 _buttonCallbackDelegate = OnButtonPressedNative;
                 _positionCallbackDelegate = OnPositionChangeRequestedNative;
                 SmtcSetButtonPressedCallback(_buttonCallbackDelegate);
                 SmtcSetPositionChangeRequestedCallback(_positionCallbackDelegate);
+
+                // Shuffle 回调（需要新版 DLL，失败不影响核心功能）
+                try
+                {
+                    _shuffleCallbackDelegate = OnShuffleChangeNative;
+                    SmtcSetShuffleChangeCallback(_shuffleCallbackDelegate);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning($"Shuffle 回调注册失败（需要重新编译 ChillSmtcBridge.dll）: {ex.Message}");
+                    _shuffleCallbackDelegate = null;
+                }
 
                 _log.LogInfo("SMTC 初始化成功");
                 return true;
@@ -257,10 +291,12 @@ namespace ChillPatcher.Native
                 
                 SmtcSetButtonPressedCallback(null);
                 SmtcSetPositionChangeRequestedCallback(null);
+                try { SmtcSetShuffleChangeCallback(null); } catch { }
                 SmtcShutdown();
-                
+
                 _buttonCallbackDelegate = null;
                 _positionCallbackDelegate = null;
+                _shuffleCallbackDelegate = null;
                 
                 _log.LogInfo("SMTC 已关闭");
             }
@@ -385,6 +421,36 @@ namespace ChillPatcher.Native
         }
 
         /// <summary>
+        /// 启用/禁用随机播放按钮
+        /// </summary>
+        public static bool SetShuffleEnabled(bool enabled)
+        {
+            if (!IsInitialized()) return false;
+            try { return SmtcSetShuffleEnabled(enabled ? 1 : 0) == 0; }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// 设置随机播放状态
+        /// </summary>
+        public static bool SetShuffleActive(bool active)
+        {
+            if (!IsInitialized()) return false;
+            try { return SmtcSetShuffleActive(active ? 1 : 0) == 0; }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// 获取随机播放状态
+        /// </summary>
+        public static bool GetShuffleActive()
+        {
+            if (!IsInitialized()) return false;
+            try { return SmtcGetShuffleActive() != 0; }
+            catch { return false; }
+        }
+
+        /// <summary>
         /// 获取最后的错误消息
         /// </summary>
         public static string GetLastError()
@@ -439,6 +505,18 @@ namespace ChillPatcher.Native
             catch (Exception ex)
             {
                 _log.LogError($"位置回调异常: {ex.Message}");
+            }
+        }
+
+        private static void OnShuffleChangeNative(int active)
+        {
+            try
+            {
+                OnShuffleChangeRequested?.Invoke(active != 0);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError($"随机播放回调异常: {ex.Message}");
             }
         }
 
