@@ -1,5 +1,5 @@
 import { h } from "preact"
-import { useEffect, useMemo, useRef, useState } from "preact/hooks"
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 
 declare const __registerPlugin: any
 declare const chill: any
@@ -8,6 +8,7 @@ type EventType = "countdown" | "elapsed"
 type SettingsMenu = "main" | "colors"
 type SettingsNumberKey = "eventsPerPage" | "pageLabelCount"
 type CardDensity = "simple" | "standard"
+type SettingsColorKey = "backgroundColor" | "leftPanelBgColor" | "rightPanelBgColor" | "textColor" | "titleColor" | "daysColor"
 
 type CalendarEvent = {
     id: string
@@ -25,8 +26,6 @@ type CalendarWidgetConfig = {
     cardDensity: CardDensity
     eventsPerPage: number
     pageLabelCount: number
-    compactCardWidth: number
-    compactCardHeight: number
     titleColor: string
     daysColor: string
     backgroundColor: string
@@ -34,6 +33,8 @@ type CalendarWidgetConfig = {
     rightPanelBgColor: string
     textColor: string
 }
+
+type PersistedSettings = Omit<CalendarWidgetConfig, "events">
 
 type CalendarCell = {
     iso: string
@@ -43,40 +44,44 @@ type CalendarCell = {
     inCurrentMonth: boolean
 }
 
+type SettingsDraft = {
+    backgroundColor: string
+    leftPanelBgColor: string
+    rightPanelBgColor: string
+    textColor: string
+    titleColor: string
+    daysColor: string
+    cardDensity: CardDensity
+    eventsPerPage: string
+    pageLabelCount: string
+    eventsFilePath: string
+}
+
 type LayoutHint = {
     windowWidth: number
     windowHeight: number
+    listWidth: number
     listHeight: number
-    pagerWidth: number
 }
 
 const CONFIG_FILE = "window-states/countdown-days.json"
 const EVENTS_FILE = "window-states/countdown-days-events.json"
-const WINDOW_STATE_FILE = "window-states/window-Countdown-Days.json"
-const PLUGIN_ID = "countdown-days"
-const AUTO_REMOUNT_FLAG = "__countdownDaysAutoRemountDone"
 const DEFAULT_EVENTS_PER_PAGE = 8
 const DEFAULT_PAGE_LABEL_COUNT = 5
-const DEFAULT_COMPACT_CARD_WIDTH = 122
-const DEFAULT_COMPACT_CARD_HEIGHT = 62
-const DEFAULT_WINDOW_WIDTH = 390
-const DEFAULT_WINDOW_HEIGHT = 830
 const DEFAULT_LAYOUT_HINT: LayoutHint = {
-    windowWidth: DEFAULT_WINDOW_WIDTH,
-    windowHeight: DEFAULT_WINDOW_HEIGHT,
+    windowWidth: 0,
+    windowHeight: 0,
+    listWidth: 0,
     listHeight: 0,
-    pagerWidth: 0,
 }
 const EVENT_CARD_ROW_HEIGHT_STANDARD = 90
 const EVENT_CARD_ROW_HEIGHT_SIMPLE = 74
-const PAGER_FIXED_SPACE = 170
-const PAGER_BUTTON_WIDTH = 34
-const COMPACT_INNER_WIDTH = 258
-const COMPACT_INNER_HEIGHT = 132
+const PAGER_SLOT_WIDTH = 34
+const PAGER_BUTTON_GAP = 4
+const PAGER_SIDE_GROUP_WIDTH = PAGER_SLOT_WIDTH * 2 + PAGER_BUTTON_GAP
 const COMPACT_CARD_GAP = 4
 const LAYOUT_HINT_SETTLE_DELAY_MS = 140
-const LAYOUT_HINT_POLL_INTERVAL_MS = 1800
-const COMPACT_SYNC_INTERVAL_MS = 30000
+const LAYOUT_HINT_JITTER_PX = 2
 
 const WEEK_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
 
@@ -217,15 +222,12 @@ const THEME_PRESETS: Array<{ id: string; name: string; config: ThemeColors }> = 
     },
 ]
 
-const DEFAULT_CONFIG: CalendarWidgetConfig = {
-    events: [],
+const DEFAULT_SETTINGS: PersistedSettings = {
     eventsFilePath: EVENTS_FILE,
     compactCount: 2,
     cardDensity: "standard",
     eventsPerPage: DEFAULT_EVENTS_PER_PAGE,
     pageLabelCount: DEFAULT_PAGE_LABEL_COUNT,
-    compactCardWidth: DEFAULT_COMPACT_CARD_WIDTH,
-    compactCardHeight: DEFAULT_COMPACT_CARD_HEIGHT,
     titleColor: "#dbeafe",
     daysColor: "#22d3ee",
     backgroundColor: "#13264a",
@@ -233,6 +235,61 @@ const DEFAULT_CONFIG: CalendarWidgetConfig = {
     rightPanelBgColor: "#1a305a",
     textColor: "#dbeafe",
 }
+
+const DEFAULT_CONFIG: CalendarWidgetConfig = {
+    ...DEFAULT_SETTINGS,
+    events: [],
+}
+
+const createSettingsDraft = (config: CalendarWidgetConfig): SettingsDraft => ({
+    backgroundColor: normalizeColor(config.backgroundColor, DEFAULT_CONFIG.backgroundColor),
+    leftPanelBgColor: normalizeColor(config.leftPanelBgColor, DEFAULT_CONFIG.leftPanelBgColor),
+    rightPanelBgColor: normalizeColor(config.rightPanelBgColor, DEFAULT_CONFIG.rightPanelBgColor),
+    textColor: normalizeColor(config.textColor, DEFAULT_CONFIG.textColor),
+    titleColor: normalizeColor(config.titleColor, DEFAULT_CONFIG.titleColor),
+    daysColor: normalizeColor(config.daysColor, DEFAULT_CONFIG.daysColor),
+    cardDensity: normalizeCardDensity(config.cardDensity, DEFAULT_CONFIG.cardDensity),
+    eventsPerPage: String(normalizeIntInRange(config.eventsPerPage, DEFAULT_CONFIG.eventsPerPage, 1, 20)),
+    pageLabelCount: String(normalizeIntInRange(config.pageLabelCount, DEFAULT_CONFIG.pageLabelCount, 3, 9)),
+    eventsFilePath: normalizeEventsFilePath(config.eventsFilePath, DEFAULT_SETTINGS.eventsFilePath),
+})
+
+const sanitizeSettingsNumberText = (value: unknown) => {
+    return String(value ?? "").replace(/[^0-9]/g, "").slice(0, 2)
+}
+
+const ensureSettingsNumberText = (value: unknown, fallback: number) => {
+    if (typeof value === "string") return value
+    if (value === undefined || value === null) return String(fallback)
+    return sanitizeSettingsNumberText(value)
+}
+
+const parseSettingsNumberDraft = (value: unknown, fallback: number, min: number, max: number) => {
+    const text = typeof value === "string" ? value.trim() : String(value ?? "").trim()
+    if (text.length === 0) return fallback
+    return normalizeIntInRange(Number(text), fallback, min, max)
+}
+
+const ensureSettingsNumber = (value: unknown, fallback: number) => {
+    const n = Math.round(Number(value))
+    return Number.isFinite(n) ? n : fallback
+}
+
+const ensureColorString = (value: unknown, fallback: string) => {
+    return typeof value === "string" && value.trim().length > 0 ? value : fallback
+}
+
+const ensureColorDraftText = (value: unknown, fallback: string) => {
+    if (typeof value === "string") return value
+    return fallback
+}
+
+const getDraftColorSwatch = (value: unknown, fallback: string) => {
+    const raw = typeof value === "string" ? value : fallback
+    return normalizeColor(raw, fallback)
+}
+
+const sameColor = (a: unknown, b: unknown) => getDraftColorSwatch(a, "").toLowerCase() === getDraftColorSwatch(b, "").toLowerCase()
 
 const normalizeText = (value: unknown, fallback: string) => {
     if (typeof value !== "string") return fallback
@@ -276,9 +333,27 @@ const canonicalizePath = (value: string) => {
         .toLowerCase()
 }
 
-const isCombinedStoragePath = (eventsFilePath: string) => {
-    return canonicalizePath(eventsFilePath) === canonicalizePath(CONFIG_FILE)
+const normalizeEventsFilePath = (value: unknown, fallback: string) => {
+    const normalizedFallback = normalizeConfigPath(fallback, EVENTS_FILE)
+    const normalized = normalizeConfigPath(value, normalizedFallback)
+    return canonicalizePath(normalized) === canonicalizePath(CONFIG_FILE)
+        ? normalizedFallback
+        : normalized
 }
+
+const extractPersistedSettings = (config: PersistedSettings | CalendarWidgetConfig): PersistedSettings => ({
+    eventsFilePath: normalizeEventsFilePath(config.eventsFilePath, DEFAULT_SETTINGS.eventsFilePath),
+    compactCount: normalizeCompactCount(config.compactCount, DEFAULT_SETTINGS.compactCount),
+    cardDensity: normalizeCardDensity(config.cardDensity, DEFAULT_SETTINGS.cardDensity),
+    eventsPerPage: normalizeIntInRange(config.eventsPerPage, DEFAULT_SETTINGS.eventsPerPage, 1, 20),
+    pageLabelCount: normalizeIntInRange(config.pageLabelCount, DEFAULT_SETTINGS.pageLabelCount, 3, 9),
+    titleColor: normalizeColor(config.titleColor, DEFAULT_SETTINGS.titleColor),
+    daysColor: normalizeColor(config.daysColor, DEFAULT_SETTINGS.daysColor),
+    backgroundColor: normalizeColor(config.backgroundColor, DEFAULT_SETTINGS.backgroundColor),
+    leftPanelBgColor: normalizeColor(config.leftPanelBgColor, DEFAULT_SETTINGS.leftPanelBgColor),
+    rightPanelBgColor: normalizeColor(config.rightPanelBgColor, DEFAULT_SETTINGS.rightPanelBgColor),
+    textColor: normalizeColor(config.textColor, DEFAULT_SETTINGS.textColor),
+})
 
 const hexToRgba = (hex: string, alpha: number) => {
     const raw = normalizeColor(hex, "#0f172a").replace("#", "")
@@ -311,26 +386,6 @@ const mixHex = (baseHex: string, mixHexColor: string, ratio: number) => {
     const outB = bb + (mb - bb) * r
 
     return `#${toHex(outR)}${toHex(outG)}${toHex(outB)}`
-}
-
-const derivePanelColors = (backgroundColor: string) => {
-    const base = normalizeColor(backgroundColor, DEFAULT_CONFIG.backgroundColor).slice(1)
-    const r = parseInt(base.slice(0, 2), 16)
-    const g = parseInt(base.slice(2, 4), 16)
-    const b = parseInt(base.slice(4, 6), 16)
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-
-    if (luminance > 0.65) {
-        return {
-            leftPanelBgColor: mixHex(backgroundColor, "#cbd5e1", 0.18),
-            rightPanelBgColor: mixHex(backgroundColor, "#ffffff", 0.18),
-        }
-    }
-
-    return {
-        leftPanelBgColor: mixHex(backgroundColor, "#000000", 0.1),
-        rightPanelBgColor: mixHex(backgroundColor, "#000000", 0.06),
-    }
 }
 
 const getDateTimePart = (source: any, field: string, getterName: string) => {
@@ -397,6 +452,19 @@ const parseIsoDate = (value: string): Date | null => {
 
 const todayIso = () => toIsoDate(nowFromHost())
 
+const getTodayStampFromNow = (now: Date) => Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+
+const getTodayInfo = () => {
+    const now = nowFromHost()
+    const nextRefresh = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 50)
+
+    return {
+        iso: toIsoDate(now),
+        stamp: getTodayStampFromNow(now),
+        delayMs: Math.max(1000, nextRefresh.getTime() - now.getTime()),
+    }
+}
+
 const sortEvents = (events: CalendarEvent[]) => {
     return [...events].sort((a, b) => {
         const dateCompare = a.targetDate.localeCompare(b.targetDate)
@@ -443,16 +511,6 @@ const areEventsEqual = (a: CalendarEvent[], b: CalendarEvent[]) => {
     return true
 }
 
-const areCompactConfigEqual = (a: CalendarWidgetConfig, b: CalendarWidgetConfig) => {
-    return (
-        a.compactCount === b.compactCount &&
-        a.titleColor === b.titleColor &&
-        a.daysColor === b.daysColor &&
-        a.rightPanelBgColor === b.rightPanelBgColor &&
-        a.textColor === b.textColor &&
-        areEventsEqual(a.events, b.events)
-    )
-}
 
 const getAdaptiveCompactTitleFontSize = (
     title: string,
@@ -502,47 +560,75 @@ const normalizeEvent = (raw: any, index: number): CalendarEvent | null => {
     }
 }
 
-const normalizeConfig = (raw: any): CalendarWidgetConfig => {
+const normalizePersistedSettings = (raw: any): PersistedSettings => {
     const source = raw && typeof raw === "object" ? raw : {}
-    const rawEvents = Array.isArray(source.events) ? source.events : []
-
-    const events = rawEvents
-        .map((item, index) => normalizeEvent(item, index))
-        .filter((item): item is CalendarEvent => item !== null)
 
     return {
-        events: sortEvents(events),
-        eventsFilePath: normalizeConfigPath(source.eventsFilePath, DEFAULT_CONFIG.eventsFilePath),
-        compactCount: normalizeCompactCount(source.compactCount, DEFAULT_CONFIG.compactCount),
-        cardDensity: normalizeCardDensity(source.cardDensity, DEFAULT_CONFIG.cardDensity),
-        eventsPerPage: normalizeIntInRange(source.eventsPerPage, DEFAULT_CONFIG.eventsPerPage, 1, 20),
-        pageLabelCount: normalizeIntInRange(source.pageLabelCount, DEFAULT_CONFIG.pageLabelCount, 3, 9),
-        compactCardWidth: normalizeIntInRange(source.compactCardWidth, DEFAULT_CONFIG.compactCardWidth, 96, COMPACT_INNER_WIDTH),
-        compactCardHeight: normalizeIntInRange(source.compactCardHeight, DEFAULT_CONFIG.compactCardHeight, 46, 160),
-        titleColor: normalizeColor(source.titleColor, DEFAULT_CONFIG.titleColor),
-        daysColor: normalizeColor(source.daysColor, DEFAULT_CONFIG.daysColor),
-        backgroundColor: normalizeColor(source.backgroundColor, DEFAULT_CONFIG.backgroundColor),
-        leftPanelBgColor: normalizeColor(source.leftPanelBgColor, DEFAULT_CONFIG.leftPanelBgColor),
-        rightPanelBgColor: normalizeColor(source.rightPanelBgColor, DEFAULT_CONFIG.rightPanelBgColor),
-        textColor: normalizeColor(source.textColor, DEFAULT_CONFIG.textColor),
+        eventsFilePath: normalizeEventsFilePath(source.eventsFilePath, DEFAULT_SETTINGS.eventsFilePath),
+        compactCount: normalizeCompactCount(source.compactCount, DEFAULT_SETTINGS.compactCount),
+        cardDensity: normalizeCardDensity(source.cardDensity, DEFAULT_SETTINGS.cardDensity),
+        eventsPerPage: normalizeIntInRange(source.eventsPerPage, DEFAULT_SETTINGS.eventsPerPage, 1, 20),
+        pageLabelCount: normalizeIntInRange(source.pageLabelCount, DEFAULT_SETTINGS.pageLabelCount, 3, 9),
+        titleColor: normalizeColor(source.titleColor, DEFAULT_SETTINGS.titleColor),
+        daysColor: normalizeColor(source.daysColor, DEFAULT_SETTINGS.daysColor),
+        backgroundColor: normalizeColor(source.backgroundColor, DEFAULT_SETTINGS.backgroundColor),
+        leftPanelBgColor: normalizeColor(source.leftPanelBgColor, DEFAULT_SETTINGS.leftPanelBgColor),
+        rightPanelBgColor: normalizeColor(source.rightPanelBgColor, DEFAULT_SETTINGS.rightPanelBgColor),
+        textColor: normalizeColor(source.textColor, DEFAULT_SETTINGS.textColor),
     }
 }
 
-const loadConfig = (): CalendarWidgetConfig => {
+const normalizeEvents = (rawEvents: unknown): CalendarEvent[] => {
+    const source = Array.isArray(rawEvents) ? rawEvents : []
+
+    return sortEvents(
+        source
+            .map((item, index) => normalizeEvent(item, index))
+            .filter((item): item is CalendarEvent => item !== null)
+    )
+}
+
+const composeRuntimeConfig = (settings: PersistedSettings, events: CalendarEvent[]): CalendarWidgetConfig => ({
+    ...settings,
+    eventsFilePath: normalizeEventsFilePath(settings.eventsFilePath, DEFAULT_SETTINGS.eventsFilePath),
+    events: normalizeEvents(events),
+})
+
+const ensureEventsFileInitialized = (eventsFilePath: string) => {
+    const normalizedPath = normalizeEventsFilePath(eventsFilePath, DEFAULT_SETTINGS.eventsFilePath)
+    if (!chill?.io?.exists?.(normalizedPath)) {
+        chill?.io?.writeText?.(normalizedPath, JSON.stringify({ events: [] }, null, 2))
+        return
+    }
+
+    const text = chill?.io?.readText?.(normalizedPath)
+    if (!text) chill?.io?.writeText?.(normalizedPath, JSON.stringify({ events: [] }, null, 2))
+}
+
+const loadConfig = (): PersistedSettings => {
     try {
-        if (!chill?.io?.exists?.(CONFIG_FILE)) return DEFAULT_CONFIG
+        if (!chill?.io?.exists?.(CONFIG_FILE)) {
+            saveConfig(DEFAULT_SETTINGS)
+            return normalizePersistedSettings(DEFAULT_SETTINGS)
+        }
+
         const text = chill?.io?.readText?.(CONFIG_FILE)
-        if (!text) return DEFAULT_CONFIG
-        return normalizeConfig(JSON.parse(text))
+        if (!text) {
+            saveConfig(DEFAULT_SETTINGS)
+            return normalizePersistedSettings(DEFAULT_SETTINGS)
+        }
+
+        return normalizePersistedSettings(JSON.parse(text))
     } catch (e) {
         console.error("[countdown-days] load config failed", CONFIG_FILE, e)
-        return DEFAULT_CONFIG
+        saveConfig(DEFAULT_SETTINGS)
+        return normalizePersistedSettings(DEFAULT_SETTINGS)
     }
 }
 
-const saveConfig = (config: CalendarWidgetConfig) => {
+const saveConfig = (config: PersistedSettings | CalendarWidgetConfig) => {
     try {
-        chill?.io?.writeText?.(CONFIG_FILE, JSON.stringify(config, null, 2))
+        chill?.io?.writeText?.(CONFIG_FILE, JSON.stringify(extractPersistedSettings(config), null, 2))
     } catch (e) {
         console.error("[countdown-days] save config failed", CONFIG_FILE, e)
     }
@@ -550,9 +636,15 @@ const saveConfig = (config: CalendarWidgetConfig) => {
 
 const loadEventsFromFile = (eventsFilePath: string): CalendarEvent[] | null => {
     try {
-        if (!chill?.io?.exists?.(eventsFilePath)) return null
+        if (!chill?.io?.exists?.(eventsFilePath)) {
+            chill?.io?.writeText?.(eventsFilePath, JSON.stringify({ events: [] }, null, 2))
+            return []
+        }
         const text = chill?.io?.readText?.(eventsFilePath)
-        if (!text) return []
+        if (!text) {
+            chill?.io?.writeText?.(eventsFilePath, JSON.stringify({ events: [] }, null, 2))
+            return []
+        }
         const raw = JSON.parse(text)
         const eventsRaw = Array.isArray(raw) ? raw : (Array.isArray(raw?.events) ? raw.events : [])
         return eventsRaw
@@ -572,37 +664,86 @@ const saveEventsToFile = (events: CalendarEvent[], eventsFilePath: string) => {
     }
 }
 
-const buildConfigForDisk = (config: CalendarWidgetConfig) => {
-    const normalized = normalizeConfig(config)
-    const eventsFilePath = normalizeConfigPath(normalized.eventsFilePath, DEFAULT_CONFIG.eventsFilePath)
-    if (isCombinedStoragePath(eventsFilePath)) return { ...normalized, eventsFilePath }
-    return { ...normalized, eventsFilePath, events: [] }
+const loadRuntimeConfig = (): CalendarWidgetConfig => {
+    const settings = loadConfig()
+    const eventsFilePath = normalizeEventsFilePath(settings.eventsFilePath, DEFAULT_SETTINGS.eventsFilePath)
+    ensureEventsFileInitialized(eventsFilePath)
+    const loadedEvents = loadEventsFromFile(eventsFilePath)
+
+    return composeRuntimeConfig(
+        { ...settings, eventsFilePath },
+        Array.isArray(loadedEvents) ? loadedEvents : []
+    )
 }
 
-const loadWindowSizeFromState = () => {
-    try {
-        if (!chill?.io?.exists?.(WINDOW_STATE_FILE)) return null
-        const text = chill?.io?.readText?.(WINDOW_STATE_FILE)
-        if (!text) return null
-        const raw = JSON.parse(text)
-        const width = Number(raw?.width)
-        const height = Number(raw?.height)
-        if (!Number.isFinite(width) || !Number.isFinite(height)) return null
-        return {
-            width: Math.max(220, Math.round(width)),
-            height: Math.max(220, Math.round(height)),
+let runtimeConfigSnapshot: CalendarWidgetConfig = DEFAULT_CONFIG
+let runtimeConfigLoaded = false
+const runtimeConfigListeners = new Set<(config: CalendarWidgetConfig) => void>()
+
+const notifyRuntimeConfigListeners = (nextConfig: CalendarWidgetConfig) => {
+    runtimeConfigListeners.forEach((listener) => {
+        try {
+            listener(nextConfig)
+        } catch (error) {
+            console.error("[countdown-days] runtime config listener failed", error)
         }
-    } catch {
-        return null
+    })
+}
+
+const getRuntimeConfigSnapshot = () => {
+    if (!runtimeConfigLoaded) {
+        runtimeConfigSnapshot = loadRuntimeConfig()
+        runtimeConfigLoaded = true
+    }
+    return runtimeConfigSnapshot
+}
+
+const subscribeRuntimeConfig = (listener: (config: CalendarWidgetConfig) => void) => {
+    runtimeConfigListeners.add(listener)
+    return () => {
+        runtimeConfigListeners.delete(listener)
     }
 }
 
-const calculateDays = (targetDate: string) => {
+const persistRuntimeConfig = (nextConfig: CalendarWidgetConfig) => {
+    const normalizedSettings = normalizePersistedSettings(nextConfig)
+    const normalizedEvents = normalizeEvents(nextConfig.events)
+    const normalizedConfig = composeRuntimeConfig(
+        {
+            ...normalizedSettings,
+            eventsFilePath: normalizeEventsFilePath(normalizedSettings.eventsFilePath, DEFAULT_SETTINGS.eventsFilePath),
+        },
+        normalizedEvents
+    )
+
+    saveConfig(normalizedConfig)
+    saveEventsToFile(normalizedConfig.events, normalizedConfig.eventsFilePath)
+
+    runtimeConfigSnapshot = normalizedConfig
+    runtimeConfigLoaded = true
+    notifyRuntimeConfigListeners(normalizedConfig)
+    return normalizedConfig
+}
+
+const useRuntimeConfig = () => {
+    const [config, setConfig] = useState<CalendarWidgetConfig>(() => getRuntimeConfigSnapshot())
+
+    useEffect(() => {
+        setConfig(getRuntimeConfigSnapshot())
+        return subscribeRuntimeConfig(setConfig)
+    }, [])
+
+    const persist = useCallback((nextConfig: CalendarWidgetConfig) => {
+        persistRuntimeConfig(nextConfig)
+    }, [])
+
+    return [config, persist] as const
+}
+
+const calculateDaysFromTodayStamp = (targetDate: string, todayStamp: number) => {
     const target = parseIsoDate(targetDate)
     if (!target) return 0
 
-    const now = nowFromHost()
-    const todayStamp = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
     const targetStamp = Date.UTC(target.getFullYear(), target.getMonth(), target.getDate())
     return Math.floor((targetStamp - todayStamp) / 86400000)
 }
@@ -613,8 +754,48 @@ const formatDaysText = (days: number) => {
     return `已经过去 ${Math.abs(days)} 天`
 }
 
-const inferEventType = (targetDate: string): EventType => {
-    return calculateDays(targetDate) < 0 ? "elapsed" : "countdown"
+const resolveEventType = (targetDate: string, todayStamp: number): EventType => (
+    calculateDaysFromTodayStamp(targetDate, todayStamp) < 0 ? "elapsed" : "countdown"
+)
+
+const clampConfiguredByLayout = (configured: number, layoutLimit: number, min: number, max: number) => {
+    const boundedConfigured = Math.max(min, Math.min(max, Math.round(configured)))
+    if (!Number.isFinite(layoutLimit) || layoutLimit <= 0) return boundedConfigured
+    return Math.max(min, Math.min(max, Math.min(boundedConfigured, Math.round(layoutLimit))))
+}
+
+const getMaxPageLabelsByWidth = (listWidth: number) => {
+    if (!Number.isFinite(listWidth) || listWidth <= 0) return 0
+
+    const centerWidth = Math.max(0, listWidth - PAGER_SIDE_GROUP_WIDTH * 2)
+    if (centerWidth <= 0) return 1
+
+    return Math.max(1, Math.floor((centerWidth + PAGER_BUTTON_GAP) / (PAGER_SLOT_WIDTH + PAGER_BUTTON_GAP)))
+}
+
+const buildPageNumbers = (currentPage: number, totalPages: number, labelCount: number) => {
+    if (totalPages <= labelCount) {
+        return Array.from({ length: totalPages }, (_, index) => index + 1)
+    }
+
+    const halfWindow = Math.floor(labelCount / 2)
+    let start = Math.max(1, currentPage - halfWindow)
+    let end = start + labelCount - 1
+
+    if (end > totalPages) {
+        end = totalPages
+        start = end - labelCount + 1
+    }
+
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index)
+}
+
+const chunkItems = <T,>(items: T[], chunkSize: number): T[][] => {
+    if (chunkSize <= 0) return []
+
+    const rows: T[][] = []
+    for (let i = 0; i < items.length; i += chunkSize) rows.push(items.slice(i, i + chunkSize))
+    return rows
 }
 
 const monthTitle = (year: number, month: number) => `${year}年 ${month + 1}月`
@@ -684,7 +865,7 @@ const CountdownActionButton = ({
             minHeight: compact ? 20 : 22,
             width: fullWidth ? "100%" : undefined,
             whiteSpace: "NoWrap",
-            overflow: "Hidden",
+            overflow: "Auto",
             textOverflow: "Ellipsis",
             unityTextAlign: "MiddleCenter",
         }}
@@ -699,284 +880,544 @@ const ColorEditorRow = ({
     textColor,
     inputBg,
     inputBorder,
+    fallbackColor,
 }: {
     label: string
-    value: string
+    value: string | undefined
     onChange: (nextValue: string) => void
     textColor: string
     inputBg: string
     inputBorder: string
-}) => (
-    <div style={{ marginBottom: 9 }}>
-        <div style={{ fontSize: 10, color: textColor, marginBottom: 4 }}>{label}</div>
+    fallbackColor: string
+}) => {
+    const draftText = ensureColorDraftText(value, fallbackColor)
+    const swatchColor = getDraftColorSwatch(draftText, fallbackColor)
 
-        <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", marginBottom: 5 }}>
-            <div
-                style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 4,
-                    marginRight: 6,
-                    backgroundColor: value,
-                    borderWidth: 1,
-                    borderColor: hexToRgba(textColor, 0.45),
-                }}
-            />
-            <textfield
-                value={value}
-                multiline={false}
-                onValueChanged={(e: any) => onChange(e?.newValue ?? "")}
-                style={{
-                    flexGrow: 1,
-                    width: "100%",
-                    height: 24,
-                    fontSize: 10,
-                    backgroundColor: inputBg,
-                    borderWidth: 1,
-                    borderColor: inputBorder,
-                    color: textColor,
-                    paddingLeft: 8,
-                    paddingRight: 8,
-                    paddingTop: 0,
-                    paddingBottom: 0,
-                    unityTextAlign: "MiddleLeft",
-                }}
-            />
-        </div>
+    return (
+        <div style={{ marginBottom: 9 }}>
+            <div style={{ fontSize: 10, color: textColor, marginBottom: 4 }}>{label}</div>
 
-        <div style={{ display: "Flex", flexDirection: "Row", flexWrap: "Wrap" }}>
-            {PRESET_COLORS.map((color) => (
+            <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", marginBottom: 5 }}>
                 <div
-                    key={`${label}-${color}`}
-                    onPointerDown={() => onChange(color)}
                     style={{
-                        width: 16,
-                        height: 16,
+                        width: 20,
+                        height: 20,
                         borderRadius: 4,
-                        marginRight: 4,
-                        marginBottom: 4,
-                        backgroundColor: color,
-                        borderWidth: value.toLowerCase() === color.toLowerCase() ? 2 : 1,
-                        borderColor: value.toLowerCase() === color.toLowerCase() ? textColor : hexToRgba(textColor, 0.4),
+                        marginRight: 6,
+                        backgroundColor: swatchColor,
+                        borderWidth: 1,
+                        borderColor: hexToRgba(textColor, 0.45),
                     }}
                 />
-            ))}
+                <textfield
+                    value={draftText}
+                    multiline={false}
+                    onValueChanged={(e: any) => onChange(String(e?.newValue ?? ""))}
+                    style={{
+                        flexGrow: 1,
+                        width: "100%",
+                        height: 24,
+                        fontSize: 10,
+                        backgroundColor: inputBg,
+                        borderWidth: 1,
+                        borderColor: inputBorder,
+                        color: textColor,
+                        paddingLeft: 8,
+                        paddingRight: 8,
+                        paddingTop: 0,
+                        paddingBottom: 0,
+                        unityTextAlign: "MiddleLeft",
+                    }}
+                />
+            </div>
+
+            <div style={{ display: "Flex", flexDirection: "Row", flexWrap: "Wrap" }}>
+                {PRESET_COLORS.map((color) => (
+                    <div
+                        key={`${label}-${color}`}
+                        onPointerDown={() => onChange(color)}
+                        style={{
+                            width: 16,
+                            height: 16,
+                            borderRadius: 4,
+                            marginRight: 4,
+                            marginBottom: 4,
+                            backgroundColor: color,
+                            borderWidth: sameColor(draftText, color) ? 2 : 1,
+                            borderColor: sameColor(draftText, color) ? textColor : hexToRgba(textColor, 0.4),
+                        }}
+                    />
+                ))}
+            </div>
         </div>
-    </div>
-)
-
-const useClockRerender = (intervalMs: number = 30000) => {
-    const [, setTick] = useState(0)
-
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setTick((tick) => tick + 1)
-        }, intervalMs)
-        return () => clearInterval(timer)
-    }, [intervalMs])
+    )
 }
 
-const useAutoRemountOnFirstMount = () => {
+const useTodayInfo = () => {
+    const [todayInfo, setTodayInfo] = useState(() => getTodayInfo())
+
     useEffect(() => {
-        const g = globalThis as any
-        if (g[AUTO_REMOUNT_FLAG]) return
+        let timer: any = null
 
-        let tries = 0
-        const timer = setInterval(() => {
-            const control = g.__wmPluginControl
-            if (!control?.togglePluginVisible) {
-                tries += 1
-                if (tries > 180) clearInterval(timer)
-                return
-            }
+        const schedule = () => {
+            const nextInfo = getTodayInfo()
+            setTodayInfo((prev) => (
+                prev.iso === nextInfo.iso && prev.stamp === nextInfo.stamp
+                    ? prev
+                    : nextInfo
+            ))
+            timer = setTimeout(schedule, nextInfo.delayMs)
+        }
 
-            clearInterval(timer)
-            g[AUTO_REMOUNT_FLAG] = true
-
-            try {
-                control.togglePluginVisible(PLUGIN_ID)
-                setTimeout(() => {
-                    control.togglePluginVisible(PLUGIN_ID)
-                }, 100)
-            } catch (e) {
-                console.error("[countdown-days] auto remount failed", e)
-            }
-        }, 66)
-
-        return () => clearInterval(timer)
+        schedule()
+        return () => {
+            if (timer) clearTimeout(timer)
+        }
     }, [])
+
+    return todayInfo
 }
 
-const useWindowLayoutHint = (eventListRef: any, pagerRowRef: any) => {
+const useWindowLayoutHint = (eventListRef: any, enabled: boolean = true, measureKey: string = "") => {
     const [layoutHint, setLayoutHint] = useState<LayoutHint>(DEFAULT_LAYOUT_HINT)
 
     useEffect(() => {
-        const readLayout = (readWindowState: boolean = true) => {
-            const windowSize = readWindowState ? loadWindowSizeFromState() : null
+        if (!enabled) return
 
-            const listHeightRaw = Number(eventListRef.current?.ve?.layout?.height ?? 0)
-            const pagerWidthRaw = Number(pagerRowRef.current?.ve?.layout?.width ?? 0)
-            const nextListHeight = Number.isFinite(listHeightRaw) ? Math.max(0, Math.round(listHeightRaw)) : 0
-            const nextPagerWidth = Number.isFinite(pagerWidthRaw) ? Math.max(0, Math.round(pagerWidthRaw)) : 0
+        let settleTimer: any = null
+        let rafId: any = null
+        let animationLocked = false
+        const detachListeners: Array<() => void> = []
+
+        const getMeasuredNode = (node: any) => {
+            if (!node) return null
+            return node.base ?? node
+        }
+
+        const readNodeHeight = (node: any) => {
+            const measured = getMeasuredNode(node)
+            const veHeight = Number(node?.ve?.layout?.height ?? measured?.ve?.layout?.height ?? 0)
+            if (Number.isFinite(veHeight) && veHeight > 0) return Math.round(veHeight)
+            const rectHeight = Number(measured?.getBoundingClientRect?.().height ?? measured?.offsetHeight ?? 0)
+            return Number.isFinite(rectHeight) && rectHeight > 0 ? Math.round(rectHeight) : 0
+        }
+
+        const readNodeWidth = (node: any) => {
+            const measured = getMeasuredNode(node)
+            const veWidth = Number(node?.ve?.layout?.width ?? measured?.ve?.layout?.width ?? 0)
+            if (Number.isFinite(veWidth) && veWidth > 0) return Math.round(veWidth)
+            const rectWidth = Number(measured?.getBoundingClientRect?.().width ?? measured?.offsetWidth ?? 0)
+            return Number.isFinite(rectWidth) && rectWidth > 0 ? Math.round(rectWidth) : 0
+        }
+
+        const applyLayout = () => {
+            animationLocked = false
+            const nextListWidth = Math.max(0, readNodeWidth(eventListRef.current))
+            const nextListHeight = Math.max(0, readNodeHeight(eventListRef.current))
+            const nextWindowWidth = Math.max(0, Math.round(Number((globalThis as any)?.innerWidth ?? 0)))
+            const nextWindowHeight = Math.max(0, Math.round(Number((globalThis as any)?.innerHeight ?? 0)))
 
             setLayoutHint((prev) => {
-                const nextWindowWidth = windowSize?.width ?? prev.windowWidth
-                const nextWindowHeight = windowSize?.height ?? prev.windowHeight
                 const same =
-                    Math.abs(prev.windowWidth - nextWindowWidth) <= 1 &&
-                    Math.abs(prev.windowHeight - nextWindowHeight) <= 1 &&
-                    Math.abs(prev.listHeight - nextListHeight) <= 1 &&
-                    Math.abs(prev.pagerWidth - nextPagerWidth) <= 1
+                    Math.abs(prev.listWidth - nextListWidth) <= LAYOUT_HINT_JITTER_PX &&
+                    Math.abs(prev.listHeight - nextListHeight) <= LAYOUT_HINT_JITTER_PX &&
+                    prev.windowWidth === nextWindowWidth &&
+                    prev.windowHeight === nextWindowHeight
 
                 if (same) return prev
 
                 return {
                     windowWidth: nextWindowWidth,
                     windowHeight: nextWindowHeight,
+                    listWidth: nextListWidth,
                     listHeight: nextListHeight,
-                    pagerWidth: nextPagerWidth,
                 }
             })
         }
 
-        readLayout(true)
-        let settleTimer: any = null
-        let fallbackTimer: any = null
-        const g = globalThis as any
-        const doc = g?.document as any
-
-        const flushLayoutAfterResize = () => {
-            readLayout(true)
+        const scheduleRead = () => {
             if (settleTimer) clearTimeout(settleTimer)
-            settleTimer = setTimeout(() => readLayout(true), LAYOUT_HINT_SETTLE_DELAY_MS)
+            if (animationLocked) {
+                settleTimer = setTimeout(applyLayout, LAYOUT_HINT_SETTLE_DELAY_MS)
+                return
+            }
+            animationLocked = true
+            if (rafId) cancelAnimationFrame(rafId)
+            rafId = requestAnimationFrame(() => {
+                applyLayout()
+                settleTimer = setTimeout(applyLayout, LAYOUT_HINT_SETTLE_DELAY_MS)
+            })
         }
 
-        const onPointerUp = () => flushLayoutAfterResize()
-        const onMouseUp = () => flushLayoutAfterResize()
-        const onTouchEnd = () => flushLayoutAfterResize()
-        const onResize = () => flushLayoutAfterResize()
+        const GEOMETRY_CHANGED_EVENT = "geometrychanged"
 
-        g?.addEventListener?.("pointerup", onPointerUp)
-        g?.addEventListener?.("mouseup", onMouseUp)
-        g?.addEventListener?.("touchend", onTouchEnd)
-        g?.addEventListener?.("resize", onResize)
-        doc?.addEventListener?.("pointerup", onPointerUp)
-        doc?.addEventListener?.("mouseup", onMouseUp)
-        doc?.addEventListener?.("touchend", onTouchEnd)
-        fallbackTimer = setInterval(() => {
-            if (!eventListRef.current && !pagerRowRef.current) return
-            readLayout(false)
-        }, LAYOUT_HINT_POLL_INTERVAL_MS)
+        const bindGeometryChanged = (node: any) => {
+            const measured = getMeasuredNode(node)
+            if (!measured?.addEventListener) return false
+            const handler = () => scheduleRead()
+
+            try {
+                measured.addEventListener(GEOMETRY_CHANGED_EVENT, handler)
+                detachListeners.push(() => measured.removeEventListener?.(GEOMETRY_CHANGED_EVENT, handler))
+                return true
+            } catch (_) {
+                return false
+            }
+        }
+
+        scheduleRead()
+
+        const eventListNode = eventListRef.current
+        const hasGeometryListener = bindGeometryChanged(eventListNode)
+
+        if (!hasGeometryListener) {
+            // No element-level geometry event is available in this host. In that case,
+            // layout will still be measured on mount and whenever measureKey changes,
+            // but we intentionally do not fall back to ResizeObserver here.
+        }
 
         return () => {
             if (settleTimer) clearTimeout(settleTimer)
-            if (fallbackTimer) clearInterval(fallbackTimer)
-            g?.removeEventListener?.("pointerup", onPointerUp)
-            g?.removeEventListener?.("mouseup", onMouseUp)
-            g?.removeEventListener?.("touchend", onTouchEnd)
-            g?.removeEventListener?.("resize", onResize)
-            doc?.removeEventListener?.("pointerup", onPointerUp)
-            doc?.removeEventListener?.("mouseup", onMouseUp)
-            doc?.removeEventListener?.("touchend", onTouchEnd)
+            if (rafId) cancelAnimationFrame(rafId)
+            animationLocked = false
+            detachListeners.forEach((detach) => {
+                try { detach() } catch (_) {}
+            })
         }
-    }, [eventListRef, pagerRowRef])
+    }, [enabled, measureKey])
 
     return layoutHint
 }
 
-const CountdownPanel = () => {
-    const [config, setConfig] = useState<CalendarWidgetConfig>(DEFAULT_CONFIG)
-    useClockRerender(30000)
-    useAutoRemountOnFirstMount()
+type EventCardProps = {
+    item: CalendarEvent
+    todayStamp: number
+    isSimpleCard: boolean
+    isEditing: boolean
+    linkedToSelected: boolean
+    isDeletePending: boolean
+    subtleText: string
+    textColor: string
+    titleColor: string
+    daysColor: string
+    panelInnerBg: string
+    rightPanelBgColor: string
+    selectedEventBorder: string
+    defaultEventBorder: string
+    focusDate: (iso: string) => void
+    togglePinned: (id: string) => void
+    startEdit: (item: CalendarEvent) => void
+    setDeleteConfirmId: (id: string | null) => void
+    removeEvent: (id: string) => void
+}
 
-    const [selectedDate, setSelectedDate] = useState(todayIso())
-    const [viewYear, setViewYear] = useState(new Date().getFullYear())
-    const [viewMonth, setViewMonth] = useState(new Date().getMonth())
+const EventCard = ({
+    item,
+    todayStamp,
+    isSimpleCard,
+    isEditing,
+    linkedToSelected,
+    isDeletePending,
+    subtleText,
+    textColor,
+    titleColor,
+    daysColor,
+    panelInnerBg,
+    rightPanelBgColor,
+    selectedEventBorder,
+    defaultEventBorder,
+    focusDate,
+    togglePinned,
+    startEdit,
+    setDeleteConfirmId,
+    removeEvent,
+}: EventCardProps) => {
+    const dayDiff = calculateDaysFromTodayStamp(item.targetDate, todayStamp)
+    const dayText = formatDaysText(dayDiff)
+    const cardBg = isEditing ? mixHex(daysColor, rightPanelBgColor, 0.82) : panelInnerBg
+    const cardBorder = linkedToSelected ? selectedEventBorder : defaultEventBorder
+    const actionBaseBg = mixHex(rightPanelBgColor, "#000000", 0.18)
+    const actionPinBg = item.pinned ? mixHex(daysColor, rightPanelBgColor, 0.22) : actionBaseBg
+    const actionDeleteBg = mixHex("#7f1d1d", rightPanelBgColor, 0.45)
 
-    const [draftTitle, setDraftTitle] = useState("")
-    const [editDialogOpen, setEditDialogOpen] = useState(false)
-    const [editDialogId, setEditDialogId] = useState<string | null>(null)
-    const [editDialogTitle, setEditDialogTitle] = useState("")
-    const [editDialogDate, setEditDialogDate] = useState(todayIso())
+    return (
+        <div
+            key={item.id}
+            onPointerDown={() => focusDate(item.targetDate)}
+            style={{
+                backgroundColor: cardBg,
+                borderWidth: 1,
+                borderColor: cardBorder,
+                borderRadius: 10,
+                flexShrink: 0,
+                minHeight: isSimpleCard ? 68 : 84,
+                paddingLeft: 9,
+                paddingRight: 9,
+                paddingTop: 6,
+                paddingBottom: 6,
+                marginBottom: 5,
+                position: "Relative",
+                overflow: "Hidden",
+            }}
+        >
+            {!isSimpleCard ? (
+                <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "SpaceBetween", marginBottom: 4 }}>
+                    <div style={{ fontSize: 9, color: subtleText }}>{item.targetDate}</div>
 
-    const [error, setError] = useState("")
+                    <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
+                        <div style={{ width: 40 }}>
+                            <CountdownActionButton
+                                text={item.pinned ? "UNP" : "PIN"}
+                                onClick={() => togglePinned(item.id)}
+                                color={item.pinned ? mixHex("#0b1120", textColor, 0.2) : textColor}
+                                bg={actionPinBg}
+                                compact
+                            />
+                        </div>
+                        <div style={{ width: 4 }} />
+                        <div style={{ width: 40 }}>
+                            <CountdownActionButton text="EDT" onClick={() => startEdit(item)} color={textColor} bg={actionBaseBg} compact />
+                        </div>
+                        <div style={{ width: 4 }} />
+                        <div style={{ width: 40 }}>
+                            <CountdownActionButton text="DEL" onClick={() => setDeleteConfirmId(item.id)} color="#fecaca" bg={actionDeleteBg} compact />
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
-    const [monthPickerOpen, setMonthPickerOpen] = useState(false)
-    const [yearCursor, setYearCursor] = useState(viewYear)
+            <div style={{ fontSize: 12, color: titleColor, unityFontStyleAndWeight: "Bold", whiteSpace: "NoWrap", overflow: "Hidden", textOverflow: "Ellipsis", marginBottom: isSimpleCard ? 4 : 6 }}>
+                {item.title}
+            </div>
 
-    const [settingsOpen, setSettingsOpen] = useState(false)
-    const [settingsMenu, setSettingsMenu] = useState<SettingsMenu>("main")
-    const [settingsDraft, setSettingsDraft] = useState({
-        backgroundColor: DEFAULT_CONFIG.backgroundColor,
-        textColor: DEFAULT_CONFIG.textColor,
-        daysColor: DEFAULT_CONFIG.daysColor,
-        cardDensity: DEFAULT_CONFIG.cardDensity as CardDensity,
-        eventsPerPage: DEFAULT_CONFIG.eventsPerPage,
-        pageLabelCount: DEFAULT_CONFIG.pageLabelCount,
-        eventsFilePath: DEFAULT_CONFIG.eventsFilePath,
-    })
-    const [eventPage, setEventPage] = useState(1)
-    const [middleMode, setMiddleMode] = useState(false)
-    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
-    const eventListRef = useRef<any>(null)
-    const pagerRowRef = useRef<any>(null)
-    const layoutHint = useWindowLayoutHint(eventListRef, pagerRowRef)
+            <div style={{ fontSize: 15, color: daysColor, unityFontStyleAndWeight: "Bold" }}>{dayText}</div>
 
-    useEffect(() => {
-        const loadedSettings = loadConfig()
-        const loadedEventsPath = normalizeConfigPath(loadedSettings.eventsFilePath, DEFAULT_CONFIG.eventsFilePath)
-        const loadedEvents = loadEventsFromFile(loadedEventsPath)
-        const configEvents = sortEvents(loadedSettings.events)
-        const nextEvents = sortEvents(loadedEvents ?? configEvents)
-        const nextConfig = { ...loadedSettings, eventsFilePath: loadedEventsPath, events: nextEvents }
-        const splitStorage = !isCombinedStoragePath(loadedEventsPath)
+            {isDeletePending ? (
+                <div
+                    onPointerDown={(e: any) => { e?.stopPropagation?.() }}
+                    style={{ position: "Absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: mixHex(rightPanelBgColor, "#000000", 0.28), borderRadius: 10, display: "Flex", flexDirection: "Column", justifyContent: "Center", alignItems: "Center" }}
+                >
+                    <div style={{ fontSize: 10, color: "#fca5a5", unityFontStyleAndWeight: "Bold", marginBottom: 6 }}>CONFIRM DELETE?</div>
+                    <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
+                        <div style={{ width: 36 }}>
+                            <CountdownActionButton text="YES" onClick={() => removeEvent(item.id)} color="#dcfce7" bg="#14532d" compact />
+                        </div>
+                        <div style={{ width: 4 }} />
+                        <div style={{ width: 36 }}>
+                            <CountdownActionButton text="NO" onClick={() => setDeleteConfirmId(null)} color={textColor} bg={actionBaseBg} compact />
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+        </div>
+    )
+}
 
-        if (splitStorage) {
-            if (loadedEvents === null && configEvents.length > 0) {
-                saveEventsToFile(configEvents, loadedEventsPath)
-            }
-            if (configEvents.length > 0 || loadedSettings.eventsFilePath !== loadedEventsPath) {
-                saveConfig(buildConfigForDisk(nextConfig))
-            }
-        }
+type EventListSectionProps = {
+    showCountLabel: boolean
+    allEventsLength: number
+    mutedText: string
+    panelInnerBg: string
+    panelBorder: string
+    pagedEvents: CalendarEvent[]
+    eventPage: number
+    totalEventPages: number
+    visiblePageNumbers: number[]
+    textColor: string
+    softActionBg: string
+    accentButtonBg: string
+    eventListRef: any
+    setEventPage: any
+    todayStamp: number
+    isSimpleCard: boolean
+    selectedDate: string
+    editDialogId: string | null
+    deleteConfirmId: string | null
+    subtleText: string
+    titleColor: string
+    daysColor: string
+    rightPanelBgColor: string
+    selectedEventBorder: string
+    defaultEventBorder: string
+    focusDate: (iso: string) => void
+    togglePinned: (id: string) => void
+    startEdit: (item: CalendarEvent) => void
+    setDeleteConfirmId: (id: string | null) => void
+    removeEvent: (id: string) => void
+}
 
-        setConfig(nextConfig)
+const EventListSection = ({ showCountLabel, allEventsLength, mutedText, panelInnerBg, panelBorder, pagedEvents, eventPage, totalEventPages, visiblePageNumbers, textColor, softActionBg, accentButtonBg, eventListRef, setEventPage, todayStamp, isSimpleCard, selectedDate, editDialogId, deleteConfirmId, subtleText, titleColor, daysColor, rightPanelBgColor, selectedEventBorder, defaultEventBorder, focusDate, togglePinned, startEdit, setDeleteConfirmId, removeEvent }: EventListSectionProps) => (
+    <>
+        {showCountLabel ? (
+            <div style={{ fontSize: 10, color: textColor, marginBottom: 4, whiteSpace: "NoWrap", display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
+                {`全部事件（置顶优先）: ${allEventsLength}`}
+            </div>
+        ) : null}
+        <div ref={eventListRef} style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, backgroundColor: panelInnerBg, borderWidth: 1, borderColor: panelBorder, borderRadius: 8, padding: 6, overflow: "Hidden" }}>
+            {allEventsLength === 0 ? (
+                <div style={{ fontSize: 10, color: mutedText }}>暂无事件，先在左侧选日期后添加一个。</div>
+            ) : (
+                <div style={{ display: "Flex", flexDirection: "Column", alignItems: "Stretch", minWidth: 0 }}>
+                    {pagedEvents.map((item) => (
+                        <EventCard
+                            key={item.id}
+                            item={item}
+                            todayStamp={todayStamp}
+                            isSimpleCard={isSimpleCard}
+                            isEditing={editDialogId === item.id}
+                            linkedToSelected={item.targetDate === selectedDate}
+                            isDeletePending={deleteConfirmId === item.id}
+                            subtleText={subtleText}
+                            textColor={textColor}
+                            titleColor={titleColor}
+                            daysColor={daysColor}
+                            panelInnerBg={panelInnerBg}
+                            rightPanelBgColor={rightPanelBgColor}
+                            selectedEventBorder={selectedEventBorder}
+                            defaultEventBorder={defaultEventBorder}
+                            focusDate={focusDate}
+                            togglePinned={togglePinned}
+                            startEdit={startEdit}
+                            setDeleteConfirmId={setDeleteConfirmId}
+                            removeEvent={removeEvent}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+        <div style={{ display: "Flex", justifyContent: "Center", alignItems: "Center", marginTop: 4, width: "100%" }}>
+            <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "Center", width: "100%", minWidth: 0 }}>
+                <div style={{ width: PAGER_SIDE_GROUP_WIDTH, minWidth: PAGER_SIDE_GROUP_WIDTH, flexShrink: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "FlexStart", gap: PAGER_BUTTON_GAP }}>
+                    <div style={{ width: PAGER_SLOT_WIDTH, flexShrink: 0 }}>
+                        <CountdownActionButton text="<<" onClick={() => setEventPage(1)} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact fullWidth />
+                    </div>
+                    <div style={{ width: PAGER_SLOT_WIDTH, flexShrink: 0 }}>
+                        <CountdownActionButton text="<" onClick={() => setEventPage((page: number) => Math.max(1, page - 1))} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact fullWidth />
+                    </div>
+                </div>
+                <div style={{ flexGrow: 1, minWidth: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "Center", gap: PAGER_BUTTON_GAP }}>
+                    {visiblePageNumbers.map((pageNumber) => (
+                        <div key={`page-${pageNumber}`} style={{ width: PAGER_SLOT_WIDTH, flexShrink: 0 }}>
+                            <CountdownActionButton text={`${pageNumber}`} onClick={() => setEventPage(pageNumber)} color={textColor} bg={eventPage === pageNumber ? accentButtonBg : softActionBg} compact fullWidth />
+                        </div>
+                    ))}
+                </div>
+                <div style={{ width: PAGER_SIDE_GROUP_WIDTH, minWidth: PAGER_SIDE_GROUP_WIDTH, flexShrink: 0, display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "FlexEnd", gap: PAGER_BUTTON_GAP }}>
+                    <div style={{ width: PAGER_SLOT_WIDTH, flexShrink: 0 }}>
+                        <CountdownActionButton text=">" onClick={() => setEventPage((page: number) => Math.min(totalEventPages, page + 1))} disabled={eventPage >= totalEventPages} color={textColor} bg={softActionBg} compact fullWidth />
+                    </div>
+                    <div style={{ width: PAGER_SLOT_WIDTH, flexShrink: 0 }}>
+                        <CountdownActionButton text=">>" onClick={() => setEventPage(totalEventPages)} disabled={eventPage >= totalEventPages} color={textColor} bg={softActionBg} compact fullWidth />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </>
+)
 
-        const todayDate = todayIso()
-        const parsed = parseIsoDate(todayDate)
+const WeekLabelsRow = ({ subtleText }: { subtleText: string }) => (
+    <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 3, width: "100%" }}>
+        {WEEK_LABELS.map((label) => (
+            <div key={`week-${label}`} style={{ width: "14.2857%", flexGrow: 0, flexShrink: 0, fontSize: 9, color: subtleText, unityTextAlign: "MiddleCenter" }}>
+                {label}
+            </div>
+        ))}
+    </div>
+)
 
-        if (parsed) {
-            setSelectedDate(todayDate)
-            setViewYear(parsed.getFullYear())
-            setViewMonth(parsed.getMonth())
-        }
-    }, [])
+type CalendarGridRowsProps = {
+    calendarRows: ReturnType<typeof chunkItems<ReturnType<typeof buildCalendarCells>[number]>>
+    selectedDate: string
+    todayIsoValue: string
+    eventCountByDate: Map<string, number>
+    focusDate: (iso: string) => void
+    selectedCellBg: string
+    calendarCellBg: string
+    calendarCellMutedBg: string
+    daysColor: string
+    textColor: string
+    subtleText: string
+}
 
-    const events = useMemo(() => sortEvents(config.events), [config.events])
+const CalendarGridRows = ({ calendarRows, selectedDate, todayIsoValue, eventCountByDate, focusDate, selectedCellBg, calendarCellBg, calendarCellMutedBg, daysColor, textColor, subtleText }: CalendarGridRowsProps) => (
+    <>
+        {calendarRows.map((row, rowIndex) => (
+            <div key={`row-${rowIndex}`} style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 3, width: "100%" }}>
+                {row.map((cell) => {
+                    const isSelected = cell.iso === selectedDate
+                    const isToday = cell.iso === todayIsoValue
+                    const count = eventCountByDate.get(cell.iso) || 0
+                    return (
+                        <div key={cell.iso} onPointerDown={() => focusDate(cell.iso)} style={{ width: "14.2857%", flexGrow: 0, flexShrink: 0, height: 33, borderRadius: 6, backgroundColor: isSelected ? selectedCellBg : (cell.inCurrentMonth ? calendarCellBg : calendarCellMutedBg), borderWidth: isToday ? 1 : 0, borderColor: isToday ? daysColor : "transparent", display: "Flex", flexDirection: "Column", justifyContent: "Center", alignItems: "Center" }}>
+                            <div style={{ fontSize: 10, color: isSelected ? "#0b1120" : (cell.inCurrentMonth ? textColor : subtleText), unityFontStyleAndWeight: isSelected ? "Bold" : "Normal" }}>{cell.day}</div>
+                            <div style={{ fontSize: 8, color: isSelected ? "#0b1120" : daysColor }}>{count > 0 ? `•${count}` : ""}</div>
+                        </div>
+                    )
+                })}
+            </div>
+        ))}
+    </>
+)
+
+
+
+type EventSectionModel = {
+    eventCountByDate: Map<string, number>
+    allEvents: CalendarEvent[]
+    totalEventPages: number
+    pagedEvents: CalendarEvent[]
+    visiblePageNumbers: number[]
+    isSimpleCard: boolean
+    selectedEventBorder: string
+    defaultEventBorder: string
+}
+
+const useEventSectionModel = ({
+    events,
+    cardDensity,
+    rightPanelBgColor,
+    textColor,
+    daysColor,
+    configuredEventsPerPage,
+    configuredPageLabelCount,
+    listWidth,
+    listHeight,
+    eventPage,
+}: {
+    events: CalendarEvent[]
+    cardDensity: CardDensity
+    rightPanelBgColor: string
+    textColor: string
+    daysColor: string
+    configuredEventsPerPage: number
+    configuredPageLabelCount: number
+    listWidth: number
+    listHeight: number
+    eventPage: number
+}): EventSectionModel => {
+    const sortedEvents = useMemo(() => sortEvents(events), [events])
 
     const eventCountByDate = useMemo(() => {
         const map = new Map<string, number>()
-        for (const eventItem of events) {
+        for (const eventItem of sortedEvents) {
             map.set(eventItem.targetDate, (map.get(eventItem.targetDate) || 0) + 1)
         }
         return map
-    }, [events])
+    }, [sortedEvents])
 
-    const allEvents = useMemo(() => sortEventsPinnedFirst(events), [events])
-    const configuredEventsPerPage = Math.max(1, config.eventsPerPage)
-    const fallbackListHeight = middleMode
-        ? Math.max(160, layoutHint.windowHeight - 210)
-        : Math.max(120, layoutHint.windowHeight - 380)
-    const activeListHeight = layoutHint.listHeight > 0 ? layoutHint.listHeight : fallbackListHeight
-    const estimatedCardRowHeight = config.cardDensity === "simple" ? EVENT_CARD_ROW_HEIGHT_SIMPLE : EVENT_CARD_ROW_HEIGHT_STANDARD
-    const autoRowsPerPage = Math.max(1, Math.floor((activeListHeight + 6) / estimatedCardRowHeight))
-    const eventsPerPage = Math.max(1, Math.min(20, autoRowsPerPage || configuredEventsPerPage))
+    const allEvents = useMemo(() => sortEventsPinnedFirst(sortedEvents), [sortedEvents])
+    const isSimpleCard = cardDensity === "simple"
+    const estimatedCardRowHeight = isSimpleCard ? EVENT_CARD_ROW_HEIGHT_SIMPLE : EVENT_CARD_ROW_HEIGHT_STANDARD
+    const measuredRowsPerPage = listHeight > 0
+        ? Math.max(1, Math.floor((listHeight + 6) / estimatedCardRowHeight))
+        : configuredEventsPerPage
+    const eventsPerPage = clampConfiguredByLayout(configuredEventsPerPage, measuredRowsPerPage, 1, 20)
 
-    const configuredPageLabelCount = Math.max(3, config.pageLabelCount)
-    const fallbackPagerWidth = Math.max(220, layoutHint.windowWidth - 40)
-    const activePagerWidth = layoutHint.pagerWidth > 0 ? layoutHint.pagerWidth : fallbackPagerWidth
-    const autoPageLabelCount = Math.floor((activePagerWidth - PAGER_FIXED_SPACE) / PAGER_BUTTON_WIDTH)
-    const pageLabelCount = Math.max(3, Math.min(9, Number.isFinite(autoPageLabelCount) ? autoPageLabelCount : configuredPageLabelCount))
+    const measuredPageLabelCount = listWidth > 0
+        ? getMaxPageLabelsByWidth(listWidth)
+        : configuredPageLabelCount
+    const pageLabelCount = clampConfiguredByLayout(configuredPageLabelCount, measuredPageLabelCount, 1, 9)
+
     const totalEventPages = useMemo(
         () => Math.max(1, Math.ceil(allEvents.length / eventsPerPage)),
         [allEvents.length, eventsPerPage]
@@ -987,35 +1428,102 @@ const CountdownPanel = () => {
         return allEvents.slice(start, start + eventsPerPage)
     }, [allEvents, eventPage, eventsPerPage])
 
-    const visiblePageNumbers = useMemo(() => {
-        if (totalEventPages <= pageLabelCount) {
-            return Array.from({ length: totalEventPages }, (_, index) => index + 1)
-        }
+    const visiblePageNumbers = useMemo(
+        () => buildPageNumbers(eventPage, totalEventPages, pageLabelCount),
+        [eventPage, totalEventPages, pageLabelCount]
+    )
 
-        const halfWindow = Math.floor(pageLabelCount / 2)
-        let start = Math.max(1, eventPage - halfWindow)
-        let end = start + pageLabelCount - 1
+    const selectedEventBorder = useMemo(
+        () => mixHex(daysColor, rightPanelBgColor, 0.24),
+        [daysColor, rightPanelBgColor]
+    )
+    const defaultEventBorder = useMemo(
+        () => mixHex(textColor, rightPanelBgColor, 0.78),
+        [textColor, rightPanelBgColor]
+    )
 
-        if (end > totalEventPages) {
-            end = totalEventPages
-            start = end - pageLabelCount + 1
-        }
+    return {
+        eventCountByDate,
+        allEvents,
+        totalEventPages,
+        pagedEvents,
+        visiblePageNumbers,
+        isSimpleCard,
+        selectedEventBorder,
+        defaultEventBorder,
+    }
+}
 
-        return Array.from({ length: end - start + 1 }, (_, index) => start + index)
-    }, [eventPage, totalEventPages, pageLabelCount])
-    const todayIsoValue = todayIso()
+const CountdownPanel = () => {
+    const [config, persist] = useRuntimeConfig()
+    const todayInfo = useTodayInfo()
+
+    const [selectedDate, setSelectedDate] = useState(todayInfo.iso)
+    const [viewYear, setViewYear] = useState(() => {
+        const parsed = parseIsoDate(todayInfo.iso)
+        return parsed ? parsed.getFullYear() : nowFromHost().getFullYear()
+    })
+    const [viewMonth, setViewMonth] = useState(() => {
+        const parsed = parseIsoDate(todayInfo.iso)
+        return parsed ? parsed.getMonth() : nowFromHost().getMonth()
+    })
+
+    const [draftTitle, setDraftTitle] = useState("")
+    const [editDialogOpen, setEditDialogOpen] = useState(false)
+    const [editDialogId, setEditDialogId] = useState<string | null>(null)
+    const [editDialogTitle, setEditDialogTitle] = useState("")
+    const [editDialogDate, setEditDialogDate] = useState(todayInfo.iso)
+
+    const [error, setError] = useState("")
+
+    const [monthPickerOpen, setMonthPickerOpen] = useState(false)
+    const [yearCursor, setYearCursor] = useState(viewYear)
+
+    const [settingsOpen, setSettingsOpen] = useState(false)
+    const [settingsMenu, setSettingsMenu] = useState<SettingsMenu>("main")
+    const [settingsDraft, setSettingsDraft] = useState<SettingsDraft>(() => createSettingsDraft(DEFAULT_CONFIG))
+    const [eventPage, setEventPage] = useState(1)
+    const [middleMode, setMiddleMode] = useState(false)
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+    const [middleModeTransitioning, setMiddleModeTransitioning] = useState(false)
+    const middleModeToggleLockRef = useRef(false)
+    const middleModeToggleTimerRef = useRef<any>(null)
+    const eventListRef = useRef<any>(null)
+    const layoutHintEnabled = !settingsOpen && !monthPickerOpen && !editDialogOpen && !middleModeTransitioning
+    const layoutMeasureKey = `${middleMode ? "middle" : "full"}|${config.cardDensity}|${settingsOpen ? 1 : 0}|${monthPickerOpen ? 1 : 0}|${editDialogOpen ? 1 : 0}|${config.events.length}`
+    const layoutHint = useWindowLayoutHint(eventListRef, layoutHintEnabled, layoutMeasureKey)
+
+    const configuredEventsPerPage = Math.max(1, config.eventsPerPage)
+    const configuredPageLabelCount = Math.max(3, ensureSettingsNumber(config.pageLabelCount, DEFAULT_CONFIG.pageLabelCount))
+    const eventSection = useEventSectionModel({
+        events: config.events,
+        cardDensity: config.cardDensity,
+            rightPanelBgColor: config.rightPanelBgColor,
+        textColor: config.textColor,
+        daysColor: config.daysColor,
+        configuredEventsPerPage,
+        configuredPageLabelCount,
+        listWidth: layoutHint.listWidth,
+        listHeight: layoutHint.listHeight,
+        eventPage,
+    })
+    const {
+        eventCountByDate,
+        allEvents,
+        totalEventPages,
+        pagedEvents,
+        visiblePageNumbers,
+        isSimpleCard,
+        selectedEventBorder,
+        defaultEventBorder,
+    } = eventSection
+    const todayIsoValue = todayInfo.iso
+    const todayStamp = todayInfo.stamp
 
     const calendarCells = useMemo(() => buildCalendarCells(viewYear, viewMonth), [viewYear, viewMonth])
+    const calendarRows = useMemo(() => chunkItems(calendarCells, 7), [calendarCells])
 
-    const calendarRows = useMemo(() => {
-        const rows: CalendarCell[][] = []
-        for (let i = 0; i < 6; i++) {
-            rows.push(calendarCells.slice(i * 7, i * 7 + 7))
-        }
-        return rows
-    }, [calendarCells])
-
-    const textColor = config.titleColor
+    const textColor = config.textColor
     const mutedText = hexToRgba(textColor, 0.72)
     const subtleText = mixHex(textColor, config.rightPanelBgColor, 0.48)
     const panelBorder = mixHex(textColor, config.rightPanelBgColor, 0.74)
@@ -1040,30 +1548,20 @@ const CountdownPanel = () => {
         unityTextAlign: "MiddleLeft",
     }
 
-    const persist = (nextConfig: CalendarWidgetConfig) => {
-        const normalized = normalizeConfig(nextConfig)
-        const targetEventsPath = normalizeConfigPath(normalized.eventsFilePath, DEFAULT_CONFIG.eventsFilePath)
-        const nextNormalized = { ...normalized, eventsFilePath: targetEventsPath }
-        const splitStorage = !isCombinedStoragePath(targetEventsPath)
-        setConfig(nextNormalized)
-        saveConfig(buildConfigForDisk(nextNormalized))
-        if (splitStorage) saveEventsToFile(nextNormalized.events, targetEventsPath)
-    }
-
-    const focusDate = (iso: string) => {
+        const focusDate = useCallback((iso: string) => {
         const parsed = parseIsoDate(iso)
         if (!parsed) return
         setSelectedDate(iso)
         setViewYear(parsed.getFullYear())
         setViewMonth(parsed.getMonth())
-    }
+    }, [])
 
-    const clearDraft = () => {
+    const clearDraft = useCallback(() => {
         setDraftTitle("")
         setDeleteConfirmId(null)
-    }
+    }, [])
 
-    const saveEventForSelectedDate = () => {
+    const saveEventForSelectedDate = useCallback(() => {
         const title = draftTitle.trim()
         if (!title) {
             setError("事件名称不能为空")
@@ -1081,7 +1579,7 @@ const CountdownPanel = () => {
                 id: `evt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
                 title,
                 targetDate: selectedDate,
-                type: inferEventType(selectedDate),
+                type: calculateDaysFromTodayStamp(selectedDate, todayStamp) < 0 ? "elapsed" : "countdown",
                 pinned: false,
                 createdAt: new Date().toISOString(),
             },
@@ -1091,23 +1589,23 @@ const CountdownPanel = () => {
         setDeleteConfirmId(null)
         clearDraft()
         setError("")
-    }
+    }, [config, draftTitle, selectedDate, persist, clearDraft])
 
-    const startEdit = (item: CalendarEvent) => {
+    const startEdit = useCallback((item: CalendarEvent) => {
         setDeleteConfirmId(null)
         setEditDialogId(item.id)
         setEditDialogTitle(item.title)
         setEditDialogDate(item.targetDate)
         setEditDialogOpen(true)
         setError("")
-    }
+    }, [])
 
-    const closeEditDialog = () => {
+    const closeEditDialog = useCallback(() => {
         setEditDialogOpen(false)
         setEditDialogId(null)
         setEditDialogTitle("")
         setEditDialogDate(selectedDate)
-    }
+    }, [selectedDate])
 
     const saveEditedEvent = () => {
         const id = editDialogId
@@ -1127,7 +1625,7 @@ const CountdownPanel = () => {
 
         const nextEvents = config.events.map((item) =>
             item.id === id
-                ? { ...item, title, targetDate, type: inferEventType(targetDate) }
+                ? { ...item, title, targetDate, type: resolveEventType(targetDate, getTodayInfo().stamp) }
                 : item
         )
 
@@ -1138,62 +1636,71 @@ const CountdownPanel = () => {
         setError("")
     }
 
-    const removeEvent = (id: string) => {
+    const removeEvent = useCallback((id: string) => {
         const nextEvents = config.events.filter((item) => item.id !== id)
         persist({ ...config, events: nextEvents })
         setDeleteConfirmId(null)
         if (editDialogId === id) closeEditDialog()
-    }
+    }, [config, editDialogId, closeEditDialog, persist])
 
-    const togglePinned = (id: string) => {
+    const togglePinned = useCallback((id: string) => {
         setDeleteConfirmId(null)
         const nextEvents = config.events.map((item) =>
             item.id === id ? { ...item, pinned: !item.pinned } : item
         )
         persist({ ...config, events: nextEvents })
-    }
+    }, [config, persist])
 
-    const goToToday = () => {
-        focusDate(todayIso())
-    }
+    const goToToday = useCallback(() => {
+        focusDate(todayInfo.iso)
+    }, [focusDate, todayInfo.iso])
 
-    const shiftView = (delta: number) => {
+    const shiftView = useCallback((delta: number) => {
         const shifted = shiftMonth(viewYear, viewMonth, delta)
         setViewYear(shifted.year)
         setViewMonth(shifted.month)
-    }
+    }, [viewYear, viewMonth])
 
-    const openMonthPicker = () => {
+    const openMonthPicker = useCallback(() => {
         setEditDialogOpen(false)
         setYearCursor(viewYear)
         setMonthPickerOpen(true)
-    }
+    }, [viewYear])
 
     const openSettings = () => {
         setEditDialogOpen(false)
         setSettingsMenu("main")
-        setSettingsDraft({
-            backgroundColor: config.backgroundColor,
-            textColor: config.textColor,
-            daysColor: config.daysColor,
-            cardDensity: config.cardDensity,
-            eventsPerPage: config.eventsPerPage,
-            pageLabelCount: config.pageLabelCount,
-            eventsFilePath: config.eventsFilePath,
-        })
+        setSettingsDraft(createSettingsDraft(config))
         setSettingsOpen(true)
     }
 
-    const enterMiddleMode = () => {
+    const scheduleMiddleModeUnlock = useCallback(() => {
+        if (middleModeToggleTimerRef.current) clearTimeout(middleModeToggleTimerRef.current)
+        middleModeToggleTimerRef.current = setTimeout(() => {
+            middleModeToggleLockRef.current = false
+            setMiddleModeTransitioning(false)
+            middleModeToggleTimerRef.current = null
+        }, 180)
+    }, [])
+
+    const enterMiddleMode = useCallback(() => {
+        if (middleModeToggleLockRef.current || middleMode) return
+        middleModeToggleLockRef.current = true
+        setMiddleModeTransitioning(true)
         setMonthPickerOpen(false)
         setSettingsOpen(false)
         setEditDialogOpen(false)
         setMiddleMode(true)
-    }
+        scheduleMiddleModeUnlock()
+    }, [middleMode, scheduleMiddleModeUnlock])
 
-    const exitMiddleMode = () => {
+    const exitMiddleMode = useCallback(() => {
+        if (middleModeToggleLockRef.current || !middleMode) return
+        middleModeToggleLockRef.current = true
+        setMiddleModeTransitioning(true)
         setMiddleMode(false)
-    }
+        scheduleMiddleModeUnlock()
+    }, [middleMode, scheduleMiddleModeUnlock])
 
     const applyThemePreset = (presetId: string) => {
         const preset = THEME_PRESETS.find((item) => item.id === presetId)
@@ -1202,18 +1709,20 @@ const CountdownPanel = () => {
         setSettingsDraft((prev) => ({
             ...prev,
             backgroundColor: preset.config.backgroundColor,
+            leftPanelBgColor: preset.config.leftPanelBgColor,
+            rightPanelBgColor: preset.config.rightPanelBgColor,
             textColor: preset.config.textColor,
+            titleColor: preset.config.titleColor,
             daysColor: preset.config.daysColor,
         }))
     }
 
-    const setCompactCount = (count: 1 | 2 | 4) => {
-        persist({ ...config, compactCount: count })
-    }
-
-    const colorDraftRows: Array<{ label: string; key: "backgroundColor" | "textColor" | "daysColor" }> = [
+    const colorDraftRows: Array<{ label: string; key: SettingsColorKey }> = [
         { label: "整体背景", key: "backgroundColor" },
+        { label: "左侧面板背景", key: "leftPanelBgColor" },
+        { label: "右侧面板背景", key: "rightPanelBgColor" },
         { label: "主文字颜色", key: "textColor" },
+        { label: "标题文字颜色", key: "titleColor" },
         { label: "天数高亮色", key: "daysColor" },
     ]
 
@@ -1223,16 +1732,15 @@ const CountdownPanel = () => {
     ]
 
     const updateSettingsDraftNumber = (key: SettingsNumberKey, rawValue: unknown) => {
-        const n = Math.round(Number(rawValue ?? ""))
-        if (!Number.isFinite(n)) return
-        setSettingsDraft((prev) => ({ ...prev, [key]: n }))
+        const nextText = sanitizeSettingsNumberText(rawValue)
+        setSettingsDraft((prev) => ({ ...prev, [key]: nextText }))
     }
 
     const renderSettingsNumberRow = (label: string, key: SettingsNumberKey) => (
         <div key={`settings-number-${key}`} style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 10, color: textColor, marginBottom: 4 }}>{label}</div>
             <textfield
-                value={`${settingsDraft[key]}`}
+                value={ensureSettingsNumberText(settingsDraft[key], key === "eventsPerPage" ? DEFAULT_CONFIG.eventsPerPage : DEFAULT_CONFIG.pageLabelCount)}
                 multiline={false}
                 onValueChanged={(e: any) => updateSettingsDraftNumber(key, e?.newValue)}
                 style={settingsNumberInputStyle}
@@ -1241,24 +1749,26 @@ const CountdownPanel = () => {
     )
 
     const applySettings = () => {
-        const nextEventsFilePath = normalizeConfigPath(settingsDraft.eventsFilePath, config.eventsFilePath)
+        const nextEventsFilePath = normalizeEventsFilePath(settingsDraft.eventsFilePath, config.eventsFilePath)
         const backgroundColor = normalizeColor(settingsDraft.backgroundColor, config.backgroundColor)
+        const leftPanelBgColor = normalizeColor(settingsDraft.leftPanelBgColor, config.leftPanelBgColor)
+        const rightPanelBgColor = normalizeColor(settingsDraft.rightPanelBgColor, config.rightPanelBgColor)
         const textColor = normalizeColor(settingsDraft.textColor, config.textColor)
+        const titleColor = normalizeColor(settingsDraft.titleColor, config.titleColor)
         const daysColor = normalizeColor(settingsDraft.daysColor, config.daysColor)
         const cardDensity = normalizeCardDensity(settingsDraft.cardDensity, config.cardDensity)
-        const panelColors = derivePanelColors(backgroundColor)
 
         const nextConfig: CalendarWidgetConfig = {
             ...config,
-            titleColor: textColor,
+            titleColor,
             daysColor,
             cardDensity,
             backgroundColor,
-            leftPanelBgColor: panelColors.leftPanelBgColor,
-            rightPanelBgColor: panelColors.rightPanelBgColor,
+            leftPanelBgColor,
+            rightPanelBgColor,
             textColor,
-            eventsPerPage: normalizeIntInRange(settingsDraft.eventsPerPage, config.eventsPerPage, 1, 20),
-            pageLabelCount: normalizeIntInRange(settingsDraft.pageLabelCount, config.pageLabelCount, 3, 9),
+            eventsPerPage: parseSettingsNumberDraft(settingsDraft.eventsPerPage, config.eventsPerPage, 1, 20),
+            pageLabelCount: parseSettingsNumberDraft(settingsDraft.pageLabelCount, config.pageLabelCount, 3, 9),
             eventsFilePath: nextEventsFilePath,
         }
 
@@ -1271,202 +1781,21 @@ const CountdownPanel = () => {
     }, [totalEventPages])
 
     useEffect(() => {
+        return () => {
+            if (middleModeToggleTimerRef.current) {
+                clearTimeout(middleModeToggleTimerRef.current)
+                middleModeToggleTimerRef.current = null
+            }
+            middleModeToggleLockRef.current = false
+        }
+    }, [])
+
+    useEffect(() => {
         setDeleteConfirmId(null)
     }, [eventPage])
 
-    const renderEventCard = (item: CalendarEvent) => {
-        const dayDiff = calculateDays(item.targetDate)
-        const dayText = formatDaysText(dayDiff)
-        const isSimpleCard = config.cardDensity === "simple"
-        const isEditing = editDialogOpen && editDialogId === item.id
-        const linkedToSelected = item.targetDate === selectedDate
-        const isDeletePending = deleteConfirmId === item.id
-        const cardBg = isEditing ? mixHex(config.daysColor, config.rightPanelBgColor, 0.82) : panelInnerBg
-        const cardBorder = linkedToSelected
-            ? mixHex(config.daysColor, config.rightPanelBgColor, 0.24)
-            : mixHex(config.textColor, config.rightPanelBgColor, 0.78)
-        const actionBaseBg = mixHex(config.rightPanelBgColor, "#000000", 0.18)
-        const actionPinBg = item.pinned ? mixHex(config.daysColor, config.rightPanelBgColor, 0.22) : actionBaseBg
-        const actionDeleteBg = mixHex("#7f1d1d", config.rightPanelBgColor, 0.45)
 
-        return (
-            <div
-                key={item.id}
-                onPointerDown={() => focusDate(item.targetDate)}
-                style={{
-                    backgroundColor: cardBg,
-                    borderWidth: 1,
-                    borderColor: cardBorder,
-                    borderRadius: 10,
-                    flexShrink: 0,
-                    minHeight: isSimpleCard ? 68 : 84,
-                    paddingLeft: 9,
-                    paddingRight: 9,
-                    paddingTop: 6,
-                    paddingBottom: 6,
-                    marginBottom: 5,
-                    position: "Relative",
-                    overflow: "Hidden",
-                }}
-            >
-                {!isSimpleCard ? (
-                    <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", justifyContent: "SpaceBetween", marginBottom: 4 }}>
-                        <div style={{ fontSize: 9, color: subtleText }}>{item.targetDate}</div>
-
-                        <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                            <div style={{ width: 40 }}>
-                                <CountdownActionButton
-                                    text={item.pinned ? "UNP" : "PIN"}
-                                    onClick={() => togglePinned(item.id)}
-                                    color={item.pinned ? mixHex("#0b1120", config.textColor, 0.2) : textColor}
-                                    bg={actionPinBg}
-                                    compact
-                                />
-                            </div>
-                            <div style={{ width: 4 }} />
-                            <div style={{ width: 40 }}>
-                                <CountdownActionButton text="EDT" onClick={() => startEdit(item)} color={textColor} bg={actionBaseBg} compact />
-                            </div>
-                            <div style={{ width: 4 }} />
-                            <div style={{ width: 40 }}>
-                                <CountdownActionButton text="DEL" onClick={() => setDeleteConfirmId(item.id)} color="#fecaca" bg={actionDeleteBg} compact />
-                            </div>
-                        </div>
-                    </div>
-                ) : null}
-
-                <div
-                    style={{
-                        fontSize: 12,
-                        color: config.titleColor,
-                        unityFontStyleAndWeight: "Bold",
-                        whiteSpace: "NoWrap",
-                        overflow: "Hidden",
-                        textOverflow: "Ellipsis",
-                        marginBottom: isSimpleCard ? 4 : 6,
-                    }}
-                >
-                    {item.title}
-                </div>
-
-                <div style={{ fontSize: 15, color: config.daysColor, unityFontStyleAndWeight: "Bold" }}>{dayText}</div>
-
-                {isDeletePending ? (
-                    <div
-                        onPointerDown={(e: any) => {
-                            e?.stopPropagation?.()
-                        }}
-                        style={{
-                            position: "Absolute",
-                            left: 0,
-                            right: 0,
-                            top: 0,
-                            bottom: 0,
-                            backgroundColor: mixHex(config.rightPanelBgColor, "#000000", 0.28),
-                            borderRadius: 10,
-                            display: "Flex",
-                            flexDirection: "Column",
-                            justifyContent: "Center",
-                            alignItems: "Center",
-                        }}
-                    >
-                        <div style={{ fontSize: 10, color: "#fca5a5", unityFontStyleAndWeight: "Bold", marginBottom: 6 }}>
-                            CONFIRM DELETE?
-                        </div>
-                        <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                            <div style={{ width: 36 }}>
-                                <CountdownActionButton text="YES" onClick={() => removeEvent(item.id)} color="#dcfce7" bg="#14532d" compact />
-                            </div>
-                            <div style={{ width: 4 }} />
-                            <div style={{ width: 36 }}>
-                                <CountdownActionButton text="NO" onClick={() => setDeleteConfirmId(null)} color={textColor} bg={actionBaseBg} compact />
-                            </div>
-                        </div>
-                    </div>
-                ) : null}
-            </div>
-        )
-    }
-
-    const renderPagedEventCards = (showCountLabel: boolean) => (
-        <>
-            {showCountLabel ? (
-                <div
-                    style={{
-                        fontSize: 10,
-                        color: textColor,
-                        marginBottom: 4,
-                        whiteSpace: "NoWrap",
-                        display: "Flex",
-                        flexDirection: "Row",
-                        alignItems: "Center",
-                    }}
-                >
-                    {`全部事件（置顶优先）: ${allEvents.length}`}
-                </div>
-            ) : null}
-
-            <div
-                ref={eventListRef}
-                style={{
-                    flexGrow: 1,
-                    flexShrink: 1,
-                    minHeight: 0,
-                    backgroundColor: panelInnerBg,
-                    borderWidth: 1,
-                    borderColor: panelBorder,
-                    borderRadius: 8,
-                    padding: 6,
-                    overflow: "Hidden",
-                }}
-            >
-                {allEvents.length === 0 ? (
-                    <div style={{ fontSize: 10, color: mutedText }}>暂无事件，先在左侧选日期后添加一个。</div>
-                ) : (
-                    <div style={{ display: "Flex", flexDirection: "Column", alignItems: "Stretch", minWidth: 0 }}>
-                        {pagedEvents.map((item) => renderEventCard(item))}
-                    </div>
-                )}
-            </div>
-
-            <div ref={pagerRowRef} style={{ display: "Flex", justifyContent: "Center", alignItems: "Center", marginTop: 4 }}>
-                <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                    <CountdownActionButton text="<<" onClick={() => setEventPage(1)} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact />
-                    <div style={{ width: 4 }} />
-                    <CountdownActionButton text="<" onClick={() => setEventPage((page) => Math.max(1, page - 1))} disabled={eventPage <= 1} color={textColor} bg={softActionBg} compact />
-                    <div style={{ width: 4 }} />
-                    {visiblePageNumbers.map((pageNumber) => (
-                        <div key={`page-${pageNumber}`} style={{ marginRight: 4 }}>
-                            <CountdownActionButton
-                                text={`${pageNumber}`}
-                                onClick={() => setEventPage(pageNumber)}
-                                color={textColor}
-                                bg={eventPage === pageNumber ? accentButtonBg : softActionBg}
-                                compact
-                            />
-                        </div>
-                    ))}
-                    <CountdownActionButton
-                        text=">"
-                        onClick={() => setEventPage((page) => Math.min(totalEventPages, page + 1))}
-                        disabled={eventPage >= totalEventPages}
-                        color={textColor}
-                        bg={softActionBg}
-                        compact
-                    />
-                    <div style={{ width: 4 }} />
-                    <CountdownActionButton
-                        text=">>"
-                        onClick={() => setEventPage(totalEventPages)}
-                        disabled={eventPage >= totalEventPages}
-                        color={textColor}
-                        bg={softActionBg}
-                        compact
-                    />
-                </div>
-            </div>
-        </>
-    )
+    const overlayOpen = monthPickerOpen || editDialogOpen || settingsOpen
 
     return (
         <div
@@ -1487,7 +1816,7 @@ const CountdownPanel = () => {
             {middleMode ? (
                 <div style={{ flexGrow: 1, display: "Flex", flexDirection: "Column", minHeight: 0, alignItems: "FlexStart" }}>
                     <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center", marginBottom: 6 }}>
-                        <CountdownActionButton text="展开" onClick={exitMiddleMode} color={textColor} bg={accentButtonBg} compact />
+                        <CountdownActionButton text="展开" onClick={exitMiddleMode} disabled={middleModeTransitioning} color={textColor} bg={accentButtonBg} compact />
                     </div>
 
                     <div
@@ -1509,36 +1838,25 @@ const CountdownPanel = () => {
                             overflow: "Hidden",
                         }}
                     >
-                        {renderPagedEventCards(false)}
+                        {<EventListSection showCountLabel={false} allEventsLength={allEvents.length} mutedText={mutedText} panelInnerBg={panelInnerBg} panelBorder={panelBorder} pagedEvents={pagedEvents} eventPage={eventPage} totalEventPages={totalEventPages} visiblePageNumbers={visiblePageNumbers} textColor={textColor} softActionBg={softActionBg} accentButtonBg={accentButtonBg} eventListRef={eventListRef} setEventPage={setEventPage} todayStamp={todayStamp} isSimpleCard={isSimpleCard} selectedDate={selectedDate} editDialogId={editDialogId} deleteConfirmId={deleteConfirmId} subtleText={subtleText} titleColor={config.titleColor} daysColor={config.daysColor} rightPanelBgColor={config.rightPanelBgColor} selectedEventBorder={selectedEventBorder} defaultEventBorder={defaultEventBorder} focusDate={focusDate} togglePinned={togglePinned} startEdit={startEdit} setDeleteConfirmId={setDeleteConfirmId} removeEvent={removeEvent} />}
                     </div>
                 </div>
             ) : (
                 <>
                     <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", alignItems: "Center", marginBottom: 6 }}>
                         <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                            <CountdownActionButton text="收起" onClick={enterMiddleMode} color={textColor} bg={softActionBg} compact />
+                            <CountdownActionButton text="收起" onClick={enterMiddleMode} disabled={middleModeTransitioning} color={textColor} bg={softActionBg} compact />
                             <div style={{ width: 6 }} />
                             <div style={{ fontSize: 12, color: textColor, unityFontStyleAndWeight: "Bold" }}>日历计时</div>
                         </div>
                         <div style={{ display: "Flex", flexDirection: "Row", alignItems: "Center" }}>
-                            <div style={{ fontSize: 9, color: subtleText, marginRight: 4 }}>小卡</div>
-                            {[1, 2, 4].map((countValue) => (
-                                <div key={`compact-count-${countValue}`} style={{ marginRight: 3 }}>
-                                    <CountdownActionButton
-                                        text={`${countValue}`}
-                                        onClick={() => setCompactCount(countValue as 1 | 2 | 4)}
-                                        color={textColor}
-                                        bg={config.compactCount === countValue ? accentButtonBg : softActionBg}
-                                        compact
-                                    />
-                                </div>
-                            ))}
                             <CountdownActionButton text="设置" onClick={openSettings} bg={accentButtonBg} color={textColor} compact />
                         </div>
                     </div>
 
                     {error ? <div style={{ fontSize: 10, color: "#fca5a5", marginBottom: 6 }}>{error}</div> : null}
 
+                    {!overlayOpen ? (
                     <div style={{ flexGrow: 1, display: "Flex", flexDirection: "Column", minHeight: 0 }}>
                         <div
                             style={{
@@ -1589,66 +1907,10 @@ const CountdownPanel = () => {
                                 </div>
 
                                 <div style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 3, width: "100%" }}>
-                                    {WEEK_LABELS.map((label) => (
-                                        <div
-                                            key={`week-${label}`}
-                                            style={{
-                                                width: "14.2857%",
-                                                flexGrow: 0,
-                                                flexShrink: 0,
-                                                fontSize: 9,
-                                                color: subtleText,
-                                                unityTextAlign: "MiddleCenter",
-                                            }}
-                                        >
-                                            {label}
-                                        </div>
-                                    ))}
+                                    {<WeekLabelsRow subtleText={subtleText} />}
                                 </div>
 
-                                {calendarRows.map((row, rowIndex) => (
-                                    <div key={`row-${rowIndex}`} style={{ display: "Flex", flexDirection: "Row", justifyContent: "SpaceBetween", marginBottom: 3, width: "100%" }}>
-                                        {row.map((cell) => {
-                                            const isSelected = cell.iso === selectedDate
-                                            const isToday = cell.iso === todayIsoValue
-                                            const count = eventCountByDate.get(cell.iso) || 0
-
-                                            return (
-                                                <div
-                                                    key={cell.iso}
-                                                    onPointerDown={() => focusDate(cell.iso)}
-                                                    style={{
-                                                        width: "14.2857%",
-                                                        flexGrow: 0,
-                                                        flexShrink: 0,
-                                                        height: 33,
-                                                        borderRadius: 6,
-                                                        backgroundColor: isSelected
-                                                            ? selectedCellBg
-                                                            : (cell.inCurrentMonth ? calendarCellBg : calendarCellMutedBg),
-                                                        borderWidth: isToday ? 1 : 0,
-                                                        borderColor: isToday ? config.daysColor : "transparent",
-                                                        display: "Flex",
-                                                        flexDirection: "Column",
-                                                        justifyContent: "Center",
-                                                        alignItems: "Center",
-                                                    }}
-                                                >
-                                                    <div
-                                                        style={{
-                                                            fontSize: 10,
-                                                            color: isSelected ? "#0b1120" : (cell.inCurrentMonth ? textColor : subtleText),
-                                                            unityFontStyleAndWeight: isSelected ? "Bold" : "Normal",
-                                                        }}
-                                                    >
-                                                        {cell.day}
-                                                    </div>
-                                                    <div style={{ fontSize: 8, color: isSelected ? "#0b1120" : config.daysColor }}>{count > 0 ? `•${count}` : ""}</div>
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                ))}
+                                {<CalendarGridRows calendarRows={calendarRows} selectedDate={selectedDate} todayIsoValue={todayIsoValue} eventCountByDate={eventCountByDate} focusDate={focusDate} selectedCellBg={selectedCellBg} calendarCellBg={calendarCellBg} calendarCellMutedBg={calendarCellMutedBg} daysColor={config.daysColor} textColor={textColor} subtleText={subtleText} />}
                             </div>
                         </div>
 
@@ -1703,9 +1965,10 @@ const CountdownPanel = () => {
                                 </div>
                             </div>
 
-                            {renderPagedEventCards(true)}
+                            {<EventListSection showCountLabel={true} allEventsLength={allEvents.length} mutedText={mutedText} panelInnerBg={panelInnerBg} panelBorder={panelBorder} pagedEvents={pagedEvents} eventPage={eventPage} totalEventPages={totalEventPages} visiblePageNumbers={visiblePageNumbers} textColor={textColor} softActionBg={softActionBg} accentButtonBg={accentButtonBg} eventListRef={eventListRef} setEventPage={setEventPage} todayStamp={todayStamp} isSimpleCard={isSimpleCard} selectedDate={selectedDate} editDialogId={editDialogId} deleteConfirmId={deleteConfirmId} subtleText={subtleText} titleColor={config.titleColor} daysColor={config.daysColor} rightPanelBgColor={config.rightPanelBgColor} selectedEventBorder={selectedEventBorder} defaultEventBorder={defaultEventBorder} focusDate={focusDate} togglePinned={togglePinned} startEdit={startEdit} setDeleteConfirmId={setDeleteConfirmId} removeEvent={removeEvent} />}
                         </div>
                     </div>
+                    ) : null}
                 </>
             )}
             {monthPickerOpen ? (
@@ -2004,10 +2267,11 @@ const CountdownPanel = () => {
                                         key={`color-row-${row.key}`}
                                         label={row.label}
                                         value={settingsDraft[row.key]}
-                                        onChange={(value) => setSettingsDraft((prev) => ({ ...prev, [row.key]: value }))}
+                                        onChange={(value) => setSettingsDraft((prev) => ({ ...prev, [row.key]: String(value ?? "") }))}
                                         textColor={textColor}
                                         inputBg={inputBg}
                                         inputBorder={inputBorder}
+                                        fallbackColor={DEFAULT_CONFIG[row.key]}
                                     />
                                 ))}
                             </div>
@@ -2030,30 +2294,8 @@ const CountdownPanel = () => {
 }
 
 const CountdownCompact = () => {
-    const [config, setConfig] = useState<CalendarWidgetConfig>(DEFAULT_CONFIG)
-    const [, setClockTick] = useState(0)
-
-    useEffect(() => {
-        const syncCompactConfig = () => {
-            const loadedSettings = loadConfig()
-            const loadedEventsPath = normalizeConfigPath(loadedSettings.eventsFilePath, DEFAULT_CONFIG.eventsFilePath)
-            const loadedEvents = loadEventsFromFile(loadedEventsPath)
-            const nextConfig = {
-                ...loadedSettings,
-                eventsFilePath: loadedEventsPath,
-                events: sortEvents(loadedEvents ?? loadedSettings.events),
-            }
-            setConfig((prev) => (areCompactConfigEqual(prev, nextConfig) ? prev : nextConfig))
-        }
-
-        syncCompactConfig()
-        const timer = setInterval(() => {
-            setClockTick((tick) => tick + 1)
-            syncCompactConfig()
-        }, COMPACT_SYNC_INTERVAL_MS)
-
-        return () => clearInterval(timer)
-    }, [])
+    const [config, persist] = useRuntimeConfig()
+    const todayInfo = useTodayInfo()
 
     const compactEvents = useMemo(() => {
         return sortEventsPinnedFirst(config.events).slice(0, config.compactCount)
@@ -2061,6 +2303,8 @@ const CountdownCompact = () => {
 
     const compactPanel = mixHex(config.rightPanelBgColor, "#000000", 0.18)
     const compactBorder = mixHex(config.textColor, config.rightPanelBgColor, 0.68)
+    const compactButtonBg = mixHex(config.rightPanelBgColor, "#000000", 0.18)
+    const compactButtonActiveBg = mixHex(config.daysColor, "#000000", 0.1)
     const autoCols = config.compactCount >= 4 ? 2 : 1
     const compactRows = useMemo(() => {
         if (compactEvents.length === 0) return [] as CalendarEvent[][]
@@ -2090,8 +2334,44 @@ const CountdownCompact = () => {
                 paddingTop: 30,
                 paddingBottom: 8,
                 overflow: "Hidden",
+                position: "Relative",
             }}
         >
+            <div
+                style={{
+                    position: "Absolute",
+                    top: 6,
+                    right: 6,
+                    display: "Flex",
+                    flexDirection: "Row",
+                    alignItems: "Center",
+                    zIndex: 2,
+                    pointerEvents: "Auto",
+                    gap: 3,
+                }}
+            >
+                {[1, 2, 4].map((countValue) => (
+                    <div key={`compact-top-count-${countValue}`} style={{ width: 28, flexShrink: 0 }}>
+                        <CountdownActionButton
+                            text={`${countValue}`}
+                            onClick={() => persist({ ...config, compactCount: countValue as 1 | 2 | 4 })}
+                            color={config.textColor}
+                            bg={config.compactCount === countValue ? compactButtonActiveBg : compactButtonBg}
+                            compact
+                            fullWidth
+                        />
+                    </div>
+                ))}
+            </div>
+            <div
+                style={{
+                    flexGrow: 1,
+                    display: "Flex",
+                    flexDirection: "Column",
+                    minHeight: 0,
+                    overflow: "Hidden",
+                }}
+            >
             {compactEvents.length === 0 ? (
                 <div
                     style={{
@@ -2196,24 +2476,42 @@ const CountdownCompact = () => {
                                             unityTextAlign: "MiddleCenter",
                                         }}
                                     >
-                                        {formatDaysText(calculateDays(item.targetDate))}
+                                        {formatDaysText(calculateDaysFromTodayStamp(item.targetDate, todayInfo.stamp))}
                                     </div>
                                 </div>
                             ))}
-                            {autoCols > 1 && row.length < autoCols ? (
-                                <div
-                                    style={{
-                                        flexGrow: 1,
-                                        flexShrink: 1,
-                                        flexBasis: 0,
-                                        minWidth: 0,
-                                    }}
-                                />
-                            ) : null}
+                            {autoCols > 1 && row.length < autoCols
+                                ? Array.from({ length: autoCols - row.length }, (_, placeholderIndex) => (
+                                    <div
+                                        key={`compact-placeholder-${rowIndex}-${placeholderIndex}`}
+                                        style={{
+                                            flexGrow: 1,
+                                            flexShrink: 1,
+                                            flexBasis: 0,
+                                            height: "100%",
+                                            marginRight: placeholderIndex < autoCols - row.length - 1 ? COMPACT_CARD_GAP : 0,
+                                            minWidth: 0,
+                                            minHeight: 0,
+                                            backgroundColor: compactPanel,
+                                            borderWidth: 1,
+                                            borderColor: compactBorder,
+                                            borderRadius: 8,
+                                            paddingLeft: 7,
+                                            paddingRight: 7,
+                                            paddingTop: 5,
+                                            paddingBottom: 5,
+                                            overflow: "Hidden",
+                                            opacity: 0,
+                                            pointerEvents: "None",
+                                        }}
+                                    />
+                                ))
+                                : null}
                         </div>
                     ))}
                 </div>
             )}
+            </div>
         </div>
     )
 }
