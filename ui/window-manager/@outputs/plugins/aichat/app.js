@@ -36,9 +36,11 @@
     "4. Persona": ["ExperimentalMemory", "SystemPrompt"]
   };
   var multilineKeys = /* @__PURE__ */ new Set(["Audio_File_Text", "SystemPrompt"]);
+  var allConfigKeys = Object.values(groups).flat();
   var call = (name, ...args) => JSON.parse(chill.aichat[name](...args));
   var loadCfg = () => JSON.parse(chill.aichat.getAllConfig() || "{}");
   var loadDefaults = () => JSON.parse(chill.aichat.getAllConfigDefaults() || "{}");
+  var hasConfigValues = (cfg) => allConfigKeys.some((k) => Object.prototype.hasOwnProperty.call(cfg, k));
   var fieldEstimatedHeight = (k) => !multilineKeys.has(k) ? 52 : k === "SystemPrompt" ? 320 : 210;
   var paginateFields = (fields, maxHeight) => {
     const pages = [];
@@ -179,9 +181,27 @@
       if (!r.ok)
         console.log(r.error);
     };
+    const openConfig = () => {
+      const cfg = loadCfg();
+      const def = loadDefaults();
+      setStatus(JSON.parse(chill.aichat.getStatus()));
+      setDraft(cfg);
+      setDefaults(def);
+      if (!hasConfigValues(cfg)) {
+        console.log("AIChat \u914D\u7F6E\u8BFB\u53D6\u4E3A\u7A7A\uFF0C\u53D6\u6D88\u6253\u5F00\u914D\u7F6E\u9875");
+        return;
+      }
+      setCfgMode(true);
+    };
     const save = () => {
+      if (!hasConfigValues(draft)) {
+        console.log("AIChat \u914D\u7F6E\u4E3A\u7A7A\uFF0C\u5DF2\u963B\u6B62\u4FDD\u5B58");
+        return;
+      }
       let ok = true;
-      for (const k of Object.keys(draft)) {
+      for (const k of allConfigKeys) {
+        if (!Object.prototype.hasOwnProperty.call(draft, k))
+          continue;
         const r = call("setConfig", k, String(draft[k] ?? ""));
         if (!r.ok)
           ok = false;
@@ -211,7 +231,7 @@
       },
       /* @__PURE__ */ h("div", { style: vuStyle }),
       rec ? "\u677E\u5F00\u53D1\u9001" : "\u6309\u4F4F\u8BF4\u8BDD"
-    ), !compact && /* @__PURE__ */ h("div", { onPointerDown: () => setCfgMode(true), style: { fontSize: 11, color: "#e2e8f0", backgroundColor: "#334155", padding: "6 10", borderRadius: 6 } }, "\u914D\u7F6E")), !compact && last && /* @__PURE__ */ h("div", { style: { marginTop: 8, padding: 6, borderWidth: 1, borderColor: "#1e293b", borderRadius: 6 } }, /* @__PURE__ */ h("div", { style: { fontSize: 10, color: "#93c5fd", marginBottom: 2 } }, `[${last.EmotionTag || "Think"}]`), /* @__PURE__ */ h("div", { style: { fontSize: 11, color: "#e2e8f0", marginBottom: 2 } }, last.VoiceText || ""), /* @__PURE__ */ h("div", { style: { fontSize: 11, color: "#cbd5e1" } }, last.SubtitleText || "")));
+    ), !compact && /* @__PURE__ */ h("div", { onPointerDown: openConfig, style: { fontSize: 11, color: "#e2e8f0", backgroundColor: "#334155", padding: "6 10", borderRadius: 6 } }, "\u914D\u7F6E")), !compact && last && /* @__PURE__ */ h("div", { style: { marginTop: 8, padding: 6, borderWidth: 1, borderColor: "#1e293b", borderRadius: 6 } }, /* @__PURE__ */ h("div", { style: { fontSize: 10, color: "#93c5fd", marginBottom: 2 } }, `[${last.EmotionTag || "Think"}]`), /* @__PURE__ */ h("div", { style: { fontSize: 11, color: "#e2e8f0", marginBottom: 2 } }, last.VoiceText || ""), /* @__PURE__ */ h("div", { style: { fontSize: 11, color: "#cbd5e1" } }, last.SubtitleText || "")));
   };
   __registerPlugin({
     id: "aichat",

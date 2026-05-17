@@ -12,10 +12,12 @@ const groups: Record<string, string[]> = {
   "4. Persona": ["ExperimentalMemory","SystemPrompt"],
 }
 const multilineKeys = new Set(["Audio_File_Text", "SystemPrompt"])
+const allConfigKeys = Object.values(groups).flat()
 
 const call = (name: string, ...args: any[]) => JSON.parse(chill.aichat[name](...args))
 const loadCfg = (): KV => JSON.parse(chill.aichat.getAllConfig() || "{}")
 const loadDefaults = (): KV => JSON.parse(chill.aichat.getAllConfigDefaults() || "{}")
+const hasConfigValues = (cfg: KV) => allConfigKeys.some(k => Object.prototype.hasOwnProperty.call(cfg, k))
 
 const fieldEstimatedHeight = (k:string) => !multilineKeys.has(k) ? 52 : (k === "SystemPrompt" ? 320 : 210)
 
@@ -152,9 +154,29 @@ const ChatPanel = ({compact=false}:{compact?:boolean}) => {
   const send = ()=>{ if (!prompt.trim()) return; const r = call("startTextConversation",prompt,"wm-plugin"); if (r.ok) setPrompt("") }
   const micDown = ()=>{ const r = call("startVoiceCapture"); if (r.ok) setRec(true) }
   const micUp = ()=>{ const r = call("stopVoiceCaptureAndSend","wm-plugin"); setRec(false); if (!r.ok) console.log(r.error) }
+  const openConfig = ()=>{
+    const cfg = loadCfg()
+    const def = loadDefaults()
+    setStatus(JSON.parse(chill.aichat.getStatus()))
+    setDraft(cfg)
+    setDefaults(def)
+    if (!hasConfigValues(cfg)) {
+      console.log("AIChat 配置读取为空，取消打开配置页")
+      return
+    }
+    setCfgMode(true)
+  }
   const save = ()=>{
+    if (!hasConfigValues(draft)) {
+      console.log("AIChat 配置为空，已阻止保存")
+      return
+    }
     let ok = true
-    for (const k of Object.keys(draft)) { const r = call("setConfig",k,String(draft[k] ?? "")); if (!r.ok) ok = false }
+    for (const k of allConfigKeys) {
+      if (!Object.prototype.hasOwnProperty.call(draft, k)) continue
+      const r = call("setConfig",k,String(draft[k] ?? ""))
+      if (!r.ok) ok = false
+    }
     const rs = call("saveConfig"); setCfgMode(false); setStatus(JSON.parse(chill.aichat.getStatus())); if (!ok || !rs.ok) console.log("保存失败")
   }
 
@@ -170,7 +192,7 @@ const ChatPanel = ({compact=false}:{compact?:boolean}) => {
       <div onPointerDown={send} style={{fontSize:11,color:"#111827",backgroundColor:"#93c5fd",padding:"6 10",borderRadius:6,marginRight:6}}>发送</div>
       <div onPointerDown={micDown} onPointerUp={micUp} onPointerLeave={micUp}
         style={{fontSize:11,color:rec?"#fff":"#e2e8f0",backgroundColor:rec?"#ef4444":"#334155",padding:"6 10",borderRadius:6,marginRight:6,display:"Flex",flexDirection:"Row",alignItems:"Center"}}><div style={vuStyle} />{rec?"松开发送":"按住说话"}</div>
-      {!compact && <div onPointerDown={()=>setCfgMode(true)} style={{fontSize:11,color:"#e2e8f0",backgroundColor:"#334155",padding:"6 10",borderRadius:6}}>配置</div>}
+      {!compact && <div onPointerDown={openConfig} style={{fontSize:11,color:"#e2e8f0",backgroundColor:"#334155",padding:"6 10",borderRadius:6}}>配置</div>}
     </div>
     {!compact && last && <div style={{marginTop:8,padding:6,borderWidth:1,borderColor:"#1e293b",borderRadius:6}}>
       <div style={{fontSize:10,color:"#93c5fd",marginBottom:2}}>{`[${last.EmotionTag || "Think"}]`}</div>
