@@ -378,15 +378,18 @@ namespace ChillPatcher.Integration
 
             try
             {
-                var valueProp = entry.GetType().GetProperty("Value", BindingFlags.Instance | BindingFlags.Public);
-                if (valueProp == null || !valueProp.CanWrite)
+                var boxedValueProp = entry.GetType().GetProperty("BoxedValue", BindingFlags.Instance | BindingFlags.Public);
+                var settingTypeProp = entry.GetType().GetProperty("SettingType", BindingFlags.Instance | BindingFlags.Public);
+                var settingType = settingTypeProp?.GetValue(entry, null) as Type;
+                if (boxedValueProp == null || !boxedValueProp.CanWrite || settingType == null)
                 {
                     error = $"config entry is readonly: {key}";
                     return false;
                 }
 
-                var converted = ConvertConfigValue(value, valueProp.PropertyType);
-                valueProp.SetValue(entry, converted, null);
+                var converted = ConvertConfigValue(value, settingType);
+                boxedValueProp.SetValue(entry, converted, null);
+                TrySaveConfigEntryFile(entry, out _);
                 return true;
             }
             catch (Exception ex)
@@ -411,17 +414,32 @@ namespace ChillPatcher.Integration
         private static bool TrySaveBepInExConfig(object instance, out string error)
         {
             error = string.Empty;
+            foreach (var pair in ConfigFields)
+            {
+                if (TryGetConfigEntry(instance, pair.Key, out var entry)
+                    && TrySaveConfigEntryFile(entry, out error))
+                {
+                    return true;
+                }
+            }
+
+            error = string.IsNullOrEmpty(error) ? "AIChat config entry not found" : error;
+            return false;
+        }
+
+        private static bool TrySaveConfigEntryFile(object entry, out string error)
+        {
+            error = string.Empty;
             try
             {
-                var config = instance.GetType().GetProperty("Config", BindingFlags.Instance | BindingFlags.Public)
-                    ?.GetValue(instance, null);
+                var configFileProp = entry.GetType().GetProperty("ConfigFile", BindingFlags.Instance | BindingFlags.Public);
+                var config = configFileProp?.GetValue(entry, null);
                 var save = config?.GetType().GetMethod("Save", BindingFlags.Instance | BindingFlags.Public);
                 if (save == null)
                 {
-                    error = "BepInEx Config.Save not found";
+                    error = "ConfigEntry.ConfigFile.Save not found";
                     return false;
                 }
-
                 save.Invoke(config, null);
                 return true;
             }
