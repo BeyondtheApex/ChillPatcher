@@ -1,5 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Windows.Automation;
 using OneJS;
 using OneJS.Dom;
 using UnityEngine;
@@ -36,6 +40,49 @@ namespace ChillPatcher
         /// <summary>当前帧是否正在拦截 UGUI</summary>
         public static bool IsBlocking { get; private set; }
 
+        /// <summary>当前鼠标按压是否从桌面图标/项目开始</summary>
+        public static bool IsDesktopItemBlocking { get; private set; }
+
+        /// <summary>是否应该清空本帧 Unity UI raycast 结果</summary>
+        public static bool ShouldClearUnityRaycasts => IsBlocking || IsDesktopItemBlocking;
+
+        /// <summary>是否应阻止游戏场景侧鼠标互动</summary>
+        public static bool ShouldBlockGameSceneMouse()
+        {
+            return UpdateDesktopItemCapture();
+        }
+
+        private static bool _wasMouseDown;
+        private static bool _desktopItemCaptureActive;
+
+        private static readonly HashSet<string> DesktopForegroundClasses = new HashSet<string>
+        {
+            "Progman",
+            "WorkerW",
+            "SHELLDLL_DefView",
+            "SysListView32",
+        };
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int x;
+            public int y;
+        }
+
         /// <summary>
         /// 每帧在 EventSystem.Update 之前调用。
         /// 检测鼠标是否在 UIToolkit 可交互元素上，设置 IsBlocking 标志。
@@ -43,6 +90,7 @@ namespace ChillPatcher
         public static void Update()
         {
             IsBlocking = false;
+            IsDesktopItemBlocking = UpdateDesktopItemCapture();
 
             if (!OneJSBridge.IsInitialized)
                 return;
@@ -75,9 +123,74 @@ namespace ChillPatcher
                 if (HasInteractiveAncestor(picked, rootVE, document, out _))
                 {
                     IsBlocking = true;
+                    IsDesktopItemBlocking = false;
                     break;
                 }
             }
+        }
+
+        private static bool UpdateDesktopItemCapture()
+        {
+            if (!PluginConfig.EnableWallpaperEngineMode.Value)
+                return false;
+
+            bool mouseDown = IsPrimaryMouseDown();
+            if (!mouseDown)
+            {
+                _wasMouseDown = false;
+                _desktopItemCaptureActive = false;
+                return false;
+            }
+
+            if (!_wasMouseDown)
+            {
+                _desktopItemCaptureActive =
+                    IsDesktopForegroundWindow(GetForegroundWindow())
+                    && IsDesktopListItemUnderCursor();
+            }
+
+            _wasMouseDown = true;
+            return _desktopItemCaptureActive;
+        }
+
+        private static bool IsPrimaryMouseDown()
+        {
+            return (GetAsyncKeyState(0x01) & 0x8000) != 0;
+        }
+
+        private static bool IsDesktopForegroundWindow(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero)
+                return false;
+
+            return DesktopForegroundClasses.Contains(GetWindowClassName(hWnd));
+        }
+
+        private static bool IsDesktopListItemUnderCursor()
+        {
+            if (!GetCursorPos(out var point))
+                return false;
+
+            try
+            {
+                var element = AutomationElement.FromPoint(
+                    new System.Windows.Point(point.x, point.y));
+                if (element == null)
+                    return false;
+
+                return element.Current.ControlType == ControlType.ListItem;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string GetWindowClassName(IntPtr hWnd)
+        {
+            var className = new StringBuilder(256);
+            GetClassName(hWnd, className, className.Capacity);
+            return className.ToString();
         }
 
         #region DOM 交互检测

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BepInEx.Logging;
 using ChillPatcher.Patches;
 using UnityEngine;
@@ -15,8 +16,19 @@ namespace ChillPatcher
     {
         private static ManualLogSource _log;
 
+        private static volatile bool _isUIToolkitTextFieldFocused;
+        private static volatile bool _isTMPInputFieldFocused;
+        private static readonly object _tmpFocusLock = new object();
+        private static readonly HashSet<int> _focusedTMPInputFields = new HashSet<int>();
+
         /// <summary>当前帧是否有 UIToolkit TextField 获焦</summary>
-        public static bool IsUIToolkitTextFieldFocused { get; private set; }
+        public static bool IsUIToolkitTextFieldFocused => _isUIToolkitTextFieldFocused;
+
+        /// <summary>当前是否有 UGUI TMP_InputField 获焦</summary>
+        public static bool IsTMPInputFieldFocused => _isTMPInputFieldFocused;
+
+        /// <summary>是否有 ChillPatcher 输入控件需要接收全局键盘钩子输入</summary>
+        public static bool HasFocusedInputTarget => _isUIToolkitTextFieldFocused || _isTMPInputFieldFocused;
 
         /// <summary>Rime Context 变化事件（主线程触发，JSON 数据或 "null"）</summary>
         public static event Action<string, string> OnImeContextChanged;
@@ -49,6 +61,22 @@ namespace ChillPatcher
         {
             if (_positionLocked) return;
             _lastTMPScreenRect = screenRect;
+        }
+
+        /// <summary>
+        /// 由 TMP_InputField_LateUpdate_Patch 每帧报告焦点状态，避免失焦后留下陈旧 true。
+        /// </summary>
+        public static void ReportTMPInputFieldFocus(int instanceId, bool focused)
+        {
+            lock (_tmpFocusLock)
+            {
+                if (focused)
+                    _focusedTMPInputFields.Add(instanceId);
+                else
+                    _focusedTMPInputFields.Remove(instanceId);
+
+                _isTMPInputFieldFocused = _focusedTMPInputFields.Count > 0;
+            }
         }
 
         /// <summary>
@@ -125,7 +153,7 @@ namespace ChillPatcher
         /// </summary>
         public static void Tick()
         {
-            IsUIToolkitTextFieldFocused = false;
+            _isUIToolkitTextFieldFocused = false;
             _currentFocusedTextField = null;
 
             if (!OneJSBridge.IsInitialized) return;
@@ -143,7 +171,7 @@ namespace ChillPatcher
                 var tf = FindTextField(focused);
                 if (tf != null)
                 {
-                    IsUIToolkitTextFieldFocused = true;
+                    _isUIToolkitTextFieldFocused = true;
                     _currentFocusedTextField = tf;
 
                     // 缓存 TextField 的面板坐标（preedit 锁定期间不更新）
