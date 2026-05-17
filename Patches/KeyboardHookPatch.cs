@@ -419,7 +419,13 @@ namespace ChillPatcher.Patches
                         return (IntPtr)1; // 拦截 F6
                     }
 
-                    // Ctrl 组合键（剪贴板操作）—— 与模式无关，仅在 UIToolkit TextField 获焦时拦截
+                    // 桌面模式：尽早放行所有按键，让系统和桌面应用完整接收键盘事件。
+                    if (!isGameMode)
+                    {
+                        return CallNextHookEx(hookId, nCode, wParam, lParam);
+                    }
+
+                    // Ctrl 组合键（剪贴板操作）—— 仅在 UIToolkit TextField 获焦时拦截
                     if (_ctrlHeld && UIToolkitInputDispatcher.IsUIToolkitTextFieldFocused)
                     {
                         if (vkCode == 0x56) // Ctrl+V: 粘贴
@@ -452,17 +458,18 @@ namespace ChillPatcher.Patches
                         }
                     }
 
-                    // 桌面模式：不拦截任何输入，让系统处理
-                    if (!isGameMode)
-                    {
-                        return CallNextHookEx(hookId, nCode, wParam, lParam);
-                    }
-
                     // 游戏模式：检测是否在桌面（只在桌面激活时拦截输入到游戏）
                     bool isDesktop = IsDesktopActive();
 
                     if (isDesktop)
                     {
+                        // 只有游戏内输入控件真正获焦时才捕获桌面键盘事件。
+                        // 否则桌面文件重命名、搜索框、快捷键等会被低级钩子吞掉。
+                        if (!UIToolkitInputDispatcher.HasFocusedInputTarget)
+                        {
+                            return CallNextHookEx(hookId, nCode, wParam, lParam);
+                        }
+
                         if (useRime && rimeEngine != null)
                         {
                             // 使用Rime处理输入
@@ -926,6 +933,9 @@ namespace ChillPatcher.Patches
             {
                 inputQueue.Clear();
                 commitQueue.Clear();
+                navigationKeyQueue.Clear();
+                clipActionQueue.Clear();
+                _pendingPasteText = null;
             }
         }
         
@@ -1117,12 +1127,13 @@ namespace ChillPatcher.Patches
         {
             try
             {
+                int instanceId = __instance.GetInstanceID();
+                UIToolkitInputDispatcher.ReportTMPInputFieldFocus(instanceId, __instance.isFocused);
+
                 // UIToolkit TextField 获焦时，队列已被 UIToolkitInputDispatcher 消费，跳过 TMP 注入
                 if (UIToolkitInputDispatcher.IsUIToolkitTextFieldFocused)
                     return;
 
-                int instanceId = __instance.GetInstanceID();
-                
                 // 只在输入框激活且获得焦点时注入
                 if (!__instance.isFocused)
                 {

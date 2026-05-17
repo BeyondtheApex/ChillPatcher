@@ -402,8 +402,8 @@ namespace ChillPatcher.Integration
                     // 检查文件名是否匹配任一 pattern（不含扩展名对比）
                     var nameNoExt = Path.GetFileNameWithoutExtension(fileName);
                     bool match = patterns.Any(p =>
-                        fileName.Contains(p, StringComparison.OrdinalIgnoreCase)
-                        || nameNoExt.Contains(p, StringComparison.OrdinalIgnoreCase));
+                        fileName.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0
+                        || nameNoExt.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0);
                     if (!match) continue;
                 }
 
