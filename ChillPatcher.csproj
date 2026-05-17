@@ -33,6 +33,9 @@
     <Compile Remove="ChillPatcher.Module.LocalFolder\**" />
     <EmbeddedResource Remove="ChillPatcher.Module.LocalFolder\**" />
     <None Remove="ChillPatcher.Module.LocalFolder\**" />
+    <Compile Remove="ChillPatcher.Module.LocalIntegration\**" />
+    <EmbeddedResource Remove="ChillPatcher.Module.LocalIntegration\**" />
+    <None Remove="ChillPatcher.Module.LocalIntegration\**" />
     <!-- Exclude Netease module sources (built separately) -->
     <Compile Remove="ChillPatcher.Module.Netease\**" />
     <EmbeddedResource Remove="ChillPatcher.Module.Netease\**" />
