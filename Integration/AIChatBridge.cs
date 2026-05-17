@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using BepInEx.Bootstrap;
 
@@ -10,6 +11,34 @@ namespace ChillPatcher.Integration
         private const string AiChatGuid = "com.username.chillaimod";
         private static readonly Dictionary<Action<Dictionary<string, string>>, Delegate> EventHandlers =
             new Dictionary<Action<Dictionary<string, string>>, Delegate>();
+
+        private static readonly Dictionary<string, string> ConfigFields =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Use_Ollama_API"] = "_useOllama",
+                ["ThinkMode"] = "_thinkModeConfig",
+                ["API_URL"] = "_chatApiUrlConfig",
+                ["API_Key"] = "_apiKeyConfig",
+                ["ModelName"] = "_modelConfig",
+                ["LogApiRequestBody"] = "_logApiRequestBodyConfig",
+                ["FixApiPathForThinkMode"] = "_fixApiPathForThinkModeConfig",
+                ["TTS_Service_URL"] = "_sovitsUrlConfig",
+                ["TTS_Service_Script_Path"] = "_TTSServicePathConfig",
+                ["LaunchTTSService"] = "_LaunchTTSServiceConfig",
+                ["QuitTTSServiceOnQuit"] = "_quitTTSServiceOnQuitConfig",
+                ["Audio_File_Path"] = "_refAudioPathConfig",
+                ["AudioPathCheck"] = "_audioPathCheckConfig",
+                ["Audio_File_Text"] = "_promptTextConfig",
+                ["PromptLang"] = "_promptLangConfig",
+                ["TargetLang"] = "_targetLangConfig",
+                ["JapaneseCheck"] = "_japaneseCheckConfig",
+                ["VoiceVolume"] = "_voiceVolumeConfig",
+                ["WindowWidth"] = "_windowWidthConfig",
+                ["WindowHeightBase"] = "_windowHeightConfig",
+                ["ReverseEnterBehavior"] = "_reverseEnterBehaviorConfig",
+                ["ExperimentalMemory"] = "_experimentalMemoryConfig",
+                ["SystemPrompt"] = "_personaConfig",
+            };
 
         public static bool IsAvailable => GetAiChatInstance() != null;
 
@@ -93,12 +122,14 @@ namespace ChillPatcher.Integration
             try
             {
                 var method = instance.GetType().GetMethod("GetAllConfigValues", BindingFlags.Instance | BindingFlags.Public);
-                return method?.Invoke(instance, null) as Dictionary<string, string> ?? new Dictionary<string, string>();
+                var values = method?.Invoke(instance, null) as Dictionary<string, string>;
+                if (values != null) return values;
             }
             catch
             {
-                return new Dictionary<string, string>();
             }
+
+            return GetConfigEntryValues(instance, defaultValues: false);
         }
 
         public static Dictionary<string, string> GetAllConfigDefaultValues()
@@ -109,12 +140,14 @@ namespace ChillPatcher.Integration
             try
             {
                 var method = instance.GetType().GetMethod("GetAllConfigDefaultValues", BindingFlags.Instance | BindingFlags.Public);
-                return method?.Invoke(instance, null) as Dictionary<string, string> ?? new Dictionary<string, string>();
+                var values = method?.Invoke(instance, null) as Dictionary<string, string>;
+                if (values != null) return values;
             }
             catch
             {
-                return new Dictionary<string, string>();
             }
+
+            return GetConfigEntryValues(instance, defaultValues: true);
         }
 
         public static string GetConfigValue(string key)
@@ -125,12 +158,16 @@ namespace ChillPatcher.Integration
             try
             {
                 var method = instance.GetType().GetMethod("GetConfigValue", BindingFlags.Instance | BindingFlags.Public);
-                return method?.Invoke(instance, new object[] { key }) as string;
+                var value = method?.Invoke(instance, new object[] { key }) as string;
+                if (value != null) return value;
             }
             catch
             {
-                return null;
             }
+
+            return TryGetConfigEntry(instance, key, out var entry)
+                ? GetConfigEntryString(entry, defaultValue: false)
+                : null;
         }
 
         public static bool TrySetConfigValue(string key, string value, out string error)
@@ -143,11 +180,14 @@ namespace ChillPatcher.Integration
                 return false;
             }
 
-            return TryInvokeBoolWithError(
+            var ok = TryInvokeBoolWithError(
                 instance,
                 "TrySetConfigValue",
                 new object[] { key, value, null },
                 out error);
+            if (ok) return true;
+
+            return TrySetConfigEntryValue(instance, key, value, out error);
         }
 
         public static bool TrySaveConfig(out string error)
@@ -160,7 +200,10 @@ namespace ChillPatcher.Integration
                 return false;
             }
 
-            return TryInvokeBoolWithError(instance, "TrySaveConfig", new object[] { null }, out error);
+            var ok = TryInvokeBoolWithError(instance, "TrySaveConfig", new object[] { null }, out error);
+            if (ok) return true;
+
+            return TrySaveBepInExConfig(instance, out error);
         }
 
         public static bool SetConsoleVisible(bool visible, out string error)
@@ -289,6 +332,116 @@ namespace ChillPatcher.Integration
         {
             if (!Chainloader.PluginInfos.TryGetValue(AiChatGuid, out var pluginInfo)) return null;
             return pluginInfo?.Instance;
+        }
+
+        private static Dictionary<string, string> GetConfigEntryValues(object instance, bool defaultValues)
+        {
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in ConfigFields)
+            {
+                if (TryGetConfigEntry(instance, pair.Key, out var entry))
+                {
+                    values[pair.Key] = GetConfigEntryString(entry, defaultValues) ?? string.Empty;
+                }
+            }
+            return values;
+        }
+
+        private static bool TryGetConfigEntry(object instance, string key, out object entry)
+        {
+            entry = null;
+            if (instance == null || string.IsNullOrWhiteSpace(key)) return false;
+            if (!ConfigFields.TryGetValue(key, out var fieldName)) return false;
+
+            entry = GetFieldValue(instance, fieldName);
+            return entry != null;
+        }
+
+        private static string GetConfigEntryString(object entry, bool defaultValue)
+        {
+            if (entry == null) return null;
+
+            var propertyName = defaultValue ? "DefaultValue" : "Value";
+            var prop = entry.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+            var value = prop?.GetValue(entry, null);
+            return value?.ToString();
+        }
+
+        private static bool TrySetConfigEntryValue(object instance, string key, string value, out string error)
+        {
+            error = string.Empty;
+            if (!TryGetConfigEntry(instance, key, out var entry))
+            {
+                error = $"config key not found: {key}";
+                return false;
+            }
+
+            try
+            {
+                var valueProp = entry.GetType().GetProperty("Value", BindingFlags.Instance | BindingFlags.Public);
+                if (valueProp == null || !valueProp.CanWrite)
+                {
+                    error = $"config entry is readonly: {key}";
+                    return false;
+                }
+
+                var converted = ConvertConfigValue(value, valueProp.PropertyType);
+                valueProp.SetValue(entry, converted, null);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static object ConvertConfigValue(string value, Type targetType)
+        {
+            if (targetType == typeof(string)) return value ?? string.Empty;
+            if (targetType == typeof(bool)) return bool.Parse(value ?? "false");
+            if (targetType == typeof(float)) return float.Parse(value ?? "0", CultureInfo.InvariantCulture);
+            if (targetType == typeof(double)) return double.Parse(value ?? "0", CultureInfo.InvariantCulture);
+            if (targetType == typeof(int)) return int.Parse(value ?? "0", CultureInfo.InvariantCulture);
+            if (targetType.IsEnum) return Enum.Parse(targetType, value ?? string.Empty, ignoreCase: true);
+
+            return Convert.ChangeType(value, targetType, CultureInfo.InvariantCulture);
+        }
+
+        private static bool TrySaveBepInExConfig(object instance, out string error)
+        {
+            error = string.Empty;
+            try
+            {
+                var config = instance.GetType().GetProperty("Config", BindingFlags.Instance | BindingFlags.Public)
+                    ?.GetValue(instance, null);
+                var save = config?.GetType().GetMethod("Save", BindingFlags.Instance | BindingFlags.Public);
+                if (save == null)
+                {
+                    error = "BepInEx Config.Save not found";
+                    return false;
+                }
+
+                save.Invoke(config, null);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static object GetFieldValue(object instance, string fieldName)
+        {
+            var type = instance.GetType();
+            while (type != null)
+            {
+                var field = type.GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                if (field != null) return field.GetValue(instance);
+                type = type.BaseType;
+            }
+            return null;
         }
 
         private static string GetStringProperty(string propertyName)
