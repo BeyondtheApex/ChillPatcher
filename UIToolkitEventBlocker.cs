@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using OneJS;
 using OneJS.Dom;
 using UnityEngine;
@@ -36,6 +39,124 @@ namespace ChillPatcher
         /// <summary>当前帧是否正在拦截 UGUI</summary>
         public static bool IsBlocking { get; private set; }
 
+        /// <summary>当前鼠标按压是否从桌面图标/项目开始</summary>
+        public static bool IsDesktopItemBlocking { get; private set; }
+
+        /// <summary>是否应该清空本帧 Unity UI raycast 结果</summary>
+        public static bool ShouldClearUnityRaycasts => IsBlocking || IsDesktopItemBlocking;
+
+        /// <summary>是否应阻止游戏场景侧鼠标互动</summary>
+        public static bool ShouldBlockGameSceneMouse()
+        {
+            return UpdateDesktopItemCapture();
+        }
+
+        private static bool _wasMouseDown;
+        private static bool _desktopItemCaptureActive;
+        private static POINT _mouseDownPoint;
+        private const int DesktopDragReleaseThresholdPixels = 6;
+
+        private static readonly HashSet<string> DesktopForegroundClasses = new HashSet<string>
+        {
+            "Progman",
+            "WorkerW",
+            "SHELLDLL_DefView",
+            "SysListView32",
+        };
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter,
+            string lpszClass, string lpszWindow);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(int dwDesiredAccess,
+            [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress,
+            int dwSize, int flAllocationType, int flProtect);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool VirtualFreeEx(IntPtr hProcess, IntPtr lpAddress,
+            int dwSize, int dwFreeType);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress,
+            byte[] lpBuffer, int nSize, out IntPtr lpNumberOfBytesWritten);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress,
+            byte[] lpBuffer, int nSize, out IntPtr lpNumberOfBytesRead);
+
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        private const int LVM_FIRST = 0x1000;
+        private const int LVM_HITTEST = LVM_FIRST + 18;
+        private const int LVHT_ONITEMICON = 0x0002;
+        private const int LVHT_ONITEMLABEL = 0x0004;
+        private const int LVHT_ONITEMSTATEICON = 0x0008;
+        private const int LVHT_ONITEM = LVHT_ONITEMICON | LVHT_ONITEMLABEL | LVHT_ONITEMSTATEICON;
+
+        private const int PROCESS_QUERY_INFORMATION = 0x0400;
+        private const int PROCESS_VM_OPERATION = 0x0008;
+        private const int PROCESS_VM_READ = 0x0010;
+        private const int PROCESS_VM_WRITE = 0x0020;
+        private const int DESKTOP_LISTVIEW_PROCESS_ACCESS =
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE;
+
+        private const int MEM_COMMIT = 0x1000;
+        private const int MEM_RESERVE = 0x2000;
+        private const int MEM_RELEASE = 0x8000;
+        private const int PAGE_READWRITE = 0x04;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int x;
+            public int y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LVHITTESTINFO
+        {
+            public POINT pt;
+            public int flags;
+            public int iItem;
+            public int iSubItem;
+            public int iGroup;
+        }
+
         /// <summary>
         /// 每帧在 EventSystem.Update 之前调用。
         /// 检测鼠标是否在 UIToolkit 可交互元素上，设置 IsBlocking 标志。
@@ -43,6 +164,7 @@ namespace ChillPatcher
         public static void Update()
         {
             IsBlocking = false;
+            IsDesktopItemBlocking = UpdateDesktopItemCapture();
 
             if (!OneJSBridge.IsInitialized)
                 return;
@@ -75,9 +197,200 @@ namespace ChillPatcher
                 if (HasInteractiveAncestor(picked, rootVE, document, out _))
                 {
                     IsBlocking = true;
-                    break;
+                    IsDesktopItemBlocking = false;
+                    return;
                 }
             }
+        }
+
+        private static bool UpdateDesktopItemCapture()
+        {
+            if (!PluginConfig.EnableWallpaperEngineMode.Value)
+                return false;
+
+            bool mouseDown = IsPrimaryMouseDown();
+            if (!mouseDown)
+            {
+                _wasMouseDown = false;
+                _desktopItemCaptureActive = false;
+                return false;
+            }
+
+            if (!_wasMouseDown)
+            {
+                if (!GetCursorPos(out _mouseDownPoint))
+                    _mouseDownPoint = default;
+
+                _desktopItemCaptureActive =
+                    IsDesktopForegroundWindow(GetForegroundWindow())
+                    && IsDesktopListItemUnderCursor();
+            }
+            else if (_desktopItemCaptureActive && HasMouseMovedPastDesktopDragThreshold())
+            {
+                _desktopItemCaptureActive = false;
+            }
+
+            _wasMouseDown = true;
+            return _desktopItemCaptureActive;
+        }
+
+        private static bool IsPrimaryMouseDown()
+        {
+            return (GetAsyncKeyState(0x01) & 0x8000) != 0;
+        }
+
+        private static bool HasMouseMovedPastDesktopDragThreshold()
+        {
+            if (!GetCursorPos(out var currentPoint))
+                return false;
+
+            int dx = currentPoint.x - _mouseDownPoint.x;
+            int dy = currentPoint.y - _mouseDownPoint.y;
+            int threshold = DesktopDragReleaseThresholdPixels;
+            return dx * dx + dy * dy > threshold * threshold;
+        }
+
+        public static bool IsDesktopForegroundActive()
+        {
+            return IsDesktopForegroundWindow(GetForegroundWindow());
+        }
+
+        private static bool IsDesktopForegroundWindow(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero)
+                return false;
+
+            return DesktopForegroundClasses.Contains(GetWindowClassName(hWnd));
+        }
+
+        public static bool IsDesktopListItemUnderCursor()
+        {
+            if (!GetCursorPos(out var screenPoint))
+                return false;
+
+            var listView = FindDesktopListViewWindow();
+            if (listView == IntPtr.Zero)
+                return false;
+
+            var clientPoint = screenPoint;
+            if (!ScreenToClient(listView, ref clientPoint))
+                return false;
+
+            return TryDesktopListViewHitTest(listView, clientPoint, out var hit)
+                && hit.iItem >= 0
+                && (hit.flags & LVHT_ONITEM) != 0;
+        }
+
+        public static IntPtr GetDesktopListViewWindow()
+        {
+            return FindDesktopListViewWindow();
+        }
+
+        private static IntPtr FindDesktopListViewWindow()
+        {
+            var progman = FindWindow("Progman", null);
+            var listView = FindDesktopListViewWindowIn(progman);
+            if (listView != IntPtr.Zero)
+                return listView;
+
+            var worker = IntPtr.Zero;
+            while ((worker = FindWindowEx(IntPtr.Zero, worker, "WorkerW", null)) != IntPtr.Zero)
+            {
+                listView = FindDesktopListViewWindowIn(worker);
+                if (listView != IntPtr.Zero)
+                    return listView;
+            }
+
+            return IntPtr.Zero;
+        }
+
+        private static IntPtr FindDesktopListViewWindowIn(IntPtr parent)
+        {
+            if (parent == IntPtr.Zero)
+                return IntPtr.Zero;
+
+            var defView = FindWindowEx(parent, IntPtr.Zero, "SHELLDLL_DefView", null);
+            if (defView == IntPtr.Zero)
+                return IntPtr.Zero;
+
+            return FindWindowEx(defView, IntPtr.Zero, "SysListView32", null);
+        }
+
+        private static bool TryDesktopListViewHitTest(IntPtr listView, POINT clientPoint,
+            out LVHITTESTINFO hit)
+        {
+            hit = new LVHITTESTINFO
+            {
+                pt = clientPoint,
+                flags = 0,
+                iItem = -1,
+                iSubItem = 0,
+                iGroup = 0,
+            };
+
+            GetWindowThreadProcessId(listView, out var processId);
+            if (processId == 0)
+                return false;
+
+            var process = OpenProcess(DESKTOP_LISTVIEW_PROCESS_ACCESS, false, processId);
+            if (process == IntPtr.Zero)
+                return false;
+
+            var size = Marshal.SizeOf(typeof(LVHITTESTINFO));
+            var remoteBuffer = IntPtr.Zero;
+            var localBuffer = IntPtr.Zero;
+
+            try
+            {
+                remoteBuffer = VirtualAllocEx(process, IntPtr.Zero, size,
+                    MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                if (remoteBuffer == IntPtr.Zero)
+                    return false;
+
+                localBuffer = Marshal.AllocHGlobal(size);
+                Marshal.StructureToPtr(hit, localBuffer, false);
+
+                var bytes = new byte[size];
+                Marshal.Copy(localBuffer, bytes, 0, size);
+
+                if (!WriteProcessMemory(process, remoteBuffer, bytes, size, out var written)
+                    || written.ToInt64() != size)
+                {
+                    return false;
+                }
+
+                SendMessage(listView, LVM_HITTEST, IntPtr.Zero, remoteBuffer);
+
+                var result = new byte[size];
+                if (!ReadProcessMemory(process, remoteBuffer, result, size, out var read)
+                    || read.ToInt64() != size)
+                {
+                    return false;
+                }
+
+                Marshal.Copy(result, 0, localBuffer, size);
+                hit = (LVHITTESTINFO)Marshal.PtrToStructure(localBuffer, typeof(LVHITTESTINFO));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (localBuffer != IntPtr.Zero)
+                    Marshal.FreeHGlobal(localBuffer);
+                if (remoteBuffer != IntPtr.Zero)
+                    VirtualFreeEx(process, remoteBuffer, 0, MEM_RELEASE);
+                CloseHandle(process);
+            }
+        }
+
+        private static string GetWindowClassName(IntPtr hWnd)
+        {
+            var className = new StringBuilder(256);
+            GetClassName(hWnd, className, className.Capacity);
+            return className.ToString();
         }
 
         #region DOM 交互检测
