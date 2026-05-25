@@ -62,6 +62,17 @@ namespace ChillPatcher.SDK.Events
     }
 
     /// <summary>
+    /// 歌曲资源释放事件（文件锁已释放，可安全写入）
+    /// </summary>
+    public class MusicResourcesReleasedEvent : ModuleEventBase
+    {
+        /// <summary>
+        /// 被释放的歌曲信息
+        /// </summary>
+        public MusicInfo Music { get; set; }
+    }
+
+    /// <summary>
     /// 播放暂停事件
     /// </summary>
     public class PlayPausedEvent : ModuleEventBase

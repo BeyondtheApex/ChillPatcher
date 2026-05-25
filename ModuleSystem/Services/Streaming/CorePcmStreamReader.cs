@@ -24,10 +24,10 @@ namespace ChillPatcher.ModuleSystem.Services.Streaming
             BepInEx.Logging.Logger.CreateLogSource("CoreStreamReader");
 
         // 配置
-        private readonly string _url;
-        private readonly string _format;
-        private readonly float _durationHint;
-        private readonly Dictionary<string, string> _headers;
+        private string _url;
+        private string _format;
+        private float _durationHint;
+        private Dictionary<string, string> _headers;
 
         // 组件
         private HttpAudioCache _cache;
@@ -74,6 +74,38 @@ namespace ChillPatcher.ModuleSystem.Services.Streaming
             float durationSeconds, string cacheKey,
             Dictionary<string, string> headers = null)
         {
+            var cachePath = System.IO.Path.Combine(
+                HttpAudioCache.GetCacheDirectory(),
+                $"{cacheKey}.{format.ToLowerInvariant()}");
+
+            Init(url, format, durationSeconds, cachePath, headers);
+        }
+
+        /// <summary>
+        /// 构造函数（指定完整缓存路径）
+        /// </summary>
+        /// <param name="url">音频 URL</param>
+        /// <param name="format">格式: "mp3", "flac", "wav"</param>
+        /// <param name="durationSeconds">预估时长 (秒), 用于计算 TotalFrames</param>
+        /// <param name="cachePath">完整缓存文件路径</param>
+        /// <param name="headers">HTTP 头</param>
+        /// <param name="useCachePath">消歧义参数, 始终传 true</param>
+        public CorePcmStreamReader(string url, string format,
+            float durationSeconds, string cachePath,
+            Dictionary<string, string> headers,
+            bool useCachePath)
+        {
+            var dir = System.IO.Path.GetDirectoryName(cachePath);
+            if (!string.IsNullOrEmpty(dir))
+                System.IO.Directory.CreateDirectory(dir);
+
+            Init(url, format, durationSeconds, cachePath, headers);
+        }
+
+        private void Init(string url, string format,
+            float durationSeconds, string cachePath,
+            Dictionary<string, string> headers)
+        {
             _url = url;
             _format = format.ToLowerInvariant();
             _durationHint = durationSeconds;
@@ -88,11 +120,6 @@ namespace ChillPatcher.ModuleSystem.Services.Streaming
                 Format = _format,
                 CanSeek = false
             };
-
-            // 缓存路径
-            var cachePath = System.IO.Path.Combine(
-                HttpAudioCache.GetCacheDirectory(),
-                $"{cacheKey}.{_format}");
 
             // 检查是否已有缓存
             if (System.IO.File.Exists(cachePath))

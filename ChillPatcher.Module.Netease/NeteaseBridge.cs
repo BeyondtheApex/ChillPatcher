@@ -31,6 +31,9 @@ namespace ChillPatcher.Module.Netease
         private static extern int NeteaseRefreshLogin();
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int NeteaseLogout();
+
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr NeteaseGetLikeSongs(int getAll);
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
@@ -139,6 +142,9 @@ namespace ChillPatcher.Module.Netease
 
             [JsonProperty("avatarUrl")]
             public string AvatarUrl { get; set; }
+
+            [JsonProperty("vipType")]
+            public int VipType { get; set; }
         }
 
         /// <summary>
@@ -189,6 +195,19 @@ namespace ChillPatcher.Module.Netease
 
             [JsonProperty("type")]
             public string Type { get; set; } // mp3, flac, etc.
+
+            [JsonProperty("isTrial")]
+            public bool IsTrial { get; set; }
+        }
+
+        /// <summary>
+        /// RefreshLogin 结果
+        /// </summary>
+        public enum RefreshLoginResult
+        {
+            Success,
+            AuthFailed,
+            NetworkError
         }
 
         /// <summary>
@@ -439,22 +458,55 @@ namespace ChillPatcher.Module.Netease
         /// <summary>
         /// 刷新登录状态
         /// </summary>
-        public bool RefreshLogin()
+        public RefreshLoginResult RefreshLogin()
+        {
+            if (!_initialized) return RefreshLoginResult.NetworkError;
+
+            try
+            {
+                var result = NeteaseRefreshLogin();
+                switch (result)
+                {
+                    case 1:
+                        return RefreshLoginResult.Success;
+                    case -1:
+                        _logger.LogWarning($"[NeteaseBridge] RefreshLogin network error: {GetLastErrorMessage()}");
+                        return RefreshLoginResult.NetworkError;
+                    default:
+                        _logger.LogWarning($"[NeteaseBridge] RefreshLogin auth failed: {GetLastErrorMessage()}");
+                        return RefreshLoginResult.AuthFailed;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[NeteaseBridge] RefreshLogin exception: {ex}");
+                return RefreshLoginResult.NetworkError;
+            }
+        }
+
+        /// <summary>
+        /// 登出
+        /// </summary>
+        public bool Logout()
         {
             if (!_initialized) return false;
 
             try
             {
-                var result = NeteaseRefreshLogin();
+                var result = NeteaseLogout();
                 if (result != 1)
                 {
-                    _logger.LogWarning($"[NeteaseBridge] RefreshLogin failed: {GetLastErrorMessage()}");
+                    _logger.LogWarning($"[NeteaseBridge] Logout failed: {GetLastErrorMessage()}");
+                }
+                else
+                {
+                    _logger.LogInfo("[NeteaseBridge] Logout completed");
                 }
                 return result == 1;
             }
             catch (Exception ex)
             {
-                _logger.LogError($"[NeteaseBridge] RefreshLogin exception: {ex}");
+                _logger.LogError($"[NeteaseBridge] Logout exception: {ex}");
                 return false;
             }
         }

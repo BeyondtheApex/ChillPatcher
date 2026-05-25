@@ -30,7 +30,9 @@ namespace ChillPatcher.Module.Netease
         private NeteaseFavoriteManager _favoriteManager;
         private NeteaseSongRegistry _songRegistry;
         private QRLoginManager _qrLoginManager;
-        
+        private NeteaseSessionManager _sessionManager;
+        private NeteaseAccountApi _accountApi;
+
         private List<MusicInfo> _musicList = new List<MusicInfo>();
         private List<MusicInfo> _fmMusicList = new List<MusicInfo>();
         private Dictionary<string, NeteaseBridge.SongInfo> _songInfoMap = new Dictionary<string, NeteaseBridge.SongInfo>();
@@ -56,6 +58,15 @@ namespace ChillPatcher.Module.Netease
         private ConfigEntry<int> _streamReadyTimeoutMs;  // PCM 流就绪超时
         private ConfigEntry<int> _streamMaxRetries;  // PCM 流最大重试次数
         private ConfigEntry<bool> _enablePersonalFM;  // 是否启用个人FM
+        private ConfigEntry<string> _musicCacheDirectory;  // 音乐缓存目录
+        private ConfigEntry<bool> _musicCacheReadableName;  // 使用可读文件名
+
+        // 文件缓存管理器
+        private NeteaseFileCache _fileCache;
+        // 待写标签队列：UUID → (cachePath, songInfo, expectedSize)
+        private readonly Dictionary<string, (string cachePath, NeteaseBridge.SongInfo songInfo, long expectedSize)> _pendingTags
+            = new Dictionary<string, (string, NeteaseBridge.SongInfo, long)>();
+        private IDisposable _resourcesReleasedSubscription;
 
         // 自定义歌单
         private Dictionary<long, List<MusicInfo>> _customPlaylistMusicLists = new Dictionary<long, List<MusicInfo>>();
@@ -85,6 +96,16 @@ namespace ChillPatcher.Module.Netease
 
             // 注册配置项
             RegisterConfig();
+
+            // 初始化文件缓存管理器
+            _fileCache = new NeteaseFileCache(context.Logger);
+            _fileCache.CacheDirectory = _musicCacheDirectory.Value;
+            _fileCache.UseReadableName = _musicCacheReadableName.Value;
+            _musicCacheDirectory.SettingChanged += (s, e) => { if (_fileCache != null) _fileCache.CacheDirectory = _musicCacheDirectory.Value; };
+            _musicCacheReadableName.SettingChanged += (s, e) => { if (_fileCache != null) _fileCache.UseReadableName = _musicCacheReadableName.Value; };
+
+            // 订阅资源释放事件，在文件锁释放后写入 ID3 标签和歌词
+            _resourcesReleasedSubscription = context.EventBus.Subscribe<MusicResourcesReleasedEvent>(OnMusicResourcesReleased);
 
             // 使用 DependencyLoader 加载原生 DLL
             var loaded = context.DependencyLoader.LoadNativeLibraryFromModulePath(
@@ -119,7 +140,11 @@ namespace ChillPatcher.Module.Netease
                 _qrLoginManager.OnLoginSuccess += OnQRLoginSuccess;
                 _qrLoginManager.OnStatusChanged += OnQRLoginStatusChanged;
                 _qrLoginManager.OnQRCodeUpdated += OnQRCodeUpdated;
-                
+
+                // 初始化会话管理器（未登录状态，绑定 QR 登录）
+                _sessionManager = new NeteaseSessionManager(_bridge, context.Logger);
+                _sessionManager.SetQRLoginManager(_qrLoginManager);
+
                 // 注册收藏专辑（包含登录歌曲）
                 RegisterLoginSongAlbum();
                 
@@ -129,12 +154,21 @@ namespace ChillPatcher.Module.Netease
                 // 监听播放事件：切换到其他歌曲时取消 QR 等待
                 _playStartedSubscription = _context.EventBus.Subscribe<PlayStartedEvent>(OnPlayStartedBeforeLogin);
 
+                // 注册账户 API（未登录模式也需要，供 UI 触发登录）
+                _accountApi = new NeteaseAccountApi(_sessionManager, context.Logger);
+                _accountApi.SetQRLoginManager(_qrLoginManager);
+                RegisterAccountApi();
+
                 _isReady = true;
                 OnReadyStateChanged?.Invoke(_isReady);
-                
+
                 context.Logger.LogInfo($"[{DisplayName}] ✅ 初始化完成（未登录模式）");
                 return;
             }
+
+            // 初始化会话管理器（已登录状态，验证会话并获取 VIP 信息）
+            _sessionManager = new NeteaseSessionManager(_bridge, context.Logger);
+            await _sessionManager.ValidateAndRefreshAsync();
 
             // 获取用户信息
             var userInfo = _bridge.GetUserInfo();
@@ -179,8 +213,10 @@ namespace ChillPatcher.Module.Netease
             // 订阅收藏变化事件
             SubscribeToFavoriteEvents();
 
-            // 注册歌词 API
+            // 注册歌词 API 和账户 API
             RegisterLyricApi();
+            _accountApi = new NeteaseAccountApi(_sessionManager, context.Logger);
+            RegisterAccountApi();
 
             _isReady = true;
             OnReadyStateChanged?.Invoke(_isReady);
@@ -210,6 +246,11 @@ namespace ChillPatcher.Module.Netease
             _qrLoginManager?.CancelLogin();
             _playStartedSubscription?.Dispose();
             _playStartedSubscription = null;
+            _sessionManager = null;
+            _accountApi = null;
+            _resourcesReleasedSubscription?.Dispose();
+            _resourcesReleasedSubscription = null;
+            _pendingTags.Clear();
             _musicList.Clear();
             _fmMusicList.Clear();
             _songInfoMap.Clear();
@@ -288,6 +329,10 @@ namespace ChillPatcher.Module.Netease
             int maxRetries = _streamMaxRetries?.Value ?? 3;
             int readyTimeoutMs = _streamReadyTimeoutMs?.Value ?? 20000;
 
+            // 歌曲元信息（用于缓存文件名）
+            string artist = songInfo.ArtistName ?? "Unknown";
+            string songName = songInfo.Name ?? "Unknown";
+
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
                 // 在线程池执行 P/Invoke（GetSongUrl 调用 Go DLL 发 HTTP 请求，会阻塞调用线程）
@@ -309,7 +354,52 @@ namespace ChillPatcher.Module.Netease
                     ? AudioFormat.Flac
                     : AudioFormat.Mp3;
 
-                _context.Logger.LogInfo($"[{DisplayName}] 获取到歌曲 URL: {songInfo.Name} [format={format}, size={songUrl.Size}]");
+                _context.Logger.LogInfo($"[{DisplayName}] 获取到歌曲 URL: {songInfo.Name} [format={format}, size={songUrl.Size}, isTrial={songUrl.IsTrial}]");
+
+                // 检查本地缓存（大小验证 + 懒迁移）
+                string localPath = _fileCache != null
+                    ? _fileCache.FindValidCache(songInfo.Id, artist, songName, format, songUrl.Size)
+                    : null;
+
+                if (localPath != null)
+                {
+                    _context.Logger.LogInfo($"[{DisplayName}] 使用本地缓存: {songInfo.Name} [{localPath}]");
+                }
+                else
+                {
+                    // 无本地缓存时才做试听检测和会话恢复
+                    if (songUrl.IsTrial && _sessionManager != null)
+                    {
+                        _context.Logger.LogWarning($"[{DisplayName}] Trial song detected: {songInfo.Name}, attempting recovery...");
+                        var recoveryResult = await _sessionManager.HandleTrialAsync(songInfo.Id, bridgeQuality, cancellationToken);
+                        switch (recoveryResult)
+                        {
+                            case TrialRecoveryResult.Recovered:
+                                songUrl = _sessionManager.RecoveredSongUrl;
+                                _context.Logger.LogInfo($"[{DisplayName}] Recovery succeeded for: {songInfo.Name}");
+                                break;
+                            case TrialRecoveryResult.VipRestricted:
+                                _context.Logger.LogWarning($"[{DisplayName}] Song requires VIP: {songInfo.Name}, skipping");
+                                return null;
+                            case TrialRecoveryResult.NetworkError:
+                                _context.Logger.LogWarning($"[{DisplayName}] Network error during recovery for: {songInfo.Name}, skipping");
+                                return null;
+                        }
+                    }
+
+                    // 恢复后仍为试听版本，跳过
+                    if (songUrl.IsTrial)
+                    {
+                        _context.Logger.LogWarning($"[{DisplayName}] 歌曲为试听版本, 跳过: {songInfo.Name}");
+                        return null;
+                    }
+                }
+
+                // 确定缓存路径（本地已有则复用，否则生成新路径）
+                string cachePath = localPath
+                    ?? (_fileCache != null
+                        ? _fileCache.GetCachePath(songInfo.Id, artist, songName, format)
+                        : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "chillpatcher_audio_cache", $"netease_{songInfo.Id}.{format}"));
 
                 // 使用主插件流式服务创建 PCM 流
                 if (!_context.StreamingService.IsAvailable)
@@ -319,13 +409,14 @@ namespace ChillPatcher.Module.Netease
                 }
 
                 var reader = await _context.StreamingService.CreateStreamAndWaitAsync(
-                    songUrl.Url,
+                    localPath != null ? "" : songUrl.Url,
                     format,
                     (float)songInfo.Duration,
-                    $"netease_{songInfo.Id}",
+                    cachePath,
                     readyTimeoutMs,
                     new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" },
-                    cancellationToken);
+                    cancellationToken,
+                    useCachePath: true);
 
                 if (reader == null)
                 {
@@ -339,6 +430,9 @@ namespace ChillPatcher.Module.Netease
                 }
 
                 _context.Logger.LogInfo($"[{DisplayName}] PCM 流已就绪: {songInfo.Name} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch, {reader.Info.Format ?? format}]");
+
+                // 记录待写标签信息，在歌曲资源释放后异步写入
+                _pendingTags[uuid] = (cachePath, songInfo, songUrl.Size);
 
                 // 返回 PCM 流源
                 return PlayableSource.FromPcmStream(uuid, reader, audioFormat);
@@ -552,6 +646,18 @@ namespace ChillPatcher.Module.Netease
                 "EnablePersonalFM",
                 false,
                 "是否启用个人FM Tag和歌曲加载 (true=启用, false=关闭)");
+
+            _musicCacheDirectory = configManager.Bind(
+                "",  // 使用默认 section
+                "MusicCacheDirectory",
+                "",
+                "音乐缓存目录（空=使用默认临时目录）");
+
+            _musicCacheReadableName = configManager.Bind(
+                "",  // 使用默认 section
+                "MusicCacheReadableName",
+                false,
+                "使用可读文件名（艺术家 - 歌名）");
         }
 
         private bool IsPersonalFMEnabled => _enablePersonalFM?.Value ?? false;
@@ -678,12 +784,55 @@ namespace ChillPatcher.Module.Netease
         }
 
         /// <summary>
+        /// 歌曲资源释放回调：文件锁已释放，异步写入 ID3 标签和歌词
+        /// </summary>
+        private void OnMusicResourcesReleased(MusicResourcesReleasedEvent evt)
+        {
+            var uuid = evt?.Music?.UUID;
+            if (string.IsNullOrEmpty(uuid)) return;
+
+            if (!_pendingTags.TryGetValue(uuid, out var pending)) return;
+            _pendingTags.Remove(uuid);
+
+            var cachePath = pending.cachePath;
+            var songInfo = pending.songInfo;
+            var expectedSize = pending.expectedSize;
+            var bridge = _bridge;
+            var logger = _context.Logger;
+
+            Task.Run(() =>
+            {
+                // 校验文件完整性：残缺文件直接删除
+                if (System.IO.File.Exists(cachePath) && expectedSize > 0)
+                {
+                    var actualSize = new System.IO.FileInfo(cachePath).Length;
+                    if (actualSize < expectedSize)
+                    {
+                        logger.LogWarning($"[{DisplayName}] 缓存文件不完整 ({actualSize}/{expectedSize}), 删除: {songInfo.Name}");
+                        try { System.IO.File.Delete(cachePath); } catch { }
+                        return;
+                    }
+                }
+
+                // 获取歌词（同时用于嵌入 ID3 和保存 .lrc）
+                string lyricText = null;
+                try { lyricText = bridge?.GetSongLyric(songInfo.Id); } catch { }
+
+                NeteaseMediaTagger.EnsureTags(cachePath, songInfo, logger, lyricText);
+                NeteaseMediaTagger.EnsureLyrics(cachePath, songInfo.Id, bridge, logger, lyricText);
+            });
+        }
+
+        /// <summary>
         /// 二维码登录成功回调
         /// </summary>
         private async void OnQRLoginSuccess()
         {
             _context.Logger.LogInfo($"[{DisplayName}] 二维码登录成功！");
             _isLoggedIn = true;
+
+            // 通知会话管理器登录成功
+            _sessionManager?.NotifyLoginSuccess();
 
             // 停止登录前的播放监听
             _playStartedSubscription?.Dispose();
@@ -732,8 +881,9 @@ namespace ChillPatcher.Module.Netease
             // 订阅收藏变化事件
             SubscribeToFavoriteEvents();
 
-            // 注册歌词 API
+            // 注册歌词 API 和账户 API
             RegisterLyricApi();
+            RegisterAccountApi();
 
             // 统计自定义歌单歌曲数
             var customSongCount = _customPlaylistMusicLists.Values.Sum(list => list.Count);
@@ -790,6 +940,12 @@ namespace ChillPatcher.Module.Netease
             EnsureLyricApiRegistrationLoop();
         }
 
+        private void RegisterAccountApi()
+        {
+            // 账户 API 注册已集成到同一个循环中，确保循环正在运行
+            EnsureLyricApiRegistrationLoop();
+        }
+
         private void EnsureLyricApiRegistrationLoop()
         {
             if (_lyricApiRegistrationTask != null && !_lyricApiRegistrationTask.IsCompleted) return;
@@ -840,18 +996,32 @@ namespace ChillPatcher.Module.Netease
                         withJsApi++;
 
                         var getMethod = jsApi.GetType().GetMethod("GetCustomApi");
-                        var existing = getMethod?.Invoke(jsApi, new object[] { "lyric_netease" });
-                        if (existing != null) continue;
-
-                        var lyricApi = new NeteaseLyricApi(_bridge, _songInfoMap, _context.Logger);
                         var registerMethod = jsApi.GetType().GetMethod("RegisterCustomApi");
-                        registerMethod?.Invoke(jsApi, new object[] { "lyric_netease", lyricApi });
-                        newlyRegistered++;
+
+                        // 注册歌词 API
+                        var existingLyric = getMethod?.Invoke(jsApi, new object[] { "lyric_netease" });
+                        if (existingLyric == null)
+                        {
+                            var lyricApi = new NeteaseLyricApi(_bridge, _songInfoMap, _context.Logger);
+                            registerMethod?.Invoke(jsApi, new object[] { "lyric_netease", lyricApi });
+                            newlyRegistered++;
+                        }
+
+                        // 注册账户 API
+                        if (_accountApi != null)
+                        {
+                            var existingAccount = getMethod?.Invoke(jsApi, new object[] { "netease_account" });
+                            if (existingAccount == null)
+                            {
+                                registerMethod?.Invoke(jsApi, new object[] { "netease_account", _accountApi });
+                                newlyRegistered++;
+                            }
+                        }
                     }
 
                     if (newlyRegistered > 0)
                     {
-                        _context.Logger.LogInfo($"[{DisplayName}] Lyric API (netease) registered on {withJsApi} ready instance(s), newly attached to {newlyRegistered} instance(s)");
+                        _context.Logger.LogInfo($"[{DisplayName}] Custom APIs registered on {withJsApi} ready instance(s), newly attached {newlyRegistered} registration(s)");
                     }
                 }
                 catch (OperationCanceledException)
@@ -860,7 +1030,7 @@ namespace ChillPatcher.Module.Netease
                 }
                 catch (Exception ex)
                 {
-                    _context.Logger.LogError($"[{DisplayName}] Lyric API (netease) registration loop failed: {ex.Message}");
+                    _context.Logger.LogError($"[{DisplayName}] Custom API registration loop failed: {ex.Message}");
                 }
 
                 await Task.Delay(1000, cancellationToken);
