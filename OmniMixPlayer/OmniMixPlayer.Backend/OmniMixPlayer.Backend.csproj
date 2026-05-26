@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AssemblyName>OmniMixPlayer.Backend</AssemblyName>
+    <OutputPath>..\bin\Backend\</OutputPath>
+    <RootNamespace>OmniMixPlayer.Backend</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OmniMixPlayer.SDK\OmniMixPlayer.SDK.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.*" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Native\x64\ChillAudioDecoder.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Native\x64\ChillAudioDecoder.dll</Link>
+    </Content>
+    <Content Include="Native\x64\ChillFlacDecoder.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Native\x64\ChillFlacDecoder.dll</Link>
+    </Content>
+  </ItemGroup>
+
+</Project>

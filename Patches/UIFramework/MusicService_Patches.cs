@@ -4,7 +4,6 @@ using R3;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ChillPatcher.ModuleSystem.Registry;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -32,10 +31,8 @@ namespace ChillPatcher.Patches.UIFramework
             CurrentInstance = __instance;
             
             // 检查是否需要移除100首限制：
-            // 1. 启用了无限歌曲配置，或者
-            // 2. 有模块注册了音乐（通过 MusicRegistry）
-            bool hasModuleMusic = MusicRegistry.Instance.GetAllMusic().Count > 0;
-            if (!UIFrameworkConfig.EnableUnlimitedSongs.Value && !hasModuleMusic)
+            // 1. 启用了无限歌曲配置
+            if (!UIFrameworkConfig.EnableUnlimitedSongs.Value)
             {
                 return true; // 两者都关闭，执行原方法（保持100首限制）
             }
@@ -84,6 +81,8 @@ namespace ChillPatcher.Patches.UIFramework
             // 添加到列表
             allMusicList.Add(music);
 
+            // TODO: IPC bridge needed - TagMerge via MusicRegistry/TagRegistry removed
+            /*
             // ✅ 合并自定义Tag到音频对象 (通过 TagRegistry 获取)
             var musicInfo = MusicRegistry.Instance?.GetByUUID(music.UUID);
             if (musicInfo != null && !string.IsNullOrEmpty(musicInfo.TagId))
@@ -95,6 +94,7 @@ namespace ChillPatcher.Patches.UIFramework
                     Plugin.Log.LogDebug($"[TagMerge] {music.Title}: {music.Tag} (merged tag: {tagInfo.DisplayName})");
                 }
             }
+            */
 
             // ⚠️ 注释掉存档保存：运行时加载的歌曲不需要保存到存档
             // SaveDataManager.Instance.MusicSetting.PlaylistOrder.Add(music.UUID);
@@ -138,8 +138,7 @@ namespace ChillPatcher.Patches.UIFramework
             CurrentInstance = __instance;
             
             // 检查是否需要移除100首限制
-            bool hasModuleMusic = MusicRegistry.Instance.GetAllMusic().Count > 0;
-            if (!UIFrameworkConfig.EnableUnlimitedSongs.Value && !hasModuleMusic)
+            if (!UIFrameworkConfig.EnableUnlimitedSongs.Value)
             {
                 return true; // 两者都关闭，执行原方法
             }
@@ -179,6 +178,8 @@ namespace ChillPatcher.Patches.UIFramework
             // 添加到列表
             allMusicList.Add(music);
             
+            // TODO: IPC bridge needed - TagMerge via MusicRegistry/TagRegistry removed
+            /*
             // ✅ 合并自定义Tag到音频对象 (通过 TagRegistry 获取)
             var musicInfo = MusicRegistry.Instance?.GetByUUID(music.UUID);
             if (musicInfo != null && !string.IsNullOrEmpty(musicInfo.TagId))
@@ -190,6 +191,7 @@ namespace ChillPatcher.Patches.UIFramework
                     Plugin.Log.LogDebug($"[TagMerge] {music.Title}: {music.Tag} (merged tag: {tagInfo.DisplayName})");
                 }
             }
+            */
             
             // ⚠️ 注释掉存档保存：运行时加载的歌曲不需要保存到存档
             // SaveDataManager.Instance.MusicSetting.PlaylistOrder.Add(music.UUID);

@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bulbul;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.SDK.Models;
+using HarmonyLib;
 using ChillPatcher.UIFramework.Core;
 using ChillPatcher.UIFramework.Music;
+using ChillPatcher.SDK.Models;
 using Cysharp.Threading.Tasks;
 using HarmonyLib;
 using UnityEngine;
@@ -68,8 +68,9 @@ namespace ChillPatcher.Patches.UIFramework
                 // 缓存实例，供 RefreshCustomTagButtons 使用（FindObjectOfType 找不到 inactive 对象）
                 _cachedTagListUI = __instance;
                 
-                // 检查是否有模块注册了标签
-                bool hasModuleTags = TagRegistry.Instance?.GetAllTags()?.Count > 0;
+                // TODO: IPC bridge needed - TagRegistry removed, custom tags disabled
+                // bool hasModuleTags = TagRegistry.Instance?.GetAllTags()?.Count > 0;
+                bool hasModuleTags = false;
                 
                 // 1. 隐藏空Tag功能
                 if (PluginConfig.HideEmptyTags.Value)
@@ -103,35 +104,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         public static void RefreshCustomTagButtons()
         {
-            try
-            {
-                var tagListUI = UnityEngine.Object.FindObjectOfType<MusicTagListUI>() ?? _cachedTagListUI;
-                if (tagListUI == null)
-                {
-                    Plugin.Log.LogWarning("[RefreshCustomTagButtons] Cannot find MusicTagListUI");
-                    return;
-                }
-                
-                // 检查是否有模块注册了标签
-                bool hasModuleTags = TagRegistry.Instance?.GetAllTags()?.Count > 0;
-                if (!hasModuleTags)
-                {
-                    Plugin.Log.LogDebug("[RefreshCustomTagButtons] No module tags registered");
-                    return;
-                }
-                
-                // 重新添加自定义 Tag 按钮
-                AddCustomTagButtons(tagListUI);
-                
-                // 更新下拉框高度
-                UpdateDropdownHeight(tagListUI);
-                
-                Plugin.Log.LogInfo("[RefreshCustomTagButtons] Custom tag buttons refreshed");
-            }
-            catch (System.Exception ex)
-            {
-                Plugin.Log.LogError($"Error in RefreshCustomTagButtons: {ex}");
-            }
+            // TODO: IPC bridge needed - TagRegistry removed, custom tag buttons disabled
         }
         
         /// <summary>
@@ -308,7 +281,7 @@ namespace ChillPatcher.Patches.UIFramework
             var buttonPrefab = firstButton.gameObject;
 
             // 添加自定义Tag按钮
-            var customTags = TagRegistry.Instance?.GetAllTags() ?? new List<TagInfo>();
+            var customTags = OmniMixIntegration.Instance?.GetGrowableTags() ?? new List<TagInfo>();
             foreach (var customTag in customTags)
             {
                 // 克隆按钮
@@ -459,40 +432,30 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static void HandleGrowableTagClick(TagInfo clickedTag, bool wasActive, AudioTag currentTag, MusicTagListUI tagListUI)
         {
-            var tagRegistry = TagRegistry.Instance;
-            if (tagRegistry == null)
-                return;
-
             if (wasActive)
             {
-                // 取消选中：移除该增长列表
                 SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = currentTag.RemoveFlag((AudioTag)clickedTag.BitValue);
-                tagRegistry.SetCurrentGrowableTag(null);
+                OmniMixIntegration.Instance.SetCurrentGrowableTag(null).Forget();
                 Plugin.Log.LogInfo($"[GrowableTag] Removed: {clickedTag.DisplayName}");
             }
             else
             {
-                // 选中：先移除其他增长列表，再添加当前
                 var newTag = currentTag;
-                
-                // 移除其他增长列表 Tag
-                var otherGrowableTags = tagRegistry.GetGrowableTags();
-                foreach (var otherTag in otherGrowableTags)
+                var otherGrowableTags = OmniMixIntegration.Instance?.GetGrowableTags();
+                if (otherGrowableTags != null)
                 {
-                    if (otherTag.TagId != clickedTag.TagId)
+                    foreach (var otherTag in otherGrowableTags)
                     {
-                        newTag = newTag.RemoveFlag((AudioTag)otherTag.BitValue);
-                        
-                        // 更新其他增长列表按钮的UI状态
-                        UpdateGrowableTagButtonUI(otherTag.TagId, false, tagListUI);
+                        if (otherTag.TagId != clickedTag.TagId)
+                        {
+                            newTag = newTag.RemoveFlag((AudioTag)otherTag.BitValue);
+                            UpdateGrowableTagButtonUI(otherTag.TagId, false, tagListUI);
+                        }
                     }
                 }
-                
-                // 添加当前增长列表
                 newTag = newTag.AddFlag((AudioTag)clickedTag.BitValue);
                 SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value = newTag;
-                tagRegistry.SetCurrentGrowableTag(clickedTag.TagId);
-                
+                OmniMixIntegration.Instance.SetCurrentGrowableTag(clickedTag.TagId).Forget();
                 Plugin.Log.LogInfo($"[GrowableTag] Added (exclusive): {clickedTag.DisplayName}");
             }
         }

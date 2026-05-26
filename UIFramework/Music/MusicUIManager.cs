@@ -2,8 +2,7 @@ using System;
 using System.Collections.Generic;
 using Bulbul;
 using ChillPatcher.UIFramework.Core;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.ModuleSystem.Services;
+// ModuleSystem removed - IPC bridge
 
 namespace ChillPatcher.UIFramework.Music
 {

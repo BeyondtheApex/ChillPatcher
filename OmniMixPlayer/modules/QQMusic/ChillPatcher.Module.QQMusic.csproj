@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <AssemblyName>OmniMixPlayer.Module.QQMusic</AssemblyName>
+    <OutputPath>..\..\bin\Modules\QQMusic\</OutputPath>
+    <RootNamespace>OmniMixPlayer.Module.QQMusic</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\OmniMixPlayer.SDK\OmniMixPlayer.SDK.csproj">
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- NuGet Packages -->
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="QRCoder" Version="1.4.3" />
+  </ItemGroup>
+
+  <!-- Embedded Resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\QQMUSIC.png" Condition="Exists('Resources\QQMUSIC.png')">
+      <LogicalName>OmniMixPlayer.Module.QQMusic.Resources.QQMUSIC.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\FAVORITES.png" Condition="Exists('Resources\FAVORITES.png')">
+      <LogicalName>OmniMixPlayer.Module.QQMusic.Resources.FAVORITES.png</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>
+

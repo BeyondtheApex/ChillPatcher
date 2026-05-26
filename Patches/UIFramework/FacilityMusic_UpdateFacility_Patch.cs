@@ -2,10 +2,6 @@ using HarmonyLib;
 using Bulbul;
 using KanKikuchi.AudioManager;
 using NestopiSystem;
-using ChillPatcher.ModuleSystem;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.SDK.Events;
-using ChillPatcher.SDK.Models;
 using System;
 using UnityEngine;
 
@@ -48,12 +44,6 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         public static float PendingSeekProgress { get; set; } = 0f;
         
-        /// <summary>
-        /// 进度事件节流计时器（避免每帧发布）
-        /// </summary>
-        private static float _progressEventTimer = 0f;
-        private const float ProgressEventInterval = 1f; // 每秒发布一次
-
         /// <summary>
         /// 拦截 UpdateFacility，修复流媒体播放时的状态判断
         /// </summary>
@@ -155,40 +145,7 @@ namespace ChillPatcher.Patches.UIFramework
 
         private static void TryPublishProgressEvent(MusicService musicService, GameAudioInfo playingMusic, float progress)
         {
-            try
-            {
-                _progressEventTimer += Time.deltaTime;
-                if (_progressEventTimer < ProgressEventInterval) return;
-                _progressEventTimer = 0f;
-
-                var eventBus = EventBus.Instance;
-                if (eventBus == null) return;
-
-                MusicInfo musicInfo = null;
-                if (!string.IsNullOrEmpty(playingMusic?.UUID))
-                    musicInfo = MusicRegistry.Instance?.GetMusic(playingMusic.UUID);
-
-                // 优先使用 PCM reader 的真实时长（AudioClip.length 包含 30 分钟余量）
-                float totalTime;
-                var reader = MusicService_SetProgress_Patch.ActivePcmReader;
-                if (reader != null && reader.Info.Duration > 0)
-                    totalTime = reader.Info.Duration;
-                else
-                    totalTime = playingMusic?.AudioClip != null ? playingMusic.AudioClip.length : 0f;
-                float currentTime = totalTime * progress;
-
-                eventBus.Publish(new PlayProgressEvent
-                {
-                    Music = musicInfo,
-                    CurrentTime = currentTime,
-                    TotalTime = totalTime,
-                    Progress = progress
-                });
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning($"[FacilityMusic_Patch] PlayProgressEvent publish failed: {ex.Message}");
-            }
+            // TODO: IPC bridge needed - EventBus and MusicRegistry removed
         }
     }
 }

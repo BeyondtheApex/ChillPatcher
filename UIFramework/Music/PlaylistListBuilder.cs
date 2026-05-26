@@ -3,8 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Bulbul;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.ModuleSystem.Services;
+// ModuleSystem removed - IPC bridge
 using ChillPatcher.SDK.Models;
 using UnityEngine;
 
@@ -36,42 +35,16 @@ namespace ChillPatcher.UIFramework.Music
             if (songs == null || songs.Count == 0)
                 return result;
 
-            // 获取 Registry 实例
-            var tagRegistry = TagRegistry.Instance;
-            var albumRegistry = AlbumRegistry.Instance;
-            var musicRegistry = MusicRegistry.Instance;
-
-            if (tagRegistry == null || albumRegistry == null || musicRegistry == null)
-            {
-                Logger.LogWarning("Registry not available, returning simple song list");
-                for (int i = 0; i < songs.Count; i++)
-                {
-                    result.Add(PlaylistListItem.CreateSongItem(songs[i], i));
-                }
-                return result;
-            }
-
-            // 按专辑分组歌曲
-            var songsByAlbum = new Dictionary<string, List<(GameAudioInfo song, int idx, MusicInfo info)>>();
-            // 未分类的自定义歌曲按Tag分组
-            var unknownSongsByTag = new Dictionary<string, List<(GameAudioInfo song, int idx)>>();
-            // 游戏默认歌曲按原生Tag分组
-            var nativeSongsByTag = new Dictionary<AudioTag, List<(GameAudioInfo song, int idx)>>();
-
-            // 分类歌曲
+            // IPC bridge: ModuleSystem registries removed.
+            // Fall back to simple list mode (no album grouping for module songs).
             for (int i = 0; i < songs.Count; i++)
             {
-                var song = songs[i];
-                var musicInfo = musicRegistry.GetMusic(song.UUID);
-                
-                if (musicInfo != null)
-                {
-                    if (!string.IsNullOrEmpty(musicInfo.AlbumId))
-                    {
-                        if (!songsByAlbum.ContainsKey(musicInfo.AlbumId))
-                            songsByAlbum[musicInfo.AlbumId] = new List<(GameAudioInfo, int, MusicInfo)>();
-                        songsByAlbum[musicInfo.AlbumId].Add((song, i, musicInfo));
-                    }
+                result.Add(PlaylistListItem.CreateSongItem(songs[i], i));
+            }
+            return result;
+        }
+    }
+}
                     else
                     {
                         var tagId = musicInfo.TagId ?? "_unknown";

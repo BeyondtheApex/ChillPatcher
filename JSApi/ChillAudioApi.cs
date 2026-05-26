@@ -6,13 +6,12 @@ using KanKikuchi.AudioManager;
 using UnityEngine;
 using ChillPatcher.Patches.UIFramework;
 using ChillPatcher.UIFramework.Music;
-using ChillPatcher.ModuleSystem.Registry;
 
 namespace ChillPatcher.JSApi
 {
     /// <summary>
-    /// 音频控制 API：播放/暂停/切歌/进度/音量 等
-    /// JS 端通过 chill.audio 访问
+    /// 音频控制 API (IPC 版本)
+    /// 播放控制通过 OmniMixPlayer API，游戏内状态通过 MusicService
     /// </summary>
     public class ChillAudioApi
     {
@@ -25,65 +24,51 @@ namespace ChillPatcher.JSApi
 
         #region 播放控制
 
-        /// <summary>
-        /// 暂停/恢复切换
-        /// </summary>
         public void togglePause()
         {
             var facility = GetFacilityMusic();
             if (facility == null) return;
             facility.OnClickButtonPlayOrPauseMusic();
+            _ = OmniMixIntegration.Instance.Toggle();
         }
 
-        /// <summary>
-        /// 暂停
-        /// </summary>
         public void pause()
         {
             var facility = GetFacilityMusic();
             if (facility == null) return;
             facility.PauseMusic();
+            _ = OmniMixIntegration.Instance.Pause();
         }
 
-        /// <summary>
-        /// 恢复播放
-        /// </summary>
         public void resume()
         {
             var facility = GetFacilityMusic();
             if (facility == null) return;
             facility.UnPauseMusic();
+            _ = OmniMixIntegration.Instance.Resume();
         }
 
-        /// <summary>
-        /// 下一首
-        /// </summary>
         public void next()
         {
             var facility = GetFacilityMusic();
             if (facility == null) return;
             facility.OnClickButtonSkip();
+            _ = OmniMixIntegration.Instance.Next();
         }
 
-        /// <summary>
-        /// 上一首
-        /// </summary>
         public void previous()
         {
             var queue = PlayQueueManager.Instance;
             if (queue == null || !queue.CanGoPrevious) return;
-
             var prev = queue.GoPrevious();
             if (prev != null)
             {
                 var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
                 musicService?.PlayArugumentMusic(prev, MusicChangeKind.Manual);
             }
+            _ = OmniMixIntegration.Instance.Prev();
         }
 
-        /// <summary>
-        /// 播放指定索引的歌曲
-        /// </summary>
         public void playByIndex(int index)
         {
             var facility = GetFacilityMusic();
@@ -91,14 +76,10 @@ namespace ChillPatcher.JSApi
             facility.PlayMusic(index);
         }
 
-        /// <summary>
-        /// 通过 UUID 播放指定歌曲
-        /// </summary>
         public bool playByUuid(string uuid)
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
             if (musicService == null) return false;
-
             var playlist = musicService.CurrentPlayList;
             for (int i = 0; i < playlist.Count; i++)
             {
@@ -106,6 +87,7 @@ namespace ChillPatcher.JSApi
                 {
                     var facility = GetFacilityMusic();
                     facility?.PlayMusic(i);
+                    _ = OmniMixIntegration.Instance.Play(uuid);
                     return true;
                 }
             }
@@ -116,18 +98,12 @@ namespace ChillPatcher.JSApi
 
         #region 进度控制
 
-        /// <summary>
-        /// 设置播放进度 (0-1)
-        /// </summary>
         public void setProgress(float progress)
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
             musicService?.SetMusicProgress(Mathf.Clamp01(progress));
         }
 
-        /// <summary>
-        /// 获取当前播放进度 (0-1)
-        /// </summary>
         public float getProgress()
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
@@ -138,36 +114,24 @@ namespace ChillPatcher.JSApi
 
         #region 播放模式
 
-        /// <summary>
-        /// 设置随机播放
-        /// </summary>
         public void setShuffle(bool enabled)
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
             musicService?.SetShuffle(enabled);
         }
 
-        /// <summary>
-        /// 获取是否随机播放
-        /// </summary>
         public bool getShuffle()
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
             return musicService?.IsShuffle ?? false;
         }
 
-        /// <summary>
-        /// 设置单曲循环
-        /// </summary>
         public void setRepeatOne(bool enabled)
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
             musicService?.SetRepeat(enabled);
         }
 
-        /// <summary>
-        /// 获取是否单曲循环
-        /// </summary>
         public bool getRepeatOne()
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
@@ -178,16 +142,11 @@ namespace ChillPatcher.JSApi
 
         #region 当前播放信息
 
-        /// <summary>
-        /// 获取当前播放歌曲信息
-        /// </summary>
         public string getCurrentSong()
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
             var playing = musicService?.PlayingMusic;
             if (playing == null) return "null";
-
-            var musicInfo = MusicRegistry.Instance?.GetMusic(playing.UUID);
 
             return JSApiHelper.ToJson(new Dictionary<string, object>
             {
@@ -195,17 +154,10 @@ namespace ChillPatcher.JSApi
                 ["title"] = playing.Title ?? "",
                 ["artist"] = playing.Credit ?? "",
                 ["duration"] = playing.AudioClip != null ? playing.AudioClip.length : 0f,
-                ["isStream"] = musicInfo?.SourceType == SDK.Models.MusicSourceType.Stream,
-                ["moduleId"] = musicInfo?.ModuleId ?? "",
-                ["albumId"] = musicInfo?.AlbumId ?? "",
-                ["isFavorite"] = musicInfo?.IsFavorite ?? false,
-                ["isExcluded"] = musicInfo?.IsExcluded ?? false
+                ["isStream"] = StreamingAudioLoader.IsStreamingSource(playing)
             });
         }
 
-        /// <summary>
-        /// 获取播放状态
-        /// </summary>
         public string getPlaybackState()
         {
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;

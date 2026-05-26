@@ -1,9 +1,6 @@
 using System;
 using Bulbul;
-using ChillPatcher.ModuleSystem;
-using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.SDK.Events;
-using ChillPatcher.SDK.Interfaces;
 using HarmonyLib;
 
 namespace ChillPatcher.Patches.UIFramework
@@ -28,30 +25,12 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                // 检查是否是模块注册的歌曲
-                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
-                if (musicInfo != null)
+                if (StreamingAudioLoader.IsStreamingSource(gameAudioInfo))
                 {
-                    // 使用模块的 IFavoriteExcludeHandler 检查当前状态
-                    var handler = ModuleLoader.Instance?.GetProvider<IFavoriteExcludeHandler>(musicInfo.ModuleId);
-                    bool currentlyExcluded = handler?.IsExcluded(gameAudioInfo.UUID) ?? musicInfo.IsExcluded;
-                    
-                    if (currentlyExcluded)
-                    {
-                        __result = false;
-                        return false;
-                    }
-
-                    // 通过模块处理器设置排除状态（这会保存到数据库并发布事件）
-                    handler?.SetExcluded(gameAudioInfo.UUID, true);
-                    
-                    // 更新 MusicInfo.IsExcluded 属性以保持同步
-                    musicInfo.IsExcluded = true;
-                    
+                    OmniMixIntegration.Instance.SetExcluded(gameAudioInfo.UUID, true).Forget();
                     __result = true;
                     OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, true);
-                    
-                    Plugin.Log.LogInfo($"[Excluded] Module song excluded: {gameAudioInfo.UUID}");
+                    Plugin.Log.LogInfo($"[Excluded] Stream song excluded: {gameAudioInfo.UUID}");
                     return false;
                 }
 
@@ -68,8 +47,7 @@ namespace ChillPatcher.Patches.UIFramework
         [HarmonyPostfix]
         static void ExcludeFromPlaylist_Postfix(GameAudioInfo gameAudioInfo, bool __result)
         {
-            var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
-            if (__result && musicInfo == null)
+            if (__result && !StreamingAudioLoader.IsStreamingSource(gameAudioInfo))
             {
                 OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, true);
             }
@@ -84,29 +62,12 @@ namespace ChillPatcher.Patches.UIFramework
         {
             try
             {
-                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
-                if (musicInfo != null)
+                if (StreamingAudioLoader.IsStreamingSource(gameAudioInfo))
                 {
-                    // 使用模块的 IFavoriteExcludeHandler 检查当前状态
-                    var handler = ModuleLoader.Instance?.GetProvider<IFavoriteExcludeHandler>(musicInfo.ModuleId);
-                    bool currentlyExcluded = handler?.IsExcluded(gameAudioInfo.UUID) ?? musicInfo.IsExcluded;
-                    
-                    if (!currentlyExcluded)
-                    {
-                        __result = false;
-                        return false;
-                    }
-
-                    // 通过模块处理器设置包含状态（这会保存到数据库并发布事件）
-                    handler?.SetExcluded(gameAudioInfo.UUID, false);
-                    
-                    // 更新 MusicInfo.IsExcluded 属性以保持同步
-                    musicInfo.IsExcluded = false;
-                    
+                    OmniMixIntegration.Instance.SetExcluded(gameAudioInfo.UUID, false).Forget();
                     __result = true;
                     OnSongExcludedChanged?.Invoke(gameAudioInfo.UUID, false);
-                    
-                    Plugin.Log.LogInfo($"[Excluded] Module song included: {gameAudioInfo.UUID}");
+                    Plugin.Log.LogInfo($"[Excluded] Stream song included: {gameAudioInfo.UUID}");
                     return false;
                 }
 
@@ -126,32 +87,8 @@ namespace ChillPatcher.Patches.UIFramework
         [HarmonyPrefix]
         static bool IsContainsExcludedFromPlaylist_Prefix(GameAudioInfo gameAudioInfo, ref bool __result)
         {
-            try
-            {
-                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
-                if (musicInfo != null)
-                {
-                    // 从模块的 IFavoriteExcludeHandler 获取最新状态
-                    var handler = ModuleLoader.Instance?.GetProvider<IFavoriteExcludeHandler>(musicInfo.ModuleId);
-                    if (handler != null)
-                    {
-                        __result = handler.IsExcluded(gameAudioInfo.UUID);
-                    }
-                    else
-                    {
-                        // 回退到 MusicInfo.IsExcluded 属性
-                        __result = musicInfo.IsExcluded;
-                    }
-                    return false;
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"[Excluded] Check status failed: {ex}");
-                return true;
-            }
+            // TODO: IPC bridge needed - exclude status for stream sources
+            return true;
         }
     }
 }

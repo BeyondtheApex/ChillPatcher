@@ -1,7 +1,6 @@
 using HarmonyLib;
 using KanKikuchi.AudioManager;
 using UnityEngine;
-using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.SDK.Models;
 using Bulbul;
 using Cysharp.Threading.Tasks;
@@ -142,10 +141,8 @@ namespace ChillPatcher.Patches.UIFramework
                 return true;
             }
 
-            var music = MusicRegistry.Instance?.GetMusic(playingMusic.UUID);
-            if (music == null || music.SourceType != MusicSourceType.Stream)
+            if (!ChillPatcher.UIFramework.Audio.StreamingAudioLoader.IsStreamingSource(playingMusic))
             {
-                // 不是流媒体，使用原始逻辑
                 return true;
             }
 

@@ -1,26 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BepInEx.Logging;
-using ChillPatcher.ModuleSystem;
-using ChillPatcher.SDK.Events;
-using ChillPatcher.SDK.Interfaces;
 using ChillPatcher.UIFramework.Music;
 
 namespace ChillPatcher.JSApi
 {
     /// <summary>
-    /// 事件 API：订阅游戏/播放事件，JS 端通过 chill.events 访问
-    /// 
-    /// 支持的事件名：
-    /// - "playStarted"  — 播放开始
-    /// - "playEnded"    — 播放结束
-    /// - "playPaused"   — 播放暂停/恢复
-    /// - "playProgress" — 播放进度变化
-    /// - "playSeek"     — Seek 跳转（含延迟 Seek 完成通知）
-    /// - "queueChanged" — 播放队列变化
-    /// - "tagRegistered"   — Tag 注册
-    /// - "tagUnregistered" — Tag 注销
-    /// - "musicRegistered" — 歌曲注册
+    /// 事件 API (IPC 版本)
+    /// EventBus subscriptions removed. Game events from PlayQueueManager still work.
     /// </summary>
     public class ChillEventApi : IDisposable
     {
@@ -35,108 +23,49 @@ namespace ChillPatcher.JSApi
             _logger = logger;
         }
 
-        /// <summary>
-        /// 初始化事件订阅（在 EventBus 可用后调用）
-        /// </summary>
         public void Initialize()
         {
             if (_initialized) return;
             _initialized = true;
 
-            var eventBus = EventBus.Instance;
-            if (eventBus == null)
-            {
-                _logger.LogWarning("[JSApi.Events] EventBus not available");
-                return;
-            }
-
-            // 订阅 SDK 事件并转发到 JS
-            _subscriptions.Add(eventBus.Subscribe<PlayStartedEvent>(e =>
-                Emit("playStarted", JSApiHelper.ToJson(new Dictionary<string, object>
-                {
-                    ["uuid"] = e.Music?.UUID ?? "",
-                    ["title"] = e.Music?.Title ?? "",
-                    ["artist"] = e.Music?.Artist ?? "",
-                    ["source"] = e.Source.ToString()
-                }))));
-
-            _subscriptions.Add(eventBus.Subscribe<PlayEndedEvent>(e =>
-                Emit("playEnded", JSApiHelper.ToJson(new Dictionary<string, object>
-                {
-                    ["uuid"] = e.Music?.UUID ?? "",
-                    ["title"] = e.Music?.Title ?? "",
-                    ["reason"] = e.Reason.ToString(),
-                    ["playedDuration"] = e.PlayedDuration
-                }))));
-
-            _subscriptions.Add(eventBus.Subscribe<PlayPausedEvent>(e =>
-                Emit("playPaused", JSApiHelper.ToJson(new Dictionary<string, object>
-                {
-                    ["uuid"] = e.Music?.UUID ?? "",
-                    ["isPaused"] = e.IsPaused
-                }))));
-
-            _subscriptions.Add(eventBus.Subscribe<PlayProgressEvent>(e =>
-                Emit("playProgress", JSApiHelper.ToJson(new Dictionary<string, object>
-                {
-                    ["uuid"] = e.Music?.UUID ?? "",
-                    ["currentTime"] = e.CurrentTime,
-                    ["totalTime"] = e.TotalTime,
-                    ["progress"] = e.Progress
-                }))));
-
-            _subscriptions.Add(eventBus.Subscribe<PlaySeekEvent>(e =>
-                Emit("playSeek", JSApiHelper.ToJson(new Dictionary<string, object>
-                {
-                    ["uuid"] = e.Music?.UUID ?? "",
-                    ["progress"] = e.Progress,
-                    ["targetTime"] = e.TargetTime,
-                    ["isPending"] = e.IsPending,
-                    ["isCompleted"] = e.IsCompleted
-                }))));
-
-            // 订阅队列变化
+            // Subscribe to queue changes (still works with PlayQueueManager)
             var queueMgr = PlayQueueManager.Instance;
             if (queueMgr != null)
             {
-                queueMgr.OnQueueChanged += () => Emit("queueChanged", null);
-                queueMgr.OnCurrentChanged += (audio) =>
+                var qAction = new Action(() => Emit("queueChanged", null));
+                queueMgr.OnQueueChanged += qAction;
+
+                Action<Bulbul.GameAudioInfo> cAction = (audio) =>
                     Emit("currentChanged", JSApiHelper.ToJson(new Dictionary<string, object>
                     {
                         ["uuid"] = audio?.UUID ?? "",
                         ["title"] = audio?.Title ?? "",
                         ["artist"] = audio?.Credit ?? ""
                     }));
+                queueMgr.OnCurrentChanged += cAction;
+
+                _subscriptions.Add(new ActionDisposable(() => queueMgr.OnQueueChanged -= qAction));
+                _subscriptions.Add(new ActionDisposable(() => queueMgr.OnCurrentChanged -= cAction));
             }
 
-            // 订阅 IME Context 变化（替代 50ms 轮询）
-            UIToolkitInputDispatcher.OnImeContextChanged += (ctxJson, rectJson) =>
-            {
+            // Subscribe to IME context changes
+            UIToolkitInputDispatcher.OnImeContextChanged += (ctx, rect) =>
                 Emit("imeContextChanged", JSApiHelper.ToJson(new Dictionary<string, object>
                 {
-                    ["context"] = ctxJson,
-                    ["inputRect"] = rectJson,
+                    ["context"] = ctx,
+                    ["inputRect"] = rect,
                 }));
-            };
 
-            // 订阅输入模式变化（替代 200ms 轮询，主线程安全）
+            // Subscribe to input mode changes
             UIToolkitInputDispatcher.OnInputModeChanged += (isGameMode) =>
-            {
                 Emit("inputModeChanged", JSApiHelper.ToJson(new Dictionary<string, object>
                 {
                     ["isGameMode"] = isGameMode,
                 }));
-            };
 
-            _logger.LogInfo("[JSApi.Events] Event subscriptions initialized");
+            _logger.LogInfo("[JSApi.Events] Event subscriptions initialized (IPC mode)");
         }
 
-        /// <summary>
-        /// 订阅事件
-        /// </summary>
-        /// <param name="eventName">事件名</param>
-        /// <param name="handler">回调函数，参数为事件数据对象</param>
-        /// <returns>取消订阅的函数</returns>
         public Action on(string eventName, Action<object> handler)
         {
             if (!_handlers.TryGetValue(eventName, out var list))
@@ -145,14 +74,9 @@ namespace ChillPatcher.JSApi
                 _handlers[eventName] = list;
             }
             list.Add(handler);
-
-            // 返回取消订阅函数
             return () => list.Remove(handler);
         }
 
-        /// <summary>
-        /// 一次性订阅（触发一次后自动取消）
-        /// </summary>
         public Action once(string eventName, Action<object> handler)
         {
             Action<object> wrapper = null;
@@ -164,31 +88,18 @@ namespace ChillPatcher.JSApi
             return on(eventName, wrapper);
         }
 
-        /// <summary>
-        /// 取消订阅
-        /// </summary>
         public void off(string eventName, Action<object> handler)
         {
             if (_handlers.TryGetValue(eventName, out var list))
-            {
                 list.Remove(handler);
-            }
         }
 
-        /// <summary>
-        /// 取消指定事件的所有订阅
-        /// </summary>
         public void offAll(string eventName)
         {
             if (_handlers.ContainsKey(eventName))
-            {
                 _handlers[eventName].Clear();
-            }
         }
 
-        /// <summary>
-        /// 触发事件（供内部或自定义模块使用）
-        /// </summary>
         public void emit(string eventName, object data)
         {
             Emit(eventName, data);
@@ -197,19 +108,11 @@ namespace ChillPatcher.JSApi
         private void Emit(string eventName, object data)
         {
             if (!_handlers.TryGetValue(eventName, out var list)) return;
-
-            // 复制列表以防止迭代时修改
             var snapshot = list.ToArray();
             foreach (var handler in snapshot)
             {
-                try
-                {
-                    handler(data);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning($"[JSApi.Events] Handler error for '{eventName}': {ex.Message}");
-                }
+                try { handler(data); }
+                catch (Exception ex) { _logger.LogWarning($"[JSApi.Events] Handler error for '{eventName}': {ex.Message}"); }
             }
         }
 
@@ -219,6 +122,13 @@ namespace ChillPatcher.JSApi
                 sub.Dispose();
             _subscriptions.Clear();
             _handlers.Clear();
+        }
+
+        private class ActionDisposable : IDisposable
+        {
+            private readonly Action _action;
+            public ActionDisposable(Action action) => _action = action;
+            public void Dispose() => _action?.Invoke();
         }
     }
 }

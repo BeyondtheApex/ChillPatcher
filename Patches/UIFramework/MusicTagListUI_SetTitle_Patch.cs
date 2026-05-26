@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bulbul;
-using ChillPatcher.ModuleSystem.Registry;
 using ChillPatcher.SDK.Models;
 using HarmonyLib;
 
@@ -43,7 +42,7 @@ namespace ChillPatcher.Patches.UIFramework
                 AudioTag tagsWithoutFavorite = currentTag.RemoveFlag(AudioTag.Favorite);
 
                 // 获取所有自定义Tag的位值（用于排除）
-                var allCustomTags = TagRegistry.Instance?.GetAllTags() ?? new List<TagInfo>();
+                var allCustomTags = new List<TagInfo>(); // IPC: custom tags from OmniMixPlayer not yet bridged
                 var allCustomBits = allCustomTags
                     .Select(t => (AudioTag)t.BitValue)
                     .Aggregate(AudioTag.All, (acc, bit) => acc.AddFlag(bit));

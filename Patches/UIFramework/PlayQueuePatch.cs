@@ -1,12 +1,7 @@
 using Bulbul;
-using ChillPatcher.ModuleSystem;
 using ChillPatcher.UIFramework;
 using ChillPatcher.UIFramework.Audio;
 using ChillPatcher.UIFramework.Music;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.ModuleSystem.Services;
-using ChillPatcher.SDK.Events;
-using ChillPatcher.SDK.Models;
 using Cysharp.Threading.Tasks;
 using HarmonyLib;
 using KanKikuchi.AudioManager;
@@ -190,31 +185,8 @@ namespace ChillPatcher.Patches.UIFramework
                 return false;
             }
 
-            var registryMusic = MusicRegistry.Instance?.GetMusic(audio.UUID);
-            if (registryMusic != null)
-            {
-                return false;
-            }
-
-            bool isModuleTrack =
-                audio.UUID.StartsWith("qqmusic_", StringComparison.OrdinalIgnoreCase) ||
-                audio.UUID.StartsWith("netease_", StringComparison.OrdinalIgnoreCase) ||
-                audio.UUID.StartsWith("bilibili_", StringComparison.OrdinalIgnoreCase);
-
-            if (!isModuleTrack)
-            {
-                return false;
-            }
-
-            lock (_invalidQueueLogLock)
-            {
-                if (_loggedInvalidQueueUuids.Add(audio.UUID))
-                {
-                    Plugin.Log.LogWarning($"[PlayQueuePatch] Skipping stale queue item removed from registry: {audio.AudioClipName} ({audio.UUID})");
-                }
-            }
-
-            return true;
+            // IPC bridge: MusicRegistry removed. Module songs always valid.
+            return false;
         }
 
         /// <summary>
@@ -229,25 +201,7 @@ namespace ChillPatcher.Patches.UIFramework
             var musicService = _latestMusicService;
             if (musicService == null) return;
 
-            // 发布 PlayEndedEvent（自然结束）
-            try
-            {
-                var eventBus = EventBus.Instance;
-                if (eventBus != null)
-                {
-                    var endedAudio = musicService.PlayingMusic;
-                    MusicInfo endedInfo = null;
-                    if (!string.IsNullOrEmpty(endedAudio?.UUID))
-                        endedInfo = MusicRegistry.Instance?.GetMusic(endedAudio.UUID);
-                    if (endedInfo == null && endedAudio != null)
-                        endedInfo = new MusicInfo { UUID = endedAudio.UUID ?? string.Empty, Title = endedAudio.AudioClipName };
-                    eventBus.Publish(new PlayEndedEvent { Music = endedInfo, Reason = PlayEndReason.Completed });
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning($"[PlayQueuePatch] PlayEndedEvent publish failed: {ex.Message}");
-            }
+            // 发布 PlayEndedEvent（自然结束）- removed: IPC bridge (EventBus removed)
 
             // 检查单曲循环模式
             if (musicService.IsRepeatOneMusic)
@@ -1235,24 +1189,7 @@ namespace ChillPatcher.Patches.UIFramework
                 Plugin.Log.LogDebug($"[PlayQueuePatch] Destroyed AudioClip for: {previousMusic.Title}");
             }
 
-            // 发布资源释放事件（文件锁已释放，可安全写入标签等）
-            try
-            {
-                var eventBus = EventBus.Instance;
-                if (eventBus != null)
-                {
-                    MusicInfo releasedInfo = null;
-                    if (!string.IsNullOrEmpty(uuid))
-                        releasedInfo = MusicRegistry.Instance?.GetMusic(uuid);
-                    if (releasedInfo == null)
-                        releasedInfo = new MusicInfo { UUID = uuid ?? string.Empty, Title = previousMusic.Title ?? previousMusic.AudioClipName };
-                    eventBus.Publish(new MusicResourcesReleasedEvent { Music = releasedInfo });
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning($"[PlayQueuePatch] MusicResourcesReleasedEvent publish failed: {ex.Message}");
-            }
+            // IPC bridge: MusicResourcesReleasedEvent removed (EventBus gone)
         }
         
         /// <summary>
@@ -1269,20 +1206,9 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static void InvokeOnPlayMusic(MusicService musicService, GameAudioInfo audio)
         {
-            // 发布 PlayEndedEvent（被新歌曲替换）
-            try
-            {
-                var eventBus = EventBus.Instance;
-                var previous = musicService.PlayingMusic;
-                if (eventBus != null && previous != null && previous.UUID != audio?.UUID)
-                {
-                    MusicInfo prevInfo = null;
-                    if (!string.IsNullOrEmpty(previous.UUID))
-                        prevInfo = MusicRegistry.Instance?.GetMusic(previous.UUID);
-                    if (prevInfo == null)
-                        prevInfo = new MusicInfo { UUID = previous.UUID ?? string.Empty, Title = previous.AudioClipName };
-                    eventBus.Publish(new PlayEndedEvent { Music = prevInfo, Reason = PlayEndReason.Replaced });
-                }
+            // IPC bridge: PlayEndedEvent/PlayStartedEvent removed (EventBus gone)
+            musicService.onPlayMusic.OnNext(audio);
+        }
             }
             catch (Exception ex)
             {

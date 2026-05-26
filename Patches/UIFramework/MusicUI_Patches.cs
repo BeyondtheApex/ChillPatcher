@@ -1,7 +1,7 @@
 using Bulbul;
 using ChillPatcher.UIFramework;
 using ChillPatcher.UIFramework.Music;
-using ChillPatcher.ModuleSystem.Registry;
+// using ChillPatcher.ModuleSystem.Registry; // removed - IPC bridge
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using HarmonyLib;
@@ -279,8 +279,8 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static string GetCurrentPlaylistId()
         {
-            // 使用 TagRegistry 检查是否有自定义 Tag
-            var tagRegistry = TagRegistry.Instance;
+            // 使用 TagRegistry 检查是否有自定义 Tag (removed - IPC bridge)
+            var tagRegistry = default(TagInfo); // null
             if (tagRegistry == null)
                 return null;
 
@@ -295,67 +295,8 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static void OnAlbumToggleHandler(string albumId)
         {
-            try
-            {
-                var albumRegistry = AlbumRegistry.Instance;
-                var musicRegistry = MusicRegistry.Instance;
-                if (albumRegistry == null || musicRegistry == null)
-                {
-                    Plugin.Log.LogWarning("Registry not initialized");
-                    return;
-                }
-
-                // 获取专辑信息
-                var albumInfo = albumRegistry.GetAlbum(albumId);
-                if (albumInfo == null)
-                {
-                    Plugin.Log.LogWarning($"Album not found: {albumId}");
-                    return;
-                }
-
-                // 获取模块的 IFavoriteExcludeHandler
-                var moduleLoader = ModuleSystem.ModuleLoader.Instance;
-                if (moduleLoader == null)
-                {
-                    Plugin.Log.LogWarning("ModuleLoader not initialized");
-                    return;
-                }
-
-                var module = moduleLoader.GetModule(albumInfo.ModuleId);
-                var excludeHandler = module as SDK.Interfaces.IFavoriteExcludeHandler;
-                if (excludeHandler == null)
-                {
-                    Plugin.Log.LogWarning($"Module {albumInfo.ModuleId} does not support exclude");
-                    return;
-                }
-
-                // 获取专辑下的所有歌曲
-                var songs = musicRegistry.GetMusicByAlbum(albumId);
-                if (songs == null || songs.Count == 0)
-                {
-                    Plugin.Log.LogWarning($"No songs in album: {albumId}");
-                    return;
-                }
-
-                // 检查当前状态：如果有任何歌曲未排除，则视为启用状态
-                bool hasEnabledSong = songs.Any(s => !excludeHandler.IsExcluded(s.UUID));
-                bool newExcludedState = hasEnabledSong; // 如果有启用的歌曲，则全部排除
-
-                Plugin.Log.LogInfo($"Album toggle: {albumInfo.DisplayName}, setting excluded={newExcludedState} for {songs.Count} songs");
-
-                // 批量设置排除状态
-                foreach (var song in songs)
-                {
-                    excludeHandler.SetExcluded(song.UUID, newExcludedState);
-                }
-
-                // 刷新播放列表以更新显示
-                RefreshPlaylistDisplay();
-            }
-            catch (System.Exception ex)
-            {
-                Plugin.Log.LogError($"Error handling album toggle: {ex}");
-            }
+            // IPC bridge: AlbumRegistry/ModuleLoader removed. Exclude handled via OmniMixIntegration.
+            return;
         }
 
         /// <summary>
@@ -403,34 +344,30 @@ namespace ChillPatcher.Patches.UIFramework
 
         /// <summary>
         /// 公共方法：异步触发增长列表加载更多
-        /// 可供其他 Patch（如 PlayQueuePatch）调用
         /// </summary>
-        /// <returns>新加载的歌曲数量，0 表示没有增长列表或加载失败</returns>
-        public static async Task<int> TriggerLoadMoreAsync()
+        public static async System.Threading.Tasks.Task<int> TriggerLoadMoreAsync()
         {
-            // 【防重入检查】如果正在加载中，直接返回 0
             if (_isLoadingMore)
             {
                 Plugin.Log.LogDebug("[GrowableList] Already loading more, skipping duplicate request");
                 return 0;
             }
             
-            // 获取当前选中的增长列表 Tag
-            var tagRegistry = TagRegistry.Instance;
-            var growableTag = tagRegistry?.GetCurrentGrowableTag();
-            
-            // 如果没有通过按钮设置，检查当前选中的 Tag 中是否包含增长 Tag
+            var tagRegistry = (object)null; // IPC: replaced by OmniMixIntegration
+
+            var growableTag = OmniMixIntegration.Instance?.GetCurrentGrowableTag();
+
             if (growableTag == null)
             {
                 var currentAudioTag = SaveDataManager.Instance?.MusicSetting?.CurrentAudioTag?.Value;
                 if (currentAudioTag != null)
                 {
-                    var growableTags = tagRegistry?.GetGrowableTags();
+                    var growableTags = OmniMixIntegration.Instance?.GetGrowableTags();
                     if (growableTags != null)
                     {
                         foreach (var gt in growableTags)
                         {
-                            if (currentAudioTag.Value.HasFlagFast((AudioTag)gt.BitValue))
+                            if (currentAudioTag.Value.HasFlagFast((Bulbul.AudioTag)gt.BitValue))
                             {
                                 growableTag = gt;
                                 break;
@@ -440,18 +377,15 @@ namespace ChillPatcher.Patches.UIFramework
                 }
             }
             
-            if (growableTag == null || growableTag.LoadMoreCallback == null)
-            {
+            if (growableTag == null)
                 return 0;
-            }
 
-            // 设置加载标志
             _isLoadingMore = true;
             Plugin.Log.LogInfo($"[GrowableList] 触发加载更多: {growableTag.DisplayName}");
 
             try
             {
-                var loadedCount = await growableTag.LoadMoreCallback();
+                var loadedCount = await OmniMixIntegration.Instance.TriggerGrowableLoadMore(growableTag.TagId);
                 
                 if (loadedCount > 0)
                 {
@@ -468,7 +402,6 @@ namespace ChillPatcher.Patches.UIFramework
             }
             finally
             {
-                // 清除加载标志
                 _isLoadingMore = false;
             }
         }
@@ -478,25 +411,20 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         public static bool IsInGrowableListMode()
         {
-            var tagRegistry = TagRegistry.Instance;
-            var growableTag = tagRegistry?.GetCurrentGrowableTag();
-            
+            var growableTag = OmniMixIntegration.Instance?.GetCurrentGrowableTag();
             if (growableTag != null)
                 return true;
-            
-            // 检查当前选中的 Tag 中是否包含增长 Tag
+
             var currentAudioTag = SaveDataManager.Instance?.MusicSetting?.CurrentAudioTag?.Value;
             if (currentAudioTag != null)
             {
-                var growableTags = tagRegistry?.GetGrowableTags();
+                var growableTags = OmniMixIntegration.Instance?.GetGrowableTags();
                 if (growableTags != null)
                 {
                     foreach (var gt in growableTags)
                     {
-                        if (currentAudioTag.Value.HasFlagFast((AudioTag)gt.BitValue))
-                        {
+                        if (currentAudioTag.Value.HasFlagFast((Bulbul.AudioTag)gt.BitValue))
                             return true;
-                        }
                     }
                 }
             }
@@ -520,27 +448,30 @@ namespace ChillPatcher.Patches.UIFramework
                     return;
 
                 // 获取当前选中的增长列表 Tag
-                var tagRegistry = TagRegistry.Instance;
+                var tagRegistry = (object)null; // removed: IPCPatch
+var tagRegistry = (object)null; // removed: IPCPatch
+var tagRegistry = (object)null; // removed: IPCPatch
+var tagRegistry = (object)null; // removed: IPCPatch
+var tagRegistry = (object)null; // removed: IPCPatch
+var tagRegistry = (object)null; // removed: IPCPatch
                 
-                // 优先使用通过按钮点击设置的当前增长 Tag
-                var growableTag = tagRegistry?.GetCurrentGrowableTag();
+                var growableTag = OmniMixIntegration.Instance?.GetCurrentGrowableTag();
                 
-                // 如果没有通过按钮设置，检查当前选中的 Tag 中是否包含增长 Tag
                 if (growableTag == null)
                 {
                     var currentAudioTag = SaveDataManager.Instance?.MusicSetting?.CurrentAudioTag?.Value;
                     if (currentAudioTag != null)
                     {
-                        var growableTags = tagRegistry?.GetGrowableTags();
+                        var growableTags = OmniMixIntegration.Instance?.GetGrowableTags();
                         if (growableTags != null)
                         {
                             foreach (var gt in growableTags)
                             {
-                                if (currentAudioTag.Value.HasFlagFast((AudioTag)gt.BitValue))
+                                if (currentAudioTag.Value.HasFlagFast((Bulbul.AudioTag)gt.BitValue))
                                 {
                                     growableTag = gt;
                                     Plugin.Log.LogInfo($"[GrowableList] 检测到当前选中包含增长 Tag: {gt.DisplayName}");
-                                    break; // 只处理第一个匹配的增长 Tag
+                                    break;
                                 }
                             }
                         }
@@ -548,40 +479,19 @@ namespace ChillPatcher.Patches.UIFramework
                 }
                 
                 if (growableTag == null)
-                {
-                    // 没有增长列表，忽略
                     return;
-                }
 
                 _lastBottomOutTime = now;
                 _isLoadingMore = true;
 
                 Plugin.Log.LogInfo($"[GrowableList] 触底: {growableTag.DisplayName}");
 
-                var eventBus = ModuleSystem.EventBus.Instance;
-                int loadedCount = 0;
-                bool hasCallback = growableTag.LoadMoreCallback != null;
+                var loadedCount = await OmniMixIntegration.Instance.TriggerGrowableLoadMore(growableTag.TagId);
+                Plugin.Log.LogInfo($"[GrowableList] 回调完成，新增 {loadedCount} 首歌曲");
 
-                // 发布触底事件（事件模式），让模块可以订阅
-                eventBus?.Publish(new SDK.Events.GrowableListBottomOutEvent
+                if (loadedCount > 0)
                 {
-                    TagId = growableTag.TagId,
-                    TagInfo = growableTag,
-                    CurrentSongCount = MusicRegistry.Instance?.GetMusicByTag(growableTag.TagId)?.Count ?? 0,
-                    ReportLoaded = (count) => OnGrowableListLoaded(growableTag.TagId, count)
-                });
-
-                // 如果 Tag 有回调，也调用回调（回调模式）
-                if (hasCallback)
-                {
-                    Plugin.Log.LogInfo($"[GrowableList] 使用回调模式加载更多...");
-                    loadedCount = await growableTag.LoadMoreCallback();
-                    Plugin.Log.LogInfo($"[GrowableList] 回调完成，新增 {loadedCount} 首歌曲");
-
-                    if (loadedCount > 0)
-                    {
-                        OnGrowableListLoaded(growableTag.TagId, loadedCount);
-                    }
+                    OnGrowableListLoaded(growableTag.TagId, loadedCount);
                 }
             }
             catch (System.Exception ex)
@@ -605,14 +515,8 @@ namespace ChillPatcher.Patches.UIFramework
 
             Plugin.Log.LogInfo($"[GrowableList] 加载完成: TagId={tagId}, 新增 {loadedCount} 首歌曲");
 
-            // 发布加载完成事件
-            var eventBus = ModuleSystem.EventBus.Instance;
-            eventBus?.Publish(new SDK.Events.GrowableListLoadedEvent
-            {
-                TagId = tagId,
-                LoadedCount = loadedCount,
-                HasMore = loadedCount > 0
-            });
+            // IPC bridge: GrowableListLoadedEvent removed
+            // eventBus?.Publish removed
 
             // 刷新播放列表显示
             RefreshPlaylistDisplay();

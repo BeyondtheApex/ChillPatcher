@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <AssemblyName>OmniMixPlayer.Module.LocalFolder</AssemblyName>
+    <OutputPath>..\..\bin\Modules\LocalFolder\</OutputPath>
+    <RootNamespace>OmniMixPlayer.Module.LocalFolder</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\OmniMixPlayer.SDK\OmniMixPlayer.SDK.csproj">
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- NuGet Packages -->
+  <ItemGroup>
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.118" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- 嵌入封面资源 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\localcover.jpg" Condition="Exists('Resources\localcover.jpg')">
+      <LogicalName>OmniMixPlayer.Module.LocalFolder.Resources.localcover.jpg</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- 构建后复制原生 DLL 到模块 native 目录 -->
+  <Target Name="CopySQLiteNative" AfterTargets="Build">
+    <PropertyGroup>
+      <ModuleNativeX64>$(OutputPath)native\x64\</ModuleNativeX64>
+    </PropertyGroup>
+    <MakeDir Directories="$(ModuleNativeX64)" />
+    <Copy SourceFiles="$(OutputPath)runtimes\win-x64\native\SQLite.Interop.dll" 
+          DestinationFolder="$(ModuleNativeX64)" 
+          Condition="Exists('$(OutputPath)runtimes\win-x64\native\SQLite.Interop.dll')" />
+  </Target>
+
+</Project>
+

@@ -1,9 +1,5 @@
 using System;
 using Bulbul;
-using ChillPatcher.ModuleSystem;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.SDK.Events;
-using ChillPatcher.SDK.Interfaces;
 using HarmonyLib;
 
 namespace ChillPatcher.Patches.UIFramework
@@ -35,29 +31,15 @@ namespace ChillPatcher.Patches.UIFramework
                 if (gameAudioInfo.Tag.HasFlagFast(AudioTag.Favorite))
                     return false;
 
-                // 检查是否是模块注册的歌曲
-                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
-                if (musicInfo != null)
+                if (StreamingAudioLoader.IsStreamingSource(gameAudioInfo))
                 {
-                    // 模块歌曲 - 添加收藏标记并通过事件通知
                     gameAudioInfo.Tag = gameAudioInfo.Tag | AudioTag.Favorite;
-                    
-                    // 发布收藏事件，让模块处理持久化
-                    EventBus.Instance?.Publish(new FavoriteChangedEvent
-                    {
-                        Music = musicInfo,
-                        IsFavorite = true,
-                        ModuleId = musicInfo.ModuleId
-                    });
-                    
-                    // 触发 UI 刷新事件
+                    OmniMixIntegration.Instance.SetFavorite(gameAudioInfo.UUID, true).Forget();
                     OnSongFavoriteChanged?.Invoke(gameAudioInfo.UUID, true);
-                    
-                    Plugin.Log.LogInfo($"[Favorite] Module song favorited: {gameAudioInfo.UUID}");
-                    return false; // 不执行原逻辑
+                    Plugin.Log.LogInfo($"[Favorite] Stream song favorited: {gameAudioInfo.UUID}");
+                    return false;
                 }
                 
-                // 非模块歌曲 - 执行原逻辑
                 return true;
             }
             catch (Exception ex)
@@ -82,14 +64,10 @@ namespace ChillPatcher.Patches.UIFramework
                 if (!gameAudioInfo.Tag.HasFlagFast(AudioTag.Favorite))
                     return false;
 
-                // 检查是否是模块注册的歌曲
-                var musicInfo = MusicRegistry.Instance?.GetMusic(gameAudioInfo.UUID);
-                if (musicInfo != null)
+                if (StreamingAudioLoader.IsStreamingSource(gameAudioInfo))
                 {
-                    // 模块歌曲 - 移除收藏标记并通过事件通知
                     gameAudioInfo.Tag = gameAudioInfo.Tag & ~AudioTag.Favorite;
                     
-                    // 更新播放列表
                     var currentAudioTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag;
                     var currentValue = currentAudioTag.CurrentValue;
                     
@@ -106,22 +84,13 @@ namespace ChillPatcher.Patches.UIFramework
                         shuffleList?.Remove(gameAudioInfo);
                     }
                     
-                    // 发布收藏事件，让模块处理持久化
-                    EventBus.Instance?.Publish(new FavoriteChangedEvent
-                    {
-                        Music = musicInfo,
-                        IsFavorite = false,
-                        ModuleId = musicInfo.ModuleId
-                    });
-                    
-                    // 触发 UI 刷新事件
+                    OmniMixIntegration.Instance.SetFavorite(gameAudioInfo.UUID, false).Forget();
                     OnSongFavoriteChanged?.Invoke(gameAudioInfo.UUID, false);
                     
-                    Plugin.Log.LogInfo($"[Favorite] Module song unfavorited: {gameAudioInfo.UUID}");
-                    return false; // 不执行原逻辑
+                    Plugin.Log.LogInfo($"[Favorite] Stream song unfavorited: {gameAudioInfo.UUID}");
+                    return false;
                 }
                 
-                // 非模块歌曲 - 执行原逻辑
                 return true;
             }
             catch (Exception ex)

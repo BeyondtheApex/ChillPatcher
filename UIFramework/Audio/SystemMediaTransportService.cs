@@ -5,9 +5,7 @@ using BepInEx.Logging;
 using Bulbul;
 using ChillPatcher.Native;
 using ChillPatcher.UIFramework.Music;
-using ChillPatcher.ModuleSystem;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.ModuleSystem.Services;
+// ModuleSystem removed - IPC bridge
 using ChillPatcher.SDK.Interfaces;
 using UnityEngine;
 
@@ -170,28 +168,7 @@ namespace ChillPatcher.UIFramework.Audio
         /// </summary>
         private string GetAlbumName(GameAudioInfo audioInfo)
         {
-            try
-            {
-                // 从 AlbumRegistry 获取专辑名称
-                if (!string.IsNullOrEmpty(audioInfo.UUID))
-                {
-                    var musicInfo = MusicRegistry.Instance?.GetByUUID(audioInfo.UUID);
-                    if (musicInfo != null && !string.IsNullOrEmpty(musicInfo.AlbumId))
-                    {
-                        var albumInfo = AlbumRegistry.Instance?.GetAlbum(musicInfo.AlbumId);
-                        if (albumInfo != null && !string.IsNullOrEmpty(albumInfo.DisplayName))
-                        {
-                            return albumInfo.DisplayName;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning($"获取专辑名称失败: {ex.Message}");
-            }
-            
-            // 默认返回游戏名
+            // IPC bridge: MusicRegistry/AlbumRegistry removed. Always return default.
             return "Chill With You";
         }
 

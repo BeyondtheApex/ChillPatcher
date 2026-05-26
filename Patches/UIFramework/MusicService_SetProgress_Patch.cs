@@ -2,10 +2,6 @@ using HarmonyLib;
 using Bulbul;
 using KanKikuchi.AudioManager;
 using UnityEngine;
-using ChillPatcher.ModuleSystem;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.SDK.Events;
-using ChillPatcher.SDK.Models;
 using System;
 
 namespace ChillPatcher.Patches.UIFramework
@@ -94,8 +90,7 @@ namespace ChillPatcher.Patches.UIFramework
             }
 
             // 检查是否是流媒体歌曲
-            var music = MusicRegistry.Instance?.GetMusic(playingMusic.UUID);
-            if (music == null || music.SourceType != MusicSourceType.Stream)
+            if (!StreamingAudioLoader.IsStreamingSource(playingMusic))
             {
                 return true; // 不是流媒体，使用原始逻辑（Postfix 会发布事件）
             }
@@ -169,30 +164,7 @@ namespace ChillPatcher.Patches.UIFramework
         [HarmonyPostfix]
         public static void SetMusicProgress_Postfix(MusicService __instance, float progress)
         {
-            // 只处理非流媒体歌曲（流媒体在 ExecuteSeek 里自己发布）
-            var playingMusic = __instance.PlayingMusic;
-            if (playingMusic == null) return;
-            var music = MusicRegistry.Instance?.GetMusic(playingMusic.UUID);
-            if (music != null && music.SourceType == MusicSourceType.Stream) return; // 流媒体已在 Prefix 处理
-
-            try
-            {
-                var eventBus = EventBus.Instance;
-                if (eventBus == null) return;
-                float totalTime = playingMusic.AudioClip != null ? playingMusic.AudioClip.length : 0f;
-                eventBus.Publish(new PlaySeekEvent
-                {
-                    Music = music,
-                    Progress = progress,
-                    TargetTime = totalTime * progress,
-                    IsPending = false,
-                    IsCompleted = true
-                });
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning($"[SetProgress_Patch] SetMusicProgress_Postfix event failed: {ex.Message}");
-            }
+            // TODO: IPC bridge needed - EventBus/MusicRegistry removed for seek events
         }
 
         /// <summary>
@@ -209,11 +181,9 @@ namespace ChillPatcher.Patches.UIFramework
             _lastSeekFrame = targetFrame;
             _lastSeekTime = System.DateTime.Now;
 
-            var musicInfo = GetCurrentMusicInfo(musicService);
             float totalTime = (ActivePcmReader != null && ActivePcmReader.Info.Duration > 0)
                 ? ActivePcmReader.Info.Duration
                 : (clip?.length ?? 0f);
-            float targetTime = totalTime * progress;
 
             // 尝试 Seek
             bool success = ActivePcmReader.Seek(targetFrame);
@@ -227,7 +197,7 @@ namespace ChillPatcher.Patches.UIFramework
                     FacilityMusic_UpdateFacility_Patch.IsWaitingForSeek = true;
                     FacilityMusic_UpdateFacility_Patch.PendingSeekProgress = progress;
                     Plugin.Log.LogInfo($"[SetProgress_Patch] Pending seek set to {progress:P1}, waiting for cache (progress: {ActivePcmReader.CacheProgress:F1}%)");
-                    PublishSeekEvent(musicInfo, progress, targetTime, isPending: true, isCompleted: false);
+                    // TODO: IPC bridge needed - EventBus removed for seek events
                     return false;
                 }
                 
@@ -250,17 +220,19 @@ namespace ChillPatcher.Patches.UIFramework
                 }
                 
                 Plugin.Log.LogInfo($"[SetProgress_Patch] Seek succeeded to {progress:P1}");
-                PublishSeekEvent(musicInfo, progress, targetTime, isPending: false, isCompleted: true);
+                // TODO: IPC bridge needed - EventBus removed for seek events
                 return false;
             }
             else
             {
                 Plugin.Log.LogWarning($"[SetProgress_Patch] Seek failed");
-                PublishSeekEvent(musicInfo, progress, targetTime, isPending: false, isCompleted: false);
+                // TODO: IPC bridge needed - EventBus removed for seek events
                 return false;
             }
         }
 
+        // TODO: IPC bridge needed - MusicRegistry removed for GetCurrentMusicInfo
+        /*
         private static MusicInfo GetCurrentMusicInfo(MusicService musicService)
         {
             var audio = musicService?.PlayingMusic;
@@ -291,6 +263,7 @@ namespace ChillPatcher.Patches.UIFramework
                 Plugin.Log.LogWarning($"[SetProgress_Patch] PlaySeekEvent publish failed: {ex.Message}");
             }
         }
+        */
 
         /// <summary>
         /// 获取 MusicUI 的拖动状态
@@ -321,29 +294,7 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 FacilityMusic_UpdateFacility_Patch.IsWaitingForSeek = false;
                 Plugin.Log.LogInfo("[SetProgress_Patch] Pending seek completed, resuming progress updates");
-
-                // 发布 Seek 完成事件
-                try
-                {
-                    var eventBus = EventBus.Instance;
-                    if (eventBus != null)
-                    {
-                        float progress = FacilityMusic_UpdateFacility_Patch.PendingSeekProgress;
-                        float totalTime = (ActivePcmReader != null && ActivePcmReader.Info.Duration > 0)
-                            ? ActivePcmReader.Info.Duration : 0f;
-                        eventBus.Publish(new PlaySeekEvent
-                        {
-                            Progress = progress,
-                            TargetTime = totalTime * progress,
-                            IsPending = false,
-                            IsCompleted = true
-                        });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Plugin.Log.LogWarning($"[SetProgress_Patch] OnPendingSeekCompleted event failed: {ex.Message}");
-                }
+                // TODO: IPC bridge needed - EventBus removed for seek completion events
             }
         }
     }

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <AssemblyName>OmniMixPlayer.Module.Netease</AssemblyName>
+    <OutputPath>..\..\bin\Modules\Netease\</OutputPath>
+    <RootNamespace>OmniMixPlayer.Module.Netease</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\OmniMixPlayer.SDK\OmniMixPlayer.SDK.csproj">
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <!-- NuGet Packages -->
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="QRCoder" Version="1.4.3" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+  </ItemGroup>
+
+  <!-- Ƕ����Դ -->
+  <ItemGroup>
+    <EmbeddedResource Include="FAVORITES.png" Condition="Exists('FAVORITES.png')">
+      <LogicalName>OmniMixPlayer.Module.Netease.Resources.FAVORITES.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FM.png" Condition="Exists('FM.png')">
+      <LogicalName>OmniMixPlayer.Module.Netease.Resources.FM.png</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>
+

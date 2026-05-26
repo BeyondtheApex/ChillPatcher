@@ -9,7 +9,6 @@ using UnityEngine.UI;
 using R3;
 using ChillPatcher.UIFramework.Core;
 using ChillPatcher.UIFramework.Music;
-using ChillPatcher.ModuleSystem.Services;
 
 namespace ChillPatcher.Patches.UIFramework
 {

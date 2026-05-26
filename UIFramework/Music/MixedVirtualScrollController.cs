@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bulbul;
-using ChillPatcher.ModuleSystem.Services;
+// ModuleSystem.Services removed - IPC bridge
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -138,8 +138,7 @@ namespace ChillPatcher.UIFramework.Music
             // 订阅滚动事件
             _scrollRect.onValueChanged.AddListener(OnScrollValueChanged);
 
-            // 订阅 CoverService 封面加载完成事件
-            CoverService.Instance.OnAlbumCoverLoaded += OnCoverLoaded;
+            // IPC bridge: CoverService removed
 
             _isInitialized = true;
         }
@@ -586,8 +585,7 @@ namespace ChillPatcher.UIFramework.Music
                 _scrollRect.onValueChanged.RemoveListener(OnScrollValueChanged);
             }
 
-            // 取消订阅 CoverService 封面加载事件
-            CoverService.Instance.OnAlbumCoverLoaded -= OnCoverLoaded;
+            // IPC bridge: CoverService removed
 
             ClearAllActiveItems();
 

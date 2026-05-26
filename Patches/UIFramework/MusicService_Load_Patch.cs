@@ -6,55 +6,48 @@ using System;
 namespace ChillPatcher.Patches.UIFramework
 {
     /// <summary>
-    /// 在MusicService.Load后加载模块
+    /// 在 MusicService.Load 之后通过 IPC 从 OmniMixPlayer 导入歌曲
     /// </summary>
     [HarmonyPatch(typeof(MusicService), "Load")]
     public static class MusicService_Load_Patch
     {
-        private static bool _modulesLoaded = false;
-        
+        private static bool _songsImported = false;
+
         [HarmonyPostfix]
         static void Postfix(MusicService __instance)
         {
-            // ✅ 首先保存实例引用，确保后续代码可用
             MusicService_RemoveLimit_Patch.CurrentInstance = __instance;
-            
-            if (_modulesLoaded)
-            {
-                // 模块已加载，但场景重载后新 MusicService 需要重新同步歌曲
-                var resyncLogger = BepInEx.Logging.Logger.CreateLogSource("MusicService_Load_Patch");
-                UniTask.Void(async () =>
-                {
-                    try
-                    {
-                        resyncLogger.LogInfo("Re-syncing module songs to new MusicService...");
-                        await Plugin.SyncMusicToGameAsync();
-                        resyncLogger.LogInfo("✅ Module songs re-synced!");
-                    }
-                    catch (Exception ex)
-                    {
-                        resyncLogger.LogError($"❌ Module re-sync failed: {ex}");
-                    }
-                });
-                return;
-            }
-            
-            _modulesLoaded = true;
-            
+
             var logger = BepInEx.Logging.Logger.CreateLogSource("MusicService_Load_Patch");
-            
-            // 延迟加载模块
+
             UniTask.Void(async () =>
             {
                 try
                 {
-                    logger.LogInfo("Starting module loading...");
-                    await Plugin.LoadModulesAsync();
-                    logger.LogInfo("✅ Modules loaded successfully!");
+                    // Connect to OmniMixPlayer
+                    if (!OmniMixIntegration.Instance.IsConnected)
+                    {
+                        logger.LogInfo("Connecting to OmniMixPlayer backend...");
+                        var ok = await OmniMixIntegration.Instance.ConnectAsync();
+                        if (!ok)
+                        {
+                            logger.LogWarning("Failed to connect to OmniMixPlayer backend");
+                            return;
+                        }
+                    }
+
+                    // Import songs
+                    var replaceOnlyFirstTime = !_songsImported;
+                    _songsImported = true;
+
+                    logger.LogInfo("Importing songs from OmniMixPlayer...");
+                    var count = await OmniMixIntegration.Instance.ImportSongsToGame(replace: replaceOnlyFirstTime);
+
+                    logger.LogInfo($"Imported {count} songs to game MusicService");
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError($"❌ Module loading failed: {ex}");
+                    logger.LogError($"Failed to import songs: {ex}");
                 }
             });
         }

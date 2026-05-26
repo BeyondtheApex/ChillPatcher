@@ -1,8 +1,7 @@
 using HarmonyLib;
 using Bulbul;
 using KanKikuchi.AudioManager;
-using ChillPatcher.ModuleSystem.Registry;
-using ChillPatcher.SDK.Models;
+using ChillPatcher.UIFramework.Audio;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -41,8 +40,7 @@ namespace ChillPatcher.Patches.UIFramework
             }
 
             // 检查是否是流媒体歌曲
-            var music = MusicRegistry.Instance?.GetMusic(playingMusic.UUID);
-            if (music == null || music.SourceType != MusicSourceType.Stream)
+            if (!StreamingAudioLoader.IsStreamingSource(playingMusic))
             {
                 // 不是流媒体，使用原始逻辑
                 return true;

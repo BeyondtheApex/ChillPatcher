@@ -3,6 +3,8 @@ obj/
 release/
 packages/
 build/
+target/
+playerbuild/
 
 # Netease bridge built artifacts (Go DLL)
 netease_bridge/*.dll

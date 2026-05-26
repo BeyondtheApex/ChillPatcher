@@ -22,6 +22,16 @@
     <BepInExCorePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core</BepInExCorePath>
   </PropertyGroup>
 
+  <!-- Framework 依赖 -->
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <!-- NuGet 依赖 -->
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
   <!-- SDK 不依赖游戏 DLL，只依赖基础 Unity 类型 -->
   <ItemGroup>
     <!-- Unity Engine (基础类型) -->
