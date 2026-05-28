@@ -622,6 +622,44 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
               ],
             ),
             const SizedBox(height: 12),
+            if (svcState == 'running' || svcState == 'installed') ...[
+              const Divider(height: 1),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.serviceAutoStart,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    value: st.serviceAutoStart,
+                    onChanged: busy
+                        ? null
+                        : (v) async {
+                            final ok = await st.setServiceAutoStart(v);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    ok
+                                        ? (st.language == 'zh' ? '开机自启设置成功' : 'Service auto-start updated')
+                                        : (st.language == 'zh' ? '开机自启设置失败' : 'Failed to update service auto-start'),
+                                  ),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
             if (busy)
               const Center(
                 child: Padding(

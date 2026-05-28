@@ -28,6 +28,8 @@ dependencies:
   # Storage
   shared_preferences: ^2.3.0
   ffi: ^2.2.0
+  archive: ^4.0.9
+  file_picker: ^11.0.2
 
 dev_dependencies:
   flutter_test:
@@ -37,6 +39,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   generate: true
+  assets:
+    - assets/
   #         style: italic
   #   - family: Trajan Pro
   #     fonts:

@@ -68,9 +68,8 @@ namespace ChillPatcher.Patches.UIFramework
                 // 缓存实例，供 RefreshCustomTagButtons 使用（FindObjectOfType 找不到 inactive 对象）
                 _cachedTagListUI = __instance;
                 
-                // TODO: IPC bridge needed - TagRegistry removed, custom tags disabled
-                // bool hasModuleTags = TagRegistry.Instance?.GetAllTags()?.Count > 0;
-                bool hasModuleTags = false;
+                // 检查是否有任何自定义 Tag
+                bool hasModuleTags = (OmniMixIntegration.Instance?.GetAllTags()?.Count ?? 0) > 0;
                 
                 // 1. 隐藏空Tag功能
                 if (PluginConfig.HideEmptyTags.Value)
@@ -104,7 +103,10 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         public static void RefreshCustomTagButtons()
         {
-            // TODO: IPC bridge needed - TagRegistry removed, custom tag buttons disabled
+            if (_cachedTagListUI != null)
+            {
+                Setup_Postfix(_cachedTagListUI);
+            }
         }
         
         /// <summary>
@@ -280,10 +282,20 @@ namespace ChillPatcher.Patches.UIFramework
             // 获取按钮预制体（克隆第一个按钮）
             var buttonPrefab = firstButton.gameObject;
 
-            // 添加自定义Tag按钮
-            var customTags = OmniMixIntegration.Instance?.GetGrowableTags() ?? new List<TagInfo>();
+            // 获取所有自定义 Tag
+            var customTags = OmniMixIntegration.Instance?.GetAllTags() ?? new List<TagInfo>();
+            var allMusicList = musicService.AllMusicList ?? new List<GameAudioInfo>();
+
             foreach (var customTag in customTags)
             {
+                // 过滤无歌曲的非增长型自定义 Tag（如：设备、登录）
+                bool isGrowable = customTag.IsGrowableList;
+                bool hasMusic = allMusicList.Any(audio => audio != null && audio.Tag.HasFlagFast((AudioTag)customTag.BitValue));
+                if (!isGrowable && !hasMusic)
+                {
+                    continue;
+                }
+
                 // 克隆按钮
                 var newButtonObj = UnityEngine.Object.Instantiate(buttonPrefab, container);
                 newButtonObj.name = $"CustomTag_{customTag.TagId}";

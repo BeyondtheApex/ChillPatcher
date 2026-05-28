@@ -33,6 +33,65 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settings => 'Settings';
 
   @override
+  String get gameIntegration => 'Game Integration';
+
+  @override
+  String get selectGameDir => 'Select Game Directory';
+
+  @override
+  String get gamePath => 'Game Path';
+
+  @override
+  String get bepinexStatus => 'BepInEx Status';
+
+  @override
+  String get modStatus => 'Mod Status';
+
+  @override
+  String get installBepInEx => 'Install BepInEx';
+
+  @override
+  String get uninstallBepInEx => 'Uninstall BepInEx';
+
+  @override
+  String get installMod => 'Install Mod';
+
+  @override
+  String get uninstallMod => 'Uninstall Mod';
+
+  @override
+  String get reinstallBepInEx => 'Reinstall BepInEx';
+
+  @override
+  String get reinstallMod => 'Reinstall Mod';
+
+  @override
+  String get statusNotInstalled => 'Not Installed';
+
+  @override
+  String get statusManaged => 'Managed';
+
+  @override
+  String get statusUnmanaged => 'Pre-installed / Unmanaged';
+
+  @override
+  String get unmanagedWarning =>
+      'BepInEx is already pre-installed. OmniMix will only manage Mod plugins. Core loader will not be managed or overwritten.';
+
+  @override
+  String get invalidGameDir =>
+      'Invalid game directory! Please select the root folder of \'Chill With You\' containing \'Chill With You.exe\' and \'Chill With You_Data\'.';
+
+  @override
+  String get modInstalled => 'Installed';
+
+  @override
+  String get deploymentLogs => 'Deployment Logs';
+
+  @override
+  String get chooseFolder => 'Choose Folder';
+
+  @override
   String get about => 'About';
 
   @override
@@ -184,4 +243,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get serviceMode => 'Service';
+
+  @override
+  String get serviceAutoStart => 'Service Auto-Start';
 }

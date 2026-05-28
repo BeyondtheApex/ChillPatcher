@@ -8,6 +8,7 @@ import '../pages/playlist_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/modules_page.dart';
 import '../pages/about_page.dart';
+import '../pages/game_integration_page.dart';
 import '../widgets/launchpad_grid.dart';
 import '../widgets/proxy_node.dart';
 
@@ -152,7 +153,7 @@ class _MainContentState extends State<_MainContent> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final st = widget.state;
     final isWide = widget.isWide;
     final cs = Theme.of(context).colorScheme;
@@ -192,6 +193,10 @@ class _MainContentState extends State<_MainContent> {
                   icon: const Icon(Icons.extension),
                   label: Text(l10n.modules),
                 ),
+                 NavigationRailDestination(
+                  icon: const Icon(Icons.sports_esports),
+                  label: Text(l10n.gameIntegration),
+                ),
                 NavigationRailDestination(
                   icon: const Icon(Icons.settings),
                   label: Text(l10n.settings),
@@ -226,6 +231,10 @@ class _MainContentState extends State<_MainContent> {
           NavigationDestination(
             icon: const Icon(Icons.extension),
             label: l10n.modules,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.sports_esports),
+            label: l10n.gameIntegration,
           ),
           NavigationDestination(
             icon: const Icon(Icons.settings),
@@ -311,6 +320,8 @@ class _MainContentState extends State<_MainContent> {
       case 3:
         return ModulesPage(state: st);
       case 4:
+        return GameIntegrationPage(state: st);
+      case 5:
         return SettingsPage(state: st);
       default:
         return HomePage(state: st);

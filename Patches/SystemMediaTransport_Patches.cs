@@ -2,10 +2,11 @@ using HarmonyLib;
 using Bulbul;
 using System;
 using R3;
-using ChillPatcher.UIFramework.Audio;
-using ChillPatcher.ModuleSystem;
 using ChillPatcher.SDK.Events;
 using ChillPatcher.Patches.UIFramework;
+using ChillPatcher.UIFramework.Audio;
+using Cysharp.Threading.Tasks;
+
 
 namespace ChillPatcher.Patches
 {
@@ -49,13 +50,6 @@ namespace ChillPatcher.Patches
                 _playMusicSubscription = __instance.MusicService.onPlayMusic.Subscribe(OnPlayMusic);
                 _changeMusicSubscription = __instance.MusicService.onChangeMusic.Subscribe(OnChangeMusic);
 
-                // 订阅进度事件，持续更新 SMTC 时间线
-                var eventBus = EventBus.Instance;
-                if (eventBus != null)
-                {
-                    _progressEventSubscription = eventBus.Subscribe<PlayProgressEvent>(OnPlayProgress);
-                }
-                
                 Plugin.Log.LogInfo("[SMTC] 服务已初始化并绑定到游戏");
             }
             catch (Exception ex)
@@ -104,27 +98,10 @@ namespace ChillPatcher.Patches
             // 实际信息由 OnPlayMusic 更新
         }
 
-        /// <summary>
-        /// 每秒更新 SMTC 时间线位置
-        /// </summary>
-        private static void OnPlayProgress(PlayProgressEvent e)
-        {
-            try
-            {
-                if (e.TotalTime <= 0) return;
 
-                long durationMs = (long)(e.TotalTime * 1000);
-                long positionMs = (long)(e.CurrentTime * 1000);
-                SystemMediaTransportService.Instance.UpdateTimeline(durationMs, positionMs);
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"[SMTC] OnPlayProgress 异常: {ex.Message}");
-            }
-        }
 
         /// <summary>
-        /// 当暂停音乐时更新 SMTC 状态
+        /// 当暂停音乐时更新 SMTC 状态并同步到后端
         /// </summary>
         [HarmonyPatch(typeof(FacilityMusic), "PauseMusic")]
         [HarmonyPostfix]
@@ -134,18 +111,20 @@ namespace ChillPatcher.Patches
             {
                 if (PluginConfig.EnableSystemMediaTransport.Value)
                     SystemMediaTransportService.Instance.SetPlaybackStatus(false);
+
+                if (OmniMixIntegration.Instance != null && OmniMixIntegration.Instance.IsConnected)
+                {
+                    OmniMixIntegration.Instance.Pause().Forget();
+                }
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"[SMTC] PauseMusic 异常: {ex.Message}");
             }
-
-            // 通知模块（如 Spotify Connect）暂停
-            PublishPlayPausedEvent(true);
         }
 
         /// <summary>
-        /// 当恢复播放时更新 SMTC 状态
+        /// 当恢复播放时更新 SMTC 状态并同步到后端
         /// </summary>
         [HarmonyPatch(typeof(FacilityMusic), "UnPauseMusic")]
         [HarmonyPostfix]
@@ -155,38 +134,15 @@ namespace ChillPatcher.Patches
             {
                 if (PluginConfig.EnableSystemMediaTransport.Value)
                     SystemMediaTransportService.Instance.SetPlaybackStatus(true);
+
+                if (OmniMixIntegration.Instance != null && OmniMixIntegration.Instance.IsConnected)
+                {
+                    OmniMixIntegration.Instance.Resume().Forget();
+                }
             }
             catch (Exception ex)
             {
                 Plugin.Log.LogError($"[SMTC] UnPauseMusic 异常: {ex.Message}");
-            }
-
-            // 通知模块（如 Spotify Connect）恢复播放
-            PublishPlayPausedEvent(false);
-        }
-
-        private static void PublishPlayPausedEvent(bool isPaused)
-        {
-            try
-            {
-                var eventBus = EventBus.Instance;
-                if (eventBus == null) return;
-
-                var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
-                var playingUuid = musicService?.PlayingMusic?.UUID;
-                var musicInfo = !string.IsNullOrEmpty(playingUuid)
-                    ? ModuleSystem.Registry.MusicRegistry.Instance?.GetMusic(playingUuid)
-                    : null;
-
-                eventBus.Publish(new PlayPausedEvent
-                {
-                    Music = musicInfo,
-                    IsPaused = isPaused
-                });
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogError($"[SMTC] PublishPlayPausedEvent 异常: {ex.Message}");
             }
         }
     }

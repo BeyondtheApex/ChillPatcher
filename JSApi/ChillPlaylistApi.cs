@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using BepInEx.Logging;
 using Bulbul;
 using ChillPatcher.Patches.UIFramework;
 using ChillPatcher.UIFramework.Music;
+using ChillPatcher.UIFramework.Audio;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
@@ -25,7 +27,7 @@ namespace ChillPatcher.JSApi
 
         #region Tag 查询 (from OmniMixPlayer)
 
-        public async string getAllTags()
+        public async Task<string> getAllTags()
         {
             return await OmniMixIntegration.Instance.GetTagsJson();
         }
@@ -34,12 +36,12 @@ namespace ChillPatcher.JSApi
 
         #region 专辑查询
 
-        public async string getAllAlbums()
+        public async Task<string> getAllAlbums()
         {
             return await OmniMixIntegration.Instance.GetAlbumsJson();
         }
 
-        public async string getAlbumsByTag(string tagId)
+        public async Task<string> getAlbumsByTag(string tagId)
         {
             return await OmniMixIntegration.Instance.GetAlbumsJson(tagId);
         }
@@ -48,22 +50,22 @@ namespace ChillPatcher.JSApi
 
         #region 歌曲查询
 
-        public async string getAllSongs()
+        public async Task<string> getAllSongs()
         {
             return await OmniMixIntegration.Instance.GetSongsJson();
         }
 
-        public async string getSongsByAlbum(string albumId)
+        public async Task<string> getSongsByAlbum(string albumId)
         {
             return await OmniMixIntegration.Instance.GetSongsJson(albumId);
         }
 
-        public async string getSongsByTag(string tagId)
+        public async Task<string> getSongsByTag(string tagId)
         {
             return await OmniMixIntegration.Instance.GetSongsJson(null, tagId);
         }
 
-        public async string getSongsByModule(string moduleId)
+        public async Task<string> getSongsByModule(string moduleId)
         {
             return await OmniMixIntegration.Instance.GetSongsJson();
         }

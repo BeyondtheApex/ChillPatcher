@@ -843,12 +843,13 @@ namespace OmniMixPlayer.Module.Netease
         private void OnQRLoginFailed(string error)
         {
             _context.Logger.LogError($"[{DisplayName}] 登录失败: {error}");
-            // 通过 ErrorEvent 通知前端
+            // 通知前端
             _context.EventBus.Publish(new ErrorEvent
             {
                 Code = "netease_login_failed",
                 Message = $"网易云登录失败: {error}"
             });
+            PushUI?.Invoke(BuildUI());
         }
 
         /// <summary>
@@ -1343,7 +1344,9 @@ namespace OmniMixPlayer.Module.Netease
             else
             {
                 var qrReady = _qrLoginManager?.QRCodeBytes != null;
-                var qrStatusText = qrReady ? "请使用网易云 APP 扫码" : "二维码加载中...";
+                var qrStatusText = qrReady
+                    ? (_qrLoginManager?.StatusMessage ?? "请使用网易云 APP 扫码")
+                    : "二维码加载中...";
 
                 return SlintUi.Column(spacing: 16, padding: 20)
                     .AddChild(SlintUi.Text("未登录", fontSize: 16))
@@ -1452,10 +1455,10 @@ namespace OmniMixPlayer.Module.Netease
         {
             if (path == "qr-image")
             {
-                // Always refresh QR when requested — handles expiry and first load
                 if (_qrLoginManager != null)
                 {
-                    if (_qrLoginManager.QRCodeBytes == null)
+                    // 二维码不存在或轮询已停止（超时/过期），重新开始
+                    if (_qrLoginManager.QRCodeBytes == null || !_qrLoginManager.IsWaitingForLogin)
                     {
                         await _qrLoginManager.StartLoginAsync();
                     }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -23,7 +23,7 @@ namespace OmniMixPlayer.Backend.Http
 {
     public class ApiServer
     {
-        private readonly PlaybackController _playback;
+        private readonly PlaybackInstanceManager _instances;
         private readonly ModuleLoader _moduleLoader;
         private readonly TagRegistry _tagRegistry;
         private readonly AlbumRegistry _albumRegistry;
@@ -34,19 +34,22 @@ namespace OmniMixPlayer.Backend.Http
         private ModuleUIHandler _moduleUIHandler;
         private GlobalConfigManager _globalConfig;
 
-        public ApiServer(PlaybackController playback, ModuleLoader moduleLoader,
+        public ApiServer(PlaybackInstanceManager instances, ModuleLoader moduleLoader,
             TagRegistry tagRegistry, AlbumRegistry albumRegistry, MusicRegistry musicRegistry,
             ILogger logger)
         {
-            _playback = playback;
+            _instances = instances;
             _moduleLoader = moduleLoader;
             _tagRegistry = tagRegistry;
             _albumRegistry = albumRegistry;
             _musicRegistry = musicRegistry;
             _logger = logger;
 
-            _playback.OnStateChanged += OnPlaybackStateChanged;
-            _playback.OnPositionChanged += OnPlaybackPositionChanged;
+            _instances.OnTrackChanged += OnInstanceTrackChanged;
+            _instances.OnStateChanged += OnInstanceStateChanged;
+            _instances.OnPositionChanged += OnInstancePositionChanged;
+            _instances.OnQueueChanged += OnInstanceQueueChanged;
+            _instances.OnInstancesChanged += OnInstancesChanged;
         }
 
         public void SetModuleUIHandler(ModuleUIHandler handler)
@@ -61,18 +64,50 @@ namespace OmniMixPlayer.Backend.Http
 
         public void Configure(IEndpointRouteBuilder endpoints)
         {
-            // Playback
-            endpoints.MapGet("/api/status", () => Results.Json(_playback.GetStatus()));
-            endpoints.MapPost("/api/play", (PlayRequest req) => { if (!string.IsNullOrEmpty(req.uuid)) _playback.Play(req.uuid); else _playback.Play(null); return Results.Ok(); });
-            endpoints.MapPost("/api/pause", () => { _playback.Pause(); return Results.Ok(); });
-            endpoints.MapPost("/api/resume", () => { _playback.Resume(); return Results.Ok(); });
-            endpoints.MapPost("/api/toggle", () => { _playback.Toggle(); return Results.Ok(); });
-            endpoints.MapPost("/api/next", () => { _playback.Next(); return Results.Ok(); });
-            endpoints.MapPost("/api/prev", () => { _playback.Prev(); return Results.Ok(); });
-            endpoints.MapPost("/api/seek", (SeekRequest req) => { _playback.Seek(req.position); return Results.Ok(); });
-            endpoints.MapPut("/api/volume", (VolumeRequest req) => { _playback.SetVolume(req.volume); return Results.Ok(); });
-            endpoints.MapPost("/api/shuffle", (ShuffleRequest req) => { _playback.SetShuffle(req.enabled); return Results.Ok(); });
-            endpoints.MapPost("/api/repeat", (RepeatRequest req) => { if (Enum.TryParse<SDK.Interfaces.RepeatMode>(req.mode, true, out var rm)) _playback.SetRepeatMode(rm); return Results.Ok(); });
+            // Playback instances
+            endpoints.MapGet("/api/instances", () => Results.Json(_instances.ListInstanceDtos()));
+            endpoints.MapGet("/api/instances/stats", () => Results.Json(_instances.GetStats()));
+            endpoints.MapPost("/api/instances/connect", (InstanceConnectRequest req) =>
+            {
+                if (string.IsNullOrWhiteSpace(req.clientId))
+                    return Results.BadRequest(new { error = "clientId is required" });
+                var role = ParseRole(req.role);
+                var mode = req.mode?.ToLowerInvariant() == "client"
+                    ? PlaybackMode.ClientManaged : PlaybackMode.ServerManaged;
+                return Results.Json(_instances.Connect(req.clientId, role, mode));
+            });
+            endpoints.MapPost("/api/instances/{id}/heartbeat", (string id) =>
+                _instances.Heartbeat(id) ? Results.Ok(new { alive = true }) : Results.NotFound(new { alive = false }));
+            endpoints.MapPost("/api/instances/{id}/disconnect", (string id) =>
+                _instances.Disconnect(id) ? Results.Ok(new { disconnected = true }) : Results.NotFound());
+            endpoints.MapDelete("/api/instances/{id}", (string id) =>
+                _instances.Delete(id) ? Results.Ok(new { deleted = true }) : Results.NotFound());
+            endpoints.MapGet("/api/instances/{id}/status", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                return instance != null ? Results.Json(instance.Controller.GetStatus()) : Results.NotFound();
+            });
+            endpoints.MapPost("/api/instances/{id}/play", (string id, PlayRequest req) =>
+            {
+                var instance = _instances.Get(id);
+                if (instance == null) return Results.NotFound();
+                instance.Controller.Play(req.uuid);
+                return Results.Ok();
+            });
+            endpoints.MapPost("/api/instances/{id}/pause", (string id) => WithInstance(id, p => p.Pause()));
+            endpoints.MapPost("/api/instances/{id}/resume", (string id) => WithInstance(id, p => p.Resume()));
+            endpoints.MapPost("/api/instances/{id}/toggle", (string id) => WithInstance(id, p => p.Toggle()));
+            endpoints.MapPost("/api/instances/{id}/next", (string id) => WithInstance(id, p => p.Next()));
+            endpoints.MapPost("/api/instances/{id}/prev", (string id) => WithInstance(id, p => p.Prev()));
+            endpoints.MapPost("/api/instances/{id}/seek", (string id, SeekRequest req) => WithInstance(id, p => p.Seek(req.position)));
+            endpoints.MapPut("/api/instances/{id}/volume", (string id, VolumeRequest req) => WithInstance(id, p => p.SetVolume(req.volume)));
+            endpoints.MapPost("/api/instances/{id}/shuffle", (string id, ShuffleRequest req) => WithInstance(id, p => p.SetShuffle(req.enabled)));
+            endpoints.MapPost("/api/instances/{id}/repeat", (string id, RepeatRequest req) =>
+            {
+                if (!Enum.TryParse<SDK.Interfaces.RepeatMode>(req.mode, true, out var rm))
+                    return Results.BadRequest(new { error = "Invalid repeat mode" });
+                return WithInstance(id, p => p.SetRepeatMode(rm));
+            });
 
             // Playlist
             endpoints.MapGet("/api/playlist", GetPlaylist);
@@ -81,20 +116,26 @@ namespace OmniMixPlayer.Backend.Http
             endpoints.MapGet("/api/songs", GetSongs);
             endpoints.MapGet("/api/song/{uuid}", (string uuid) => { var m = _musicRegistry.GetMusic(uuid); return m != null ? Results.Json(MapSong(m)) : Results.NotFound(); });
 
-            // Queue
-            endpoints.MapGet("/api/queue", () => Results.Json(_playback.Queue.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist, moduleId = m.ModuleId })));
-            endpoints.MapPost("/api/queue", (PlayRequest req) => { _playback.AddToQueue(req.uuid); return Results.Ok(); });
-            endpoints.MapDelete("/api/queue/{index}", (int index) => { _playback.RemoveFromQueue(index); return Results.Ok(); });
-            endpoints.MapPost("/api/queue/move", (MoveRequest req) => { _playback.MoveInQueue(req.from, req.to); return Results.Ok(); });
-            endpoints.MapPost("/api/queue/clear", () => { _playback.ClearQueue(); return Results.Ok(); });
-            endpoints.MapGet("/api/queue/history", () => Results.Json(_playback.History.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist })));
-            endpoints.MapPost("/api/queue/history/clear", () => { _playback.ClearHistory(); return Results.Ok(); });
-
-            // Multi-queue
-            endpoints.MapGet("/api/queues", () => Results.Json(_playback.ListQueues()));
-            endpoints.MapPost("/api/queues", (CreateQueueRequest req) => { var info = _playback.CreateQueue(req.name); return Results.Json(info); });
-            endpoints.MapPut("/api/queues/{id}/activate", (string id) => { var ok = _playback.SwitchQueue(id); return ok ? Results.Ok() : Results.NotFound(); });
-            endpoints.MapDelete("/api/queues/{id}", (string id) => { var ok = _playback.DeleteQueue(id); return ok ? Results.Ok() : Results.NotFound(); });
+            // Instance queue
+            endpoints.MapGet("/api/instances/{id}/queue", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                return instance != null
+                    ? Results.Json(instance.Controller.Queue.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist, moduleId = m.ModuleId }))
+                    : Results.NotFound();
+            });
+            endpoints.MapPost("/api/instances/{id}/queue", (string id, PlayRequest req) => WithInstance(id, p => p.AddToQueue(req.uuid)));
+            endpoints.MapDelete("/api/instances/{id}/queue/{index}", (string id, int index) => WithInstance(id, p => p.RemoveFromQueue(index)));
+            endpoints.MapPost("/api/instances/{id}/queue/move", (string id, MoveRequest req) => WithInstance(id, p => p.MoveInQueue(req.from, req.to)));
+            endpoints.MapPost("/api/instances/{id}/queue/clear", (string id) => WithInstance(id, p => p.ClearQueue()));
+            endpoints.MapGet("/api/instances/{id}/history", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                return instance != null
+                    ? Results.Json(instance.Controller.History.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist }))
+                    : Results.NotFound();
+            });
+            endpoints.MapPost("/api/instances/{id}/history/clear", (string id) => WithInstance(id, p => p.ClearHistory()));
 
             // Growable tags (paginated loading)
             endpoints.MapGet("/api/tags/growable", () =>
@@ -129,10 +170,15 @@ namespace OmniMixPlayer.Backend.Http
             });
 
             // Favorites
-            endpoints.MapPost("/api/favorite", (FavoriteRequest req) => { var ok = _playback.Fav(req.uuid, req.isFavorite); return ok ? Results.Ok() : Results.NotFound(); });
+            endpoints.MapPost("/api/favorite", (FavoriteRequest req) => SetFavorite(req.uuid, req.isFavorite) ? Results.Ok() : Results.NotFound());
 
             // Exclude
-            endpoints.MapPost("/api/exclude", (FavoriteRequest req) => { _playback.SetExcluded(req.uuid, req.isFavorite); _ = BroadcastEvent("exclude.changed", new { uuid = req.uuid, isExcluded = req.isFavorite }); return Results.Ok(); });
+            endpoints.MapPost("/api/exclude", (FavoriteRequest req) =>
+            {
+                var ok = SetExcluded(req.uuid, req.isFavorite);
+                if (ok) _ = BroadcastEvent("exclude.changed", new { uuid = req.uuid, isExcluded = req.isFavorite });
+                return ok ? Results.Ok() : Results.NotFound();
+            });
 
             // Modules
             endpoints.MapGet("/api/modules", () => Results.Json(_moduleLoader.LoadedModules.Select(m =>
@@ -177,42 +223,6 @@ namespace OmniMixPlayer.Backend.Http
 
             // Health
             endpoints.MapGet("/api/health", () => Results.Ok(new { status = "ok", timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }));
-
-            // Client Connection Management
-            endpoints.MapPost("/api/client/connect", (ClientConnectRequest req) =>
-            {
-                if (string.IsNullOrEmpty(req.clientId))
-                    return Results.BadRequest(new { error = "clientId is required" });
-                var mode = req.mode?.ToLowerInvariant() == "client"
-                    ? PlaybackMode.ClientManaged : PlaybackMode.ServerManaged;
-                var ok = _playback.ConnectClient(req.clientId, mode);
-                if (!ok)
-                    return Results.Conflict(new { error = "Another client is already connected", connectedClient = _playback.ConnectedClient?.ClientId });
-                // 连接成功后返回完整的注册列表
-                var tags = _tagRegistry.GetAllTags().Select(t => new { id = t.TagId, name = t.DisplayName, moduleId = t.ModuleId, bitValue = t.BitValue, isGrowable = t.IsGrowableList });
-                var albums = _albumRegistry.GetAllAlbums().Select(a => new { id = a.AlbumId, name = a.DisplayName, moduleId = a.ModuleId, coverPath = a.CoverPath, songCount = a.SongCount, isGrowable = a.IsGrowableAlbum });
-                var songs = _musicRegistry.GetAllMusic().Select(s => new { uuid = s.UUID, title = s.Title, artist = s.Artist, albumId = s.AlbumId, duration = s.Duration, moduleId = s.ModuleId, isFavorite = s.IsFavorite, isExcluded = s.IsExcluded });
-                return Results.Ok(new
-                {
-                    connected = true,
-                    mode = mode.ToString(),
-                    tags,
-                    albums,
-                    songs,
-                    playbackMode = _playback.CurrentMode.ToString()
-                });
-            });
-            endpoints.MapPost("/api/client/disconnect", (ClientDisconnectRequest req) =>
-            {
-                var ok = _playback.DisconnectClient(req.clientId);
-                return ok ? Results.Ok(new { disconnected = true }) : Results.NotFound(new { error = "Client not connected or clientId mismatch" });
-            });
-            endpoints.MapPost("/api/client/heartbeat", (ClientHeartbeatRequest req) =>
-            {
-                var ok = _playback.Heartbeat(req.clientId);
-                return ok ? Results.Ok(new { alive = true }) : Results.Json(new { error = "Client not connected", alive = false }, statusCode: 410);
-            });
-            endpoints.MapGet("/api/client/status", () => Results.Json(_playback.GetClientStatus()));
 
             // Backend control
             endpoints.MapPost("/api/backend/stop", () =>
@@ -346,7 +356,7 @@ namespace OmniMixPlayer.Backend.Http
                 return Results.Json(new { id = "root", nodeType = "Text", text = "This module has no UI panel" });
             });
 
-            // Module raw content — modules serve their own binary data (QR codes, etc.)
+            // Module raw content 鈥?modules serve their own binary data (QR codes, etc.)
             endpoints.MapGet("/api/modules/{id}/content/{*path}", async (string id, string path) =>
             {
                 var module = _moduleLoader.GetModule(id);
@@ -485,22 +495,102 @@ namespace OmniMixPlayer.Backend.Http
             }
         }
 
-        private void OnPlaybackStateChanged(int state)
+        private IResult WithInstance(string id, Action<PlaybackController> action)
         {
-            var data = new
-            {
-                isPlaying = _playback.IsPlaying,
-                position = _playback.Position,
-                volume = _playback.Volume,
-                repeatMode = _playback.RepeatMode,
-                shuffle = _playback.Shuffle
-            };
-            _ = BroadcastEvent("state.changed", data);
+            var instance = _instances.Get(id);
+            if (instance == null) return Results.NotFound();
+            action(instance.Controller);
+            return Results.Ok();
         }
 
-        private void OnPlaybackPositionChanged(float position)
+        private static PlaybackClientRole ParseRole(string role)
         {
-            _ = BroadcastEvent("position", new { position });
+            return role?.ToLowerInvariant() switch
+            {
+                "controller" => PlaybackClientRole.Controller,
+                "observer" => PlaybackClientRole.Observer,
+                _ => PlaybackClientRole.Audio
+            };
+        }
+
+        private bool SetFavorite(string uuid, bool isFavorite)
+        {
+            var m = _musicRegistry.GetMusic(uuid);
+            if (m == null) return false;
+            m.IsFavorite = isFavorite;
+            _musicRegistry.UpdateMusic(m);
+
+            if (!string.IsNullOrEmpty(m.ModuleId))
+            {
+                var module = _moduleLoader.GetModule(m.ModuleId);
+                if (module != null && module.Capabilities.CanFavorite)
+                {
+                    var handler = _moduleLoader.GetProvider<IFavoriteExcludeHandler>(m.ModuleId);
+                    handler?.SetFavorite(uuid, isFavorite);
+                }
+            }
+            return true;
+        }
+
+        private bool SetExcluded(string uuid, bool isExcluded)
+        {
+            var m = _musicRegistry.GetMusic(uuid);
+            if (m == null) return false;
+            m.IsExcluded = isExcluded;
+            _musicRegistry.UpdateMusic(m);
+
+            if (!string.IsNullOrEmpty(m.ModuleId))
+            {
+                var module = _moduleLoader.GetModule(m.ModuleId);
+                if (module != null && module.Capabilities.CanExclude)
+                {
+                    var handler = _moduleLoader.GetProvider<IFavoriteExcludeHandler>(m.ModuleId);
+                    handler?.SetExcluded(uuid, isExcluded);
+                }
+            }
+            return true;
+        }
+
+        private void OnInstanceTrackChanged(string instanceId, SDK.Models.MusicInfo track)
+        {
+            _ = BroadcastEvent("track.changed", new
+            {
+                instanceId,
+                uuid = track?.UUID,
+                title = track?.Title,
+                artist = track?.Artist,
+                albumId = track?.AlbumId,
+                duration = track?.Duration ?? 0,
+                moduleId = track?.ModuleId
+            });
+        }
+
+        private void OnInstanceStateChanged(string instanceId, PlaybackController playback)
+        {
+            _ = BroadcastEvent("state.changed", new
+            {
+                instanceId,
+                isPlaying = playback.IsPlaying,
+                position = playback.Position,
+                volume = playback.Volume,
+                repeatMode = playback.RepeatMode,
+                shuffle = playback.Shuffle
+            });
+        }
+
+        private void OnInstancePositionChanged(string instanceId, float position)
+        {
+            _ = BroadcastEvent("position", new { instanceId, position });
+        }
+
+        private void OnInstanceQueueChanged(string instanceId)
+        {
+            _ = BroadcastEvent("queue.changed", new { instanceId });
+        }
+
+        private void OnInstancesChanged()
+        {
+            _ = BroadcastEvent("instances.changed", _instances.ListInstanceDtos());
         }
 
         private async Task HandleWebSocket(HttpContext context)
@@ -597,8 +687,7 @@ namespace OmniMixPlayer.Backend.Http
     public record MoveRequest(int from, int to);
     public record FavoriteRequest(string uuid, bool isFavorite);
     public record ModuleToggleRequest(bool enabled);
-    public record CreateQueueRequest(string name);
-    public record ClientConnectRequest(string clientId, string mode);
-    public record ClientDisconnectRequest(string clientId);
-    public record ClientHeartbeatRequest(string clientId);
+    public record InstanceConnectRequest(string clientId, string role, string mode);
 }
+
+

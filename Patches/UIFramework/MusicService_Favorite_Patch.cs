@@ -1,6 +1,8 @@
 using System;
 using Bulbul;
 using HarmonyLib;
+using ChillPatcher.UIFramework.Audio;
+using Cysharp.Threading.Tasks;
 
 namespace ChillPatcher.Patches.UIFramework
 {

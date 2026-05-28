@@ -4,6 +4,8 @@ using R3;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Cysharp.Threading.Tasks;
+using ChillPatcher.SDK.Native;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -242,6 +244,29 @@ namespace ChillPatcher.Patches.UIFramework
         {
             // ✅ 保存实例引用供后续使用
             MusicService_RemoveLimit_Patch.CurrentInstance = __instance;
+
+            // 监听播放事件以同步到 OmniMix 后端
+            __instance.onPlayMusic.Subscribe(audioInfo =>
+            {
+                if (audioInfo != null && ChillPatcher.UIFramework.Audio.StreamingAudioLoader.IsStreamingSource(audioInfo))
+                {
+                    if (OmniMixIntegration.Instance != null && OmniMixIntegration.Instance.IsConnected)
+                    {
+                        var shm = OmniMixIntegration.Instance.SharedMemory;
+                        string shmUuid = shm?.CurrentUuid;
+                        if (shmUuid == audioInfo.UUID)
+                        {
+                            Plugin.Log?.LogInfo($"[MusicService_PlayPatch] Song {audioInfo.UUID} is already active, ensuring resumed in backend");
+                            OmniMixIntegration.Instance.Resume().Forget();
+                        }
+                        else
+                        {
+                            Plugin.Log?.LogInfo($"[MusicService_PlayPatch] Song changed in game, playing in OmniMix backend: {audioInfo.UUID}");
+                            OmniMixIntegration.Instance.Play(audioInfo.UUID).Forget();
+                        }
+                    }
+                }
+            });
         }
     }
 }

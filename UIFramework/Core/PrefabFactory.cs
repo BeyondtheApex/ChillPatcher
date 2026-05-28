@@ -317,12 +317,12 @@ namespace ChillPatcher.UIFramework.Core
         private static GameObject CreateGenericButtonPrefab(GameObject instance, string prefabName)
         {
             // 创建一个隐藏的克隆作为模板
-            var prefab = Object.Instantiate(instance);
+            var prefab = UnityEngine.Object.Instantiate(instance);
             prefab.name = prefabName;
             prefab.SetActive(false);
             
             // 将其移到 DontDestroyOnLoad 确保不被销毁
-            Object.DontDestroyOnLoad(prefab);
+            UnityEngine.Object.DontDestroyOnLoad(prefab);
             
             // 重置状态 - 清除所有点击事件
             var button = prefab.GetComponent<Button>();
@@ -341,12 +341,12 @@ namespace ChillPatcher.UIFramework.Core
         private static GameObject CreateCapsuleButtonPrefab(GameObject instance)
         {
             // 创建一个隐藏的克隆作为模板
-            var prefab = Object.Instantiate(instance);
+            var prefab = UnityEngine.Object.Instantiate(instance);
             prefab.name = "SimpleCapsuleButton_Prefab";
             prefab.SetActive(false);
             
             // 将其移到 DontDestroyOnLoad 确保不被销毁
-            Object.DontDestroyOnLoad(prefab);
+            UnityEngine.Object.DontDestroyOnLoad(prefab);
             
             // 重置状态 - 清除所有点击事件
             var button = prefab.GetComponent<Button>();
@@ -379,12 +379,12 @@ namespace ChillPatcher.UIFramework.Core
         private static GameObject CreatePrefabFromInstance(GameObject instance)
         {
             // 创建一个隐藏的克隆作为模板
-            var prefab = Object.Instantiate(instance);
+            var prefab = UnityEngine.Object.Instantiate(instance);
             prefab.name = "SimpleRectButton_Prefab";
             prefab.SetActive(false);
             
             // 将其移到 DontDestroyOnLoad 确保不被销毁
-            Object.DontDestroyOnLoad(prefab);
+            UnityEngine.Object.DontDestroyOnLoad(prefab);
             
             // 重置状态
             var button = prefab.GetComponent<Button>();
@@ -429,7 +429,7 @@ namespace ChillPatcher.UIFramework.Core
             }
             
             // 克隆 Prefab
-            var go = Object.Instantiate(SimpleRectButtonPrefab, parent);
+            var go = UnityEngine.Object.Instantiate(SimpleRectButtonPrefab, parent);
             go.name = $"SimpleRectButton_{text}";
             go.SetActive(true);
             
@@ -475,7 +475,7 @@ namespace ChillPatcher.UIFramework.Core
             }
             
             // 克隆 Prefab
-            var go = Object.Instantiate(SimpleCapsuleButtonPrefab, parent);
+            var go = UnityEngine.Object.Instantiate(SimpleCapsuleButtonPrefab, parent);
             go.name = $"SimpleCapsuleButton_{text}";
             go.SetActive(true);
             
@@ -727,7 +727,7 @@ namespace ChillPatcher.UIFramework.Core
         {
             if (GameObject != null)
             {
-                Object.Destroy(GameObject);
+                UnityEngine.Object.Destroy(GameObject);
             }
         }
         
@@ -1025,7 +1025,7 @@ namespace ChillPatcher.UIFramework.Core
         {
             if (GameObject != null)
             {
-                Object.Destroy(GameObject);
+                UnityEngine.Object.Destroy(GameObject);
             }
         }
         

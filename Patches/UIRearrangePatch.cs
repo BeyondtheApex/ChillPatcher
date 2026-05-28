@@ -6,7 +6,6 @@ using UnityEngine.UI;
 using ChillPatcher.UIFramework.Audio;
 using ChillPatcher.UIFramework.Music;
 using ChillPatcher.Patches.UIFramework;
-using ChillPatcher.ModuleSystem.Services;
 
 namespace ChillPatcher.Patches
 {

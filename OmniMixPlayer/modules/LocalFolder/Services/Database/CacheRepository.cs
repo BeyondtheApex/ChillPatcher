@@ -127,15 +127,15 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Database
 
         #region Song Cache
 
-        public void SaveSongCacheBatch(IEnumerable<(string uuid, string tagId, string albumId, string title, string artist, string filePath)> songs)
+        public void SaveSongCacheBatch(IEnumerable<(string uuid, string tagId, string albumId, string title, string artist, string filePath, double duration)> songs)
         {
             using (var transaction = _connection.BeginTransaction())
             {
                 try
                 {
                     var sql = @"
-                        INSERT OR REPLACE INTO song_cache (uuid, tag_id, album_id, title, artist, file_path, file_modified)
-                        VALUES (@uuid, @tagId, @albumId, @title, @artist, @filePath, @fileModified)
+                        INSERT OR REPLACE INTO song_cache (uuid, tag_id, album_id, title, artist, file_path, file_modified, duration)
+                        VALUES (@uuid, @tagId, @albumId, @title, @artist, @filePath, @fileModified, @duration)
                     ";
 
                     foreach (var song in songs)
@@ -153,6 +153,7 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Database
                             cmd.Parameters.AddWithValue("@artist", (object)song.artist ?? DBNull.Value);
                             cmd.Parameters.AddWithValue("@filePath", song.filePath);
                             cmd.Parameters.AddWithValue("@fileModified", (object)fileModified ?? DBNull.Value);
+                            cmd.Parameters.AddWithValue("@duration", song.duration);
                             cmd.ExecuteNonQuery();
                         }
                     }
@@ -167,10 +168,10 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Database
             }
         }
 
-        public List<(string uuid, string albumId, string title, string artist, string filePath)> GetSongCacheByPlaylist(string tagId)
+        public List<(string uuid, string albumId, string title, string artist, string filePath, double duration)> GetSongCacheByPlaylist(string tagId)
         {
-            var result = new List<(string, string, string, string, string)>();
-            var sql = "SELECT uuid, album_id, title, artist, file_path FROM song_cache WHERE tag_id = @tagId";
+            var result = new List<(string, string, string, string, string, double)>();
+            var sql = "SELECT uuid, album_id, title, artist, file_path, duration FROM song_cache WHERE tag_id = @tagId";
             using (var cmd = new SQLiteCommand(sql, _connection))
             {
                 cmd.Parameters.AddWithValue("@tagId", tagId);
@@ -183,7 +184,8 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Database
                             reader.IsDBNull(1) ? null : reader.GetString(1),
                             reader.IsDBNull(2) ? null : reader.GetString(2),
                             reader.IsDBNull(3) ? null : reader.GetString(3),
-                            reader.GetString(4)
+                            reader.GetString(4),
+                            reader.IsDBNull(5) ? 0.0 : reader.GetDouble(5)
                         ));
                     }
                 }

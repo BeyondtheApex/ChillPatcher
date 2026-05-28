@@ -97,7 +97,7 @@ namespace ChillPatcher.Patches.UIFramework
                 if (reorderTrigger != null)
                 {
                     // 直接销毁拖动柄GameObject，让HorizontalLayoutGroup重新布局
-                    Object.Destroy(reorderTrigger.gameObject);
+                    UnityEngine.Object.Destroy(reorderTrigger.gameObject);
                 }
             }
             catch (System.Exception ex)

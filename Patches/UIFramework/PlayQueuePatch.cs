@@ -1209,37 +1209,6 @@ namespace ChillPatcher.Patches.UIFramework
             // IPC bridge: PlayEndedEvent/PlayStartedEvent removed (EventBus gone)
             musicService.onPlayMusic.OnNext(audio);
         }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning($"[PlayQueuePatch] PlayEndedEvent(Replaced) publish failed: {ex.Message}");
-            }
-
-            musicService.onPlayMusic.OnNext(audio);
-
-            // 向 EventBus 发布 PlayStartedEvent，让订阅了此事件的模块（如 QQ音乐、网易云）
-            // 能够在切换到非登录歌曲时取消 QR 登录轮询
-            try
-            {
-                var eventBus = EventBus.Instance;
-                if (eventBus != null)
-                {
-                    MusicInfo musicInfo = null;
-                    if (!string.IsNullOrEmpty(audio?.UUID))
-                        musicInfo = MusicRegistry.Instance?.GetMusic(audio.UUID);
-
-                    // 即使 MusicInfo 为 null（游戏内置歌曲），也要发布事件，UUID 通过临时对象传递
-                    if (musicInfo == null && audio != null)
-                        musicInfo = new MusicInfo { UUID = audio.UUID ?? string.Empty, Title = audio.AudioClipName };
-
-                    eventBus.Publish(new PlayStartedEvent { Music = musicInfo });
-                }
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning($"[PlayQueuePatch] InvokeOnPlayMusic: EventBus publish failed: {ex.Message}");
-            }
-        }
         
         #endregion
         

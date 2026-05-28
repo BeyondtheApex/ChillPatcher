@@ -173,22 +173,6 @@ namespace OmniMixPlayer.Backend
             // 5. Initialize StreamingService
             var streamingService = new CoreStreamingService(loggerFactory.CreateLogger("CoreStreaming"));
 
-            // 6. Initialize SharedMemory
-            var sharedMemory = new SharedMemoryServer(loggerFactory.CreateLogger("SharedMemory"));
-            if (!sharedMemory.Initialize())
-            {
-                logger.LogWarning("Failed to initialize SharedMemory, PlaybackController will run without PCM output");
-            }
-
-            // 7. Initialize PlaybackController
-            var playback = new PlaybackController(
-                loggerFactory.CreateLogger("Playback"),
-                sharedMemory,
-                EventBus.Instance,
-                MusicRegistry.Instance,
-                streamingService,
-                configDir);
-
             // 8. Initialize ModuleManager config
             var moduleConfigManager = new ModuleConfigManager("modules", configDir);
 
@@ -207,11 +191,18 @@ namespace OmniMixPlayer.Backend
                 DefaultCoverProvider.Instance,
                 dependencyLoader,
                 streamingService,
-                playback);
+                new NullPlayQueue());
             ModuleLoader.Initialize(modulesPath, contextFactory, loggerFactory.CreateLogger("ModuleLoader"), moduleConfigManager);
 
-            // 10. Create ApiServer
-            var apiServer = new ApiServer(playback, ModuleLoader.Instance,
+            // 10. Playback instances are created lazily when audio clients connect.
+            var playbackInstances = new PlaybackInstanceManager(
+                loggerFactory,
+                EventBus.Instance,
+                MusicRegistry.Instance,
+                streamingService);
+
+            // 11. Create ApiServer
+            var apiServer = new ApiServer(playbackInstances, ModuleLoader.Instance,
                 TagRegistry.Instance, AlbumRegistry.Instance, MusicRegistry.Instance,
                 loggerFactory.CreateLogger("ApiServer"));
 
@@ -220,15 +211,15 @@ namespace OmniMixPlayer.Backend
             apiServer.SetModuleUIHandler(moduleUIHandler);
             apiServer.SetGlobalConfig(globalConfig);
 
-            new EventBridge(apiServer, playback);
+            new EventBridge(apiServer);
 
-            // 11. Configure routes
+            // 12. Configure routes
             app.UseCors();
             app.UseWebSockets();
             app.UseStaticFiles();
             apiServer.Configure(app);
 
-            // 12. Load modules in background
+            // 13. Load modules in background
             _ = Task.Run(async () =>
             {
                 try
@@ -259,7 +250,7 @@ namespace OmniMixPlayer.Backend
                 }
             });
 
-            // 13. Start the server
+            // 14. Start the server
             logger.LogInformation("OmniMixPlayer API: tcp://127.0.0.1:{IpcPort} (primary), unix://{SocketPath} (fallback), http://0.0.0.0:17890 (remote)",
                 IpcPort, SocketPath);
             await app.RunAsync();

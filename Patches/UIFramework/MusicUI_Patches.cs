@@ -3,6 +3,7 @@ using ChillPatcher.UIFramework;
 using ChillPatcher.UIFramework.Music;
 // using ChillPatcher.ModuleSystem.Registry; // removed - IPC bridge
 using Cysharp.Threading.Tasks;
+using ChillPatcher.SDK.Models;
 using DG.Tweening;
 using HarmonyLib;
 using NestopiSystem.DIContainers;
@@ -449,11 +450,6 @@ namespace ChillPatcher.Patches.UIFramework
 
                 // 获取当前选中的增长列表 Tag
                 var tagRegistry = (object)null; // removed: IPCPatch
-var tagRegistry = (object)null; // removed: IPCPatch
-var tagRegistry = (object)null; // removed: IPCPatch
-var tagRegistry = (object)null; // removed: IPCPatch
-var tagRegistry = (object)null; // removed: IPCPatch
-var tagRegistry = (object)null; // removed: IPCPatch
                 
                 var growableTag = OmniMixIntegration.Instance?.GetCurrentGrowableTag();
                 
@@ -525,7 +521,7 @@ var tagRegistry = (object)null; // removed: IPCPatch
         /// <summary>
         /// 刷新播放列表显示
         /// </summary>
-        private static void RefreshPlaylistDisplay()
+        public static void RefreshPlaylistDisplay()
         {
             try
             {

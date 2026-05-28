@@ -22,6 +22,8 @@ namespace OmniMixPlayer.Module.Netease
         private bool _isPolling;
         private CancellationTokenSource _pollingCts;
 
+        private static readonly TimeSpan POLLING_TIMEOUT = TimeSpan.FromMinutes(2);
+
         /// <summary>
         /// 登录成功事件
         /// </summary>
@@ -115,9 +117,21 @@ namespace OmniMixPlayer.Module.Netease
         {
             try
             {
+                var startTime = DateTime.UtcNow;
                 int failCount = 0;
+
                 while (!cancellationToken.IsCancellationRequested)
                 {
+                    // 检查 2 分钟超时
+                    if (DateTime.UtcNow - startTime >= POLLING_TIMEOUT)
+                    {
+                        _logger.LogInformation("[QRLoginManager] 登录轮询超时，已停止");
+                        _currentState = new NeteaseBridge.QRLoginState { StatusCode = -1, StatusMsg = "登录超时，请刷新二维码重试" };
+                        OnStatusChanged?.Invoke(_currentState.StatusMsg);
+                        OnLoginFailed?.Invoke(_currentState.StatusMsg);
+                        return;
+                    }
+
                     await Task.Delay(1500, cancellationToken); // 每 1.5 秒检查一次
 
                     var status = await Task.Run(() => _bridge.CheckQRLoginStatus(), cancellationToken);
@@ -125,11 +139,10 @@ namespace OmniMixPlayer.Module.Netease
                     {
                         failCount++;
                         _logger.LogWarning($"[QRLoginManager] 检查状态失败 ({failCount})");
-                        // 连续失败60次（约90秒）后重新获取二维码
                         if (failCount >= 60)
                         {
-                            _logger.LogInformation("[QRLoginManager] 连续失败过多，重新获取二维码...");
-                            await StartLoginAsync();
+                            _logger.LogInformation("[QRLoginManager] 连续失败过多，停止轮询");
+                            OnLoginFailed?.Invoke("检查登录状态失败，请刷新重试");
                             return;
                         }
                         continue;
@@ -148,10 +161,10 @@ namespace OmniMixPlayer.Module.Netease
                     }
                     else if (status.IsExpired)
                     {
-                        _logger.LogInformation("[QRLoginManager] 二维码已失效，重新生成...");
-                        // 重新开始登录
-                        await StartLoginAsync();
-                        return; // 新的轮询任务已启动
+                        _logger.LogInformation("[QRLoginManager] 二维码已过期，停止轮询");
+                        OnStatusChanged?.Invoke("二维码已过期，请刷新重试");
+                        OnLoginFailed?.Invoke("二维码已过期，请刷新重试");
+                        return;
                     }
                     // IsWaitingScan 和 IsWaitingConfirm 继续轮询
                 }
@@ -179,7 +192,7 @@ namespace OmniMixPlayer.Module.Netease
             CancelPolling();
             _bridge.CancelQRLogin();
             _currentState = null;
-            
+
             CleanupQRCodeResources();
         }
 

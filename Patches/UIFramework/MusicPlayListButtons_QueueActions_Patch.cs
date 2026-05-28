@@ -478,7 +478,7 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 if (holdAnim != null)
                 {
-                    Object.DestroyImmediate(holdAnim);
+                    UnityEngine.Object.DestroyImmediate(holdAnim);
                 }
             }
             
@@ -509,7 +509,7 @@ namespace ChillPatcher.Patches.UIFramework
             var longPressButton = buttonObj.transform.Find("LongPressButton");
             if (longPressButton != null)
             {
-                Object.DestroyImmediate(longPressButton.gameObject);
+                UnityEngine.Object.DestroyImmediate(longPressButton.gameObject);
             }
         }
         
@@ -551,7 +551,7 @@ namespace ChillPatcher.Patches.UIFramework
             }
             
             // 克隆按钮
-            var buttonObj = Object.Instantiate(PrefabFactory.XCloseButtonPrefab, parent);
+            var buttonObj = UnityEngine.Object.Instantiate(PrefabFactory.XCloseButtonPrefab, parent);
             buttonObj.name = AddToQueueButtonName;
             buttonObj.SetActive(true);
             
@@ -588,7 +588,7 @@ namespace ChillPatcher.Patches.UIFramework
             }
             
             // 克隆按钮
-            var buttonObj = Object.Instantiate(PrefabFactory.CircleArrowButtonPrefab, parent);
+            var buttonObj = UnityEngine.Object.Instantiate(PrefabFactory.CircleArrowButtonPrefab, parent);
             buttonObj.name = PlayNextButtonName;
             buttonObj.SetActive(true);
             

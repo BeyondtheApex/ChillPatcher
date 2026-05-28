@@ -51,7 +51,7 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                 // 加载歌曲
                 var songs = _database.GetSongCacheByPlaylist(tagId);
                 int validCount = 0;
-                foreach (var (uuid, albumId, title, artist, filePath) in songs)
+                foreach (var (uuid, albumId, title, artist, filePath, duration) in songs)
                 {
                     if (!File.Exists(filePath))
                     {
@@ -68,7 +68,8 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                         TagId = tagId,
                         SourceType = MusicSourceType.File,
                         SourcePath = filePath,
-                        IsUnlocked = true
+                        IsUnlocked = true,
+                        Duration = (float)duration
                     });
                     validCount++;
                 }
@@ -100,7 +101,7 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
 
                 var songsToSave = result.Music
                     .Where(m => m.TagId == tagId)
-                    .Select(m => (m.UUID, tagId, m.AlbumId, m.Title, m.Artist, m.SourcePath));
+                    .Select(m => (m.UUID, tagId, m.AlbumId, m.Title, m.Artist, m.SourcePath, (double)m.Duration));
                 _database.SaveSongCacheBatch(songsToSave);
 
                 _logger.LogDebug($"保存缓存: {tagId} ({result.Music.Count(m => m.TagId == tagId)} 首歌曲)");

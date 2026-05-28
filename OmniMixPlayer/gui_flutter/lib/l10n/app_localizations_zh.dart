@@ -33,6 +33,65 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settings => '设置';
 
   @override
+  String get gameIntegration => '游戏集成';
+
+  @override
+  String get selectGameDir => '选择游戏目录';
+
+  @override
+  String get gamePath => '游戏路径';
+
+  @override
+  String get bepinexStatus => 'BepInEx 状态';
+
+  @override
+  String get modStatus => 'Mod 状态';
+
+  @override
+  String get installBepInEx => '安装 BepInEx';
+
+  @override
+  String get uninstallBepInEx => '卸载 BepInEx';
+
+  @override
+  String get installMod => '安装 Mod';
+
+  @override
+  String get uninstallMod => '卸载 Mod';
+
+  @override
+  String get reinstallBepInEx => '重新安装 BepInEx';
+
+  @override
+  String get reinstallMod => '重新安装 Mod';
+
+  @override
+  String get statusNotInstalled => '未安装';
+
+  @override
+  String get statusManaged => '已管理';
+
+  @override
+  String get statusUnmanaged => '外部安装 / 未管理';
+
+  @override
+  String get unmanagedWarning =>
+      '检测到游戏目录下已存在外部安装的 BepInEx。OmniMix 将仅管理游戏 Mod 插件，不会对 BepInEx 核心文件进行管理或覆盖。';
+
+  @override
+  String get invalidGameDir =>
+      '无效的游戏目录！请确认选择的是 \'Chill With You\' 的根目录（包含 \'Chill With You.exe\' 和 \'Chill With You_Data\'）。';
+
+  @override
+  String get modInstalled => '已安装';
+
+  @override
+  String get deploymentLogs => '部署日志';
+
+  @override
+  String get chooseFolder => '选择文件夹';
+
+  @override
   String get about => '关于';
 
   @override
@@ -184,4 +243,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get serviceMode => '服务';
+
+  @override
+  String get serviceAutoStart => '服务自动启动';
 }

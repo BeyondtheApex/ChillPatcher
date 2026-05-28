@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Exclude backend sources -->
+    <Compile Remove="OmniMixPlayer\**" />
+    <EmbeddedResource Remove="OmniMixPlayer\**" />
+    <None Remove="OmniMixPlayer\**" />
     <!-- Exclude game source files -->
     <Compile Remove="game\**" />
     <EmbeddedResource Remove="game\**" />
@@ -105,6 +109,7 @@
     <!-- NuGet Packages -->
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.*" PrivateAssets="all" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -206,11 +211,7 @@
       <HintPath>$(GamePath)\com.rlabrecque.steamworks.net.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <!-- UI Framework Dependencies -->
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>$(GamePath)\Newtonsoft.Json.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
+
     <Reference Include="UniTask">
       <HintPath>$(GamePath)\UniTask.dll</HintPath>
       <Private>False</Private>

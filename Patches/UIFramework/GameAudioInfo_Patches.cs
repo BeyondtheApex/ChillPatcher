@@ -7,6 +7,7 @@ using ChillPatcher.UIFramework.Audio;
 using ChillPatcher.Native;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Cysharp.Threading.Tasks;
 using System.Threading;
 
@@ -189,9 +190,8 @@ namespace ChillPatcher.Patches.UIFramework
         /// 扩展音频格式支持 - 可配置开关
         /// 默认关闭，不影响原游戏行为和存档
         /// </summary>
-        [HarmonyPatch(typeof(GameAudioInfo), "<DownloadAudioFile>g__GetAudioType|20_0")]
-        [HarmonyPrefix]
-        static bool GetAudioType_Prefix(string uri, ref AudioType __result)
+        // Patched by GameAudioInfo_GetAudioType_Patch below. The compiler-generated suffix changes between game builds.
+        internal static bool GetAudioType_Prefix(string uri, ref AudioType __result)
         {
             // 检查配置开关
             if (!UIFrameworkConfig.EnableExtendedFormats.Value)
@@ -315,8 +315,60 @@ namespace ChillPatcher.Patches.UIFramework
             // 如果原来没有 Credit，保持为空（不覆盖为 DownloadAudioFile 返回的值）
             
             Plugin.Log.LogDebug($"[LoadLocalFile] Restored metadata: Title={instance.Title}, Credit={instance.Credit}");
-            
+
             return clip;
+        }
+    }
+
+    /// <summary>
+    /// Patch the compiler-generated local function used by DownloadAudioFile.
+    /// The generated suffix changes between game builds, so resolve it by signature.
+    /// </summary>
+    [HarmonyPatch]
+    public static class GameAudioInfo_GetAudioType_Patch
+    {
+        private static MethodBase _targetMethod;
+
+        static bool Prepare()
+        {
+            _targetMethod = ResolveTargetMethod();
+            if (_targetMethod == null)
+            {
+                Plugin.Log.LogWarning("[GetAudioType] Could not find compiler-generated DownloadAudioFile audio type method; skipping patch.");
+                return false;
+            }
+
+            Plugin.Log.LogDebug($"[GetAudioType] Patching generated method: {_targetMethod.Name}");
+            return true;
+        }
+
+        static MethodBase TargetMethod()
+        {
+            return _targetMethod ?? ResolveTargetMethod();
+        }
+
+        private static MethodBase ResolveTargetMethod()
+        {
+            const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
+            foreach (var method in typeof(GameAudioInfo).GetMethods(flags))
+            {
+                var parameters = method.GetParameters();
+                if (method.Name.StartsWith("<DownloadAudioFile>g__GetAudioType|", StringComparison.Ordinal)
+                    && method.ReturnType == typeof(AudioType)
+                    && parameters.Length == 1
+                    && parameters[0].ParameterType == typeof(string))
+                {
+                    return method;
+                }
+            }
+
+            return null;
+        }
+
+        [HarmonyPrefix]
+        static bool Prefix(string uri, ref AudioType __result)
+        {
+            return GameAudioInfo_Patches.GetAudioType_Prefix(uri, ref __result);
         }
     }
 }

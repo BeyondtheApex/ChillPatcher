@@ -49,6 +49,16 @@ namespace ChillPatcher
                         log.LogError($"[Core] 缺失依赖文件: {path}");
                     }
                 }
+
+                string optionalOmniPcm = Path.Combine(nativeDir, "OmniPcmShared.dll");
+                if (File.Exists(optionalOmniPcm))
+                {
+                    var handle = LoadLibrary(optionalOmniPcm);
+                    if (handle != IntPtr.Zero)
+                        log.LogInfo("[Core] Preloaded optional native SDK: OmniPcmShared.dll");
+                    else
+                        log.LogWarning("[Core] Optional native SDK load returned 0: OmniPcmShared.dll");
+                }
             }
             catch (Exception ex)
             {

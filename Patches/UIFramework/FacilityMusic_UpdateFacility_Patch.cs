@@ -145,7 +145,27 @@ namespace ChillPatcher.Patches.UIFramework
 
         private static void TryPublishProgressEvent(MusicService musicService, GameAudioInfo playingMusic, float progress)
         {
-            // TODO: IPC bridge needed - EventBus and MusicRegistry removed
+            if (playingMusic == null) return;
+            try
+            {
+                if (PluginConfig.EnableSystemMediaTransport.Value)
+                {
+                    float duration = OmniMixIntegration.Instance?.CurrentTrackDuration ?? 0f;
+                    if (duration <= 0 && playingMusic.AudioClip != null)
+                        duration = playingMusic.AudioClip.length;
+                    
+                    if (duration > 0)
+                    {
+                        long durationMs = (long)(duration * 1000);
+                        long positionMs = (long)(duration * progress * 1000);
+                        ChillPatcher.UIFramework.Audio.SystemMediaTransportService.Instance.UpdateTimeline(durationMs, positionMs);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError($"[UpdateFacility_Patch] Update SMTC timeline failed: {ex.Message}");
+            }
         }
     }
 }

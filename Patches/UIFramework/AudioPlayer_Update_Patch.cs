@@ -1,7 +1,9 @@
 using HarmonyLib;
 using KanKikuchi.AudioManager;
 using UnityEngine;
+using ChillPatcher.SDK.Ipc;
 using ChillPatcher.SDK.Models;
+using ChillPatcher.SDK.Native;
 using Bulbul;
 using Cysharp.Threading.Tasks;
 using NestopiSystem.DIContainers;
@@ -106,12 +108,6 @@ namespace ChillPatcher.Patches.UIFramework
         [HarmonyPrefix]
         public static bool Update_Prefix(AudioPlayer __instance)
         {
-            // 只在 Playing 状态时进行特殊处理
-            if (__instance.CurrentState != AudioPlayer.State.Playing)
-            {
-                return true; // 使用原始逻辑
-            }
-
             var audioSource = __instance.AudioSource;
             if (audioSource == null || audioSource.clip == null)
             {
@@ -127,6 +123,9 @@ namespace ChillPatcher.Patches.UIFramework
                 // 这样就不会影响语音、音效等其他 AudioPlayer
                 return true;
             }
+
+            // IPC streaming EOF can arrive after the backend publishes state=stopped.
+            // Client-managed mode still needs this patch to run and make the next-track decision.
 
             // 是流媒体音乐，进行特殊处理
             var musicService = ProjectLifetimeScope.Resolve<MusicService>();
@@ -159,6 +158,11 @@ namespace ChillPatcher.Patches.UIFramework
             }
 
             // 获取当前播放进度
+            if (reader is SharedMemoryPcmStreamReader sharedMemoryReader)
+            {
+                sharedMemoryReader.ReportAudioSourcePosition(audioSource.timeSamples);
+            }
+
             float currentProgress = audioSource.time;
             if (reader != null)
             {
@@ -248,6 +252,76 @@ namespace ChillPatcher.Patches.UIFramework
                     try
                     {
                         HandlePlaybackEnd(musicService, "PCM stream EOF");
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Plugin.Log.LogError($"[AudioPlayer_Patch] Error handling playback end: {ex.Message}");
+                    }
+                    
+                    return false; // 阻止原始逻辑
+                }
+            }
+
+            // ===== 共享内存流特殊处理 (IPC 模式) =====
+            var shm = OmniMixIntegration.Instance?.SharedMemory;
+            if (shm != null && reader == null)
+            {
+                var snapshot = shm.Snapshot;
+                if (snapshot.Version >= 2 &&
+                    snapshot.CurrentUuid == playingMusic.UUID &&
+                    shm.IsPlaybackComplete(Mathf.Max(1, snapshot.SampleRate * 250 / 1000)))
+                {
+                    if (_isSkippingToNext)
+                    {
+                        return false;
+                    }
+
+                    if (clipName == _lastEofTriggeredStreamId)
+                    {
+                        return false;
+                    }
+
+                    _lastEofTriggeredStreamId = clipName;
+                    _isSkippingToNext = true;
+
+                    try
+                    {
+                        Plugin.Log.LogInfo("[AudioPlayer_Patch] IPC v2 EOF detected, triggering next song");
+                        HandlePlaybackEnd(musicService, "Shared memory v2 EOF");
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Plugin.Log.LogError($"[AudioPlayer_Patch] Error handling playback end: {ex.Message}");
+                    }
+
+                    return false;
+                }
+
+                int playState = snapshot.LegacyPlayState;
+                long readCursor = snapshot.ReadCursor;
+                long writeCursor = snapshot.WriteCursor;
+
+                // 只有当 backend 已经写入过音频帧且当前状态为停止，且读取游标追上写入游标时，判定为播放完毕
+                if (writeCursor > 0 && playState == 0 && readCursor >= writeCursor)
+                {
+                    // 【防重入检查】防止同一个 stream 被多次触发
+                    if (_isSkippingToNext)
+                    {
+                        return false;
+                    }
+                    
+                    if (clipName == _lastEofTriggeredStreamId)
+                    {
+                        return false;
+                    }
+                    
+                    _lastEofTriggeredStreamId = clipName;
+                    _isSkippingToNext = true;
+
+                    try
+                    {
+                        Plugin.Log.LogInfo("[AudioPlayer_Patch] IPC shared memory EOF detected, triggering next song");
+                        HandlePlaybackEnd(musicService, "Shared memory EOF");
                     }
                     catch (System.Exception ex)
                     {

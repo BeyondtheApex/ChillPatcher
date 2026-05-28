@@ -47,79 +47,30 @@ namespace ChillPatcher.Patches.UIFramework
             }
 
             // 如果正在拖动且有预览进度，返回预览进度
-            // 这让进度条 UI 跟随用户拖动，但不执行实际 Seek
             if (MusicService_SetProgress_Patch.IsDragging && MusicService_SetProgress_Patch.PreviewProgress >= 0)
             {
                 __result = MusicService_SetProgress_Patch.PreviewProgress;
                 return false;
             }
 
-            // 获取活跃的 PCM 读取器
             var reader = MusicService_SetProgress_Patch.ActivePcmReader;
-            
-            // 直接从 PCM reader 检查是否有待定 Seek
-            // 不再依赖 IsWaitingForSeek 标志（Go 端完成 Seek 后不会通知 C#）
-            if (reader != null && reader.HasPendingSeek)
-            {
-                // 有待定 Seek，返回待定位置的进度
-                if (reader.Info.TotalFrames > 0 && reader.PendingSeekFrame >= 0)
-                {
-                    __result = (float)reader.PendingSeekFrame / (float)reader.Info.TotalFrames;
-                }
-                else
-                {
-                    __result = FacilityMusic_UpdateFacility_Patch.PendingSeekProgress;
-                }
-                return false;
-            }
-            
-            // Seek 已完成，清除等待标志
-            if (FacilityMusic_UpdateFacility_Patch.IsWaitingForSeek)
-            {
-                FacilityMusic_UpdateFacility_Patch.IsWaitingForSeek = false;
-                FacilityMusic_UpdateFacility_Patch.PendingSeekProgress = 0f;
-            }
-
             if (reader != null && reader.Info.TotalFrames > 0)
             {
-                // 使用 PCM reader 的真实位置计算进度
                 float progress = (float)reader.CurrentFrame / (float)reader.Info.TotalFrames;
-                
-                // 限制在 0-1 范围内
-                progress = UnityEngine.Mathf.Clamp01(progress);
-                
-                _lastValidProgress = progress;
-                __result = progress;
-                
-                return false; // 跳过原始逻辑
-            }
-
-            // 没有有效的 PCM reader，尝试使用原始逻辑
-            // 但先检查是否有 AudioPlayer
-            var musicManager = SingletonMonoBehaviour<MusicManager>.Instance;
-            var player = playingMusic.AudioClip != null 
-                ? musicManager.GetPlayer(playingMusic.AudioClip) 
-                : null;
-
-            if (player != null && player.AudioSource != null && player.AudioSource.clip != null)
-            {
-                // 【注意】这里使用 clip.length 可能不准确（包含余量）
-                // 但这是 fallback，正常情况不会走到这里
-                var clip = player.AudioSource.clip;
-                float effectiveLength = clip.length;
-                
-                // 如果有 reader，尝试使用原始时长
-                if (reader != null && reader.Info.Duration > 0)
-                {
-                    effectiveLength = reader.Info.Duration;
-                }
-                
-                __result = player.AudioSource.time / effectiveLength;
-                __result = UnityEngine.Mathf.Clamp01(__result);
+                __result = UnityEngine.Mathf.Clamp01(progress);
+                _lastValidProgress = __result;
                 return false;
             }
 
-            // 无法获取进度，返回上次有效值或 0
+            var integration = OmniMixIntegration.Instance;
+            if (integration != null && integration.CurrentTrackDuration > 0)
+            {
+                float progress = integration.CurrentTrackPosition / integration.CurrentTrackDuration;
+                __result = UnityEngine.Mathf.Clamp01(progress);
+                _lastValidProgress = __result;
+                return false;
+            }
+
             __result = _lastValidProgress;
             return false;
         }

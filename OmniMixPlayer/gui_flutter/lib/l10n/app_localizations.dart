@@ -146,6 +146,120 @@ abstract class AppLocalizations {
   /// **'Settings'**
   String get settings;
 
+  /// No description provided for @gameIntegration.
+  ///
+  /// In en, this message translates to:
+  /// **'Game Integration'**
+  String get gameIntegration;
+
+  /// No description provided for @selectGameDir.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Game Directory'**
+  String get selectGameDir;
+
+  /// No description provided for @gamePath.
+  ///
+  /// In en, this message translates to:
+  /// **'Game Path'**
+  String get gamePath;
+
+  /// No description provided for @bepinexStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'BepInEx Status'**
+  String get bepinexStatus;
+
+  /// No description provided for @modStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Mod Status'**
+  String get modStatus;
+
+  /// No description provided for @installBepInEx.
+  ///
+  /// In en, this message translates to:
+  /// **'Install BepInEx'**
+  String get installBepInEx;
+
+  /// No description provided for @uninstallBepInEx.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall BepInEx'**
+  String get uninstallBepInEx;
+
+  /// No description provided for @installMod.
+  ///
+  /// In en, this message translates to:
+  /// **'Install Mod'**
+  String get installMod;
+
+  /// No description provided for @uninstallMod.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall Mod'**
+  String get uninstallMod;
+
+  /// No description provided for @reinstallBepInEx.
+  ///
+  /// In en, this message translates to:
+  /// **'Reinstall BepInEx'**
+  String get reinstallBepInEx;
+
+  /// No description provided for @reinstallMod.
+  ///
+  /// In en, this message translates to:
+  /// **'Reinstall Mod'**
+  String get reinstallMod;
+
+  /// No description provided for @statusNotInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not Installed'**
+  String get statusNotInstalled;
+
+  /// No description provided for @statusManaged.
+  ///
+  /// In en, this message translates to:
+  /// **'Managed'**
+  String get statusManaged;
+
+  /// No description provided for @statusUnmanaged.
+  ///
+  /// In en, this message translates to:
+  /// **'Pre-installed / Unmanaged'**
+  String get statusUnmanaged;
+
+  /// No description provided for @unmanagedWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'BepInEx is already pre-installed. OmniMix will only manage Mod plugins. Core loader will not be managed or overwritten.'**
+  String get unmanagedWarning;
+
+  /// No description provided for @invalidGameDir.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid game directory! Please select the root folder of \'Chill With You\' containing \'Chill With You.exe\' and \'Chill With You_Data\'.'**
+  String get invalidGameDir;
+
+  /// No description provided for @modInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed'**
+  String get modInstalled;
+
+  /// No description provided for @deploymentLogs.
+  ///
+  /// In en, this message translates to:
+  /// **'Deployment Logs'**
+  String get deploymentLogs;
+
+  /// No description provided for @chooseFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Folder'**
+  String get chooseFolder;
+
   /// No description provided for @about.
   ///
   /// In en, this message translates to:
@@ -451,6 +565,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Service'**
   String get serviceMode;
+
+  /// No description provided for @serviceAutoStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Service Auto-Start'**
+  String get serviceAutoStart;
 }
 
 class _AppLocalizationsDelegate

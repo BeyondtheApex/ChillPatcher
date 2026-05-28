@@ -10,7 +10,7 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Database
     /// </summary>
     public class DatabaseCore : IDisposable
     {
-        private const int DB_VERSION = 3;
+        private const int DB_VERSION = 4;
         private readonly string _dbPath;
         private readonly ILogger _logger;
         private SQLiteConnection _connection;
@@ -88,6 +88,7 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Database
                     artist TEXT,
                     file_path TEXT NOT NULL,
                     file_modified TEXT,
+                    duration REAL,
                     FOREIGN KEY (tag_id) REFERENCES playlist_cache(tag_id)
                 );
 
@@ -141,46 +142,50 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Database
 
         private void MigrateIfNeeded()
         {
-            var getVersion = "SELECT version FROM db_version LIMIT 1";
-            int currentVersion;
-
-            using (var cmd = new SQLiteCommand(getVersion, _connection))
+            int currentVersion = 0;
+            try
             {
-                currentVersion = Convert.ToInt32(cmd.ExecuteScalar());
+                var getVersion = "SELECT version FROM db_version LIMIT 1";
+                using (var cmd = new SQLiteCommand(getVersion, _connection))
+                {
+                    currentVersion = Convert.ToInt32(cmd.ExecuteScalar());
+                }
+            }
+            catch
+            {
+                // db_version 表可能不存在
             }
 
             if (currentVersion < DB_VERSION)
             {
-                _logger.LogInformation($"鏁版嵁搴撹縼绉? {currentVersion} -> {DB_VERSION}");
-
-                if (currentVersion < 3)
-                {
-                    MigrateToV3();
-                }
-
-                var updateVersion = $"UPDATE db_version SET version = {DB_VERSION}";
-                using (var cmd = new SQLiteCommand(updateVersion, _connection))
-                {
-                    cmd.ExecuteNonQuery();
-                }
+                _logger.LogInformation($"数据库版本不匹配 ({currentVersion} < {DB_VERSION})，强制重建数据库...");
+                RecreateDatabase();
             }
         }
 
-        private void MigrateToV3()
+        private void RecreateDatabase()
         {
-            var sql = @"
-                CREATE TABLE IF NOT EXISTS cover_cache (
-                    cache_key TEXT PRIMARY KEY,
-                    cover_path TEXT,
-                    source_type INTEGER DEFAULT 0,
-                    cached_at TEXT NOT NULL
-                );
-            ";
+            _connection?.Close();
+            _connection?.Dispose();
+            _connection = null;
 
-            using (var cmd = new SQLiteCommand(sql, _connection))
+            try
             {
-                cmd.ExecuteNonQuery();
+                if (File.Exists(_dbPath))
+                {
+                    File.Delete(_dbPath);
+                }
             }
+            catch (Exception ex)
+            {
+                _logger.LogError($"删除旧数据库文件失败: {ex.Message}");
+            }
+
+            var connectionString = $"Data Source={_dbPath};Version=3;";
+            _connection = new SQLiteConnection(connectionString);
+            _connection.Open();
+
+            CreateTables();
         }
 
         public void Dispose()

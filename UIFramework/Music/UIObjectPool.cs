@@ -31,13 +31,13 @@ namespace ChillPatcher.UIFramework.Music
             // 最终方案：总是创建新对象，不复用
             // 原因：ButtonEventObservable的Subject是readonly，无法清空订阅者
             // 复用会导致事件订阅累积
-            var go = Object.Instantiate(_prefab, _parent);
+            var go = UnityEngine.Object.Instantiate(_prefab, _parent);
             item = go.GetComponent<T>();
 
             if (item == null)
             {
                 BepInEx.Logging.Logger.CreateLogSource("ChillUIFramework").LogError($"Prefab does not have component {typeof(T).Name}");
-                Object.Destroy(go);
+                UnityEngine.Object.Destroy(go);
                 return null;
             }
 
@@ -71,7 +71,7 @@ namespace ChillPatcher.UIFramework.Music
             {
                 if (item != null)
                 {
-                    Object.Destroy(item.gameObject);
+                    UnityEngine.Object.Destroy(item.gameObject);
                 }
             }
 
@@ -80,7 +80,7 @@ namespace ChillPatcher.UIFramework.Music
                 var item = _pool.Dequeue();
                 if (item != null)
                 {
-                    Object.Destroy(item.gameObject);
+                    UnityEngine.Object.Destroy(item.gameObject);
                 }
             }
 

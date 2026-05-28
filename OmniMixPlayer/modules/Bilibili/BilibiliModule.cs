@@ -295,7 +295,9 @@ namespace OmniMixPlayer.Module.Bilibili
             else
             {
                 var qrReady = _qrManager?.QRCodeBytes != null;
-                var qrStatusText = qrReady ? "请使用 B站 扫码登录" : "二维码加载中...";
+                var qrStatusText = qrReady
+                    ? (_qrManager?.StatusMessage ?? "请使用 B站 扫码登录")
+                    : "二维码加载中...";
 
                 return SlintUi.Column(spacing: 16, padding: 20)
                     .AddChild(SlintUi.Text("未登录", fontSize: 16))
@@ -364,9 +366,9 @@ namespace OmniMixPlayer.Module.Bilibili
             {
                 if (_qrManager != null)
                 {
-                    if (_qrManager.QRCodeBytes == null)
+                    // 二维码不存在或轮询已停止（超时/过期），重新开始
+                    if (_qrManager.QRCodeBytes == null || !_qrManager.IsPollingActive)
                     {
-                        // 首次加载时自动触发登录（参考网易云模块）
                         _qrManager.StartLogin();
                         // 等待一小段时间让二维码生成
                         for (int i = 0; i < 50; i++)

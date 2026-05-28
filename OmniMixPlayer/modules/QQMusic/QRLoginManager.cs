@@ -19,6 +19,8 @@ namespace OmniMixPlayer.Module.QQMusic
         private bool _isPolling;
         private CancellationTokenSource _pollingCts;
 
+        private static readonly TimeSpan POLLING_TIMEOUT = TimeSpan.FromMinutes(2);
+
         public event Action OnLoginSuccess;
         public event Action<(byte[] data, string mimeType)> OnQRCodeUpdated;
         public event Action<string> OnStatusChanged;
@@ -76,8 +78,20 @@ namespace OmniMixPlayer.Module.QQMusic
         {
             try
             {
+                var startTime = DateTime.UtcNow;
+
                 while (!cancellationToken.IsCancellationRequested)
                 {
+                    // 检查 2 分钟超时
+                    if (DateTime.UtcNow - startTime >= POLLING_TIMEOUT)
+                    {
+                        _logger.LogInformation("[QRLoginManager] 登录轮询超时，已停止");
+                        _currentState = new QQMusicBridge.QRLoginState { Code = -1, Msg = "登录超时，请刷新二维码重试" };
+                        OnStatusChanged?.Invoke(_currentState.Msg);
+                        OnLoginFailed?.Invoke(_currentState.Msg);
+                        return;
+                    }
+
                     await Task.Delay(1500, cancellationToken);
 
                     var status = await Task.Run(() => _bridge.CheckQRStatus(), cancellationToken);
@@ -99,8 +113,9 @@ namespace OmniMixPlayer.Module.QQMusic
                     }
                     else if (status.IsExpired)
                     {
-                        _logger.LogInformation("[QRLoginManager] 二维码已失效，重新生成...");
-                        await StartLoginAsync(_loginType);
+                        _logger.LogInformation("[QRLoginManager] 二维码已过期，停止轮询");
+                        OnStatusChanged?.Invoke("二维码已过期，请刷新重试");
+                        OnLoginFailed?.Invoke("二维码已过期，请刷新重试");
                         return;
                     }
                 }

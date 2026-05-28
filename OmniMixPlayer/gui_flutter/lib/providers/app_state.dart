@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/node_data.dart';
+import '../models/mod_manifest.dart';
 import '../services/api_client.dart';
 import '../services/ws_client.dart';
 import '../services/backend_manager.dart';
 import '../services/platform_service.dart';
 import '../services/port_file.dart';
 import '../services/logger.dart';
+import '../services/mod_deployment_service.dart';
 
 enum AppThemeMode { light, dark, system }
 
@@ -14,6 +17,19 @@ class AppState extends ChangeNotifier {
   late ApiClient api;
   late WsClient ws;
   late final BackendManager _backendMgr;
+
+  // Game Integration (Mod Manager)
+  String _gamePath = '';
+  BepInExStatus _bepinexStatus = BepInExStatus.notInstalled;
+  ModStatus _modStatus = ModStatus.notInstalled;
+  final List<String> _deploymentLogs = [];
+  bool _deploymentBusy = false;
+
+  String get gamePath => _gamePath;
+  BepInExStatus get bepinexStatus => _bepinexStatus;
+  ModStatus get modStatus => _modStatus;
+  List<String> get deploymentLogs => _deploymentLogs;
+  bool get deploymentBusy => _deploymentBusy;
 
   // Backend
   bool _backendOnline = false;
@@ -26,6 +42,7 @@ class AppState extends ChangeNotifier {
   String _serviceState =
       'unknown'; // 'running', 'installed', 'not_installed', 'unknown'
   bool _serviceBusy = false;
+  bool _serviceAutoStart = false;
   String? _serviceResult; // Result message after install/uninstall
   Timer? _serviceResultTimer;
 
@@ -59,6 +76,7 @@ class AppState extends ChangeNotifier {
   bool get minimizeToTray => _minimizeToTray;
   String get serviceState => _serviceState;
   bool get serviceBusy => _serviceBusy;
+  bool get serviceAutoStart => _serviceAutoStart;
   String? get serviceResult => _serviceResult;
   AppThemeMode get themeMode => _themeMode;
   String get language => _language;
@@ -102,6 +120,7 @@ class AppState extends ChangeNotifier {
     // Run initial detection → auto-start if not running
     _backendBusy = true;
     _runInitialDetection();
+    loadGameIntegrationSettings();
   }
 
   void _createClients(int port) {
@@ -120,10 +139,14 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _runInitialDetection() async {
+    _serviceBusy = true;
+    _backendBusy = true;
+    notifyListeners();
     try {
       _serviceState = await PlatformService.getServiceState();
+      _serviceAutoStart = await PlatformService.isServiceAutoStart();
       GuiLogger().conn(
-        'AppState._runInitialDetection: serviceState=$_serviceState',
+        'AppState._runInitialDetection: serviceState=$_serviceState, serviceAutoStart=$_serviceAutoStart',
       );
 
       // ═══ Pure service mode: no process fallback ═══
@@ -186,6 +209,7 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     } finally {
       _backendBusy = false;
+      _serviceBusy = false;
       notifyListeners();
     }
   }
@@ -251,6 +275,7 @@ class AppState extends ChangeNotifier {
       final connected = await ws.connectOnce();
       GuiLogger().conn('AppState._connectAndLoad: WS connected=$connected');
       if (connected) {
+        await api.connectController();
         await _loadModules();
       }
     } catch (e, st) {
@@ -275,6 +300,10 @@ class AppState extends ChangeNotifier {
     };
     ws.onUiPush = (push) {
       if (push.replace && push.tree != null) {
+        // 只处理当前活跃模块的 UI 推送, 避免后台模块的推送覆盖当前显示
+        if (push.moduleId.isNotEmpty && push.moduleId != _activeModuleId) {
+          return;
+        }
         if (_overlayUiTree != null) {
           _overlayUiTree = push.tree;
         } else {
@@ -476,8 +505,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       final ok = await PlatformService.installService();
-      _serviceState = await PlatformService.getServiceState();
-      _serviceResult = ok ? 'installed' : 'failed';
+      if (ok) {
+        _serviceState = 'installed';
+        _serviceAutoStart = await PlatformService.isServiceAutoStart();
+        _serviceResult = 'installed';
+      } else {
+        _serviceState = await PlatformService.getServiceState();
+        _serviceResult = 'failed';
+      }
     } catch (e) {
       _serviceResult = 'failed';
       GuiLogger().error('installService failed', e);
@@ -497,8 +532,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       final ok = await PlatformService.uninstallService();
-      _serviceState = await PlatformService.getServiceState();
-      _serviceResult = ok ? 'not_installed' : 'failed';
+      if (ok) {
+        _serviceState = 'not_installed';
+        _serviceAutoStart = false; // Reset when uninstalled
+        _serviceResult = 'not_installed';
+      } else {
+        _serviceState = await PlatformService.getServiceState();
+        _serviceResult = 'failed';
+      }
     } catch (e) {
       _serviceResult = 'failed';
       GuiLogger().error('uninstallService failed', e);
@@ -521,7 +562,27 @@ class AppState extends ChangeNotifier {
   /// Refresh service state from OS.
   Future<void> refreshServiceState() async {
     _serviceState = await PlatformService.getServiceState();
+    _serviceAutoStart = await PlatformService.isServiceAutoStart();
     notifyListeners();
+  }
+
+  /// Toggle service startup type between automatic and manual.
+  Future<bool> setServiceAutoStart(bool autoStart) async {
+    _serviceBusy = true;
+    notifyListeners();
+    try {
+      final ok = await PlatformService.setServiceAutoStart(autoStart);
+      if (ok) {
+        _serviceAutoStart = autoStart;
+      }
+      return ok;
+    } catch (e) {
+      GuiLogger().error('setServiceAutoStart failed', e);
+      return false;
+    } finally {
+      _serviceBusy = false;
+      notifyListeners();
+    }
   }
 
   Future<void> setBackendPort(String port) async {
@@ -690,6 +751,134 @@ class AppState extends ChangeNotifier {
       return;
     }
     ws.sendUiEvent(_activeModuleId ?? '', nodeId, action, value);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Game Integration (Mod Manager) Methods
+  // ═══════════════════════════════════════════════════════════
+
+  void addDeploymentLog(String log) {
+    final timeStr = DateTime.now().toLocal().toString().substring(11, 19);
+    _deploymentLogs.add('[$timeStr] $log');
+    notifyListeners();
+  }
+
+  void clearDeploymentLogs() {
+    _deploymentLogs.clear();
+    notifyListeners();
+  }
+
+  Future<void> loadGameIntegrationSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _gamePath = prefs.getString('game_integration_path') ?? '';
+      refreshModStatuses();
+    } catch (e) {
+      GuiLogger().error('loadGameIntegrationSettings failed', e);
+    }
+  }
+
+  Future<void> setGamePath(String path) async {
+    _gamePath = path;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('game_integration_path', path);
+      refreshModStatuses();
+    } catch (e) {
+      GuiLogger().error('setGamePath failed', e);
+    }
+  }
+
+  void refreshModStatuses() {
+    if (_gamePath.isEmpty) {
+      _bepinexStatus = BepInExStatus.notInstalled;
+      _modStatus = ModStatus.notInstalled;
+      notifyListeners();
+      return;
+    }
+
+    final game = gameCatalog.firstWhere((g) => g.id == 'chill_with_you');
+    final isValid = ModDeploymentService.verifyGameDirectory(_gamePath, game);
+    if (!isValid) {
+      _bepinexStatus = BepInExStatus.notInstalled;
+      _modStatus = ModStatus.notInstalled;
+      notifyListeners();
+      return;
+    }
+
+    _bepinexStatus = ModDeploymentService.checkBepInExStatus(_gamePath);
+    final mod = modCatalog.firstWhere((m) => m.id == 'chill_patcher');
+    _modStatus = ModDeploymentService.checkModStatus(_gamePath, mod.folderName);
+    notifyListeners();
+  }
+
+  Future<bool> installBepInEx() async {
+    if (_gamePath.isEmpty || _deploymentBusy) return false;
+    _deploymentBusy = true;
+    clearDeploymentLogs();
+    notifyListeners();
+
+    try {
+      final framework = frameworkCatalog.firstWhere((f) => f.id == 'bepinex_5');
+      final success = await ModDeploymentService.deployBepInEx(_gamePath, framework, addDeploymentLog);
+      refreshModStatuses();
+      return success;
+    } finally {
+      _deploymentBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> uninstallBepInEx() async {
+    if (_gamePath.isEmpty || _deploymentBusy) return false;
+    _deploymentBusy = true;
+    clearDeploymentLogs();
+    notifyListeners();
+
+    try {
+      final framework = frameworkCatalog.firstWhere((f) => f.id == 'bepinex_5');
+      final success = await ModDeploymentService.undeployBepInEx(_gamePath, framework, addDeploymentLog);
+      refreshModStatuses();
+      return success;
+    } finally {
+      _deploymentBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> installMod() async {
+    if (_gamePath.isEmpty || _deploymentBusy) return false;
+    _deploymentBusy = true;
+    clearDeploymentLogs();
+    notifyListeners();
+
+    try {
+      final mod = modCatalog.firstWhere((m) => m.id == 'chill_patcher');
+      final success = await ModDeploymentService.deployMod(_gamePath, mod, addDeploymentLog);
+      refreshModStatuses();
+      return success;
+    } finally {
+      _deploymentBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> uninstallMod() async {
+    if (_gamePath.isEmpty || _deploymentBusy) return false;
+    _deploymentBusy = true;
+    clearDeploymentLogs();
+    notifyListeners();
+
+    try {
+      final mod = modCatalog.firstWhere((m) => m.id == 'chill_patcher');
+      final success = await ModDeploymentService.undeployMod(_gamePath, mod, addDeploymentLog);
+      refreshModStatuses();
+      return success;
+    } finally {
+      _deploymentBusy = false;
+      notifyListeners();
+    }
   }
 
   @override

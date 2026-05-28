@@ -6,34 +6,19 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using OmniMixPlayer.Backend.ModuleSystem;
 using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
+using OmniMixPlayer.SDK.Ipc;
 using OmniMixPlayer.SDK.Models;
 using QueueChangeType = OmniMixPlayer.SDK.Interfaces.QueueChangeType;
 
 namespace OmniMixPlayer.Backend.Audio
 {
-    /// <summary>
-    /// 播放模式
-    /// </summary>
     public enum PlaybackMode
     {
-        /// <summary>客户端自行管理队列，服务仅提供音源和解码</summary>
         ClientManaged,
-        /// <summary>服务端管理队列和播放决策，客户端被动接收播放事件</summary>
         ServerManaged
-    }
-
-    /// <summary>
-    /// 已连接客户端状态
-    /// </summary>
-    public class ClientConnectionState
-    {
-        public string ClientId { get; set; }
-        public PlaybackMode Mode { get; set; }
-        public DateTime ConnectedAt { get; set; }
-        public DateTime LastHeartbeat { get; set; }
-        public bool IsConnected { get; set; }
     }
 
     public class PlaybackController : IDisposable, IPlayQueue
@@ -44,12 +29,12 @@ namespace OmniMixPlayer.Backend.Audio
         private readonly IMusicRegistry _musicRegistry;
         private readonly IStreamingService _streamingService;
         private readonly string _stateFilePath;
+        private readonly PlaybackMode _mode;
 
         private readonly Dictionary<string, QueueSlot> _queues = new Dictionary<string, QueueSlot>();
         private string _activeQueueId;
         private const string DefaultQueueId = "default";
         private const int MaxHistoryCount = 50;
-        private const int HeartbeatTimeoutSeconds = 30;
 
         private CancellationTokenSource _playbackCts;
         private Task _playbackTask;
@@ -57,15 +42,17 @@ namespace OmniMixPlayer.Backend.Audio
         private volatile int _playState;
         private readonly Random _rng = new Random();
         private readonly object _lock = new object();
-        private readonly object _clientLock = new object();
 
         private IPcmStreamReader _currentReader;
         private bool _disposed;
-
-        // 客户端连接状态
-        private ClientConnectionState _connectedClient;
-        private CancellationTokenSource _heartbeatWatchCts;
-        private string _lastPlayInitiator; // "server" 或 clientId
+        private long _lastHandledSeekGeneration;
+        private bool _currentStreamEofSignaled;
+        private bool _formatReadySignaled;
+        private float _lastLoopProgress;
+        private DateTime _lastLoopProgressChangeUtc = DateTime.UtcNow;
+        private const int AudibleDrainToleranceMs = 250;
+        private const int NearEndStallTimeoutSeconds = 10;
+        private string _lastPlayInitiator; // "server" 鎴?clientId
 
         private QueueSlot Active
         {
@@ -97,31 +84,12 @@ namespace OmniMixPlayer.Backend.Audio
         public bool CanGoNext => Active.CanGoNext;
         public string ActiveQueueId => _activeQueueId;
         public IReadOnlyList<string> QueueIds => _queues.Keys.ToList();
-
-        /// <summary>
-        /// 当前连接的客户端信息（null 表示无客户端连接）
-        /// </summary>
-        public ClientConnectionState ConnectedClient
-        {
-            get { lock (_clientLock) return _connectedClient; }
-        }
-
-        /// <summary>
-        /// 当前播放模式
-        /// </summary>
-        public PlaybackMode CurrentMode => ConnectedClient?.Mode ?? PlaybackMode.ServerManaged;
-
-        /// <summary>
-        /// 是否有客户端连接
-        /// </summary>
-        public bool HasClient => ConnectedClient != null;
+        public PlaybackMode CurrentMode => _mode;
 
         public event Action<MusicInfo> OnTrackChanged;
         public event Action<int> OnStateChanged;
         public event Action<float> OnPositionChanged;
         public event Action OnQueueChanged;
-        public event Action<ClientConnectionState> OnClientConnected;
-        public event Action OnClientDisconnected;
 
         event EventHandler<QueueChangedEventArgs> IPlayQueue.OnQueueChanged
         {
@@ -177,13 +145,14 @@ namespace OmniMixPlayer.Backend.Audio
 
         public PlaybackController(ILogger logger, SharedMemoryServer sharedMemory,
             IEventBus eventBus, IMusicRegistry musicRegistry, IStreamingService streamingService,
-            string configDir = null)
+            string configDir = null, PlaybackMode mode = PlaybackMode.ServerManaged)
         {
             _logger = logger;
             _sharedMemory = sharedMemory;
             _eventBus = eventBus;
             _musicRegistry = musicRegistry;
             _streamingService = streamingService;
+            _mode = mode;
 
             lock (_lock)
             {
@@ -250,7 +219,7 @@ namespace OmniMixPlayer.Backend.Audio
 
         #endregion
 
-        #region IPlayQueue — delegates to Active
+        #region IPlayQueue 鈥?delegates to Active
 
         public void Play(string uuid = null)
         {
@@ -273,6 +242,7 @@ namespace OmniMixPlayer.Backend.Audio
         {
             _playState = 2;
             _sharedMemory.SetPlayState(2);
+            _sharedMemory.SetStreamState(SharedMemoryStreamState.Paused);
             FireStateChanged(2);
         }
 
@@ -282,6 +252,7 @@ namespace OmniMixPlayer.Backend.Audio
             {
                 _playState = 1;
                 _sharedMemory.SetPlayState(1);
+                _sharedMemory.SetStreamState(SharedMemoryStreamState.Playing);
                 FireStateChanged(1);
             }
         }
@@ -291,6 +262,7 @@ namespace OmniMixPlayer.Backend.Audio
             StopPlayback();
             _playState = 0;
             _sharedMemory.SetPlayState(0);
+            _sharedMemory.SetStreamState(SharedMemoryStreamState.Stopped);
             FireStateChanged(0);
         }
 
@@ -346,12 +318,32 @@ namespace OmniMixPlayer.Backend.Audio
 
         public void Seek(float positionSeconds)
         {
-            _sharedMemory.WriteI64(0x1C, (long)(positionSeconds * _sharedMemory.SampleRate));
+            long shmTargetFrame = (long)(positionSeconds * _sharedMemory.SampleRate);
+            var seekGeneration = _sharedMemory.RequestSeek(shmTargetFrame);
+            _sharedMemory.DiscardUnreadFrames();
             if (_currentReader != null && _currentReader.CanSeek)
             {
                 ulong targetFrame = (ulong)(positionSeconds * _currentReader.Info.SampleRate);
                 if (_currentReader.Seek(targetFrame))
+                {
                     Position = positionSeconds;
+                    
+                    // Align the shared memory cursors to the seek target frame
+                    _sharedMemory.WriteI64(SharedMemoryProtocol.WriteCursor, shmTargetFrame);
+                    _sharedMemory.WriteI64(SharedMemoryProtocol.ReadCursor, shmTargetFrame);
+                    _sharedMemory.WriteI64(SharedMemoryProtocol.AudibleCursor, shmTargetFrame);
+                    _sharedMemory.WriteI64(SharedMemoryProtocol.FinalWriteCursor, 0);
+                    _sharedMemory.SetFlag(SharedMemoryStreamFlags.DecoderEof, false);
+                    _sharedMemory.SetFlag(SharedMemoryStreamFlags.SyntheticEof, false);
+                    _sharedMemory.SetFlag(SharedMemoryStreamFlags.ClientDrained, false);
+                    _sharedMemory.SetFlag(SharedMemoryStreamFlags.SeekPending, false);
+                    _sharedMemory.SetFlag(SharedMemoryStreamFlags.Discontinuity, false);
+                    _currentStreamEofSignaled = false;
+                    _lastHandledSeekGeneration = seekGeneration;
+
+                    FirePositionChanged(Position);
+                    SaveState();
+                }
             }
         }
 
@@ -395,6 +387,20 @@ namespace OmniMixPlayer.Backend.Audio
             if (m == null) return;
             m.IsFavorite = isFavorite;
             _musicRegistry.UpdateMusic(m);
+
+            if (!string.IsNullOrEmpty(m.ModuleId))
+            {
+                var loader = OmniMixPlayer.Backend.ModuleSystem.ModuleLoader.Instance;
+                if (loader != null)
+                {
+                    var module = loader.GetModule(m.ModuleId);
+                    if (module != null && module.Capabilities.CanFavorite)
+                    {
+                        var handler = loader.GetProvider<IFavoriteExcludeHandler>(m.ModuleId);
+                        handler?.SetFavorite(uuid, isFavorite);
+                    }
+                }
+            }
         }
 
         public bool IsExcluded(string uuid) { var m = _musicRegistry.GetMusic(uuid); return m?.IsExcluded ?? false; }
@@ -404,140 +410,20 @@ namespace OmniMixPlayer.Backend.Audio
             if (m == null) return;
             m.IsExcluded = isExcluded;
             _musicRegistry.UpdateMusic(m);
-        }
 
-        #endregion
-
-        #region Client Connection Management
-
-        /// <summary>
-        /// 客户端请求连接。同一时间只允许一个客户端连接。
-        /// </summary>
-        /// <param name="clientId">客户端标识</param>
-        /// <param name="mode">播放模式：ClientManaged=客户端自管队列, ServerManaged=服务端管队列</param>
-        /// <returns>连接成功返回 true，已有其他客户端连接返回 false</returns>
-        public bool ConnectClient(string clientId, PlaybackMode mode)
-        {
-            lock (_clientLock)
+            if (!string.IsNullOrEmpty(m.ModuleId))
             {
-                // 如果已有连接，检查是否超时
-                if (_connectedClient != null && _connectedClient.IsConnected)
+                var loader = OmniMixPlayer.Backend.ModuleSystem.ModuleLoader.Instance;
+                if (loader != null)
                 {
-                    var elapsed = DateTime.UtcNow - _connectedClient.LastHeartbeat;
-                    if (elapsed.TotalSeconds < HeartbeatTimeoutSeconds)
+                    var module = loader.GetModule(m.ModuleId);
+                    if (module != null && module.Capabilities.CanExclude)
                     {
-                        _logger.LogWarning("Client connection rejected: {ClientId} already connected", _connectedClient.ClientId);
-                        return false;
-                    }
-                    // 旧连接已超时，强制断开
-                    _logger.LogWarning("Old client {OldId} heartbeat timeout ({Seconds:F0}s), force disconnect",
-                        _connectedClient.ClientId, elapsed.TotalSeconds);
-                    DisconnectClientInternal();
-                }
-
-                _connectedClient = new ClientConnectionState
-                {
-                    ClientId = clientId,
-                    Mode = mode,
-                    ConnectedAt = DateTime.UtcNow,
-                    LastHeartbeat = DateTime.UtcNow,
-                    IsConnected = true
-                };
-
-                _logger.LogInformation("Client connected: {ClientId} mode={Mode}", clientId, mode);
-
-                // 启动心跳监控
-                StartHeartbeatWatch();
-
-                OnClientConnected?.Invoke(_connectedClient);
-                return true;
-            }
-        }
-
-        /// <summary>
-        /// 客户端心跳
-        /// </summary>
-        public bool Heartbeat(string clientId)
-        {
-            lock (_clientLock)
-            {
-                if (_connectedClient == null || !_connectedClient.IsConnected)
-                    return false;
-                if (_connectedClient.ClientId != clientId)
-                    return false;
-
-                _connectedClient.LastHeartbeat = DateTime.UtcNow;
-                return true;
-            }
-        }
-
-        /// <summary>
-        /// 断开客户端连接
-        /// </summary>
-        public bool DisconnectClient(string clientId)
-        {
-            lock (_clientLock)
-            {
-                if (_connectedClient == null || _connectedClient.ClientId != clientId)
-                    return false;
-
-                DisconnectClientInternal();
-                return true;
-            }
-        }
-
-        private void DisconnectClientInternal()
-        {
-            if (_connectedClient == null) return;
-
-            _logger.LogInformation("Client disconnected: {ClientId}", _connectedClient.ClientId);
-
-            // 停止当前播放
-            if (_playState == 1)
-            {
-                Stop();
-            }
-
-            _connectedClient = null;
-            StopHeartbeatWatch();
-            OnClientDisconnected?.Invoke();
-        }
-
-        private void StartHeartbeatWatch()
-        {
-            StopHeartbeatWatch();
-            _heartbeatWatchCts = new CancellationTokenSource();
-            var ct = _heartbeatWatchCts.Token;
-
-            _ = Task.Run(async () =>
-            {
-                while (!ct.IsCancellationRequested)
-                {
-                    await Task.Delay(5000, ct);
-                    if (ct.IsCancellationRequested) break;
-
-                    lock (_clientLock)
-                    {
-                        if (_connectedClient == null || !_connectedClient.IsConnected) break;
-
-                        var elapsed = DateTime.UtcNow - _connectedClient.LastHeartbeat;
-                        if (elapsed.TotalSeconds > HeartbeatTimeoutSeconds)
-                        {
-                            _logger.LogWarning("Client {ClientId} heartbeat timeout, disconnecting",
-                                _connectedClient.ClientId);
-                            DisconnectClientInternal();
-                            break;
-                        }
+                        var handler = loader.GetProvider<IFavoriteExcludeHandler>(m.ModuleId);
+                        handler?.SetExcluded(uuid, isExcluded);
                     }
                 }
-            }, ct);
-        }
-
-        private void StopHeartbeatWatch()
-        {
-            _heartbeatWatchCts?.Cancel();
-            _heartbeatWatchCts?.Dispose();
-            _heartbeatWatchCts = null;
+            }
         }
 
         #endregion
@@ -550,7 +436,6 @@ namespace OmniMixPlayer.Backend.Audio
         public object GetStatus()
         {
             var a = Active;
-            var client = ConnectedClient;
             return new
             {
                 IsPlaying = _playState == 1,
@@ -565,32 +450,10 @@ namespace OmniMixPlayer.Backend.Audio
                 HistoryPosition = GetHistoryPosition(a),
                 ActiveQueueId = _activeQueueId,
                 PlaybackMode = CurrentMode.ToString(),
-                HasClient = client != null,
-                ClientId = client?.ClientId,
                 PlayInitiator = _lastPlayInitiator,
                 CurrentTrack = a.CurrentTrack != null ? TrackMap(a.CurrentTrack) : null
             };
         }
-
-        /// <summary>
-        /// 获取客户端连接状态（供 API 返回）
-        /// </summary>
-        public object GetClientStatus()
-        {
-            var client = ConnectedClient;
-            if (client == null)
-                return new { connected = false };
-            return new
-            {
-                connected = true,
-                clientId = client.ClientId,
-                mode = client.Mode.ToString(),
-                connectedAt = client.ConnectedAt.ToString("O"),
-                lastHeartbeat = client.LastHeartbeat.ToString("O"),
-                playbackMode = CurrentMode.ToString()
-            };
-        }
-
         private static object TrackMap(MusicInfo m) => new
         {
             uuid = m.UUID,
@@ -678,27 +541,72 @@ namespace OmniMixPlayer.Backend.Audio
             if (track == null) return;
 
             Active.PushHistory();
-            // 记录播放发起者：ClientManaged 模式下来自客户端，否则来自服务端
+            // 璁板綍鎾斁鍙戣捣鑰咃細ClientManaged 妯″紡涓嬫潵鑷鎴风锛屽惁鍒欐潵鑷湇鍔＄
             _lastPlayInitiator = CurrentMode == PlaybackMode.ClientManaged
-                ? ConnectedClient?.ClientId ?? "client"
+                ? "client"
                 : "server";
             FireTrackChanged(track);
-            _sharedMemory.SetCurrentUuid(track.UUID);
+            long totalFramesHint = track.Duration > 0 ? (long)(track.Duration * _sharedMemory.SampleRate) : 0;
+            _sharedMemory.BeginStream(track.UUID, totalFramesHint);
             SaveState();
 
-            _currentReader = CreateStreamReader(track);
             _playbackCts = new CancellationTokenSource();
+            var playbackToken = _playbackCts.Token;
             _playState = 1;
             _sharedMemory.SetPlayState(1);
+            _sharedMemory.SetStreamState(SharedMemoryStreamState.Preparing);
             Position = 0;
+            _lastHandledSeekGeneration = _sharedMemory.GetSeekGeneration();
+            _currentStreamEofSignaled = false;
+            _formatReadySignaled = false;
+            _lastLoopProgress = 0;
+            _lastLoopProgressChangeUtc = DateTime.UtcNow;
             FireStateChanged(1);
-            _playbackTask = Task.Run(() => PlaybackLoopAsync(_playbackCts.Token));
+            _playbackTask = Task.Run(async () =>
+            {
+                var reader = await CreateStreamReaderAsync(track, playbackToken).ConfigureAwait(false);
+                if (playbackToken.IsCancellationRequested)
+                {
+                    reader?.Dispose();
+                    return;
+                }
+
+                if (reader == null)
+                {
+                    _logger.LogWarning("No playable stream for {Uuid}; publishing synthetic EOF", track.UUID);
+                    _sharedMemory.MarkFormatReady(_sharedMemory.SampleRate, _sharedMemory.Channels, 0);
+                    _sharedMemory.MarkError(SharedMemoryStreamError.DecoderFailed, syntheticEof: true);
+                    _playState = 0;
+                    FireStateChanged(0);
+
+                    if (CurrentMode != PlaybackMode.ClientManaged && !playbackToken.IsCancellationRequested)
+                    {
+                        await Task.Delay(50, playbackToken).ConfigureAwait(false);
+                        Next();
+                    }
+                    return;
+                }
+
+                _currentReader = reader;
+                await PlaybackLoopAsync(playbackToken).ConfigureAwait(false);
+            }, playbackToken);
         }
 
-        private IPcmStreamReader CreateStreamReader(MusicInfo music)
+        private async Task<IPcmStreamReader> CreateStreamReaderAsync(MusicInfo music, CancellationToken cancellationToken)
         {
             try
             {
+                if (IsModuleResolvedSource(music))
+                {
+                    var moduleReader = await TryResolveModuleStreamAsync(music, cancellationToken).ConfigureAwait(false);
+                    if (moduleReader != null)
+                        return moduleReader;
+
+                    // Module tracks store provider-specific identifiers in SourcePath (for example Netease song ids),
+                    // so falling back to CoreStreaming would create a bogus URL stream instead of skipping.
+                    return null;
+                }
+
                 string url = music.SourcePath;
                 string format = DetectFormat(music);
                 float duration = music.Duration > 0 ? music.Duration : 240f;
@@ -707,7 +615,100 @@ namespace OmniMixPlayer.Backend.Audio
                     return _streamingService.CreateStream(url, format, duration, cacheKey);
             }
             catch (Exception ex) { _logger.LogError(ex, "CreateStreamReader failed: {Uuid}", music.UUID); }
-            return new NullPcmReader();
+            return null;
+        }
+
+        private bool IsModuleResolvedSource(MusicInfo music)
+        {
+            if (music == null || string.IsNullOrEmpty(music.ModuleId))
+                return false;
+            if (music.SourceType != MusicSourceType.Stream && music.SourceType != MusicSourceType.Url)
+                return false;
+            return ModuleLoader.Instance?.GetProvider<IPlayableSourceResolver>(music.ModuleId) != null;
+        }
+
+        private async Task<IPcmStreamReader> TryResolveModuleStreamAsync(MusicInfo music, CancellationToken cancellationToken)
+        {
+            if (music == null || string.IsNullOrEmpty(music.ModuleId))
+                return null;
+            if (music.SourceType != MusicSourceType.Stream && music.SourceType != MusicSourceType.Url)
+                return null;
+
+            var resolver = ModuleLoader.Instance?.GetProvider<IPlayableSourceResolver>(music.ModuleId);
+            if (resolver == null)
+                return null;
+
+            _logger.LogInformation("Resolving playable source via module {ModuleId}: {Uuid}", music.ModuleId, music.UUID);
+            var source = await resolver.ResolveAsync(music.UUID, AudioQuality.ExHigh, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (source == null)
+            {
+                _logger.LogWarning("Module {ModuleId} returned no playable source: {Uuid}", music.ModuleId, music.UUID);
+                return null;
+            }
+
+            if (source.IsRemote && source.IsExpired)
+            {
+                _logger.LogInformation("Playable URL expired, refreshing via module {ModuleId}: {Uuid}", music.ModuleId, music.UUID);
+                source = await resolver.RefreshUrlAsync(music.UUID, AudioQuality.ExHigh, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            return CreateReaderFromPlayableSource(music, source);
+        }
+
+        private IPcmStreamReader CreateReaderFromPlayableSource(MusicInfo music, PlayableSource source)
+        {
+            if (source == null)
+                return null;
+
+            switch (source.SourceType)
+            {
+                case PlayableSourceType.PcmStream:
+                    if (source.PcmReader == null)
+                    {
+                        _logger.LogWarning("Module returned a PCM source without reader: {Uuid}", music.UUID);
+                        return null;
+                    }
+                    return source.PcmReader;
+
+                case PlayableSourceType.Remote:
+                    if (string.IsNullOrEmpty(source.Url))
+                        return null;
+                    return _streamingService.CreateStream(
+                        source.Url,
+                        FormatToString(source.Format, DetectFormat(music)),
+                        music.Duration > 0 ? music.Duration : 240f,
+                        music.UUID ?? Guid.NewGuid().ToString("N"));
+
+                case PlayableSourceType.Local:
+                case PlayableSourceType.Cached:
+                    if (string.IsNullOrEmpty(source.LocalPath))
+                        return null;
+                    return _streamingService.CreateStream(
+                        source.LocalPath,
+                        FormatToString(source.Format, DetectFormat(music)),
+                        music.Duration > 0 ? music.Duration : 240f,
+                        music.UUID ?? Guid.NewGuid().ToString("N"));
+
+                default:
+                    _logger.LogWarning("Unsupported playable source type {SourceType}: {Uuid}", source.SourceType, music.UUID);
+                    return null;
+            }
+        }
+
+        private static string FormatToString(AudioFormat format, string fallback)
+        {
+            return format switch
+            {
+                AudioFormat.Mp3 => "mp3",
+                AudioFormat.Ogg => "ogg",
+                AudioFormat.Wav => "wav",
+                AudioFormat.Flac => "flac",
+                AudioFormat.Aac => "aac",
+                _ => fallback
+            };
         }
 
         private static string DetectFormat(MusicInfo music)
@@ -727,6 +728,8 @@ namespace OmniMixPlayer.Backend.Audio
             _playbackCts = null;
             _playState = 0;
             _sharedMemory.SetPlayState(0);
+            _sharedMemory.SetStreamState(SharedMemoryStreamState.Stopped);
+            _sharedMemory.ResetCursors();
             var old = _currentReader;
             _currentReader = null;
             old?.Dispose();
@@ -734,7 +737,7 @@ namespace OmniMixPlayer.Backend.Audio
 
         private async Task PlaybackLoopAsync(CancellationToken ct)
         {
-            var pcmBuffer = new float[4096];
+            float[] pcmBuffer = null;
             int sampleRate = _sharedMemory.SampleRate;
             int channels = _sharedMemory.Channels;
 
@@ -744,22 +747,107 @@ namespace OmniMixPlayer.Backend.Audio
                 {
                     if (_playState != 1) { await Task.Delay(50, ct); continue; }
 
+                    // Update Position based on the audible cursor when the client reports it.
+                    var audibleCursor = _sharedMemory.GetAudibleCursor();
+                    var readCursor = _sharedMemory.GetReadCursor();
+                    var progressCursor = audibleCursor > 0 ? audibleCursor : readCursor;
+                    var newPos = (float)progressCursor / sampleRate;
+                    if (Math.Abs(newPos - Position) > 0.05f)
+                    {
+                        Position = newPos;
+                        FirePositionChanged(Position);
+                    }
+
+                    if (Math.Abs(newPos - _lastLoopProgress) > 0.1f)
+                    {
+                        _lastLoopProgress = newPos;
+                        _lastLoopProgressChangeUtc = DateTime.UtcNow;
+                    }
+
+                    // 限流机制：只在缓冲区空余空间不足 2048 帧时睡眠，防止因 Windows 定时器精度不足导致播放卡顿
+                    while (_sharedMemory.GetReadableFrames() > _sharedMemory.BufferFrames - 2048)
+                    {
+                        await Task.Delay(10, ct);
+                        if (_playState != 1 || ct.IsCancellationRequested)
+                            break;
+                    }
+                    if (_playState != 1 || ct.IsCancellationRequested) continue;
+
                     var reader = _currentReader;
                     if (reader == null || !reader.IsReady) { await Task.Delay(100, ct); continue; }
 
-                    int framesPerRead = pcmBuffer.Length / channels;
+                    if (channels != reader.Info.Channels || sampleRate != reader.Info.SampleRate)
+                    {
+                        sampleRate = reader.Info.SampleRate;
+                        channels = reader.Info.Channels;
+                        _sharedMemory.UpdateFormat(sampleRate, channels);
+                        _logger.LogInformation("Dynamic audio format updated: {SampleRate} Hz, {Channels} channels", sampleRate, channels);
+                    }
+
+                    if (!_formatReadySignaled)
+                    {
+                        var totalFramesHint = reader.Info.TotalFrames > 0
+                            ? (long)Math.Min(reader.Info.TotalFrames, (ulong)long.MaxValue)
+                            : (CurrentTrack?.Duration > 0 ? (long)(CurrentTrack.Duration * sampleRate) : 0);
+                        _sharedMemory.MarkFormatReady(sampleRate, channels, totalFramesHint);
+                        _formatReadySignaled = true;
+                    }
+
+                    HandlePendingSharedMemorySeek(reader, sampleRate);
+
+                    int framesPerRead = 1024; // 每次读取的音频帧数 (大约 23ms，能平稳控制占用)
+                    int requiredLength = framesPerRead * channels;
+                    if (pcmBuffer == null || pcmBuffer.Length < requiredLength)
+                    {
+                        pcmBuffer = new float[requiredLength];
+                    }
+
                     long framesRead = reader.ReadFrames(pcmBuffer, framesPerRead);
 
                     if (framesRead <= 0)
                     {
                         if (reader.IsEndOfStream)
                         {
-                            if (Active.RepeatMode == RepeatMode.One) { reader.Seek(0); Position = 0; continue; }
-                            // ClientManaged 模式下不自动切歌，由客户端决定下一首
+                            if (!_currentStreamEofSignaled)
+                            {
+                                var decodedFrames = reader.CurrentFrame > 0
+                                    ? (long)Math.Min(reader.CurrentFrame, (ulong)long.MaxValue)
+                                    : _sharedMemory.GetWriteCursor();
+                                _sharedMemory.MarkDecoderEof(decodedFrames);
+                                _currentStreamEofSignaled = true;
+                                _logger.LogInformation("Decoder EOF signaled: finalWrite={FinalWrite}, decodedFrames={DecodedFrames}",
+                                    _sharedMemory.GetWriteCursor(), decodedFrames);
+                            }
+
+                            var toleranceFrames = Math.Max(1, sampleRate * AudibleDrainToleranceMs / 1000);
+                            if (!_sharedMemory.IsClientDrained(toleranceFrames))
+                            {
+                                Position = (float)Math.Max(_sharedMemory.GetAudibleCursor(), _sharedMemory.GetReadCursor()) / sampleRate;
+                                FirePositionChanged(Position);
+                                await Task.Delay(25, ct);
+                                continue;
+                            }
+
+                            if (Active.RepeatMode == RepeatMode.One)
+                            {
+                                reader.Seek(0);
+                                _sharedMemory.WriteI64(SharedMemoryProtocol.WriteCursor, 0);
+                                _sharedMemory.WriteI64(SharedMemoryProtocol.ReadCursor, 0);
+                                _sharedMemory.WriteI64(SharedMemoryProtocol.AudibleCursor, 0);
+                                _sharedMemory.WriteI64(SharedMemoryProtocol.FinalWriteCursor, 0);
+                                _sharedMemory.SetFlag(SharedMemoryStreamFlags.DecoderEof, false);
+                                _sharedMemory.SetFlag(SharedMemoryStreamFlags.SyntheticEof, false);
+                                _sharedMemory.SetFlag(SharedMemoryStreamFlags.ClientDrained, false);
+                                _sharedMemory.SetStreamState(SharedMemoryStreamState.Playing);
+                                _currentStreamEofSignaled = false;
+                                Position = 0;
+                                continue;
+                            }
+                            // ClientManaged mode leaves the next-track decision to the client.
                             if (CurrentMode == PlaybackMode.ClientManaged)
                             {
                                 _playState = 0;
-                                _sharedMemory.SetPlayState(0);
+                                _sharedMemory.MarkEnded();
                                 FireStateChanged(0);
                                 continue;
                             }
@@ -767,17 +855,71 @@ namespace OmniMixPlayer.Backend.Audio
                             Next();
                             continue;
                         }
+                        if (ShouldTreatStallAsEof(reader, sampleRate))
+                        {
+                            _logger.LogWarning("Playback stalled near end; marking synthetic EOF");
+                            _sharedMemory.MarkError(SharedMemoryStreamError.StalledNearEnd, syntheticEof: true);
+                            _currentStreamEofSignaled = true;
+                            continue;
+                        }
                         await Task.Delay(10, ct);
                         continue;
                     }
 
                     _sharedMemory.WriteFrames(pcmBuffer, (int)framesRead);
-                    Position += (float)framesRead / sampleRate;
-                    FirePositionChanged(Position);
                 }
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) { _logger.LogError(ex, "Playback loop error"); }
+        }
+
+        private void HandlePendingSharedMemorySeek(IPcmStreamReader reader, int sampleRate)
+        {
+            if (reader == null || !reader.CanSeek)
+                return;
+
+            var seekGeneration = _sharedMemory.GetSeekGeneration();
+            if (seekGeneration == _lastHandledSeekGeneration)
+                return;
+
+            _lastHandledSeekGeneration = seekGeneration;
+            var targetFrame = _sharedMemory.GetSeekFrame();
+            if (targetFrame < 0) targetFrame = 0;
+
+            if (!reader.Seek((ulong)targetFrame))
+                return;
+
+            _sharedMemory.WriteI64(SharedMemoryProtocol.WriteCursor, targetFrame);
+            _sharedMemory.WriteI64(SharedMemoryProtocol.ReadCursor, targetFrame);
+            _sharedMemory.WriteI64(SharedMemoryProtocol.AudibleCursor, targetFrame);
+            _sharedMemory.WriteI64(SharedMemoryProtocol.FinalWriteCursor, 0);
+            _sharedMemory.SetFlag(SharedMemoryStreamFlags.DecoderEof, false);
+            _sharedMemory.SetFlag(SharedMemoryStreamFlags.SyntheticEof, false);
+            _sharedMemory.SetFlag(SharedMemoryStreamFlags.ClientDrained, false);
+            _sharedMemory.SetFlag(SharedMemoryStreamFlags.SeekPending, false);
+            _sharedMemory.SetFlag(SharedMemoryStreamFlags.Discontinuity, false);
+            _sharedMemory.SetStreamState(SharedMemoryStreamState.Playing);
+            Position = (float)targetFrame / sampleRate;
+            _currentStreamEofSignaled = false;
+            _lastLoopProgress = Position;
+            _lastLoopProgressChangeUtc = DateTime.UtcNow;
+            FirePositionChanged(Position);
+        }
+
+        private bool ShouldTreatStallAsEof(IPcmStreamReader reader, int sampleRate)
+        {
+            if (reader == null || reader.HasPendingSeek || _currentStreamEofSignaled)
+                return false;
+
+            var totalFrames = reader.Info.TotalFrames;
+            if (totalFrames == 0)
+                return false;
+
+            var secondsFromEnd = ((double)totalFrames - reader.CurrentFrame) / Math.Max(1, sampleRate);
+            if (secondsFromEnd > 1.0)
+                return false;
+
+            return (DateTime.UtcNow - _lastLoopProgressChangeUtc).TotalSeconds >= NearEndStallTimeoutSeconds;
         }
 
         private void EmitQueueChanged(OmniMixPlayer.SDK.Interfaces.QueueChangeType type, string uuid)
@@ -795,8 +937,7 @@ namespace OmniMixPlayer.Backend.Audio
             _disposed = true;
             SaveState();
             StopPlayback();
-            StopHeartbeatWatch();
-        }
+            }
 
         private sealed class NullPcmReader : IPcmStreamReader
         {
@@ -1018,3 +1159,7 @@ namespace OmniMixPlayer.Backend.Audio
 
     #endregion
 }
+
+
+
+

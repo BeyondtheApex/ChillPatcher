@@ -6,6 +6,7 @@ using KanKikuchi.AudioManager;
 using UnityEngine;
 using ChillPatcher.Patches.UIFramework;
 using ChillPatcher.UIFramework.Music;
+using ChillPatcher.UIFramework.Audio;
 
 namespace ChillPatcher.JSApi
 {

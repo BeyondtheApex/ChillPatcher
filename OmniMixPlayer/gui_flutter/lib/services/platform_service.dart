@@ -74,7 +74,7 @@ class PlatformService {
       await _runElevated('sc.exe', ['stop', _serviceName]);
       await _runElevated('sc.exe', ['delete', _serviceName]);
       // demand = manual start (not auto)
-      return await _runElevated('sc.exe', [
+      final created = await _runElevated('sc.exe', [
         'create',
         _serviceName,
         'binPath=',
@@ -82,6 +82,15 @@ class PlatformService {
         'start=',
         'demand',
       ]);
+      if (created) {
+        // Configure DACL to allow Authenticated Users (AU) to start (RP), stop (WP), and query/change config (CCDC) without elevation
+        await _runElevated('sc.exe', [
+          'sdset',
+          _serviceName,
+          'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)(A;;CCDCRPWP;;;AU)',
+        ]);
+      }
+      return created;
     }
 
     if (Platform.isLinux) {
@@ -271,6 +280,76 @@ class PlatformService {
     final installed = await isServiceInstalled();
     if (installed) return 'installed';
     return 'not_installed';
+  }
+
+  /// Check if the service is configured to start automatically.
+  static Future<bool> isServiceAutoStart() async {
+    if (Platform.isWindows) {
+      final result = await Process.run('sc.exe', ['qc', _serviceName]);
+      if (result.exitCode != 0) return false;
+      final output = (result.stdout as String).toLowerCase();
+      return output.contains('auto_start');
+    }
+    if (Platform.isLinux) {
+      final result = await Process.run('systemctl', [
+        '--user',
+        'is-enabled',
+        'omnimixplayer-backend',
+      ]);
+      return (result.stdout as String).trim() == 'enabled';
+    }
+    if (Platform.isMacOS) {
+      final home = Platform.environment['HOME'] ?? '/tmp';
+      final file = File('$home/Library/LaunchAgents/com.omnimixplayer.backend.plist');
+      if (!file.existsSync()) return false;
+      final content = file.readAsStringSync();
+      return content.contains('<key>RunAtLoad</key><true/>') ||
+          content.contains('<key>RunAtLoad</key>\n<true/>') ||
+          content.contains('<key>RunAtLoad</key>\n\t<true/>') ||
+          content.contains('<key>RunAtLoad</key>\n\t\t<true/>');
+    }
+    return false;
+  }
+
+  /// Configure the service to start automatically or manually.
+  static Future<bool> setServiceAutoStart(bool autoStart) async {
+    if (Platform.isWindows) {
+      final startType = autoStart ? 'auto' : 'demand';
+      var result = await Process.run('sc.exe', ['config', _serviceName, 'start=', startType]);
+      if (result.exitCode != 0) {
+        // Fallback to elevated if normal config fails
+        return await _runElevated('sc.exe', ['config', _serviceName, 'start=', startType]);
+      }
+      return result.exitCode == 0;
+    }
+    if (Platform.isLinux) {
+      final action = autoStart ? 'enable' : 'disable';
+      final result = await Process.run('systemctl', [
+        '--user',
+        action,
+        'omnimixplayer-backend',
+      ]);
+      return result.exitCode == 0;
+    }
+    if (Platform.isMacOS) {
+      final exe = _backendExePath;
+      if (exe == null) return false;
+      final home = Platform.environment['HOME'] ?? '/tmp';
+      final file = File('$home/Library/LaunchAgents/com.omnimixplayer.backend.plist');
+      file.writeAsStringSync(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0"><dict>\n'
+        '<key>Label</key><string>com.omnimixplayer.backend</string>\n'
+        '<key>ProgramArguments</key><array><string>$exe</string></array>\n'
+        '<key>RunAtLoad</key>${autoStart ? '<true/>' : '<false/>'}\n'
+        '<key>KeepAlive</key><true/>\n'
+        '</dict></plist>\n',
+      );
+      return true;
+    }
+    return false;
   }
 
   // ═══════════════════════════════════════════════════════════

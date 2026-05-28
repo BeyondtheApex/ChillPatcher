@@ -142,9 +142,34 @@ class ApiClient {
         .toList();
   }
 
-  Future<void> play({String? uuid}) async {
+  Future<List<Map<String, dynamic>>> getInstances() async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    final list = json.decode(resp.body) as List<dynamic>;
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> getInstanceStats() async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/stats'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<void> connectController({String clientId = 'flutter'}) async {
     await _http.post(
-      Uri.parse('$_baseUrl/api/play'),
+      Uri.parse('$_baseUrl/api/instances/connect'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'clientId': clientId,
+        'role': 'controller',
+        'mode': 'server',
+      }),
+    );
+  }
+
+  Future<void> play(String instanceId, {String? uuid}) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/play'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'uuid': uuid ?? ''}),
     );

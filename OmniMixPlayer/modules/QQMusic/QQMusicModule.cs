@@ -663,9 +663,9 @@ namespace OmniMixPlayer.Module.QQMusic
             else
             {
                 var qrReady = _qrLoginManager?.QRCodeBytes != null;
-                var isQQ = _currentLoginType == "qq";
-                var hintText = isQQ ? "请使用 QQ 扫码登录" : "请使用微信扫码登录";
-                var qrStatusText = qrReady ? hintText : "二维码加载中...";
+                var qrStatusText = qrReady
+                    ? (_qrLoginManager?.StatusMessage ?? "请使用 QQ 扫码登录")
+                    : "二维码加载中...";
 
                 return SlintUi.Column(spacing: 16, padding: 20)
                     .AddChild(SlintUi.Text("未登录", fontSize: 16))
@@ -746,7 +746,8 @@ namespace OmniMixPlayer.Module.QQMusic
             {
                 if (_qrLoginManager != null)
                 {
-                    if (_qrLoginManager.QRCodeBytes == null)
+                    // 二维码不存在或轮询已停止（超时/过期），重新开始
+                    if (_qrLoginManager.QRCodeBytes == null || !_qrLoginManager.IsWaitingForLogin)
                     {
                         await _qrLoginManager.StartLoginAsync(_currentLoginType);
                     }

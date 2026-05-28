@@ -9,28 +9,12 @@ namespace OmniMixPlayer.Backend.Http
     public class EventBridge : IDisposable
     {
         private readonly ApiServer _apiServer;
-        private readonly PlaybackController _playback;
         private readonly List<IDisposable> _subscriptions = new List<IDisposable>();
-        private readonly Action<SDK.Models.MusicInfo> _onTrackChanged;
-        private readonly Action<int> _onStateChanged;
-        private readonly Action<float> _onPositionChanged;
-        private readonly Action _onQueueChanged;
         private bool _disposed;
 
-        public EventBridge(ApiServer apiServer, PlaybackController playback)
+        public EventBridge(ApiServer apiServer)
         {
             _apiServer = apiServer;
-            _playback = playback;
-
-            _onTrackChanged = OnTrackChanged;
-            _onStateChanged = OnStateChanged;
-            _onPositionChanged = OnPositionChanged;
-            _onQueueChanged = OnQueueChanged;
-
-            _playback.OnTrackChanged += _onTrackChanged;
-            _playback.OnStateChanged += _onStateChanged;
-            _playback.OnPositionChanged += _onPositionChanged;
-            _playback.OnQueueChanged += _onQueueChanged;
 
             _subscriptions.Add(EventBus.Instance.Subscribe<PlayStartedEvent>(OnPlayStarted));
             _subscriptions.Add(EventBus.Instance.Subscribe<ModuleLoadedEvent>(OnModuleLoaded));
@@ -43,41 +27,6 @@ namespace OmniMixPlayer.Backend.Http
             _subscriptions.Add(EventBus.Instance.Subscribe<ErrorEvent>(OnError));
             _subscriptions.Add(EventBus.Instance.Subscribe<LyricFetchedEvent>(OnLyricFetched));
             _subscriptions.Add(EventBus.Instance.Subscribe<LyricPositionEvent>(OnLyricPosition));
-        }
-
-        private void OnTrackChanged(SDK.Models.MusicInfo track)
-        {
-            _ = _apiServer.BroadcastEvent("track.changed", new
-            {
-                uuid = track?.UUID,
-                title = track?.Title,
-                artist = track?.Artist,
-                albumId = track?.AlbumId,
-                duration = track?.Duration ?? 0,
-                moduleId = track?.ModuleId
-            });
-        }
-
-        private void OnStateChanged(int state)
-        {
-            _ = _apiServer.BroadcastEvent("state.changed", new
-            {
-                isPlaying = _playback.IsPlaying,
-                position = _playback.Position,
-                volume = _playback.Volume,
-                repeatMode = _playback.RepeatMode,
-                shuffle = _playback.Shuffle
-            });
-        }
-
-        private void OnPositionChanged(float position)
-        {
-            _ = _apiServer.BroadcastEvent("position", new { position });
-        }
-
-        private void OnQueueChanged()
-        {
-            _ = _apiServer.BroadcastEvent("queue.changed", new { });
         }
 
         private void OnPlayStarted(PlayStartedEvent e)
@@ -187,11 +136,6 @@ namespace OmniMixPlayer.Backend.Http
         {
             if (_disposed) return;
             _disposed = true;
-
-            _playback.OnTrackChanged -= _onTrackChanged;
-            _playback.OnStateChanged -= _onStateChanged;
-            _playback.OnPositionChanged -= _onPositionChanged;
-            _playback.OnQueueChanged -= _onQueueChanged;
 
             foreach (var sub in _subscriptions)
                 sub.Dispose();

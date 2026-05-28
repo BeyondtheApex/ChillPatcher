@@ -260,6 +260,7 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
             // 使用 TagLib 读取元数�?
             string title = fileName;
             string artist = null;
+            float duration = 0f;
             try
             {
                 using (var tagFile = TagLib.File.Create(filePath))
@@ -268,6 +269,8 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                         title = tagFile.Tag.Title;
                     if (!string.IsNullOrEmpty(tagFile.Tag.FirstPerformer))
                         artist = tagFile.Tag.FirstPerformer;
+                    if (tagFile.Properties?.Duration.TotalSeconds > 0)
+                        duration = (float)tagFile.Properties.Duration.TotalSeconds;
                 }
             }
             catch (Exception ex)
@@ -284,6 +287,7 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                 TagId = tagId,
                 SourceType = MusicSourceType.File,
                 SourcePath = filePath,
+                Duration = duration,
                 CoverUrl = filePath,
                 IsUnlocked = true
             };

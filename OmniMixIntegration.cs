@@ -8,6 +8,7 @@ using Bulbul;
 using ChillPatcher.Patches.UIFramework;
 using ChillPatcher.SDK.Ipc;
 using ChillPatcher.SDK.Models;
+using ChillPatcher.SDK.Native;
 using ChillPatcher.UIFramework.Music;
 using Cysharp.Threading.Tasks;
 using HarmonyLib;
@@ -21,17 +22,68 @@ namespace ChillPatcher
         private static OmniMixIntegration _instance;
         public static OmniMixIntegration Instance => _instance ??= new OmniMixIntegration();
 
-        private readonly OmniMixPlayerClient _client;
-        private SharedMemoryReader _shmReader;
+        private OmniMixPlayerClient _client;
+        private OmniPcmShared _shmReader;
+        private CancellationTokenSource _heartbeatCts;
+        private readonly string _clientId = "chillpatcher-" + Guid.NewGuid().ToString("N");
         private bool _connected;
         private bool _disposed;
+        private readonly SemaphoreSlim _importSemaphore = new SemaphoreSlim(1, 1);
 
-        // Growable list state (synced from backend)
+        // Tag state (synced from backend)
+        private List<TagInfo> _allTags = new List<TagInfo>();
         private List<TagInfo> _growableTags = new List<TagInfo>();
         private TagInfo _currentGrowableTag;
 
+        public IReadOnlyList<TagInfo> GetAllTags() => _allTags;
+
+        // In-memory exclusions (synced from backend)
+        private readonly HashSet<string> _excludedUuids = new HashSet<string>();
+
+        public bool IsExcluded(string uuid)
+        {
+            if (string.IsNullOrEmpty(uuid)) return false;
+            lock (_excludedUuids)
+            {
+                return _excludedUuids.Contains(uuid);
+            }
+        }
+
+        private float _currentTrackDuration;
+        private float _currentTrackPosition;
+        private bool _currentIsPlaying;
+        private float _lastPositionUpdateTime;
+
+        public float CurrentTrackDuration => _currentTrackDuration;
+        public float CurrentTrackPosition
+        {
+            get
+            {
+                if (!_currentIsPlaying)
+                    return _currentTrackPosition;
+                float elapsed = Time.time - _lastPositionUpdateTime;
+                return Mathf.Min(_currentTrackPosition + elapsed, _currentTrackDuration);
+            }
+        }
+        public bool CurrentIsPlaying => _currentIsPlaying;
+
+        public async UniTask Seek(float positionSeconds)
+        {
+            if (_client != null)
+            {
+                try
+                {
+                    await _client.Seek(positionSeconds);
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log?.LogWarning($"[OmniMix] Seek request failed: {ex.Message}");
+                }
+            }
+        }
+
         public bool IsConnected => _connected && _client?.IsConnected == true;
-        public SharedMemoryReader SharedMemory => _shmReader;
+        public OmniPcmShared SharedMemory => _shmReader;
 
         /// <summary>
         /// Unified Unix socket path (fallback IPC).
@@ -120,7 +172,85 @@ namespace ChillPatcher
             catch { return false; }
         }
 
+        private CancellationTokenSource _connectionLoopCts;
+        private bool _isConnectionLoopRunning;
+
+        private void StartConnectionLoop()
+        {
+            if (_isConnectionLoopRunning) return;
+            _isConnectionLoopRunning = true;
+            
+            // Try starting Windows Service in the background at startup
+            _ = System.Threading.Tasks.Task.Run(() => TryStartWindowsService());
+
+            _connectionLoopCts = new CancellationTokenSource();
+            ConnectionLoop(_connectionLoopCts.Token).Forget();
+        }
+
+        private void StopConnectionLoop()
+        {
+            _connectionLoopCts?.Cancel();
+            _connectionLoopCts?.Dispose();
+            _connectionLoopCts = null;
+            _isConnectionLoopRunning = false;
+        }
+
+        private async UniTaskVoid ConnectionLoop(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                bool alive = false;
+                try
+                {
+                    var port = ReadPortFile();
+                    alive = (port.HasValue && QuickTcpProbe(port.Value))
+                            || QuickTcpProbe(17890)
+                            || SocketFileExists(ResolveSocketPath());
+                }
+                catch { }
+
+                if (!alive)
+                {
+                    if (_connected)
+                    {
+                        Plugin.Log?.LogWarning("[OmniMix] Backend connection lost, cleaning up...");
+                        await DisconnectInternalAsync();
+                    }
+                }
+                else
+                {
+                    if (!_connected)
+                    {
+                        Plugin.Log?.LogInfo("[OmniMix] Backend detected, attempting to connect...");
+                        bool success = await ConnectInternalAsync();
+                        if (success)
+                        {
+                            Plugin.Log?.LogInfo("[OmniMix] Reconnected to backend. Syncing songs...");
+                            try
+                            {
+                                await ImportSongsToGame(replace: true);
+                            }
+                            catch (Exception ex)
+                            {
+                                Plugin.Log?.LogWarning($"[OmniMix] Reconnect song sync failed: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+
+                await UniTask.Delay(TimeSpan.FromSeconds(5), cancellationToken: ct);
+            }
+        }
+
         public async UniTask<bool> ConnectAsync()
+        {
+            StartConnectionLoop();
+            if (_connected) return true;
+
+            return await ConnectInternalAsync();
+        }
+
+        private async UniTask<bool> ConnectInternalAsync()
         {
             try
             {
@@ -150,19 +280,14 @@ namespace ChillPatcher
                     goto connect;
                 }
 
-                Plugin.Log?.LogWarning("[OmniMix] Backend not detected (no port file, no TCP, no socket)");
                 _connected = false;
                 return false;
 
             connect:
                 await _client.ConnectAsync();
 
-                // 以 ClientManaged 模式连接（此 Mod 自行管理队列）
-                var connectResult = await _client.ConnectClient("chillpatcher", "client");
-                if (!connectResult)
-                {
-                    Plugin.Log?.LogWarning("[OmniMix] Another client is already connected, retrying as observer...");
-                }
+                var connectResult = await _client.ConnectInstance(_clientId, "audio", "client");
+                var sharedMemoryName = connectResult["sharedMemoryName"]?.ToString();
 
                 _connected = true;
 
@@ -171,156 +296,260 @@ namespace ChillPatcher
                 _client.OnQueueChanged += OnQueueChanged;
                 _client.OnPosition += OnPosition;
                 _client.OnPlaylistUpdated += OnPlaylistUpdated;
+                _client.OnExcludeChanged += OnExcludeChanged;
 
-                // 3. Open shared memory for PCM audio (separate from connection detection)
-                _shmReader = new SharedMemoryReader();
-                _shmReader.Initialize();
+                // 3. Open this instance's shared memory for PCM audio
+                _shmReader = new OmniPcmShared(sharedMemoryName);
+                StartHeartbeatLoop();
 
                 // Sync growable tags
                 await RefreshGrowableTags();
 
-                // 启动心跳 (每10秒) — socket 文件为主，HTTP 为辅
-                StartHeartbeat();
-
-                Plugin.Log?.LogInfo("[OmniMix] Connected to OmniMixPlayer backend (ClientManaged mode)");
+                Plugin.Log?.LogInfo($"[OmniMix] Connected to OmniMixPlayer backend instance {_client.InstanceId} (ClientManaged mode)");
                 return true;
             }
             catch (Exception ex)
             {
-                Plugin.Log?.LogWarning($"[OmniMix] Failed to connect: {ex.Message}");
-                _connected = false;
-                _shmReader?.Dispose();
-                _shmReader = null;
+                Plugin.Log?.LogWarning($"[OmniMix] Failed to connect internally: {ex.Message}");
+                await DisconnectInternalAsync();
                 return false;
             }
         }
 
         public async UniTask DisconnectAsync()
         {
+            StopConnectionLoop();
+            await DisconnectInternalAsync();
+        }
+
+        private async UniTask DisconnectInternalAsync()
+        {
             try
             {
-                StopHeartbeat();
+                if (_client != null)
+                {
+                    _client.OnTrackChanged -= OnTrackChanged;
+                    _client.OnStateChanged -= OnStateChanged;
+                    _client.OnQueueChanged -= OnQueueChanged;
+                    _client.OnPosition -= OnPosition;
+                    _client.OnPlaylistUpdated -= OnPlaylistUpdated;
+                    _client.OnExcludeChanged -= OnExcludeChanged;
 
-                _client.OnTrackChanged -= OnTrackChanged;
-                _client.OnStateChanged -= OnStateChanged;
-                _client.OnQueueChanged -= OnQueueChanged;
-                _client.OnPosition -= OnPosition;
-                _client.OnPlaylistUpdated -= OnPlaylistUpdated;
-
-                try { await _client.DisconnectClient("chillpatcher"); } catch { }
-                await _client.DisconnectAsync();
+                    StopHeartbeatLoop();
+                    try { await _client.DisconnectInstance(); } catch { }
+                    await _client.DisconnectAsync();
+                }
+            }
+            catch { }
+            finally
+            {
                 _shmReader?.Dispose();
                 _shmReader = null;
                 _connected = false;
-                Plugin.Log?.LogInfo("[OmniMix] Disconnected from OmniMixPlayer backend");
+
+                // Clean up game audio resources and cover cache
+                try
+                {
+                    CleanupStreamAudioClips();
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log?.LogWarning($"[OmniMix] Failed to clean up stream audio clips: {ex.Message}");
+                }
+
+                try
+                {
+                    UIFramework.Music.CoverService.Instance.ClearCache();
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log?.LogWarning($"[OmniMix] Failed to clear cover cache: {ex.Message}");
+                }
+
+                Plugin.Log?.LogInfo("[OmniMix] Disconnected from OmniMixPlayer backend and cleared cached resources");
             }
-            catch { }
         }
 
-        #region Heartbeat
-
-        private CancellationTokenSource _heartbeatCts;
-
-        private void StartHeartbeat()
+        private void StartHeartbeatLoop()
         {
-            StopHeartbeat();
+            StopHeartbeatLoop();
             _heartbeatCts = new CancellationTokenSource();
-            HeartbeatLoop(_heartbeatCts.Token).Forget();
+            var token = _heartbeatCts.Token;
+            UniTask.Void(async () =>
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await UniTask.Delay(TimeSpan.FromSeconds(10), cancellationToken: token);
+                        if (_client == null || !_connected) continue;
+                        var ok = await _client.HeartbeatInstance();
+                        if (!ok)
+                        {
+                            Plugin.Log?.LogWarning("[OmniMix] Instance heartbeat rejected; disconnecting local integration");
+                            await DisconnectInternalAsync();
+                            break;
+                        }
+                    }
+                    catch (OperationCanceledException) { break; }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log?.LogWarning($"[OmniMix] Instance heartbeat failed: {ex.Message}");
+                    }
+                }
+            });
         }
 
-        private void StopHeartbeat()
+        private void StopHeartbeatLoop()
         {
-            _heartbeatCts?.Cancel();
-            _heartbeatCts?.Dispose();
+            try { _heartbeatCts?.Cancel(); } catch { }
+            try { _heartbeatCts?.Dispose(); } catch { }
             _heartbeatCts = null;
         }
 
-        private async UniTaskVoid HeartbeatLoop(CancellationToken ct)
+        private static void TryStartWindowsService()
         {
-            while (!ct.IsCancellationRequested)
-            {
-                await UniTask.Delay(TimeSpan.FromSeconds(10), cancellationToken: ct);
-                if (ct.IsCancellationRequested) break;
-                try
-                {
-                    // Primary: port file or default port reachable via TCP?
-                    var port = ReadPortFile();
-                    bool alive = (port.HasValue && QuickTcpProbe(port.Value))
-                              || QuickTcpProbe(17890)
-                              || SocketFileExists(ResolveSocketPath());
+            if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+                return;
 
-                    if (!alive)
+            try
+            {
+                // Check if the service is installed
+                var queryPsi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "sc.exe",
+                    Arguments = "query OmniMixPlayerBackend",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                };
+                using var queryProcess = System.Diagnostics.Process.Start(queryPsi);
+                if (queryProcess == null) return;
+                
+                string output = queryProcess.StandardOutput.ReadToEnd();
+                queryProcess.WaitForExit();
+
+                if (queryProcess.ExitCode == 0) // Service is installed
+                {
+                    if (!output.ToLower().Contains("running"))
                     {
-                        Plugin.Log?.LogWarning("[OmniMix] Backend appears down, reconnecting...");
-                        _connected = false;
-                        await ConnectAsync();
-                        break;
+                        Plugin.Log?.LogInfo("[OmniMix] Service 'OmniMixPlayerBackend' is installed but not running. Attempting to start it...");
+                        
+                        var startPsi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "sc.exe",
+                            Arguments = "start OmniMixPlayerBackend",
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        using var startProcess = System.Diagnostics.Process.Start(startPsi);
+                        startProcess?.WaitForExit();
+                    }
+                    else
+                    {
+                        Plugin.Log?.LogInfo("[OmniMix] Service 'OmniMixPlayerBackend' is already running.");
                     }
                 }
-                catch
+                else
                 {
-                    Plugin.Log?.LogWarning("[OmniMix] Heartbeat error, may be disconnected");
-                    _connected = false;
-                    break;
+                    Plugin.Log?.LogDebug("[OmniMix] Service 'OmniMixPlayerBackend' is not installed.");
                 }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning($"[OmniMix] Failed to check/start Windows service: {ex.Message}");
             }
         }
 
-        #endregion
+        private static void CleanupStreamAudioClips()
+        {
+            var musicService = Patches.UIFramework.MusicService_RemoveLimit_Patch.CurrentInstance;
+            if (musicService != null)
+            {
+                var allMusicList = Traverse.Create(musicService)
+                    .Field("_allMusicList")
+                    .GetValue<List<GameAudioInfo>>();
+                if (allMusicList != null)
+                {
+                    foreach (var ga in allMusicList)
+                    {
+                        if (ga != null && UIFramework.Audio.StreamingAudioLoader.IsStreamingSource(ga))
+                        {
+                            if (ga.AudioClip != null)
+                            {
+                                UnityEngine.Object.Destroy(ga.AudioClip);
+                                ga.AudioClip = null;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         #region Import songs into game MusicService
 
         public async UniTask<int> ImportSongsToGame(bool replace = false)
         {
-            var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
-            if (musicService == null)
-            {
-                Plugin.Log?.LogWarning("[OmniMix] MusicService not available, cannot import songs");
-                return 0;
-            }
-
+            await _importSemaphore.WaitAsync();
             try
             {
+                var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
+                if (musicService == null)
+                {
+                    Plugin.Log?.LogWarning("[OmniMix] MusicService not available, cannot import songs");
+                    return 0;
+                }
+
                 // Pull active queue from OmniMixPlayer
                 var queueJson = await _client.GetQueue();
                 var songsJson = await _client.GetSongs();
                 var tagsJson = await _client.GetTags();
 
+                // Refresh custom tags and growable tags
+                await RefreshGrowableTags();
+
+                // Switch to main thread for modifying game collections
+                await UniTask.SwitchToMainThread();
+
                 var allGameAudios = new List<GameAudioInfo>();
                 var moduleSongs = new List<MusicInfo>();
 
-                // Parse queue items
-                if (queueJson is JArray queueArr)
+                // Parse tags to map tagId -> bitValue
+                var tagBitValues = new Dictionary<string, ulong>();
+                if (tagsJson is JArray tagsArr)
                 {
-                    foreach (var item in queueArr)
+                    foreach (var tag in tagsArr)
                     {
-                        var uuid = item["uuid"]?.ToString();
-                        var title = item["title"]?.ToString() ?? "";
-                        var artist = item["artist"]?.ToString() ?? "";
-                        var moduleId = item["moduleId"]?.ToString() ?? "";
-                        var song = new MusicInfo
+                        var tagId = tag["id"]?.ToString();
+                        var bitValue = tag["bitValue"]?.ToObject<ulong>() ?? 0;
+                        if (!string.IsNullOrEmpty(tagId) && bitValue > 0)
                         {
-                            UUID = uuid,
-                            Title = title,
-                            Artist = artist,
-                            ModuleId = moduleId,
-                            SourceType = MusicSourceType.Stream,
-                            IsUnlocked = true
-                        };
-                        moduleSongs.Add(song);
-                        allGameAudios.Add(ConvertToGameAudio(song));
+                            tagBitValues[tagId] = bitValue;
+                        }
                     }
                 }
 
                 // Parse all songs
+                var songDict = new Dictionary<string, MusicInfo>();
                 if (songsJson is JArray songsArr)
                 {
                     foreach (var s in songsArr)
                     {
                         var uuid = s["uuid"]?.ToString();
-                        if (moduleSongs.Any(m => m.UUID == uuid)) continue;
+                        if (string.IsNullOrEmpty(uuid)) continue;
 
-                        moduleSongs.Add(new MusicInfo
+                        bool isExcluded = s["isExcluded"]?.ToObject<bool>() ?? false;
+                        lock (_excludedUuids)
+                        {
+                            if (isExcluded)
+                                _excludedUuids.Add(uuid);
+                            else
+                                _excludedUuids.Remove(uuid);
+                        }
+
+                        var songTagIds = s["tagIds"]?.ToObject<List<string>>() ?? new List<string>();
+
+                        var song = new MusicInfo
                         {
                             UUID = uuid,
                             Title = s["title"]?.ToString() ?? "",
@@ -331,8 +560,56 @@ namespace ChillPatcher
                             SourceType = MusicSourceType.Stream,
                             IsUnlocked = true,
                             IsFavorite = s["isFavorite"]?.ToObject<bool>() ?? false,
-                            IsExcluded = s["isExcluded"]?.ToObject<bool>() ?? false
-                        });
+                            IsExcluded = isExcluded,
+                            TagIds = songTagIds
+                        };
+                        songDict[uuid] = song;
+                    }
+                }
+
+                // Parse queue items
+                if (queueJson is JArray queueArr)
+                {
+                    foreach (var item in queueArr)
+                    {
+                        var uuid = item["uuid"]?.ToString();
+                        if (string.IsNullOrEmpty(uuid)) continue;
+
+                        MusicInfo song;
+                        if (songDict.TryGetValue(uuid, out var existingSong))
+                        {
+                            song = existingSong;
+                        }
+                        else
+                        {
+                            var title = item["title"]?.ToString() ?? "";
+                            var artist = item["artist"]?.ToString() ?? "";
+                            var moduleId = item["moduleId"]?.ToString() ?? "";
+                            song = new MusicInfo
+                            {
+                                UUID = uuid,
+                                Title = title,
+                                Artist = artist,
+                                ModuleId = moduleId,
+                                SourceType = MusicSourceType.Stream,
+                                IsUnlocked = true
+                            };
+                        }
+
+                        if (!moduleSongs.Any(m => m.UUID == uuid))
+                        {
+                            moduleSongs.Add(song);
+                        }
+                        allGameAudios.Add(ConvertToGameAudio(song, tagBitValues));
+                    }
+                }
+
+                // Add remaining songs from songDict to moduleSongs
+                foreach (var kvp in songDict)
+                {
+                    if (!moduleSongs.Any(m => m.UUID == kvp.Key))
+                    {
+                        moduleSongs.Add(kvp.Value);
                     }
                 }
 
@@ -357,7 +634,7 @@ namespace ChillPatcher
                 {
                     if (!allMusicList.Any(a => a.UUID == ms.UUID))
                     {
-                        var ga = ConvertToGameAudio(ms);
+                        var ga = ConvertToGameAudio(ms, tagBitValues);
                         allMusicList.Add(ga);
                     }
                 }
@@ -366,7 +643,16 @@ namespace ChillPatcher
                 var currentPlayList = musicService.CurrentPlayList;
                 if (currentPlayList != null && allGameAudios.Count > 0)
                 {
-                    if (replace) currentPlayList.RemoveAll(a => string.IsNullOrEmpty(a.LocalPath));
+                    if (replace)
+                    {
+                        for (int i = currentPlayList.Count - 1; i >= 0; i--)
+                        {
+                            if (string.IsNullOrEmpty(currentPlayList[i].LocalPath))
+                            {
+                                currentPlayList.RemoveAt(i);
+                            }
+                        }
+                    }
 
                     foreach (var ga in allGameAudios)
                     {
@@ -376,6 +662,27 @@ namespace ChillPatcher
                 }
 
                 Plugin.Log?.LogInfo($"[OmniMix] Imported {moduleSongs.Count} songs to game MusicService");
+
+                // Trigger UI playlist refresh
+                try
+                {
+                    MusicUI_VirtualScroll_Patch.RefreshPlaylistDisplay();
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh playlist display: {ex.Message}");
+                }
+
+                // Trigger UI tag buttons refresh
+                try
+                {
+                    MusicTagListUI_Patches.RefreshCustomTagButtons();
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh custom tag buttons: {ex.Message}");
+                }
+
                 return moduleSongs.Count;
             }
             catch (Exception ex)
@@ -383,16 +690,36 @@ namespace ChillPatcher
                 Plugin.Log?.LogError($"[OmniMix] Failed to import songs: {ex}");
                 return 0;
             }
+            finally
+            {
+                _importSemaphore.Release();
+            }
         }
 
-        private static GameAudioInfo ConvertToGameAudio(MusicInfo mi)
+        private static GameAudioInfo ConvertToGameAudio(MusicInfo mi, Dictionary<string, ulong> tagBitValues)
         {
+            ulong tagValue = 0;
+            if (mi.TagIds != null && tagBitValues != null)
+            {
+                foreach (var tagId in mi.TagIds)
+                {
+                    if (tagBitValues.TryGetValue(tagId, out var bv))
+                    {
+                        tagValue |= bv;
+                    }
+                }
+            }
+            if (mi.IsFavorite)
+            {
+                tagValue |= (ulong)AudioTag.Favorite;
+            }
+
             return new GameAudioInfo
             {
                 UUID = mi.UUID,
                 Title = mi.Title ?? "",
                 Credit = mi.Artist ?? "",
-                Tag = AudioTag.Custom1,
+                Tag = (AudioTag)tagValue,
                 IsUnlocked = true,
                 PathType = AudioMode.LocalPc,
                 LocalPath = "",
@@ -438,11 +765,11 @@ namespace ChillPatcher
         public async UniTask AddToQueue(string uuid) { try { await _client.AddToQueue(uuid); } catch { } }
         public async UniTask SetFavorite(string uuid, bool fav)
         {
-            try { await _client.PostAsync($"/api/favorite", new { uuid, isFavorite = fav }); } catch { }
+            try { await _client.PostAsync($"/favorite", new { uuid, isFavorite = fav }); } catch { }
         }
         public async UniTask SetExcluded(string uuid, bool excluded)
         {
-            try { await _client.PostAsync($"/api/exclude", new { uuid, isFavorite = excluded }); } catch { }
+            try { await _client.PostAsync($"/exclude", new { uuid, isFavorite = excluded }); } catch { }
         }
 
         #endregion
@@ -473,7 +800,7 @@ namespace ChillPatcher
             if (!string.IsNullOrEmpty(tagId))
             {
                 _currentGrowableTag = _growableTags.FirstOrDefault(t => t.TagId == tagId);
-                try { await _client.PostAsync($"/api/tags/{Uri.EscapeDataString(tagId)}/activate", new { }); } catch { }
+                try { await _client.PostAsync($"/tags/{Uri.EscapeDataString(tagId)}/activate", new { }); } catch { }
             }
             else
             {
@@ -488,7 +815,7 @@ namespace ChillPatcher
         {
             try
             {
-                var json = await _client.GetAsync($"/api/tags/{Uri.EscapeDataString(tagId)}/load-more");
+                var json = await _client.PostAsync($"/tags/{Uri.EscapeDataString(tagId)}/load-more", new { });
                 var obj = JObject.Parse(json);
                 return obj["loadedCount"]?.ToObject<int>() ?? 0;
             }
@@ -500,27 +827,29 @@ namespace ChillPatcher
         }
 
         /// <summary>
-        /// 从后端刷新增长列表 Tag 缓存
+        /// 从后端刷新 Tag 缓存（包括所有自定义 Tag 和增长型 Tag）
         /// </summary>
         public async UniTask RefreshGrowableTags()
         {
             try
             {
-                var json = await _client.GetAsync("/api/tags/growable");
+                var json = await _client.GetAsync("/tags");
                 var arr = JArray.Parse(json);
-                _growableTags = arr.Select(j => new TagInfo
+                _allTags = arr.Select(j => new TagInfo
                 {
-                    TagId = j["tagId"]?.ToString() ?? "",
+                    TagId = j["id"]?.ToString() ?? "",
                     DisplayName = j["name"]?.ToString() ?? "",
                     ModuleId = j["moduleId"]?.ToString() ?? "",
                     BitValue = (ulong)(j["bitValue"]?.ToObject<long>() ?? 0),
                     IsGrowableList = j["isGrowable"]?.ToObject<bool>() ?? false
                 }).ToList();
-                Plugin.Log?.LogInfo($"[OmniMix] Refreshed {_growableTags.Count} growable tags");
+                
+                _growableTags = _allTags.Where(t => t.IsGrowableList).ToList();
+                Plugin.Log?.LogInfo($"[OmniMix] Refreshed {_allTags.Count} custom tags ({_growableTags.Count} growable)");
             }
             catch (Exception ex)
             {
-                Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh growable tags: {ex.Message}");
+                Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh tags: {ex.Message}");
             }
         }
 
@@ -534,11 +863,75 @@ namespace ChillPatcher
 
         private void OnTrackChanged(object sender, TrackChangedEventArgs e)
         {
+            _currentTrackDuration = e.Duration;
+            _currentTrackPosition = 0f;
+            _lastPositionUpdateTime = Time.time;
             OnTrackUpdated?.Invoke(e.Uuid, e.Title, e.Artist, e.Duration);
+            
+            // 同步播放状态到游戏内，传入事件参数以防未导入时动态生成虚拟轨道
+            SyncTrackToGameAsync(e.Uuid, e.Title, e.Artist).Forget();
+        }
+
+        private async UniTaskVoid SyncTrackToGameAsync(string uuid, string title, string artist)
+        {
+            if (string.IsNullOrEmpty(uuid)) return;
+            
+            await UniTask.SwitchToMainThread();
+            
+            var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
+            if (musicService == null) return;
+            
+            // 如果已经是当前播放的歌曲，无需重复触发
+            if (musicService.PlayingMusic != null && musicService.PlayingMusic.UUID == uuid)
+                return;
+                
+            var targetAudio = musicService.AllMusicList?.FirstOrDefault(m => m != null && m.UUID == uuid);
+            if (targetAudio == null)
+            {
+                // 1. 如果找不到，说明歌单可能落后，尝试从后端增量同步
+                Plugin.Log?.LogInfo($"[OmniMix] Track {uuid} not found in game list, forcing a playlist refresh...");
+                await ImportSongsToGame(replace: false);
+                targetAudio = musicService.AllMusicList?.FirstOrDefault(m => m != null && m.UUID == uuid);
+            }
+            
+            if (targetAudio == null)
+            {
+                // 2. 如果依然找不到（例如是通过外部临时播放的单曲/搜索结果），动态生成一个虚拟歌曲信息注入游戏，确保 UI 能够正确显示
+                Plugin.Log?.LogInfo($"[OmniMix] Track {uuid} still not found after refresh, dynamically creating temporary track info...");
+                
+                var virtualMusic = new MusicInfo
+                {
+                    UUID = uuid,
+                    Title = string.IsNullOrEmpty(title) ? "OmniMix Track" : title,
+                    Artist = string.IsNullOrEmpty(artist) ? "" : artist,
+                    Duration = _currentTrackDuration,
+                    SourceType = MusicSourceType.Stream,
+                    IsUnlocked = true
+                };
+                
+                var allMusicList = Traverse.Create(musicService)
+                    .Field("_allMusicList")
+                    .GetValue<List<GameAudioInfo>>();
+                
+                if (allMusicList != null)
+                {
+                    targetAudio = ConvertToGameAudio(virtualMusic, new Dictionary<string, ulong>());
+                    allMusicList.Add(targetAudio);
+                }
+            }
+            
+            if (targetAudio != null)
+            {
+                Plugin.Log?.LogInfo($"[OmniMix] Syncing track change from backend: {targetAudio.AudioClipName}");
+                musicService.PlayArugumentMusic(targetAudio, MusicChangeKind.Manual);
+            }
         }
 
         private void OnStateChanged(object sender, StateChangedEventArgs e)
         {
+            _currentIsPlaying = e.IsPlaying;
+            _currentTrackPosition = e.Position;
+            _lastPositionUpdateTime = Time.time;
             OnStateUpdated?.Invoke(e.IsPlaying, e.Position, e.Volume);
         }
 
@@ -547,7 +940,11 @@ namespace ChillPatcher
             OnQueueUpdated?.Invoke();
         }
 
-        private void OnPosition(object sender, PositionEventArgs e) { }
+        private void OnPosition(object sender, PositionEventArgs e)
+        {
+            _currentTrackPosition = e.Position;
+            _lastPositionUpdateTime = Time.time;
+        }
 
         private void OnPlaylistUpdated(object sender, PlaylistUpdatedEventArgs e)
         {
@@ -555,6 +952,26 @@ namespace ChillPatcher
             // re-import them into the game's MusicService
             Plugin.Log?.LogInfo("[OmniMix] Playlist updated, re-importing songs...");
             ImportSongsToGame(false).Forget();
+        }
+
+        private void OnExcludeChanged(object sender, ExcludeChangedEventArgs e)
+        {
+            lock (_excludedUuids)
+            {
+                if (e.IsExcluded)
+                    _excludedUuids.Add(e.Uuid);
+                else
+                    _excludedUuids.Remove(e.Uuid);
+            }
+            
+            try
+            {
+                MusicService_Excluded_Patch.RaiseOnSongExcludedChanged(e.Uuid, e.IsExcluded);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogError($"[OmniMix] Failed to raise UI exclusion change event: {ex}");
+            }
         }
 
         #endregion

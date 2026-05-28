@@ -71,7 +71,15 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   Future<void> _playSong(SongInfo song) async {
     try {
-      await widget.state.api.play(uuid: song.uuid);
+      final instances = await widget.state.api.getInstances();
+      final audioInstances = instances
+          .where((i) => i['role'] == 'audio' && i['attached'] == true)
+          .toList();
+      if (audioInstances.isEmpty) {
+        setState(() => _error = 'No attached audio instance');
+        return;
+      }
+      await widget.state.api.play(audioInstances.first['id'] as String, uuid: song.uuid);
     } catch (e) {
       setState(() => _error = 'Play failed: $e');
     }

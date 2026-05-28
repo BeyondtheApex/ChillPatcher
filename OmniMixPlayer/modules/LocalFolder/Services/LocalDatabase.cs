@@ -75,9 +75,9 @@ namespace OmniMixPlayer.Module.LocalFolder.Services
 
         #region Song Cache
 
-        public void SaveSongCacheBatch(IEnumerable<(string uuid, string tagId, string albumId, string title, string artist, string filePath)> songs)
+        public void SaveSongCacheBatch(IEnumerable<(string uuid, string tagId, string albumId, string title, string artist, string filePath, double duration)> songs)
             => _cache.SaveSongCacheBatch(songs);
-        public List<(string uuid, string albumId, string title, string artist, string filePath)> GetSongCacheByPlaylist(string tagId)
+        public List<(string uuid, string albumId, string title, string artist, string filePath, double duration)> GetSongCacheByPlaylist(string tagId)
             => _cache.GetSongCacheByPlaylist(tagId);
 
         #endregion

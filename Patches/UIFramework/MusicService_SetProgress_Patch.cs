@@ -3,6 +3,8 @@ using Bulbul;
 using KanKikuchi.AudioManager;
 using UnityEngine;
 using System;
+using ChillPatcher.UIFramework.Audio;
+using Cysharp.Threading.Tasks;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -172,63 +174,46 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static bool ExecuteSeek(MusicService musicService, AudioPlayer player, AudioClip clip, float progress, ulong targetFrame)
         {
-            if (ActivePcmReader == null)
-            {
-                return true; // 没有 PCM 读取器，使用原始逻辑
-            }
-
             // 记录 Seek 位置和时间（用于防抖）
             _lastSeekFrame = targetFrame;
             _lastSeekTime = System.DateTime.Now;
 
-            float totalTime = (ActivePcmReader != null && ActivePcmReader.Info.Duration > 0)
-                ? ActivePcmReader.Info.Duration
-                : (clip?.length ?? 0f);
+            float duration = OmniMixIntegration.Instance?.CurrentTrackDuration ?? 0f;
+            if (duration <= 0) duration = clip != null ? clip.length : 0f;
+            float targetTime = duration * progress;
 
-            // 尝试 Seek
-            bool success = ActivePcmReader.Seek(targetFrame);
-            
-            if (success)
+            Plugin.Log.LogInfo($"[SetProgress_Patch] Executing seek to {targetTime:F2}s ({progress:P1})");
+
+            if (OmniMixIntegration.Instance != null)
             {
-                // 使用接口属性检查是否是延迟 Seek
-                if (ActivePcmReader.HasPendingSeek)
-                {
-                    // 延迟 Seek - 设置等待状态
-                    FacilityMusic_UpdateFacility_Patch.IsWaitingForSeek = true;
-                    FacilityMusic_UpdateFacility_Patch.PendingSeekProgress = progress;
-                    Plugin.Log.LogInfo($"[SetProgress_Patch] Pending seek set to {progress:P1}, waiting for cache (progress: {ActivePcmReader.CacheProgress:F1}%)");
-                    // TODO: IPC bridge needed - EventBus removed for seek events
-                    return false;
-                }
-                
-                // 立即 Seek 成功
-                FacilityMusic_UpdateFacility_Patch.IsWaitingForSeek = false;
-                FacilityMusic_UpdateFacility_Patch.PendingSeekProgress = 0f;
-                
-                // 同步更新 AudioSource.time（虽然 PCM 流控制实际位置，但需要同步 UI）
-                // 【重要】使用原始时长，而不是 clip.length（包含 30 分钟余量）
-                IsSeekingFromSetProgress = true;
-                try
-                {
-                    float originalDuration = ActivePcmReader != null ? ActivePcmReader.Info.Duration : clip.length;
-                    if (originalDuration <= 0) originalDuration = clip.length;
-                    player.AudioSource.time = Mathf.Clamp(originalDuration * progress, 0f, clip.length);
-                }
-                finally
-                {
-                    IsSeekingFromSetProgress = false;
-                }
-                
-                Plugin.Log.LogInfo($"[SetProgress_Patch] Seek succeeded to {progress:P1}");
-                // TODO: IPC bridge needed - EventBus removed for seek events
-                return false;
+                OmniMixIntegration.Instance.Seek(targetTime).Forget();
             }
-            else
+
+            if (ActivePcmReader != null)
             {
-                Plugin.Log.LogWarning($"[SetProgress_Patch] Seek failed");
-                // TODO: IPC bridge needed - EventBus removed for seek events
-                return false;
+                ActivePcmReader.Seek(targetFrame);
             }
+
+            IsSeekingFromSetProgress = true;
+            try
+            {
+                if (player != null && player.AudioSource != null)
+                {
+                    player.AudioSource.Stop(); // Stop to flush FMOD internal queue
+                    player.AudioSource.time = 0f; // Reset Unity buffer time
+                    player.AudioSource.Play(); // Restart playback from new cursors
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogWarning($"[SetProgress_Patch] Reset audio source time failed: {ex.Message}");
+            }
+            finally
+            {
+                IsSeekingFromSetProgress = false;
+            }
+
+            return false;
         }
 
         // TODO: IPC bridge needed - MusicRegistry removed for GetCurrentMusicInfo

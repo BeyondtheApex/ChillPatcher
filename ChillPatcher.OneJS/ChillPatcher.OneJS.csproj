@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
@@ -103,12 +103,8 @@
     </Reference>
   </ItemGroup>
 
-  <!-- Game DLLs -->
   <ItemGroup>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>$(GamePath)\Newtonsoft.Json.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <!-- NuGet packages for .NET 4.7.2 compatibility -->

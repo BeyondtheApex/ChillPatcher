@@ -69,6 +69,12 @@ namespace ChillPatcher.SDK.Ipc
     {
     }
 
+    public class ExcludeChangedEventArgs : EventArgs
+    {
+        public string Uuid { get; set; }
+        public bool IsExcluded { get; set; }
+    }
+
     #endregion
 
     /// <summary>
@@ -93,9 +99,19 @@ namespace ChillPatcher.SDK.Ipc
         private CancellationTokenSource _wsCts;
         private Task _wsTask;
         private readonly object _wsLock = new object();
+        private string _instanceId;
         private bool _disposed;
 
-        // ... events unchanged ...
+        public event EventHandler<TrackChangedEventArgs> OnTrackChanged;
+        public event EventHandler<StateChangedEventArgs> OnStateChanged;
+        public event EventHandler<PositionEventArgs> OnPosition;
+        public event EventHandler<QueueChangedEventArgs> OnQueueChanged;
+        public event EventHandler<PlaylistUpdatedEventArgs> OnPlaylistUpdated;
+        public event EventHandler<ModuleChangedEventArgs> OnModuleChanged;
+        public event EventHandler<ErrorEventArgs> OnError;
+        public event EventHandler<LyricFetchedEventArgs> OnLyricFetched;
+        public event EventHandler<LyricPositionEventArgs> OnLyricPosition;
+        public event EventHandler<ExcludeChangedEventArgs> OnExcludeChanged;
 
         public bool IsConnected => _ws?.State == WebSocketState.Open;
 
@@ -114,16 +130,7 @@ namespace ChillPatcher.SDK.Ipc
             _useSocket = useSocket;
             if (useSocket)
             {
-                var handler = new SocketsHttpHandler
-                {
-                    ConnectCallback = async (context, ct) =>
-                    {
-                        var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-                        await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), ct);
-                        return new NetworkStream(socket, ownsSocket: true);
-                    }
-                };
-                _http = new HttpClient(handler) { Timeout = RequestTimeout };
+                throw new PlatformNotSupportedException("Unix domain sockets are not supported under .NET Framework.");
             }
             else
             {
@@ -137,9 +144,16 @@ namespace ChillPatcher.SDK.Ipc
         private string ApiUrl(string path) => _useSocket
             ? $"{DummyHost}{ApiPath}{path}"
             : $"{TcpBaseUrl}{path}";
-                return false;
-            }
-}
+
+        public string InstanceId => _instanceId;
+
+        private string InstancePath(string path)
+        {
+            if (string.IsNullOrEmpty(_instanceId))
+                throw new InvalidOperationException("No playback instance is connected.");
+            return $"/instances/{Uri.EscapeDataString(_instanceId)}{path}";
+        }
+
 
 #region Connection
 
@@ -177,31 +191,9 @@ public async Task ConnectAsync(CancellationToken cancellationToken)
     _wsTask = Task.Run(() => ReceiveLoop(_wsCts.Token));
 }
 
-private async Task ConnectUnixWsAsync(CancellationToken ct)
+private Task ConnectUnixWsAsync(CancellationToken ct)
 {
-    _wsSocket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-    await _wsSocket.ConnectAsync(new UnixDomainSocketEndPoint(_socketPath), ct);
-
-    var upgradeBytes = Encoding.ASCII.GetBytes(
-        $"GET {WsPath} HTTP/1.1\r\n" +
-        "Host: unix\r\n" +
-        "Upgrade: websocket\r\n" +
-        "Connection: Upgrade\r\n" +
-        $"Sec-WebSocket-Key: {Convert.ToBase64String(Guid.NewGuid().ToByteArray())}\r\n" +
-        "Sec-WebSocket-Version: 13\r\n" +
-        "\r\n");
-    await _wsSocket.SendAsync(new ArraySegment<byte>(upgradeBytes), SocketFlags.None, ct);
-
-    var respBuffer = new byte[4096];
-    var received = await _wsSocket.ReceiveAsync(new ArraySegment<byte>(respBuffer), SocketFlags.None, ct);
-    var respText = Encoding.ASCII.GetString(respBuffer, 0, received);
-
-    if (!respText.Contains("101"))
-        throw new Exception($"WebSocket upgrade rejected: {respText.Split('\r')[0]}");
-
-    var stream = new NetworkStream(_wsSocket, ownsSocket: true);
-    _ws = WebSocket.CreateFromStream(stream, isServer: false, subProtocol: null, RequestTimeout);
-    _wsSocket = null; // owned by NetworkStream now
+    throw new PlatformNotSupportedException("Unix domain sockets are not supported under .NET Framework.");
 }
 
 public async Task DisconnectAsync()
@@ -348,6 +340,14 @@ private void ProcessMessage(string json)
             case "playlist.updated":
                 OnPlaylistUpdated?.Invoke(this, new PlaylistUpdatedEventArgs());
                 break;
+
+            case "exclude.changed":
+                OnExcludeChanged?.Invoke(this, new ExcludeChangedEventArgs
+                {
+                    Uuid = data?["uuid"]?.ToString(),
+                    IsExcluded = data?["isExcluded"]?.ToObject<bool>() ?? false
+                });
+                break;
         }
     }
     catch { }
@@ -360,44 +360,44 @@ private void ProcessMessage(string json)
 public async Task Play(string uuid)
 {
     var content = JsonContent(new { uuid });
-    await _http.PostAsync(ApiUrl("/play"), content);
+    await _http.PostAsync(ApiUrl(InstancePath("/play")), content);
 }
 
 public async Task Pause()
 {
-    await _http.PostAsync(ApiUrl("/pause"), null);
+    await _http.PostAsync(ApiUrl(InstancePath("/pause")), null);
 }
 
 public async Task Resume()
 {
-    await _http.PostAsync(ApiUrl("/resume"), null);
+    await _http.PostAsync(ApiUrl(InstancePath("/resume")), null);
 }
 
 public async Task Toggle()
 {
-    await _http.PostAsync(ApiUrl("/toggle"), null);
+    await _http.PostAsync(ApiUrl(InstancePath("/toggle")), null);
 }
 
 public async Task Next()
 {
-    await _http.PostAsync(ApiUrl("/next"), null);
+    await _http.PostAsync(ApiUrl(InstancePath("/next")), null);
 }
 
 public async Task Prev()
 {
-    await _http.PostAsync(ApiUrl("/prev"), null);
+    await _http.PostAsync(ApiUrl(InstancePath("/prev")), null);
 }
 
 public async Task Seek(float position)
 {
     var content = JsonContent(new { position });
-    await _http.PostAsync(ApiUrl("/seek"), content);
+    await _http.PostAsync(ApiUrl(InstancePath("/seek")), content);
 }
 
 public async Task SetVolume(float volume)
 {
     var content = JsonContent(new { volume });
-    var request = new HttpRequestMessage(HttpMethod.Put, ApiUrl("/volume"))
+    var request = new HttpRequestMessage(HttpMethod.Put, ApiUrl(InstancePath("/volume")))
     {
         Content = content
     };
@@ -407,13 +407,13 @@ public async Task SetVolume(float volume)
 public async Task SetShuffle(bool enabled)
 {
     var content = JsonContent(new { enabled });
-    await _http.PostAsync(ApiUrl("/shuffle"), content);
+    await _http.PostAsync(ApiUrl(InstancePath("/shuffle")), content);
 }
 
 public async Task SetRepeat(string mode)
 {
     var content = JsonContent(new { mode });
-    await _http.PostAsync(ApiUrl("/repeat"), content);
+    await _http.PostAsync(ApiUrl(InstancePath("/repeat")), content);
 }
 
 #endregion
@@ -422,7 +422,7 @@ public async Task SetRepeat(string mode)
 
 public async Task<JObject> GetStatus()
 {
-    var json = await _http.GetStringAsync(ApiUrl("/status"));
+    var json = await _http.GetStringAsync(ApiUrl(InstancePath("/status")));
     return JObject.Parse(json);
 }
 
@@ -432,22 +432,22 @@ public async Task<JObject> GetPlaylist()
     return JObject.Parse(json);
 }
 
-public async Task<JObject> GetTags()
+public async Task<JToken> GetTags()
 {
     var json = await _http.GetStringAsync(ApiUrl("/tags"));
-    return JObject.Parse(json);
+    return JToken.Parse(json);
 }
 
-public async Task<JObject> GetAlbums(string tagId = null)
+public async Task<JToken> GetAlbums(string tagId = null)
 {
     var url = ApiUrl("/albums");
     if (!string.IsNullOrEmpty(tagId))
         url += $"?tagId={Uri.EscapeDataString(tagId)}";
     var json = await _http.GetStringAsync(url);
-    return JObject.Parse(json);
+    return JToken.Parse(json);
 }
 
-public async Task<JObject> GetSongs(string albumId = null, string tagId = null)
+public async Task<JToken> GetSongs(string albumId = null, string tagId = null)
 {
     var url = ApiUrl("/songs");
     var separator = "?";
@@ -461,80 +461,86 @@ public async Task<JObject> GetSongs(string albumId = null, string tagId = null)
         url += $"{separator}tagId={Uri.EscapeDataString(tagId)}";
     }
     var json = await _http.GetStringAsync(url);
-    return JObject.Parse(json);
+    return JToken.Parse(json);
 }
 
 #endregion
 
 #region Queue Management
 
-public async Task<JObject> GetQueue()
+public async Task<JToken> GetQueue()
 {
-    var json = await _http.GetStringAsync(ApiUrl("/queue"));
-    return JObject.Parse(json);
+    var json = await _http.GetStringAsync(ApiUrl(InstancePath("/queue")));
+    return JToken.Parse(json);
 }
 
 public async Task AddToQueue(string uuid)
 {
     var content = JsonContent(new { uuid });
-    await _http.PostAsync(ApiUrl("/queue"), content);
+    await _http.PostAsync(ApiUrl(InstancePath("/queue")), content);
 }
 
 public async Task RemoveFromQueue(int index)
 {
-    await _http.DeleteAsync(ApiUrl($"/queue/{index}"));
+    await _http.DeleteAsync(ApiUrl(InstancePath($"/queue/{index}")));
 }
 
 public async Task MoveInQueue(int from, int to)
 {
     var content = JsonContent(new { from, to });
-    await _http.PostAsync(ApiUrl("/queue/move"), content);
+    await _http.PostAsync(ApiUrl(InstancePath("/queue/move")), content);
 }
 
 public async Task ClearQueue()
 {
-    await _http.PostAsync(ApiUrl("/queue/clear"), null);
+    await _http.PostAsync(ApiUrl(InstancePath("/queue/clear")), null);
 }
 
 #endregion
 
 #region Client Connection
 
-public async Task<bool> ConnectClient(string clientId, string mode)
+public async Task<JObject> ConnectInstance(string clientId, string role, string mode)
 {
-    try
-    {
-        var content = JsonContent(new { clientId, mode });
-        var response = await _http.PostAsync(ApiUrl("/client/connect"), content);
-        return response.IsSuccessStatusCode;
-    }
-    catch { return false; }
+    var content = JsonContent(new { clientId, role, mode });
+    var response = await _http.PostAsync(ApiUrl("/instances/connect"), content);
+    response.EnsureSuccessStatusCode();
+    var json = await response.Content.ReadAsStringAsync();
+    var obj = JObject.Parse(json);
+    _instanceId = obj["instanceId"]?.ToString();
+    return obj;
 }
 
-public async Task DisconnectClient(string clientId)
+public async Task DisconnectInstance()
 {
     try
     {
-        var content = JsonContent(new { clientId });
-        await _http.PostAsync(ApiUrl("/client/disconnect"), content);
+        if (!string.IsNullOrEmpty(_instanceId))
+            await _http.PostAsync(ApiUrl(InstancePath("/disconnect")), null);
+        _instanceId = null;
     }
     catch { }
 }
 
-public async Task<bool> Heartbeat(string clientId)
+public async Task<bool> HeartbeatInstance()
 {
     try
     {
-        var content = JsonContent(new { clientId });
-        var response = await _http.PostAsync(ApiUrl("/client/heartbeat"), content);
+        var response = await _http.PostAsync(ApiUrl(InstancePath("/heartbeat")), null);
         return response.IsSuccessStatusCode;
     }
     catch { return false; }
 }
 
-public async Task<JObject> GetClientStatus()
+public async Task<JArray> GetInstances()
 {
-    var json = await _http.GetStringAsync(ApiUrl("/client/status"));
+    var json = await _http.GetStringAsync(ApiUrl("/instances"));
+    return JArray.Parse(json);
+}
+
+public async Task<JObject> GetInstanceStats()
+{
+    var json = await _http.GetStringAsync(ApiUrl("/instances/stats"));
     return JObject.Parse(json);
 }
 
@@ -593,10 +599,12 @@ public async Task<JObject> GetVersion()
 
 #region General
 
-public async Task PostAsync(string path, object body)
+public async Task<string> PostAsync(string path, object body)
 {
     var content = JsonContent(body);
-    await _http.PostAsync(ApiUrl(path), content);
+    var response = await _http.PostAsync(ApiUrl(path), content);
+    response.EnsureSuccessStatusCode();
+    return await response.Content.ReadAsStringAsync();
 }
 
 public async Task<string> GetAsync(string path)
@@ -633,4 +641,3 @@ public void Dispose()
         #endregion
     }
 }
-

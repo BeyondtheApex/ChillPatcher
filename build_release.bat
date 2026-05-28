@@ -67,47 +67,6 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM ========== Step 3: Build Modules ==========
-echo.
-echo [3/10] Building ChillPatcher.Module.LocalFolder...
-dotnet build ChillPatcher.Module.LocalFolder\ChillPatcher.Module.LocalFolder.csproj -c %Configuration% --no-restore
-if %errorlevel% neq 0 (
-    echo ERROR: LocalFolder module build failed!
-    exit /b 1
-)
-
-echo.
-echo [4/10] Building ChillPatcher.Module.Netease...
-dotnet build ChillPatcher.Module.Netease\ChillPatcher.Module.Netease.csproj -c %Configuration% --no-restore
-if %errorlevel% neq 0 (
-    echo ERROR: Netease module build failed!
-    exit /b 1
-)
-
-echo.
-echo [5/10] Building ChillPatcher.Module.Bilibili...
-dotnet build ChillPatcher.Module.Bilibili\ChillPatcher.Module.Bilibili.csproj -c %Configuration% --no-restore
-if %errorlevel% neq 0 (
-    echo ERROR: Bilibili module build failed!
-    exit /b 1
-)
-
-echo.
-echo [6/10] Building ChillPatcher.Module.QQMusic...
-dotnet build ChillPatcher.Module.QQMusic\ChillPatcher.Module.QQMusic.csproj -c %Configuration% --no-restore
-if %errorlevel% neq 0 (
-    echo ERROR: QQMusic module build failed!
-    exit /b 1
-)
-
-echo.
-echo [6.5/10] Building ChillPatcher.Module.Spotify...
-dotnet build ChillPatcher.Module.Spotify\ChillPatcher.Module.Spotify.csproj -c %Configuration% --no-restore
-if %errorlevel% neq 0 (
-    echo ERROR: Spotify module build failed!
-    exit /b 1
-)
-
 REM ========== Step 7: Build OneJS ==========
 echo.
 echo [7/10] Building ChillPatcher.OneJS...
@@ -121,45 +80,50 @@ REM ========== Step 7.5: Build OneJS UI (esbuild) ==========
 echo.
 echo [7.5/10] Building OneJS UI (Preact + esbuild)...
 
-REM -- ui/default --
-cd ui\default
-if not exist "node_modules" (
-    echo   - [default] Installing npm dependencies...
-    call npm install
-    if %errorlevel% neq 0 (
-        echo ERROR: npm install failed!
+where npm >nul 2>&1
+if %errorlevel% equ 0 (
+    REM -- ui/default --
+    cd ui\default
+    if not exist "node_modules" (
+        echo   - [default] Installing npm dependencies...
+        call npm install
+        if !errorlevel! neq 0 (
+            echo ERROR: npm install failed!
+            cd ..\..
+            exit /b 1
+        )
+    )
+    echo   - [default] Bundling UI with esbuild...
+    call npm run build
+    if !errorlevel! neq 0 (
+        echo ERROR: esbuild build failed!
         cd ..\..
         exit /b 1
     )
-)
-echo   - [default] Bundling UI with esbuild...
-call npm run build
-if %errorlevel% neq 0 (
-    echo ERROR: esbuild build failed!
     cd ..\..
-    exit /b 1
-)
-cd ..\..
 
-REM -- ui/window-manager --
-cd ui\window-manager
-if not exist "node_modules" (
-    echo   - [window-manager] Installing npm dependencies...
-    call npm install
-    if %errorlevel% neq 0 (
-        echo ERROR: npm install failed!
+    REM -- ui/window-manager --
+    cd ui\window-manager
+    if not exist "node_modules" (
+        echo   - [window-manager] Installing npm dependencies...
+        call npm install
+        if !errorlevel! neq 0 (
+            echo ERROR: npm install failed!
+            cd ..\..
+            exit /b 1
+        )
+    )
+    echo   - [window-manager] Bundling UI with esbuild...
+    call npm run build
+    if !errorlevel! neq 0 (
+        echo ERROR: esbuild build failed!
         cd ..\..
         exit /b 1
     )
-)
-echo   - [window-manager] Bundling UI with esbuild...
-call npm run build
-if %errorlevel% neq 0 (
-    echo ERROR: esbuild build failed!
     cd ..\..
-    exit /b 1
+) else (
+    echo   - WARNING: npm not found! Skipping esbuild bundling, using existing built UI assets.
 )
-cd ..\..
 
 REM ========== Step 7: Build Native Plugins (Only in full mode) ==========
 if %FULL_BUILD% equ 1 (
@@ -170,7 +134,7 @@ if exist "NativePlugins\AudioDecoder\build.bat" (
     echo   - Building Audio Decoder...
     cd NativePlugins\AudioDecoder
     call build.bat >nul 2>&1
-    if %errorlevel% neq 0 (
+    if !errorlevel! neq 0 (
         echo WARNING: Native audio decoder build failed, using existing if available
     )
     cd ..\..
@@ -180,7 +144,7 @@ if exist "NativePlugins\FlacDecoder\build.bat" (
     echo   - Building FLAC Decoder...
     cd NativePlugins\FlacDecoder
     call build.bat >nul 2>&1
-    if %errorlevel% neq 0 (
+    if !errorlevel! neq 0 (
         echo WARNING: Native FLAC decoder build failed, using existing if available
     )
     cd ..\..
@@ -190,8 +154,18 @@ if exist "NativePlugins\SmtcBridge\build.bat" (
     echo   - Building SMTC Bridge...
     cd NativePlugins\SmtcBridge
     call build.bat >nul 2>&1
-    if %errorlevel% neq 0 (
+    if !errorlevel! neq 0 (
         echo WARNING: Native SMTC bridge build failed, using existing if available
+    )
+    cd ..\..
+)
+
+if exist "NativePlugins\OmniPcmShared\build.bat" (
+    echo   - Building Omni PCM Shared SDK...
+    cd NativePlugins\OmniPcmShared
+    call build.bat >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo WARNING: Omni PCM Shared SDK build failed, using existing if available
     )
     cd ..\..
 )
@@ -200,7 +174,7 @@ if exist "netease_bridge\build.bat" (
     echo   - Building Netease Bridge...
     cd netease_bridge
     call build.bat --no-pause >nul 2>&1
-    if %errorlevel% neq 0 (
+    if !errorlevel! neq 0 (
         echo WARNING: Netease bridge build failed, using existing if available
     )
     cd ..
@@ -210,7 +184,7 @@ if exist "qqmusic_bridge\build.bat" (
     echo   - Building QQ Music Bridge...
     cd qqmusic_bridge
     call build.bat --no-pause >nul 2>&1
-    if %errorlevel% neq 0 (
+    if !errorlevel! neq 0 (
         echo WARNING: QQ Music bridge build failed, using existing if available
     )
     cd ..
@@ -220,7 +194,7 @@ if exist "NativePlugins\EsbuildBridge\build.bat" (
     echo   - Building Esbuild Bridge ^(Go DLL^)...
     cd NativePlugins\EsbuildBridge
     call build.bat >nul 2>&1
-    if %errorlevel% neq 0 (
+    if !errorlevel! neq 0 (
         echo WARNING: Esbuild bridge build failed, using existing if available
     )
     cd ..\..
@@ -270,6 +244,7 @@ echo   - Native plugins...
 if exist "bin\native\x64\ChillAudioDecoder.dll" copy /y "bin\native\x64\ChillAudioDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillFlacDecoder.dll" copy /y "bin\native\x64\ChillFlacDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillSmtcBridge.dll" copy /y "bin\native\x64\ChillSmtcBridge.dll" "%NativeDir%\x64\" >nul
+if exist "bin\native\x64\OmniPcmShared.dll" copy /y "bin\native\x64\OmniPcmShared.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillEsbuildBridge.dll" copy /y "bin\native\x64\ChillEsbuildBridge.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillNetease.dll" copy /y "bin\native\x64\ChillNetease.dll" "%NativeDir%\x64\" >nul
 if exist "ChillPatcher.OneJS\native\x64\puerts.dll" copy /y "ChillPatcher.OneJS\native\x64\puerts.dll" "%NativeDir%\x64\" >nul
@@ -287,69 +262,8 @@ if exist "rime\librime\build\bin\Release\rime.dll" (
     copy /y "rime\librime\build\bin\Release\rime.dll" "%PluginDir%\" >nul
 )
 
-REM Modules
-echo   - Modules...
-
-REM LocalFolder 模块 (ID: com.chillpatcher.localfolder)
-set "LocalFolderModuleDir=%ModulesDir%\com.chillpatcher.localfolder"
-if not exist "%LocalFolderModuleDir%" mkdir "%LocalFolderModuleDir%"
-if not exist "%LocalFolderModuleDir%\native" mkdir "%LocalFolderModuleDir%\native"
-if not exist "%LocalFolderModuleDir%\native\x64" mkdir "%LocalFolderModuleDir%\native\x64"
-copy /y "ChillPatcher.Module.LocalFolder\bin\ChillPatcher.Module.LocalFolder.dll" "%LocalFolderModuleDir%\" >nul
-REM LocalFolder 模块的依赖
-copy /y "ChillPatcher.Module.LocalFolder\bin\System.Data.SQLite.dll" "%LocalFolderModuleDir%\" >nul
-copy /y "ChillPatcher.Module.LocalFolder\bin\Newtonsoft.Json.dll" "%LocalFolderModuleDir%\" >nul
-copy /y "ChillPatcher.Module.LocalFolder\bin\TagLibSharp.dll" "%LocalFolderModuleDir%\" >nul
-REM SQLite 原生库复制到模块的 native 目录
-if exist "ChillPatcher.Module.LocalFolder\bin\native\x64\SQLite.Interop.dll" (
-    copy /y "ChillPatcher.Module.LocalFolder\bin\native\x64\SQLite.Interop.dll" "%LocalFolderModuleDir%\native\x64\" >nul
-)
-
-REM Netease 模块 (ID: com.chillpatcher.netease)
-echo   - Netease Module...
-set "NeteaseModuleDir=%ModulesDir%\com.chillpatcher.netease"
-if not exist "%NeteaseModuleDir%" mkdir "%NeteaseModuleDir%"
-if not exist "%NeteaseModuleDir%\native" mkdir "%NeteaseModuleDir%\native"
-if not exist "%NeteaseModuleDir%\native\x64" mkdir "%NeteaseModuleDir%\native\x64"
-copy /y "ChillPatcher.Module.Netease\bin\ChillPatcher.Module.Netease.dll" "%NeteaseModuleDir%\" >nul
-REM Netease 模块的依赖
-copy /y "ChillPatcher.Module.Netease\bin\Newtonsoft.Json.dll" "%NeteaseModuleDir%\" >nul
-if exist "ChillPatcher.Module.Netease\bin\QRCoder.dll" copy /y "ChillPatcher.Module.Netease\bin\QRCoder.dll" "%NeteaseModuleDir%\" >nul
-REM Netease 模块原生库
-if exist "bin\native\x64\ChillNetease.dll" (
-    copy /y "bin\native\x64\ChillNetease.dll" "%NeteaseModuleDir%\native\x64\" >nul
-)
-
-REM Bilibili 模块 (ID: com.chillpatcher.bilibili)
-echo   - Bilibili Module...
-set "BilibiliModuleDir=%ModulesDir%\com.chillpatcher.bilibili"
-if not exist "%BilibiliModuleDir%" mkdir "%BilibiliModuleDir%"
-copy /y "ChillPatcher.Module.Bilibili\bin\ChillPatcher.Module.Bilibili.dll" "%BilibiliModuleDir%\" >nul
-REM Bilibili 模块的依赖
-copy /y "ChillPatcher.Module.Bilibili\bin\Newtonsoft.Json.dll" "%BilibiliModuleDir%\" >nul
-
-REM QQ Music 模块 (ID: com.chillpatcher.qqmusic)
-echo   - QQ Music Module...
-set "QQMusicModuleDir=%ModulesDir%\com.chillpatcher.qqmusic"
-if not exist "%QQMusicModuleDir%" mkdir "%QQMusicModuleDir%"
-if not exist "%QQMusicModuleDir%\native" mkdir "%QQMusicModuleDir%\native"
-if not exist "%QQMusicModuleDir%\native\x64" mkdir "%QQMusicModuleDir%\native\x64"
-copy /y "ChillPatcher.Module.QQMusic\bin\ChillPatcher.Module.QQMusic.dll" "%QQMusicModuleDir%\" >nul
-REM QQ Music 模块的依赖
-copy /y "ChillPatcher.Module.QQMusic\bin\Newtonsoft.Json.dll" "%QQMusicModuleDir%\" >nul
-if exist "ChillPatcher.Module.QQMusic\bin\QRCoder.dll" copy /y "ChillPatcher.Module.QQMusic\bin\QRCoder.dll" "%QQMusicModuleDir%\" >nul
-REM QQ Music 模块原生库
-if exist "qqmusic_bridge\ChillQQMusic.dll" (
-    copy /y "qqmusic_bridge\ChillQQMusic.dll" "%QQMusicModuleDir%\native\x64\" >nul
-)
-
-REM Spotify 模块 (ID: com.chillpatcher.spotify)
-echo   - Spotify Module...
-set "SpotifyModuleDir=%ModulesDir%\com.chillpatcher.spotify"
-if not exist "%SpotifyModuleDir%" mkdir "%SpotifyModuleDir%"
-copy /y "ChillPatcher.Module.Spotify\bin\ChillPatcher.Module.Spotify.dll" "%SpotifyModuleDir%\" >nul
-REM Spotify 模块的依赖
-copy /y "ChillPatcher.Module.Spotify\bin\Newtonsoft.Json.dll" "%SpotifyModuleDir%\" >nul
+REM Modules (Skipped because modules run inside Backend now)
+echo   - Modules (SKIPPED)...
 
 REM RIME data directory (rime-data/shared 和 rime-data/user)
 echo   - RIME data...
@@ -516,11 +430,35 @@ echo       ^|   +-- Newtonsoft.Json.dll
 echo       +-- Spotify\
 echo           +-- ChillPatcher.Module.Spotify.dll
 echo           +-- Newtonsoft.Json.dll
-echo.
 echo To deploy: Copy ChillPatcher folder to
 echo   ^<game^>\BepInEx\plugins\
 echo.
 echo ========================================
 
+REM ========== Step 10: Zip and Copy to Flutter Assets ==========
+echo.
+echo [10/10] Packaging and copying to Flutter assets...
+set "AssetsDir=%~dp0OmniMixPlayer\gui_flutter\assets"
+if not exist "%AssetsDir%" mkdir "%AssetsDir%"
+
+REM Compress ChillPatcher folder to ChillPatcher.zip
+echo   - Creating ChillPatcher.zip...
+if exist "%ReleaseDir%\ChillPatcher.zip" del /f "%ReleaseDir%\ChillPatcher.zip"
+powershell -NoProfile -Command "Compress-Archive -Path '%PluginDir%\*' -DestinationPath '%ReleaseDir%\ChillPatcher.zip' -Force"
+
+REM Copy to gui_flutter/assets
+echo   - Copying ChillPatcher.zip to assets...
+copy /y "%ReleaseDir%\ChillPatcher.zip" "%AssetsDir%\" >nul
+
+echo   - Copying BepInEx zip to assets...
+if exist "C:\Users\kaiwe\Downloads\BepInEx_win_x64_5.4.23.5.zip" (
+    copy /y "C:\Users\kaiwe\Downloads\BepInEx_win_x64_5.4.23.5.zip" "%AssetsDir%\" >nul
+    echo     BepInEx zip copied successfully.
+) else (
+    echo     WARNING: BepInEx zip not found at C:\Users\kaiwe\Downloads\BepInEx_win_x64_5.4.23.5.zip
+)
+echo ========================================
+
 endlocal
 exit /b 0
+

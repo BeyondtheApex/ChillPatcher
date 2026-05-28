@@ -2,6 +2,8 @@ using System;
 using Bulbul;
 using ChillPatcher.SDK.Events;
 using HarmonyLib;
+using ChillPatcher.UIFramework.Audio;
+using Cysharp.Threading.Tasks;
 
 namespace ChillPatcher.Patches.UIFramework
 {
@@ -15,6 +17,11 @@ namespace ChillPatcher.Patches.UIFramework
         /// 歌曲排除状态变化事件
         /// </summary>
         public static event Action<string, bool> OnSongExcludedChanged;
+
+        public static void RaiseOnSongExcludedChanged(string uuid, bool isExcluded)
+        {
+            OnSongExcludedChanged?.Invoke(uuid, isExcluded);
+        }
 
         /// <summary>
         /// Patch ExcludeFromPlaylist - 排除歌曲
@@ -87,7 +94,12 @@ namespace ChillPatcher.Patches.UIFramework
         [HarmonyPrefix]
         static bool IsContainsExcludedFromPlaylist_Prefix(GameAudioInfo gameAudioInfo, ref bool __result)
         {
-            // TODO: IPC bridge needed - exclude status for stream sources
+            if (gameAudioInfo == null) return true;
+            if (StreamingAudioLoader.IsStreamingSource(gameAudioInfo))
+            {
+                __result = OmniMixIntegration.Instance != null && OmniMixIntegration.Instance.IsExcluded(gameAudioInfo.UUID);
+                return false;
+            }
             return true;
         }
     }

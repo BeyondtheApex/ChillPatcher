@@ -77,6 +77,44 @@ namespace OmniMixPlayer.Backend.ModuleSystem.Services.Streaming
                 CanSeek = false
             };
 
+            // Check if the source URL is actually a local file
+            bool isLocalFile = false;
+            string localPath = url;
+            try
+            {
+                if (!string.IsNullOrEmpty(url))
+                {
+                    if (url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var uri = new Uri(url);
+                        localPath = uri.LocalPath;
+                        isLocalFile = File.Exists(localPath);
+                    }
+                    else
+                    {
+                        isLocalFile = !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                                      !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                                      File.Exists(url);
+                    }
+                }
+            }
+            catch { }
+
+            if (isLocalFile)
+            {
+                try
+                {
+                    InitFileDecoder(localPath, _format);
+                    _isReady = true;
+                    _logger?.LogInformation("Using local file directly: {Path}", localPath);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Failed to initialize decoder for local file: {Path}", localPath);
+                }
+            }
+
             if (File.Exists(cachePath))
             {
                 try
