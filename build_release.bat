@@ -457,6 +457,12 @@ if exist "C:\Users\kaiwe\Downloads\BepInEx_win_x64_5.4.23.5.zip" (
 ) else (
     echo     WARNING: BepInEx zip not found at C:\Users\kaiwe\Downloads\BepInEx_win_x64_5.4.23.5.zip
 )
+
+echo   - Packaging FH6 Omni Bridge asset...
+call "%~dp0build_fh6_omni_bridge_assets.bat" skip-build
+if %errorlevel% neq 0 (
+    echo     WARNING: FH6 Omni Bridge asset packaging failed.
+)
 echo ========================================
 
 endlocal

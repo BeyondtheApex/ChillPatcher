@@ -173,14 +173,14 @@ class ModuleLinkEntryResponse {
 /// WS event wrapper
 class WsEvent {
   final String type;
-  final Map<String, dynamic>? data;
+  final dynamic data;
 
   WsEvent({this.type = '', this.data});
 
   factory WsEvent.fromJson(Map<String, dynamic> json) {
     return WsEvent(
       type: (json['type'] ?? json['event'] ?? '') as String,
-      data: json['data'] as Map<String, dynamic>?,
+      data: json['data'],
     );
   }
 }
@@ -334,6 +334,142 @@ class SongInfo {
       moduleId: json['moduleId'] ?? '',
       isFavorite: json['isFavorite'] ?? false,
       isExcluded: json['isExcluded'] ?? false,
+    );
+  }
+}
+
+class TrackInfo {
+  final String uuid;
+  final String title;
+  final String artist;
+  final String albumId;
+  final double duration;
+  final String moduleId;
+
+  const TrackInfo({
+    this.uuid = '',
+    this.title = '',
+    this.artist = '',
+    this.albumId = '',
+    this.duration = 0.0,
+    this.moduleId = '',
+  });
+
+  factory TrackInfo.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const TrackInfo();
+    return TrackInfo(
+      uuid: json['uuid'] ?? '',
+      title: json['title'] ?? '',
+      artist: json['artist'] ?? '',
+      albumId: json['albumId'] ?? '',
+      duration: (json['duration'] ?? 0.0).toDouble(),
+      moduleId: json['moduleId'] ?? '',
+    );
+  }
+
+  bool get isEmpty => uuid.isEmpty && title.isEmpty;
+}
+
+class PlaybackInstanceInfo {
+  final String id;
+  final String clientId;
+  final String role;
+  final String mode;
+  final bool attached;
+  final bool isPlaying;
+  final double position;
+  final double volume;
+  final int queueCount;
+  final int queueIndex;
+  final int historyCount;
+  final int sampleRate;
+  final int channels;
+  final TrackInfo? currentTrack;
+
+  const PlaybackInstanceInfo({
+    this.id = '',
+    this.clientId = '',
+    this.role = '',
+    this.mode = '',
+    this.attached = false,
+    this.isPlaying = false,
+    this.position = 0.0,
+    this.volume = 1.0,
+    this.queueCount = 0,
+    this.queueIndex = -1,
+    this.historyCount = 0,
+    this.sampleRate = 0,
+    this.channels = 0,
+    this.currentTrack,
+  });
+
+  factory PlaybackInstanceInfo.fromJson(Map<String, dynamic> json) {
+    return PlaybackInstanceInfo(
+      id: json['id'] ?? '',
+      clientId: json['clientId'] ?? '',
+      role: json['role'] ?? '',
+      mode: json['mode'] ?? '',
+      attached: json['attached'] ?? false,
+      isPlaying: json['isPlaying'] ?? false,
+      position: (json['position'] ?? 0.0).toDouble(),
+      volume: (json['volume'] ?? 1.0).toDouble(),
+      queueCount: json['queueCount'] ?? 0,
+      queueIndex: json['queueIndex'] ?? -1,
+      historyCount: json['historyCount'] ?? 0,
+      sampleRate: json['sampleRate'] ?? 0,
+      channels: json['channels'] ?? 0,
+      currentTrack: json['currentTrack'] == null
+          ? null
+          : TrackInfo.fromJson(json['currentTrack'] as Map<String, dynamic>),
+    );
+  }
+
+  bool get isServerManaged => mode.toLowerCase() == 'servermanaged';
+  bool get isClientManaged => mode.toLowerCase() == 'clientmanaged';
+}
+
+class QueueItemInfo extends TrackInfo {
+  final int index;
+
+  const QueueItemInfo({
+    this.index = 0,
+    super.uuid,
+    super.title,
+    super.artist,
+    super.albumId,
+    super.duration,
+    super.moduleId,
+  });
+
+  factory QueueItemInfo.fromJson(Map<String, dynamic> json) {
+    return QueueItemInfo(
+      index: json['index'] ?? 0,
+      uuid: json['uuid'] ?? '',
+      title: json['title'] ?? '',
+      artist: json['artist'] ?? '',
+      albumId: json['albumId'] ?? '',
+      duration: (json['duration'] ?? 0.0).toDouble(),
+      moduleId: json['moduleId'] ?? '',
+    );
+  }
+}
+
+class PlaylistSourceInfo {
+  final String id;
+  final String name;
+  final int songCount;
+
+  const PlaylistSourceInfo({
+    this.id = '',
+    this.name = '',
+    this.songCount = 0,
+  });
+
+  factory PlaylistSourceInfo.fromJson(Map<String, dynamic> json) {
+    return PlaylistSourceInfo(
+      id: json['id'] ?? json['Id'] ?? '',
+      name: json['name'] ?? json['Name'] ?? '',
+      songCount: json['songCount'] ?? json['SongCount'] ?? 0,
     );
   }
 }

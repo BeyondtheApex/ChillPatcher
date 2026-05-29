@@ -22,7 +22,7 @@ namespace OmniMixPlayer.Module.Spotify
         Version = "1.0.0",
         Author = "ChillPatcher",
         Description = "Spotify Connect playback control and playlist sync")]
-    public class SpotifyModule : IMusicModule, IStreamingMusicSourceProvider, ICoverProvider, IFavoriteExcludeHandler, IModuleUIProvider
+    public class SpotifyModule : IMusicModule, IStreamingMusicSourceProvider, IModuleAudioDecoderProvider, ICoverProvider, IFavoriteExcludeHandler, IModuleUIProvider
     {
         public string ModuleId => "com.chillpatcher.spotify";
         public string DisplayName => "Spotify";
@@ -63,6 +63,7 @@ namespace OmniMixPlayer.Module.Spotify
         // 当前选定的设备
         private string _activeDeviceId;
         private string _activeDeviceName;
+        private bool _nativeBridgeLoaded;
 
         // 事件订阅
         private IDisposable _pauseSubscription;
@@ -106,6 +107,11 @@ namespace OmniMixPlayer.Module.Spotify
 
             InitOAuthManager();
             SubscribePlaybackEvents();
+            _nativeBridgeLoaded = _context.DependencyLoader.LoadNativeLibrary(
+                "SpotifyLibrespotBridge.dll",
+                ModuleId);
+            if (!_nativeBridgeLoaded)
+                _logger.LogWarning("[Spotify] SpotifyLibrespotBridge.dll not loaded; native Spotify decode is disabled");
 
             // 加载已保存的 session
             _bridge.LoadSession();
@@ -336,6 +342,123 @@ namespace OmniMixPlayer.Module.Spotify
             _registry.UnregisterAll();
             _savedCache.Clear();
             await LoadPlaylistsAsync();
+        }
+
+        // =====================================================================
+        // IModuleAudioDecoderProvider (librespot pipe -> PCM shared memory)
+        // =====================================================================
+
+        public bool CanDecode(string uuid)
+        {
+            if (!UseNativeLibrespotDecoder() || !_nativeBridgeLoaded || _bridge == null || !_bridge.IsLoggedIn || !_bridge.Session.IsPremium)
+                return false;
+
+            var music = _context?.MusicRegistry?.GetMusic(uuid);
+            return GetTrackMeta(music) != null;
+        }
+
+        public async Task<IPcmStreamReader> CreateDecoderAsync(
+            string uuid,
+            AudioQuality quality = AudioQuality.ExHigh,
+            CancellationToken cancellationToken = default)
+        {
+            var music = _context.MusicRegistry.GetMusic(uuid);
+            var meta = GetTrackMeta(music);
+            if (music == null || meta == null || string.IsNullOrEmpty(meta.SpotifyUri))
+                return null;
+
+            if (!UseNativeLibrespotDecoder())
+            {
+                _logger.LogInformation("[Spotify] Native librespot decoder disabled by config; using Spotify Connect fallback");
+                return null;
+            }
+
+            if (!_nativeBridgeLoaded)
+            {
+                _logger.LogWarning("[Spotify] SpotifyLibrespotBridge.dll is not loaded; falling back to Spotify Connect silent reader");
+                return null;
+            }
+
+            var deviceName = _context.ConfigManager.GetString(
+                "LibrespotDeviceName",
+                $"OmniMixPlayer-{Environment.ProcessId}");
+            var cacheDir = Path.Combine(_dataPath, "librespot-cache");
+
+            var reader = new NativeLibrespotPcmReader(
+                _bridge.Session.AccessToken,
+                deviceName,
+                cacheDir,
+                music.Duration,
+                _logger);
+
+            try
+            {
+                if (!reader.Start())
+                {
+                    reader.Dispose();
+                    return null;
+                }
+
+                if (!reader.WaitForReady(15000, cancellationToken))
+                {
+                    _logger.LogWarning("[Spotify] native librespot bridge did not become ready: {DeviceName}", deviceName);
+                    reader.Dispose();
+                    return null;
+                }
+
+                var deviceId = await WaitForLibrespotDeviceAsync(deviceName, cancellationToken).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(deviceId))
+                {
+                    _logger.LogWarning("[Spotify] native librespot device did not appear: {DeviceName}", deviceName);
+                    reader.Dispose();
+                    return null;
+                }
+
+                await _bridge.TransferPlaybackAsync(deviceId, play: false).ConfigureAwait(false);
+                var ok = await _bridge.PlayTrackAsync(meta.SpotifyUri, deviceId).ConfigureAwait(false);
+                if (!ok)
+                {
+                    _logger.LogWarning("[Spotify] Failed to start librespot playback: {Title}", music.Title);
+                    reader.Dispose();
+                    return null;
+                }
+
+                _activeDeviceId = deviceId;
+                _activeDeviceName = deviceName;
+                _logger.LogInformation("[Spotify] native librespot decoder started: {Title}", music.Title);
+                return reader;
+            }
+            catch
+            {
+                reader.Dispose();
+                throw;
+            }
+        }
+
+        private async Task<string> WaitForLibrespotDeviceAsync(string deviceName, CancellationToken cancellationToken)
+        {
+            for (int i = 0; i < 30; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var devices = await _bridge.GetAvailableDevicesAsync().ConfigureAwait(false);
+                var device = devices.FirstOrDefault(d =>
+                    string.Equals(d.Name, deviceName, StringComparison.OrdinalIgnoreCase));
+                if (device != null)
+                    return device.Id;
+                await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+            }
+            return null;
+        }
+
+        private bool UseNativeLibrespotDecoder()
+        {
+            var backend = _context?.ConfigManager?.GetString("PlaybackBackend", "native") ?? "native";
+            if (backend.Equals("connect", StringComparison.OrdinalIgnoreCase) ||
+                backend.Equals("spotify_connect", StringComparison.OrdinalIgnoreCase) ||
+                backend.Equals("client", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return _context?.ConfigManager?.GetBool("UseNativeLibrespotDecoder", true) ?? true;
         }
 
         // =====================================================================

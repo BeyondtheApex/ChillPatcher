@@ -1,0 +1,16 @@
+[package]
+name = "spotify_librespot_bridge"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+crossbeam-channel = "0.5"
+librespot-connect = { version = "0.8.0", default-features = false, features = ["native-tls"] }
+librespot-core = { version = "0.8.0", default-features = false, features = ["native-tls"] }
+librespot-playback = { version = "0.8.0", default-features = false, features = ["native-tls"] }
+log = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+zerocopy = "0.8"

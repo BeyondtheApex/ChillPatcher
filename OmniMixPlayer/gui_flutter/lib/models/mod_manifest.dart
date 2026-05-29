@@ -41,17 +41,26 @@ class ModDeclaration {
   final String name;
   final String version;
   final String archiveName;
-  final String targetFramework;
+  final String? targetFramework;
   final String folderName;
+  final List<String> rootFilesToLink;
+  final List<String> rootDirsToLink;
 
   const ModDeclaration({
     required this.id,
     required this.name,
     required this.version,
     required this.archiveName,
-    required this.targetFramework,
+    this.targetFramework,
     required this.folderName,
+    this.rootFilesToLink = const [],
+    this.rootDirsToLink = const [],
   });
+
+  bool get usesFramework =>
+      targetFramework != null && targetFramework!.isNotEmpty;
+  bool get installsToGameRoot =>
+      rootFilesToLink.isNotEmpty || rootDirsToLink.isNotEmpty;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +75,14 @@ final List<GameDeclaration> gameCatalog = [
     signatureFiles: ['Chill With You.exe', 'Chill With You_Data'],
     supportedFrameworks: ['bepinex_5'],
     supportedMods: ['chill_patcher'],
+  ),
+  const GameDeclaration(
+    id: 'forza_horizon_6',
+    name: 'Forza Horizon 6',
+    exeName: 'forzahorizon6.exe',
+    signatureFiles: ['forzahorizon6.exe'],
+    supportedFrameworks: [],
+    supportedMods: ['fh6_omni_bridge'],
   ),
 ];
 
@@ -89,5 +106,13 @@ final List<ModDeclaration> modCatalog = [
     archiveName: 'ChillPatcher.zip',
     targetFramework: 'bepinex_5',
     folderName: 'ChillPatcher',
+  ),
+  const ModDeclaration(
+    id: 'fh6_omni_bridge',
+    name: 'Forza Horizon 6 Omni Bridge',
+    version: '1.0.0',
+    archiveName: 'FH6OmniBridge.zip',
+    folderName: 'fh6-omnimix',
+    rootFilesToLink: ['version.dll', 'OmniPcmShared.dll'],
   ),
 ];

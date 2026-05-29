@@ -11,19 +11,22 @@ echo ========================================
 echo OmniPcmShared Native SDK Build Script
 echo ========================================
 
+where cl >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Searching for Visual Studio...
+    call "D:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
+    if %errorlevel% neq 0 (
+        call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
+        if %errorlevel% neq 0 (
+            call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
+        )
+    )
+)
+
 where cmake >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: CMake not found in PATH
     exit /b 1
-)
-
-where cl >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Searching for Visual Studio...
-    call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
-    if %errorlevel% neq 0 (
-        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
-    )
 )
 
 echo.

@@ -111,8 +111,12 @@ namespace OmniMixPlayer.Backend.Http
 
             // Playlist
             endpoints.MapGet("/api/playlist", GetPlaylist);
-            endpoints.MapGet("/api/tags", () => Results.Json(_tagRegistry.GetAllTags().Select(t => new { id = t.TagId, name = t.DisplayName, moduleId = t.ModuleId, bitValue = t.BitValue, isGrowable = t.IsGrowableList })));
-            endpoints.MapGet("/api/albums", (string tagId) => Results.Json(_albumRegistry.GetAlbumsByTag(tagId).Select(a => new { id = a.AlbumId, name = a.DisplayName, tagId = (a.TagIds?.FirstOrDefault() ?? ""), moduleId = a.ModuleId, coverPath = a.CoverPath, songCount = a.SongCount, isGrowable = a.IsGrowableAlbum })));
+            endpoints.MapGet("/api/tags", () => Results.Json(_tagRegistry.GetAllTags().Select(t => new { id = t.TagId ?? "", name = t.DisplayName ?? "", moduleId = t.ModuleId ?? "", bitValue = t.BitValue, isGrowable = t.IsGrowableList })));
+            endpoints.MapGet("/api/albums", (string? tagId) => Results.Json(
+                string.IsNullOrEmpty(tagId)
+                    ? _albumRegistry.GetAllAlbums().Select(a => new { id = a.AlbumId ?? "", name = a.DisplayName ?? "", tagId = (a.TagIds?.FirstOrDefault() ?? ""), moduleId = a.ModuleId ?? "", coverPath = a.CoverPath ?? "", songCount = a.SongCount, isGrowable = a.IsGrowableAlbum })
+                    : _albumRegistry.GetAlbumsByTag(tagId).Select(a => new { id = a.AlbumId ?? "", name = a.DisplayName ?? "", tagId = (a.TagIds?.FirstOrDefault() ?? ""), moduleId = a.ModuleId ?? "", coverPath = a.CoverPath ?? "", songCount = a.SongCount, isGrowable = a.IsGrowableAlbum })
+            ));
             endpoints.MapGet("/api/songs", GetSongs);
             endpoints.MapGet("/api/song/{uuid}", (string uuid) => { var m = _musicRegistry.GetMusic(uuid); return m != null ? Results.Json(MapSong(m)) : Results.NotFound(); });
 
@@ -124,8 +128,28 @@ namespace OmniMixPlayer.Backend.Http
                     ? Results.Json(instance.Controller.Queue.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist, moduleId = m.ModuleId }))
                     : Results.NotFound();
             });
+            endpoints.MapGet("/api/instances/{id}/playlist", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                return instance != null
+                    ? Results.Json(instance.Controller.Playlist.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist, albumId = m.AlbumId, moduleId = m.ModuleId }))
+                    : Results.NotFound();
+            });
+            endpoints.MapGet("/api/instances/{id}/playlist/sources", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                return instance != null ? Results.Json(instance.Controller.PlaylistSources) : Results.NotFound();
+            });
+            endpoints.MapPut("/api/instances/{id}/playlist", (string id, QueueReplaceRequest req) => WithInstance(id, p => p.SetPlaylist(req.uuids ?? Array.Empty<string>())));
+            endpoints.MapPut("/api/instances/{id}/playlist/sources", (string id, PlaylistSourcesReplaceRequest req) => WithInstance(id, p => p.SetPlaylistSources(req.sources ?? Array.Empty<PlaylistSourceRequest>())));
+            endpoints.MapPost("/api/instances/{id}/playlist/sources", (string id, PlaylistSourceInsertRequest req) => WithInstance(id, p => p.InsertPlaylistSource(req.source, req.index)));
+            endpoints.MapDelete("/api/instances/{id}/playlist/sources/{sourceId}", (string id, string sourceId) => WithInstance(id, p => p.RemovePlaylistSource(sourceId)));
             endpoints.MapPost("/api/instances/{id}/queue", (string id, PlayRequest req) => WithInstance(id, p => p.AddToQueue(req.uuid)));
+            endpoints.MapPost("/api/instances/{id}/queue/insert", (string id, QueueInsertRequest req) => WithInstance(id, p => p.InsertIntoQueue(req.uuids ?? Array.Empty<string>(), req.index)));
+            endpoints.MapPut("/api/instances/{id}/queue", (string id, QueueReplaceRequest req) => WithInstance(id, p => p.SetQueue(req.uuids ?? Array.Empty<string>())));
+            endpoints.MapPost("/api/instances/{id}/queue/replace", (string id, QueueReplaceRequest req) => WithInstance(id, p => p.SetQueue(req.uuids ?? Array.Empty<string>())));
             endpoints.MapDelete("/api/instances/{id}/queue/{index}", (string id, int index) => WithInstance(id, p => p.RemoveFromQueue(index)));
+            endpoints.MapDelete("/api/instances/{id}/queue/by-uuid/{uuid}", (string id, string uuid) => WithInstance(id, p => p.RemoveFromQueue(uuid)));
             endpoints.MapPost("/api/instances/{id}/queue/move", (string id, MoveRequest req) => WithInstance(id, p => p.MoveInQueue(req.from, req.to)));
             endpoints.MapPost("/api/instances/{id}/queue/clear", (string id) => WithInstance(id, p => p.ClearQueue()));
             endpoints.MapGet("/api/instances/{id}/history", (string id) =>
@@ -135,6 +159,10 @@ namespace OmniMixPlayer.Backend.Http
                     ? Results.Json(instance.Controller.History.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist }))
                     : Results.NotFound();
             });
+            endpoints.MapPost("/api/instances/{id}/history/insert", (string id, QueueInsertRequest req) => WithInstance(id, p => p.InsertIntoHistory(req.uuids ?? Array.Empty<string>(), req.index)));
+            endpoints.MapDelete("/api/instances/{id}/history/{index}", (string id, int index) => WithInstance(id, p => p.RemoveFromHistory(index)));
+            endpoints.MapDelete("/api/instances/{id}/history/by-uuid/{uuid}", (string id, string uuid) => WithInstance(id, p => p.RemoveFromHistory(uuid)));
+            endpoints.MapPost("/api/instances/{id}/history/move", (string id, MoveRequest req) => WithInstance(id, p => p.MoveInHistory(req.from, req.to)));
             endpoints.MapPost("/api/instances/{id}/history/clear", (string id) => WithInstance(id, p => p.ClearHistory()));
 
             // Growable tags (paginated loading)
@@ -399,15 +427,15 @@ namespace OmniMixPlayer.Backend.Http
             endpoints.Map("/ws", async (HttpContext ctx) => await HandleWebSocket(ctx));
         }
 
-        private object GetPlaylist()
+        private IResult GetPlaylist()
         {
-            var tags = _tagRegistry.GetAllTags().Select(t => new { id = t.TagId, name = t.DisplayName, moduleId = t.ModuleId });
-            var albums = _albumRegistry.GetAllAlbums().Select(a => new { id = a.AlbumId, name = a.DisplayName, tagId = (a.TagIds?.FirstOrDefault() ?? ""), moduleId = a.ModuleId, coverPath = a.CoverPath, songCount = a.SongCount });
+            var tags = _tagRegistry.GetAllTags().Select(t => new { id = t.TagId ?? "", name = t.DisplayName ?? "", moduleId = t.ModuleId ?? "" });
+            var albums = _albumRegistry.GetAllAlbums().Select(a => new { id = a.AlbumId ?? "", name = a.DisplayName ?? "", tagId = (a.TagIds?.FirstOrDefault() ?? ""), moduleId = a.ModuleId ?? "", coverPath = a.CoverPath ?? "", songCount = a.SongCount });
             var songs = _musicRegistry.GetAllMusic().Select(MapSong);
             return Results.Json(new { tags, albums, songs });
         }
 
-        private object GetSongs(string albumId, string tagId)
+        private IResult GetSongs(string albumId, string tagId)
         {
             var songs = !string.IsNullOrEmpty(albumId) ? _musicRegistry.GetMusicByAlbum(albumId)
                 : !string.IsNullOrEmpty(tagId) ? _musicRegistry.GetMusicByTag(tagId)
@@ -685,6 +713,10 @@ namespace OmniMixPlayer.Backend.Http
     public record ShuffleRequest(bool enabled);
     public record RepeatRequest(string mode);
     public record MoveRequest(int from, int to);
+    public record QueueReplaceRequest(string[] uuids);
+    public record QueueInsertRequest(string[] uuids, int index);
+    public record PlaylistSourcesReplaceRequest(PlaylistSourceRequest[] sources);
+    public record PlaylistSourceInsertRequest(PlaylistSourceRequest source, int index);
     public record FavoriteRequest(string uuid, bool isFavorite);
     public record ModuleToggleRequest(bool enabled);
     public record InstanceConnectRequest(string clientId, string role, string mode);

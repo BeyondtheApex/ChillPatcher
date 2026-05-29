@@ -65,7 +65,11 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
   //  Game List View
   // ═══════════════════════════════════════════════════════════
 
-  Widget _buildGameList(BuildContext context, AppLocalizations l10n, ColorScheme cs) {
+  Widget _buildGameList(
+    BuildContext context,
+    AppLocalizations l10n,
+    ColorScheme cs,
+  ) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Padding(
@@ -76,16 +80,16 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
             Text(
               l10n.gameIntegration,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: cs.onSurface,
-                  ),
+                fontWeight: FontWeight.bold,
+                color: cs.onSurface,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               l10n.welcomeHint,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
             ),
             const SizedBox(height: 24),
             Expanded(
@@ -99,7 +103,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     elevation: 2,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+                      side: BorderSide(
+                        color: cs.outlineVariant.withOpacity(0.5),
+                      ),
                     ),
                     child: InkWell(
                       onTap: () {
@@ -131,12 +137,13 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                                 children: [
                                   Text(
                                     game.name,
-                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(fontWeight: FontWeight.bold),
                                   ),
                                   const SizedBox(height: 6),
-                                  _buildCompactStatusBadge(l10n, cs),
+                                  _buildCompactStatusBadge(game, l10n, cs),
                                 ],
                               ),
                             ),
@@ -159,14 +166,18 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     );
   }
 
-  Widget _buildCompactStatusBadge(AppLocalizations l10n, ColorScheme cs) {
+  Widget _buildCompactStatusBadge(
+    GameDeclaration game,
+    AppLocalizations l10n,
+    ColorScheme cs,
+  ) {
     final st = widget.state;
-    if (st.gamePath.isEmpty) {
+    final gamePath = st.gamePathFor(game.id);
+    if (gamePath.isEmpty) {
       return _badge(l10n.statusNotInstalled, Colors.grey, cs);
     }
 
-    final game = gameCatalog.firstWhere((g) => g.id == 'chill_with_you');
-    final isValid = ModDeploymentService.verifyGameDirectory(st.gamePath, game);
+    final isValid = ModDeploymentService.verifyGameDirectory(gamePath, game);
     if (!isValid) {
       return _badge(l10n.statusNotInstalled, Colors.grey, cs);
     }
@@ -174,22 +185,27 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     final list = <Widget>[];
 
     // BepInEx badge
-    switch (st.bepinexStatus) {
-      case BepInExStatus.notInstalled:
-        list.add(_badge('BepInEx: ${l10n.statusNotInstalled}', Colors.grey, cs));
-        break;
-      case BepInExStatus.managed:
-        list.add(_badge('BepInEx: ${l10n.statusManaged}', Colors.green, cs));
-        break;
-      case BepInExStatus.unmanaged:
-        list.add(_badge('BepInEx: ${l10n.statusUnmanaged}', Colors.orange, cs));
-        break;
+    if (game.supportedFrameworks.contains('bepinex_5')) {
+      switch (st.bepinexStatusFor(game.id)) {
+        case BepInExStatus.notInstalled:
+          list.add(
+            _badge('BepInEx: ${l10n.statusNotInstalled}', Colors.grey, cs),
+          );
+          break;
+        case BepInExStatus.managed:
+          list.add(_badge('BepInEx: ${l10n.statusManaged}', Colors.green, cs));
+          break;
+        case BepInExStatus.unmanaged:
+          list.add(
+            _badge('BepInEx: ${l10n.statusUnmanaged}', Colors.orange, cs),
+          );
+          break;
+      }
+      list.add(const SizedBox(width: 8));
     }
 
-    list.add(const SizedBox(width: 8));
-
     // Mod badge
-    switch (st.modStatus) {
+    switch (st.modStatusFor(game.id)) {
       case ModStatus.notInstalled:
         list.add(_badge('Mod: ${l10n.statusNotInstalled}', Colors.grey, cs));
         break;
@@ -225,10 +241,20 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
   // ═══════════════════════════════════════════════════════════
 
   Widget _buildGameDetail(
-      BuildContext context, AppLocalizations l10n, ColorScheme cs, GameDeclaration game) {
+    BuildContext context,
+    AppLocalizations l10n,
+    ColorScheme cs,
+    GameDeclaration game,
+  ) {
     final st = widget.state;
-    final isPathEmpty = st.gamePath.isEmpty;
-    final isValidPath = !isPathEmpty && ModDeploymentService.verifyGameDirectory(st.gamePath, game);
+    final gamePath = st.gamePathFor(game.id);
+    final bepinexStatus = st.bepinexStatusFor(game.id);
+    final modStatus = st.modStatusFor(game.id);
+    final hasBepInEx = game.supportedFrameworks.contains('bepinex_5');
+    final isPathEmpty = gamePath.isEmpty;
+    final isValidPath =
+        !isPathEmpty &&
+        ModDeploymentService.verifyGameDirectory(gamePath, game);
 
     return Scaffold(
       appBar: AppBar(
@@ -268,15 +294,18 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     Text(
                       l10n.selectGameDir,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
                             decoration: BoxDecoration(
                               color: cs.surfaceContainerHigh,
                               borderRadius: BorderRadius.circular(8),
@@ -287,10 +316,12 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                               ),
                             ),
                             child: Text(
-                              isPathEmpty ? l10n.chooseFolder : st.gamePath,
+                              isPathEmpty ? l10n.chooseFolder : gamePath,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: isPathEmpty ? cs.onSurfaceVariant : cs.onSurface,
+                                color: isPathEmpty
+                                    ? cs.onSurfaceVariant
+                                    : cs.onSurface,
                               ),
                             ),
                           ),
@@ -300,15 +331,19 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                           onPressed: st.deploymentBusy
                               ? null
                               : () async {
-                                  final path = await ModDeploymentService.selectDirectory();
+                                  final path =
+                                      await ModDeploymentService.selectDirectory();
                                   if (path != null) {
-                                    await st.setGamePath(path);
+                                    await st.setGamePath(path, gameId: game.id);
                                   }
                                 },
                           icon: const Icon(Icons.folder_open),
                           label: Text(l10n.chooseFolder),
                           style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -319,7 +354,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     if (!isPathEmpty && !isValidPath) ...[
                       const SizedBox(height: 8),
                       Text(
-                        l10n.invalidGameDir,
+                        '${l10n.invalidGameDir} (${game.exeName})',
                         style: TextStyle(
                           fontSize: 12,
                           color: cs.error,
@@ -335,7 +370,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
 
             if (isValidPath) ...[
               // 2. BepInEx status alert card if unmanaged
-              if (st.bepinexStatus == BepInExStatus.unmanaged) ...[
+              if (hasBepInEx && bepinexStatus == BepInExStatus.unmanaged) ...[
                 Card(
                   elevation: 0,
                   color: Colors.orange.withOpacity(0.08),
@@ -348,7 +383,11 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.orange,
+                          size: 24,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -372,37 +411,52 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // BepInEx Card
-                  Expanded(
-                    child: Card(
-                      elevation: 0,
-                      color: cs.surfaceContainerLow,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              l10n.bepinexStatus,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 12),
-                            _buildDetailedStatusBadge(st.bepinexStatus, l10n, cs),
-                            const SizedBox(height: 24),
-                            SizedBox(
-                              width: double.infinity,
-                              child: _buildBepInExActionButton(st, l10n, cs),
-                            ),
-                          ],
+                  if (hasBepInEx) ...[
+                    Expanded(
+                      child: Card(
+                        elevation: 0,
+                        color: cs.surfaceContainerLow,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: cs.outlineVariant.withOpacity(0.5),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                l10n.bepinexStatus,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildDetailedStatusBadge(
+                                bepinexStatus,
+                                l10n,
+                                cs,
+                              ),
+                              const SizedBox(height: 24),
+                              SizedBox(
+                                width: double.infinity,
+                                child: _buildBepInExActionButton(
+                                  st,
+                                  l10n,
+                                  cs,
+                                  game.id,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
+                    const SizedBox(width: 16),
+                  ],
                   // Mod Card
                   Expanded(
                     child: Card(
@@ -410,7 +464,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                       color: cs.surfaceContainerLow,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
-                        side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+                        side: BorderSide(
+                          color: cs.outlineVariant.withOpacity(0.5),
+                        ),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(20.0),
@@ -419,14 +475,17 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                           children: [
                             Text(
                               l10n.modStatus,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             const SizedBox(height: 12),
-                            _buildModDetailedStatusBadge(st.modStatus, l10n, cs),
+                            _buildModDetailedStatusBadge(modStatus, l10n, cs),
                             const SizedBox(height: 24),
                             SizedBox(
                               width: double.infinity,
-                              child: _buildModActionButton(st, l10n, cs),
+                              child: _buildModActionButton(st, l10n, cs, game),
                             ),
                           ],
                         ),
@@ -442,8 +501,8 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                 Text(
                   l10n.deploymentLogs,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 if (st.deploymentBusy) ...[
@@ -456,7 +515,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.85),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: cs.outlineVariant.withOpacity(0.5)),
+                    border: Border.all(
+                      color: cs.outlineVariant.withOpacity(0.5),
+                    ),
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
@@ -488,7 +549,11 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     );
   }
 
-  Widget _buildDetailedStatusBadge(BepInExStatus status, AppLocalizations l10n, ColorScheme cs) {
+  Widget _buildDetailedStatusBadge(
+    BepInExStatus status,
+    AppLocalizations l10n,
+    ColorScheme cs,
+  ) {
     switch (status) {
       case BepInExStatus.notInstalled:
         return _badge(l10n.statusNotInstalled, Colors.grey, cs);
@@ -499,7 +564,11 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     }
   }
 
-  Widget _buildModDetailedStatusBadge(ModStatus status, AppLocalizations l10n, ColorScheme cs) {
+  Widget _buildModDetailedStatusBadge(
+    ModStatus status,
+    AppLocalizations l10n,
+    ColorScheme cs,
+  ) {
     switch (status) {
       case ModStatus.notInstalled:
         return _badge(l10n.statusNotInstalled, Colors.grey, cs);
@@ -508,7 +577,12 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     }
   }
 
-  Widget _buildBepInExActionButton(AppState st, AppLocalizations l10n, ColorScheme cs) {
+  Widget _buildBepInExActionButton(
+    AppState st,
+    AppLocalizations l10n,
+    ColorScheme cs,
+    String gameId,
+  ) {
     if (st.deploymentBusy) {
       return ElevatedButton(
         onPressed: null,
@@ -520,10 +594,10 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       );
     }
 
-    switch (st.bepinexStatus) {
+    switch (st.bepinexStatusFor(gameId)) {
       case BepInExStatus.notInstalled:
         return ElevatedButton.icon(
-          onPressed: () => st.installBepInEx(),
+          onPressed: () => st.installBepInEx(gameId: gameId),
           icon: const Icon(Icons.download),
           label: Text(l10n.installBepInEx),
           style: ElevatedButton.styleFrom(
@@ -537,12 +611,12 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
           runSpacing: 8,
           children: [
             ElevatedButton.icon(
-              onPressed: () => st.installBepInEx(),
+              onPressed: () => st.installBepInEx(gameId: gameId),
               icon: const Icon(Icons.refresh),
               label: Text(l10n.reinstallBepInEx),
             ),
             OutlinedButton.icon(
-              onPressed: () => st.uninstallBepInEx(),
+              onPressed: () => st.uninstallBepInEx(gameId: gameId),
               icon: const Icon(Icons.delete_outline),
               label: Text(l10n.uninstallBepInEx),
               style: OutlinedButton.styleFrom(
@@ -561,7 +635,12 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     }
   }
 
-  Widget _buildModActionButton(AppState st, AppLocalizations l10n, ColorScheme cs) {
+  Widget _buildModActionButton(
+    AppState st,
+    AppLocalizations l10n,
+    ColorScheme cs,
+    GameDeclaration game,
+  ) {
     if (st.deploymentBusy) {
       return ElevatedButton(
         onPressed: null,
@@ -573,7 +652,10 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       );
     }
 
-    final bepinexPresent = st.bepinexStatus != BepInExStatus.notInstalled;
+    final requiresBepInEx = game.supportedFrameworks.contains('bepinex_5');
+    final bepinexPresent =
+        !requiresBepInEx ||
+        st.bepinexStatusFor(game.id) != BepInExStatus.notInstalled;
     if (!bepinexPresent) {
       return ElevatedButton.icon(
         onPressed: null,
@@ -582,10 +664,10 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       );
     }
 
-    switch (st.modStatus) {
+    switch (st.modStatusFor(game.id)) {
       case ModStatus.notInstalled:
         return ElevatedButton.icon(
-          onPressed: () => st.installMod(),
+          onPressed: () => st.installMod(gameId: game.id),
           icon: const Icon(Icons.add),
           label: Text(l10n.installMod),
           style: ElevatedButton.styleFrom(
@@ -599,7 +681,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
           runSpacing: 8,
           children: [
             ElevatedButton.icon(
-              onPressed: () => st.installMod(),
+              onPressed: () => st.installMod(gameId: game.id),
               icon: const Icon(Icons.refresh),
               label: Text(l10n.reinstallMod),
               style: ElevatedButton.styleFrom(
@@ -608,7 +690,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
               ),
             ),
             OutlinedButton.icon(
-              onPressed: () => st.uninstallMod(),
+              onPressed: () => st.uninstallMod(gameId: game.id),
               icon: const Icon(Icons.delete_outline),
               label: Text(l10n.uninstallMod),
               style: OutlinedButton.styleFrom(

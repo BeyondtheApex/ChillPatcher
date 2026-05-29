@@ -5,6 +5,8 @@ packages/
 build/
 target/
 playerbuild/
+NativePlugins/ForzaHorizon6OmniBridge/build/
+NativePlugins/ForzaHorizon6OmniBridge/bin/
 
 # Netease bridge built artifacts (Go DLL)
 netease_bridge/*.dll

@@ -142,11 +142,13 @@ class ApiClient {
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> getInstances() async {
+  Future<List<PlaybackInstanceInfo>> getInstances() async {
     final resp = await _http.get(Uri.parse('$_baseUrl/api/instances'));
     if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
     final list = json.decode(resp.body) as List<dynamic>;
-    return list.cast<Map<String, dynamic>>();
+    return list
+        .map((e) => PlaybackInstanceInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Map<String, dynamic>> getInstanceStats() async {
@@ -173,5 +175,108 @@ class ApiClient {
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'uuid': uuid ?? ''}),
     );
+  }
+
+  Future<void> pause(String instanceId) => _post('/api/instances/$instanceId/pause');
+  Future<void> resume(String instanceId) => _post('/api/instances/$instanceId/resume');
+  Future<void> toggle(String instanceId) => _post('/api/instances/$instanceId/toggle');
+  Future<void> next(String instanceId) => _post('/api/instances/$instanceId/next');
+  Future<void> previous(String instanceId) => _post('/api/instances/$instanceId/prev');
+
+  Future<void> seek(String instanceId, double position) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/seek'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'position': position}),
+    );
+  }
+
+  Future<List<QueueItemInfo>> getInstanceQueue(String instanceId) async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/$instanceId/queue'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    final list = json.decode(resp.body) as List<dynamic>;
+    return list.map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<QueueItemInfo>> getInstanceHistory(String instanceId) async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/$instanceId/history'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    final list = json.decode(resp.body) as List<dynamic>;
+    return list.map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<QueueItemInfo>> getInstancePlaylist(String instanceId) async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/$instanceId/playlist'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    final list = json.decode(resp.body) as List<dynamic>;
+    return list.map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<PlaylistSourceInfo>> getPlaylistSources(String instanceId) async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    final list = json.decode(resp.body) as List<dynamic>;
+    return list.map((e) => PlaylistSourceInfo.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> addToQueue(String instanceId, String uuid) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/queue'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'uuid': uuid}),
+    );
+  }
+
+  Future<void> removeQueueAt(String instanceId, int index) =>
+      _delete('/api/instances/$instanceId/queue/$index');
+
+  Future<void> clearQueue(String instanceId) => _post('/api/instances/$instanceId/queue/clear');
+
+  Future<void> removeHistoryAt(String instanceId, int index) =>
+      _delete('/api/instances/$instanceId/history/$index');
+
+  Future<void> clearHistory(String instanceId) => _post('/api/instances/$instanceId/history/clear');
+
+  Future<void> addPlaylistSource(
+    String instanceId, {
+    required String id,
+    required String name,
+    required List<String> uuids,
+  }) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'source': {'id': id, 'name': name, 'uuids': uuids},
+      }),
+    );
+  }
+
+  Future<void> replacePlaylistSources(
+    String instanceId, {
+    required List<Map<String, dynamic>> sources,
+  }) async {
+    await _http.put(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'sources': sources}),
+    );
+  }
+
+  Future<void> removePlaylistSource(String instanceId, String sourceId) =>
+      _delete('/api/instances/$instanceId/playlist/sources/$sourceId');
+
+  Future<void> _post(String path) async {
+    final resp = await _http.post(Uri.parse('$_baseUrl$path'));
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception('HTTP ${resp.statusCode}');
+    }
+  }
+
+  Future<void> _delete(String path) async {
+    final resp = await _http.delete(Uri.parse('$_baseUrl$path'));
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception('HTTP ${resp.statusCode}');
+    }
   }
 }

@@ -23,6 +23,11 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <ItemGroup></ItemGroup>
+  <ItemGroup>
+    <Content Include="native\x64\SpotifyLibrespotBridge.dll" Condition="Exists('native\x64\SpotifyLibrespotBridge.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>native\x64\SpotifyLibrespotBridge.dll</Link>
+    </Content>
+  </ItemGroup>
 
 </Project>

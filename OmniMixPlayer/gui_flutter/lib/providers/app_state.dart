@@ -19,17 +19,23 @@ class AppState extends ChangeNotifier {
   late final BackendManager _backendMgr;
 
   // Game Integration (Mod Manager)
-  String _gamePath = '';
-  BepInExStatus _bepinexStatus = BepInExStatus.notInstalled;
-  ModStatus _modStatus = ModStatus.notInstalled;
+  final Map<String, String> _gamePaths = {};
+  final Map<String, BepInExStatus> _bepinexStatuses = {};
+  final Map<String, ModStatus> _modStatuses = {};
   final List<String> _deploymentLogs = [];
   bool _deploymentBusy = false;
 
-  String get gamePath => _gamePath;
-  BepInExStatus get bepinexStatus => _bepinexStatus;
-  ModStatus get modStatus => _modStatus;
+  String get gamePath => gamePathFor('chill_with_you');
+  BepInExStatus get bepinexStatus => bepinexStatusFor('chill_with_you');
+  ModStatus get modStatus => modStatusFor('chill_with_you');
   List<String> get deploymentLogs => _deploymentLogs;
   bool get deploymentBusy => _deploymentBusy;
+
+  String gamePathFor(String gameId) => _gamePaths[gameId] ?? '';
+  BepInExStatus bepinexStatusFor(String gameId) =>
+      _bepinexStatuses[gameId] ?? BepInExStatus.notInstalled;
+  ModStatus modStatusFor(String gameId) =>
+      _modStatuses[gameId] ?? ModStatus.notInstalled;
 
   // Backend
   bool _backendOnline = false;
@@ -62,6 +68,16 @@ class AppState extends ChangeNotifier {
   // Navigation
   int _currentTab = 0;
 
+  // Playback
+  List<PlaybackInstanceInfo> _playbackInstances = [];
+  String? _activeInstanceId;
+  List<QueueItemInfo> _activeQueue = [];
+  List<QueueItemInfo> _activeHistory = [];
+  List<QueueItemInfo> _activePlaylist = [];
+  List<PlaylistSourceInfo> _playlistSources = [];
+  bool _playbackLoading = false;
+  Timer? _playbackPollTimer;
+
   // Notifications
   String? _lastError;
 
@@ -88,6 +104,26 @@ class AppState extends ChangeNotifier {
   String get overlayMode => _overlayMode;
   String get overlayTitle => _overlayTitle;
   int get currentTab => _currentTab;
+  List<PlaybackInstanceInfo> get playbackInstances => _playbackInstances;
+  String? get activeInstanceId => _activeInstanceId;
+  List<QueueItemInfo> get activeQueue => _activeQueue;
+  List<QueueItemInfo> get activeHistory => _activeHistory;
+  List<QueueItemInfo> get activePlaylist => _activePlaylist;
+  List<PlaylistSourceInfo> get playlistSources => _playlistSources;
+  bool get playbackLoading => _playbackLoading;
+  int get playbackInstanceCount => _playbackInstances.length;
+  int get attachedAudioClientCount => _playbackInstances.where((i) => i.attached).length;
+
+  PlaybackInstanceInfo? get activeInstance {
+    final id = _activeInstanceId;
+    if (id == null) return _playbackInstances.isNotEmpty ? _playbackInstances.first : null;
+    for (final instance in _playbackInstances) {
+      if (instance.id == id) return instance;
+    }
+    return _playbackInstances.isNotEmpty ? _playbackInstances.first : null;
+  }
+
+  bool get canControlActiveInstance => activeInstance?.isServerManaged == true;
 
   bool get hasOverlay => _overlayUiTree != null || _overlayMode == 'about';
   bool get hasModuleDetail => _activeModuleId != null && _moduleUiTree != null;
@@ -232,15 +268,23 @@ class AppState extends ChangeNotifier {
     _backendRunning = alive;
 
     if (alive) {
-      // Backend appeared – connect & load
+      // Backend appeared — connect & load
       _connectAndLoad();
+      _startPlaybackPolling();
     } else {
-      // Backend disappeared – clean up
+      // Backend disappeared — clean up
       GuiLogger().conn('AppState: backend gone, cleaning up');
       ws.disconnect();
       _modules.clear();
       _moduleUiTree = null;
       _activeModuleId = null;
+      _stopPlaybackPolling();
+      _playbackInstances = [];
+      _activeInstanceId = null;
+      _activeQueue = [];
+      _activeHistory = [];
+      _activePlaylist = [];
+      _playlistSources = [];
     }
     notifyListeners();
   }
@@ -277,6 +321,7 @@ class AppState extends ChangeNotifier {
       if (connected) {
         await api.connectController();
         await _loadModules();
+        await refreshPlayback();
       }
     } catch (e, st) {
       GuiLogger().error('AppState._connectAndLoad CRASHED', e, st);
@@ -286,16 +331,30 @@ class AppState extends ChangeNotifier {
   void _setupWs() {
     ws.onEvent = (event) {
       if (event.type == 'backend.state.changed') {
-        final running = event.data?['running'] == true;
+        final data = event.data is Map<String, dynamic>
+            ? event.data as Map<String, dynamic>
+            : const <String, dynamic>{};
+        final running = data['running'] == true;
         if (_backendRunning != running) {
           _backendRunning = running;
           _backendOnline = running;
           notifyListeners();
         }
       } else if (event.type == 'error') {
-        final msg = event.data?['message'] as String? ?? 'Unknown error';
+        final data = event.data is Map<String, dynamic>
+            ? event.data as Map<String, dynamic>
+            : const <String, dynamic>{};
+        final msg = data['message'] as String? ?? 'Unknown error';
         _lastError = msg;
         notifyListeners();
+      } else if (event.type == 'instances.changed' ||
+          event.type == 'track.changed' ||
+          event.type == 'state.changed' ||
+          event.type == 'queue.changed' ||
+          event.type == 'playlist.updated') {
+        refreshPlayback();
+      } else if (event.type == 'position') {
+        _applyPositionEvent(event.data);
       }
     };
     ws.onUiPush = (push) {
@@ -667,6 +726,219 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshPlayback() async {
+    if (!_backendOnline) return;
+    if (_playbackLoading) return;
+    _playbackLoading = true;
+    try {
+      final instances = await api.getInstances();
+      var nextActiveId = _activeInstanceId;
+      if (nextActiveId == null || !instances.any((i) => i.id == nextActiveId)) {
+        final attached = instances.where((i) => i.attached).toList();
+        final serverManaged = attached.where((i) => i.isServerManaged).toList();
+        nextActiveId = (serverManaged.isNotEmpty
+                ? serverManaged.first
+                : attached.isNotEmpty
+                ? attached.first
+                : instances.isNotEmpty
+                ? instances.first
+                : null)
+            ?.id;
+      }
+
+      List<QueueItemInfo> queue = [];
+      List<QueueItemInfo> history = [];
+      List<QueueItemInfo> playlist = [];
+      List<PlaylistSourceInfo> sources = [];
+      if (nextActiveId != null && nextActiveId.isNotEmpty) {
+        queue = await api.getInstanceQueue(nextActiveId);
+        history = await api.getInstanceHistory(nextActiveId);
+        playlist = await api.getInstancePlaylist(nextActiveId);
+        sources = await api.getPlaylistSources(nextActiveId);
+      }
+
+      _playbackInstances = instances;
+      _activeInstanceId = nextActiveId;
+      _activeQueue = queue;
+      _activeHistory = history;
+      _activePlaylist = playlist;
+      _playlistSources = sources;
+      notifyListeners();
+    } catch (e) {
+      GuiLogger().error('refreshPlayback failed', e);
+    } finally {
+      _playbackLoading = false;
+    }
+  }
+
+  void selectPlaybackInstance(String id) {
+    _activeInstanceId = id;
+    notifyListeners();
+    refreshPlayback();
+  }
+
+  Future<void> togglePlayback() async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.toggle(instance.id);
+    await refreshPlayback();
+  }
+
+  Future<void> nextTrack() async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.next(instance.id);
+    await refreshPlayback();
+  }
+
+  Future<void> previousTrack() async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.previous(instance.id);
+    await refreshPlayback();
+  }
+
+  Future<void> seekActive(double position) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.seek(instance.id, position);
+    await refreshPlayback();
+  }
+
+  Future<void> playSongOnActive(String uuid) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.play(instance.id, uuid: uuid);
+    await refreshPlayback();
+  }
+
+  Future<void> addSongToActiveQueue(String uuid) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.addToQueue(instance.id, uuid);
+    await refreshPlayback();
+  }
+
+  Future<void> removeQueueItem(int index) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.removeQueueAt(instance.id, index);
+    await refreshPlayback();
+  }
+
+  Future<void> clearActiveQueue() async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.clearQueue(instance.id);
+    await refreshPlayback();
+  }
+
+  Future<void> removeHistoryItem(int index) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.removeHistoryAt(instance.id, index);
+    await refreshPlayback();
+  }
+
+  Future<void> clearActiveHistory() async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.clearHistory(instance.id);
+    await refreshPlayback();
+  }
+
+  /// Replace all playlist sources with the given list. Empty list = reset to "全部".
+  Future<void> replacePlaylistSources(
+    String instanceId, {
+    required List<Map<String, dynamic>> sources,
+  }) async {
+    await api.replacePlaylistSources(instanceId, sources: sources);
+    await refreshPlayback();
+  }
+
+  /// Replace all playlist sources with a single tag source.
+  Future<void> addTagToActivePlaylist(TagInfo tag) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    final songs = await api.getSongs(tagId: tag.id);
+    await api.replacePlaylistSources(
+      instance.id,
+      sources: [
+        {
+          'id': 'tag_${tag.id}',
+          'name': tag.name,
+          'uuids': songs.map((s) => s.uuid).toList(),
+        },
+      ],
+    );
+    await refreshPlayback();
+  }
+
+  /// Replace all playlist sources with a single album source.
+  Future<void> addAlbumToActivePlaylist(AlbumInfo album) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    final songs = await api.getSongs(albumId: album.id);
+    await api.replacePlaylistSources(
+      instance.id,
+      sources: [
+        {
+          'id': 'album_${album.id}',
+          'name': album.name,
+          'uuids': songs.map((s) => s.uuid).toList(),
+        },
+      ],
+    );
+    await refreshPlayback();
+  }
+
+  Future<void> removePlaylistSource(String sourceId) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.removePlaylistSource(instance.id, sourceId);
+    await refreshPlayback();
+  }
+
+  void _startPlaybackPolling() {
+    _playbackPollTimer?.cancel();
+    _playbackPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      refreshPlayback();
+    });
+  }
+
+  void _stopPlaybackPolling() {
+    _playbackPollTimer?.cancel();
+    _playbackPollTimer = null;
+  }
+
+  void _applyPositionEvent(dynamic data) {
+    if (data is! Map<String, dynamic>) return;
+    final instanceId = data['instanceId'] as String?;
+    final position = (data['position'] ?? 0.0).toDouble();
+    var changed = false;
+    _playbackInstances = _playbackInstances.map((instance) {
+      if (instance.id != instanceId) return instance;
+      changed = true;
+      return PlaybackInstanceInfo(
+        id: instance.id,
+        clientId: instance.clientId,
+        role: instance.role,
+        mode: instance.mode,
+        attached: instance.attached,
+        isPlaying: instance.isPlaying,
+        position: position,
+        volume: instance.volume,
+        queueCount: instance.queueCount,
+        queueIndex: instance.queueIndex,
+        historyCount: instance.historyCount,
+        sampleRate: instance.sampleRate,
+        channels: instance.channels,
+        currentTrack: instance.currentTrack,
+      );
+    }).toList();
+    if (changed) notifyListeners();
+  }
+
   Future<void> openModule(String moduleId) async {
     _activeModuleId = moduleId;
     _moduleUiTree = null;
@@ -771,58 +1043,86 @@ class AppState extends ChangeNotifier {
   Future<void> loadGameIntegrationSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _gamePath = prefs.getString('game_integration_path') ?? '';
+      for (final game in gameCatalog) {
+        _gamePaths[game.id] =
+            prefs.getString('game_integration_path_${game.id}') ??
+            (game.id == 'chill_with_you'
+                ? prefs.getString('game_integration_path')
+                : null) ??
+            '';
+      }
       refreshModStatuses();
     } catch (e) {
       GuiLogger().error('loadGameIntegrationSettings failed', e);
     }
   }
 
-  Future<void> setGamePath(String path) async {
-    _gamePath = path;
+  Future<void> setGamePath(
+    String path, {
+    String gameId = 'chill_with_you',
+  }) async {
+    _gamePaths[gameId] = path;
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('game_integration_path', path);
-      refreshModStatuses();
+      await prefs.setString('game_integration_path_$gameId', path);
+      if (gameId == 'chill_with_you') {
+        await prefs.setString('game_integration_path', path);
+      }
+      refreshModStatuses(gameId);
     } catch (e) {
       GuiLogger().error('setGamePath failed', e);
     }
   }
 
-  void refreshModStatuses() {
-    if (_gamePath.isEmpty) {
-      _bepinexStatus = BepInExStatus.notInstalled;
-      _modStatus = ModStatus.notInstalled;
-      notifyListeners();
-      return;
-    }
+  void refreshModStatuses([String? gameId]) {
+    final games = gameId == null
+        ? gameCatalog
+        : gameCatalog.where((g) => g.id == gameId);
 
-    final game = gameCatalog.firstWhere((g) => g.id == 'chill_with_you');
-    final isValid = ModDeploymentService.verifyGameDirectory(_gamePath, game);
-    if (!isValid) {
-      _bepinexStatus = BepInExStatus.notInstalled;
-      _modStatus = ModStatus.notInstalled;
-      notifyListeners();
-      return;
-    }
+    for (final game in games) {
+      final path = gamePathFor(game.id);
+      if (path.isEmpty ||
+          !ModDeploymentService.verifyGameDirectory(path, game)) {
+        _bepinexStatuses[game.id] = BepInExStatus.notInstalled;
+        _modStatuses[game.id] = ModStatus.notInstalled;
+        continue;
+      }
 
-    _bepinexStatus = ModDeploymentService.checkBepInExStatus(_gamePath);
-    final mod = modCatalog.firstWhere((m) => m.id == 'chill_patcher');
-    _modStatus = ModDeploymentService.checkModStatus(_gamePath, mod.folderName);
+      _bepinexStatuses[game.id] = game.supportedFrameworks.contains('bepinex_5')
+          ? ModDeploymentService.checkBepInExStatus(path)
+          : BepInExStatus.notInstalled;
+
+      if (game.supportedMods.isEmpty) {
+        _modStatuses[game.id] = ModStatus.notInstalled;
+        continue;
+      }
+
+      final mod = modCatalog.firstWhere(
+        (m) => m.id == game.supportedMods.first,
+      );
+      _modStatuses[game.id] = mod.installsToGameRoot
+          ? ModDeploymentService.checkRootModStatus(path, mod)
+          : ModDeploymentService.checkModStatus(path, mod.folderName);
+    }
     notifyListeners();
   }
 
-  Future<bool> installBepInEx() async {
-    if (_gamePath.isEmpty || _deploymentBusy) return false;
+  Future<bool> installBepInEx({String gameId = 'chill_with_you'}) async {
+    final path = gamePathFor(gameId);
+    if (path.isEmpty || _deploymentBusy) return false;
     _deploymentBusy = true;
     clearDeploymentLogs();
     notifyListeners();
 
     try {
       final framework = frameworkCatalog.firstWhere((f) => f.id == 'bepinex_5');
-      final success = await ModDeploymentService.deployBepInEx(_gamePath, framework, addDeploymentLog);
-      refreshModStatuses();
+      final success = await ModDeploymentService.deployBepInEx(
+        path,
+        framework,
+        addDeploymentLog,
+      );
+      refreshModStatuses(gameId);
       return success;
     } finally {
       _deploymentBusy = false;
@@ -830,16 +1130,21 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> uninstallBepInEx() async {
-    if (_gamePath.isEmpty || _deploymentBusy) return false;
+  Future<bool> uninstallBepInEx({String gameId = 'chill_with_you'}) async {
+    final path = gamePathFor(gameId);
+    if (path.isEmpty || _deploymentBusy) return false;
     _deploymentBusy = true;
     clearDeploymentLogs();
     notifyListeners();
 
     try {
       final framework = frameworkCatalog.firstWhere((f) => f.id == 'bepinex_5');
-      final success = await ModDeploymentService.undeployBepInEx(_gamePath, framework, addDeploymentLog);
-      refreshModStatuses();
+      final success = await ModDeploymentService.undeployBepInEx(
+        path,
+        framework,
+        addDeploymentLog,
+      );
+      refreshModStatuses(gameId);
       return success;
     } finally {
       _deploymentBusy = false;
@@ -847,16 +1152,24 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> installMod() async {
-    if (_gamePath.isEmpty || _deploymentBusy) return false;
+  Future<bool> installMod({String gameId = 'chill_with_you'}) async {
+    final path = gamePathFor(gameId);
+    if (path.isEmpty || _deploymentBusy) return false;
     _deploymentBusy = true;
     clearDeploymentLogs();
     notifyListeners();
 
     try {
-      final mod = modCatalog.firstWhere((m) => m.id == 'chill_patcher');
-      final success = await ModDeploymentService.deployMod(_gamePath, mod, addDeploymentLog);
-      refreshModStatuses();
+      final game = gameCatalog.firstWhere((g) => g.id == gameId);
+      final mod = modCatalog.firstWhere(
+        (m) => m.id == game.supportedMods.first,
+      );
+      final success = await ModDeploymentService.deployMod(
+        path,
+        mod,
+        addDeploymentLog,
+      );
+      refreshModStatuses(gameId);
       return success;
     } finally {
       _deploymentBusy = false;
@@ -864,16 +1177,24 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> uninstallMod() async {
-    if (_gamePath.isEmpty || _deploymentBusy) return false;
+  Future<bool> uninstallMod({String gameId = 'chill_with_you'}) async {
+    final path = gamePathFor(gameId);
+    if (path.isEmpty || _deploymentBusy) return false;
     _deploymentBusy = true;
     clearDeploymentLogs();
     notifyListeners();
 
     try {
-      final mod = modCatalog.firstWhere((m) => m.id == 'chill_patcher');
-      final success = await ModDeploymentService.undeployMod(_gamePath, mod, addDeploymentLog);
-      refreshModStatuses();
+      final game = gameCatalog.firstWhere((g) => g.id == gameId);
+      final mod = modCatalog.firstWhere(
+        (m) => m.id == game.supportedMods.first,
+      );
+      final success = await ModDeploymentService.undeployMod(
+        path,
+        mod,
+        addDeploymentLog,
+      );
+      refreshModStatuses(gameId);
       return success;
     } finally {
       _deploymentBusy = false;
@@ -884,6 +1205,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _serviceResultTimer?.cancel();
+    _stopPlaybackPolling();
     _backendMgr.dispose();
     ws.disconnect();
     api.dispose();

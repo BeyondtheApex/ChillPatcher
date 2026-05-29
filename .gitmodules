@@ -25,3 +25,6 @@
 [submodule "NativePlugins/minimp4"]
 	path = NativePlugins/minimp4
 	url = https://github.com/lieff/minimp4.git
+[submodule "NativePlugins/fh6-universal-radio"]
+	path = NativePlugins/fh6-universal-radio
+	url = https://github.com/g0ldyy/fh6-universal-radio.git

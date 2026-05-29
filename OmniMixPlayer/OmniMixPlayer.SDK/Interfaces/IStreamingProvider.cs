@@ -314,6 +314,28 @@ namespace OmniMixPlayer.SDK.Interfaces
     }
 
     /// <summary>
+    /// Module-owned audio decoder provider.
+    /// Implement this when a module needs to decode a track itself and expose
+    /// decoded float PCM to the backend playback/shared-memory pipeline.
+    /// </summary>
+    public interface IModuleAudioDecoderProvider
+    {
+        /// <summary>
+        /// Return true when this module can provide decoded PCM for the track.
+        /// </summary>
+        bool CanDecode(string uuid);
+
+        /// <summary>
+        /// Create a PCM reader for the track. Return null to let the backend try
+        /// other module playback paths.
+        /// </summary>
+        Task<IPcmStreamReader> CreateDecoderAsync(
+            string uuid,
+            AudioQuality quality = AudioQuality.ExHigh,
+            CancellationToken cancellationToken = default);
+    }
+
+    /// <summary>
     /// 流媒体音乐源提供器
     /// 继承 IMusicSourceProvider，增加 URL 解析能力
     /// 
