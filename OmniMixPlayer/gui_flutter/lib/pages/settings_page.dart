@@ -77,6 +77,16 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 24),
 
         // ═══════════════════════════════════
+        //  Service Management (install / uninstall) — desktop only
+        // ═══════════════════════════════════
+        if (!kIsWeb) ...[
+          _SectionHeader(title: l10n.serviceManagement),
+          const SizedBox(height: 8),
+          _ServiceStatusCard(state: st, l10n: l10n),
+          const SizedBox(height: 24),
+        ],
+
+        // ═══════════════════════════════════
         //  Instance & Archive Management
         // ═══════════════════════════════════
         _SectionHeader(title: l10n.instanceManagement),

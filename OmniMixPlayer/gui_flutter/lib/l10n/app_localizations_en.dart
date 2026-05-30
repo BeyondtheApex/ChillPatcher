@@ -209,6 +209,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get fullyExit => 'Fully Exit';
 
   @override
+  String get serviceManagement => 'Service Management (Install/Uninstall)';
+
+  @override
   String get serviceStatus => 'Service Status';
 
   @override

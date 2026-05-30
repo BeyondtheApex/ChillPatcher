@@ -494,6 +494,12 @@ abstract class AppLocalizations {
   /// **'Fully Exit'**
   String get fullyExit;
 
+  /// No description provided for @serviceManagement.
+  ///
+  /// In en, this message translates to:
+  /// **'Service Management (Install/Uninstall)'**
+  String get serviceManagement;
+
   /// No description provided for @serviceStatus.
   ///
   /// In en, this message translates to:

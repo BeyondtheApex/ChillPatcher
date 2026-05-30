@@ -66,6 +66,7 @@
   "disconnected": "Disconnected",
   "showHideWindow": "Show/Hide Window",
   "fullyExit": "Fully Exit",
+  "serviceManagement": "Service Management (Install/Uninstall)",
   "serviceStatus": "Service Status",
   "serviceRunning": "Service is running",
   "serviceInstalled": "Service installed (not running)",

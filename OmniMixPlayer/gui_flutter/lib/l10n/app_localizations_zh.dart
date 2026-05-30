@@ -209,6 +209,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get fullyExit => '完全退出';
 
   @override
+  String get serviceManagement => '服务管理（安装/卸载）';
+
+  @override
   String get serviceStatus => '服务状态';
 
   @override

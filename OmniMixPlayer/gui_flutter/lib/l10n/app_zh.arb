@@ -66,6 +66,7 @@
   "disconnected": "未连接",
   "showHideWindow": "显示/隐藏窗口",
   "fullyExit": "完全退出",
+  "serviceManagement": "服务管理（安装/卸载）",
   "serviceStatus": "服务状态",
   "serviceRunning": "服务运行中",
   "serviceInstalled": "服务已安装（未运行）",
