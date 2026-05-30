@@ -250,13 +250,15 @@ void OmniPcmSource::pump(RingBuffer& ring) {
     OmniPcmSnapshot snap{};
     if (api_.snapshot(pcm_, &snap) == OMNI_PCM_OK) {
         snapshot_ = snap;
-        if (current_uuid_ != snap.current_uuid) {
-            current_uuid_ = snap.current_uuid;
-            last_seen_seek_generation_ = snap.seek_generation;
-            reset_stream_state(&ring);
-            api_.bind_current(pcm_);
-            eof_advanced_ = false;
-        } else if (last_seen_seek_generation_ != snap.seek_generation) {
+        bool stream_changed = (current_stream_id_ != snap.stream_id || current_uuid_ != snap.current_uuid);
+        bool seek_detected = (last_seen_seek_generation_ != snap.seek_generation);
+
+        if (stream_changed || seek_detected) {
+            if (stream_changed) {
+                current_stream_id_ = snap.stream_id;
+                current_uuid_ = snap.current_uuid;
+                api_.bind_current(pcm_);
+            }
             last_seen_seek_generation_ = snap.seek_generation;
             reset_stream_state(&ring);
             eof_advanced_ = false;
@@ -381,6 +383,8 @@ bool OmniPcmSource::open_shared_memory() {
     if (api_.snapshot(pcm_, &snap) == OMNI_PCM_OK) {
         snapshot_ = snap;
         last_seen_seek_generation_ = snap.seek_generation;
+        current_stream_id_ = snap.stream_id;
+        current_uuid_ = snap.current_uuid;
     }
     log::info("[omni] opened shared memory '{}'", shared_memory_name_);
     return true;
