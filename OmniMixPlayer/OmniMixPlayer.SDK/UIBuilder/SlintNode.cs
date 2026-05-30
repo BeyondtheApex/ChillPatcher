@@ -32,6 +32,9 @@ namespace OmniMixPlayer.SDK.Interfaces
         [JsonPropertyName("padding")]
         public float Padding { get; set; }
 
+        [JsonPropertyName("cross-axis-align")]
+        public string CrossAxisAlignment { get; set; }
+
         [JsonPropertyName("children")]
         public List<SlintNode> Children { get; set; } = new();
 

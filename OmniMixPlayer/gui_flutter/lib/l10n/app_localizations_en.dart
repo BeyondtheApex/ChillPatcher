@@ -246,4 +246,72 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get serviceAutoStart => 'Service Auto-Start';
+
+  @override
+  String get websiteLink => 'Website';
+
+  @override
+  String get save => 'Save';
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get pendingSave => 'Pending Save';
+
+  @override
+  String get clear => 'Clear';
+
+  @override
+  String get openFolder => 'Open Folder';
+
+  @override
+  String installed(String version) {
+    return 'Installed v$version';
+  }
+
+  @override
+  String get closeBehavior => 'Close Behavior';
+
+  @override
+  String get closeMinimize => 'Minimize to Tray';
+
+  @override
+  String get closeExit => 'Exit App';
+
+  @override
+  String get themeColor => 'Theme Color';
+
+  @override
+  String get customColor => 'Custom';
+
+  @override
+  String get hue => 'Hue';
+
+  @override
+  String get saturation => 'Saturation';
+
+  @override
+  String get brightness => 'Brightness';
+
+  @override
+  String get confirm => 'OK';
+
+  @override
+  String get useSystemColor => 'Use system accent color';
+
+  @override
+  String get backendConfig => 'Backend Config';
+
+  @override
+  String get moduleStatusDisabled => 'Disabled — will not load on next start';
+
+  @override
+  String get moduleStatusPending => 'Loaded but will be disabled on next start';
+
+  @override
+  String get moduleStatusActive => 'Loaded and active';
+
+  @override
+  String get moduleStatusWillLoad => 'Will load on next start';
 }

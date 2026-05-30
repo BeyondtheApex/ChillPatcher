@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
+import '../models/mod_manifest.dart';
+import '../services/mod_deployment_service.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppState state;
@@ -31,7 +33,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
     final st = widget.state;
 
@@ -82,9 +84,17 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 24),
 
         // ═══════════════════════════════════
+        //  Instance & Archive Management
+        // ═══════════════════════════════════
+        _SectionHeader(title: '实例管理'),
+        const SizedBox(height: 8),
+        _InstanceManagementCard(state: st),
+        const SizedBox(height: 24),
+
+        // ═══════════════════════════════════
         //  Backend Config (port / bind)
         // ═══════════════════════════════════
-        _SectionHeader(title: 'Backend Config'),
+        _SectionHeader(title: l10n.backendConfig),
         const SizedBox(height: 8),
         Card(
           elevation: 0,
@@ -108,8 +118,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   onChanged: (v) => st.setBackendBind(v),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                Wrap(
                   spacing: 8,
+                  runSpacing: 8,
                   children: [
                     FilledButton.icon(
                       onPressed: st.backendBusy
@@ -171,6 +182,39 @@ class _SettingsPageState extends State<SettingsPage> {
                   value: st.minimizeToTray,
                   onChanged: (v) => st.setMinimizeToTray(v),
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      l10n.closeBehavior,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    const Spacer(),
+                    DropdownButton<String>(
+                      value: st.closeBehavior,
+                      underline: const SizedBox(),
+                      items: [
+                        DropdownMenuItem(
+                          value: 'minimize',
+                          child: Text(
+                            l10n.closeMinimize,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'exit',
+                          child: Text(
+                            l10n.closeExit,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) st.setCloseBehavior(v);
+                      },
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -212,6 +256,36 @@ class _SettingsPageState extends State<SettingsPage> {
                   items: const ['zh', 'en', 'system'],
                   displayNames: const ['中文', 'English', 'System'],
                   onChanged: (v) => st.setLanguage(v),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(l10n.themeColor, style: const TextStyle(fontSize: 14)),
+                    const Spacer(),
+                    SizedBox(
+                      width: 280,
+                      child: _ColorPickerRow(
+                        currentColor: Color(st.seedColor),
+                        onChanged: (c) => st.setSeedColor(c.toARGB32()),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.useSystemColor,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                    Switch(
+                      value: st.useSystemColor,
+                      onChanged: (v) => st.setUseSystemColor(v),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -647,8 +721,12 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
                                 SnackBar(
                                   content: Text(
                                     ok
-                                        ? (st.language == 'zh' ? '开机自启设置成功' : 'Service auto-start updated')
-                                        : (st.language == 'zh' ? '开机自启设置失败' : 'Failed to update service auto-start'),
+                                        ? (st.language == 'zh'
+                                              ? '开机自启设置成功'
+                                              : 'Service auto-start updated')
+                                        : (st.language == 'zh'
+                                              ? '开机自启设置失败'
+                                              : 'Failed to update service auto-start'),
                                   ),
                                   duration: const Duration(seconds: 2),
                                 ),
@@ -787,5 +865,515 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
           duration: const Duration(seconds: 2),
         ),
       );
+  }
+}
+
+// ── Instance Management Card ──
+
+class _InstanceManagementCard extends StatefulWidget {
+  final AppState state;
+  const _InstanceManagementCard({required this.state});
+  @override
+  State<_InstanceManagementCard> createState() =>
+      _InstanceManagementCardState();
+}
+
+class _InstanceManagementCardState extends State<_InstanceManagementCard> {
+  @override
+  void initState() {
+    super.initState();
+    widget.state.refreshInstances();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final st = widget.state;
+    final instances = st.instances;
+    final archives = st.archives;
+
+    return Card(
+      elevation: 0,
+      color: cs.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.devices, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  instances.isEmpty ? '暂无已安装实例' : '已安装实例 (${instances.length})',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: cs.onSurface,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => _showArchiveDialog(context),
+                  icon: const Icon(Icons.archive, size: 16),
+                  label: Text(
+                    '归档 (${archives.length})',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            if (instances.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '安装游戏 Mod 后，实例会自动注册',
+                  style: TextStyle(fontSize: 12, color: cs.outline),
+                ),
+              ),
+            if (instances.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...instances.map((inst) => _buildInstanceTile(inst, cs)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInstanceTile(InstalledInstance inst, ColorScheme cs) {
+    final online = widget.state.isInstanceOnline(inst.instanceId);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(
+            online ? Icons.circle : Icons.circle_outlined,
+            size: 10,
+            color: online ? Colors.green : Colors.grey,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  inst.gameName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: cs.onSurface,
+                  ),
+                ),
+                Text(
+                  inst.instanceId,
+                  style: TextStyle(fontSize: 11, color: cs.outline),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: inst.isServerMode
+                  ? Colors.blue.withAlpha(30)
+                  : Colors.orange.withAlpha(30),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              inst.mode,
+              style: TextStyle(
+                fontSize: 11,
+                color: inst.isServerMode ? Colors.blue : Colors.orange,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showArchiveDialog(BuildContext context) {
+    final archives = widget.state.archives;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('归档管理'),
+        content: SizedBox(
+          width: 500,
+          child: archives.isEmpty
+              ? const Text('暂无归档实例')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: archives.length,
+                  itemBuilder: (_, i) {
+                    final a = archives[i];
+                    return Card(
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(
+                          a.mode == 'server' ? Icons.dns : Icons.smartphone,
+                          size: 20,
+                        ),
+                        title: Text(
+                          a.displayName,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        subtitle: Text(
+                          '${a.gameName} · ${a.mode} · ${a.archivedAt.toLocal().toString().substring(0, 16)}',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, size: 16),
+                              tooltip: '重命名',
+                              onPressed: () => _renameArchive(ctx, a),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.delete,
+                                size: 16,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              tooltip: '删除',
+                              onPressed: () => _deleteArchive(ctx, a),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _renameArchive(BuildContext ctx, ArchiveEntry a) {
+    final ctrl = TextEditingController(text: a.label);
+    showDialog(
+      context: ctx,
+      builder: (c) => AlertDialog(
+        title: const Text('重命名归档'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            hintText: '输入归档名称',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              ModDeploymentService.renameArchive(a.instanceId, ctrl.text);
+              widget.state.refreshInstances();
+              Navigator.pop(c);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteArchive(BuildContext ctx, ArchiveEntry a) async {
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (c) => AlertDialog(
+        title: const Text('删除归档'),
+        content: Text('确定要删除 "${a.displayName}" 的归档吗？此操作不可撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(c).colorScheme.error,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      ModDeploymentService.deleteArchive(a.instanceId);
+      widget.state.refreshInstances();
+    }
+  }
+}
+
+/// Row of preset color circles + color picker trigger.
+class _ColorPickerRow extends StatelessWidget {
+  final Color currentColor;
+  final ValueChanged<Color> onChanged;
+
+  const _ColorPickerRow({required this.currentColor, required this.onChanged});
+
+  static const _presets = <int>[
+    0xFF673AB7, // deepPurple
+    0xFF1976D2, // blue
+    0xFF00897B, // teal
+    0xFF689F38, // green
+    0xFFFBC02D, // yellow
+    0xFFF57C00, // orange
+    0xFFD32F2F, // red
+    0xFF8D6E63, // brown
+    0xFF455A64, // blueGrey
+    0xFF000000, // custom (last)
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        for (final c in _presets)
+          GestureDetector(
+            onTap: () {
+              if (c == 0xFF000000) {
+                _pickCustom(context);
+              } else {
+                onChanged(Color(c));
+              }
+            },
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: c == 0xFF000000 ? null : Color(c),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: currentColor.toARGB32() == c
+                      ? cs.primary
+                      : cs.outlineVariant,
+                  width: currentColor.toARGB32() == c ? 3 : 1,
+                ),
+                gradient: c == 0xFF000000
+                    ? const LinearGradient(
+                        colors: [Colors.red, Colors.green, Colors.blue],
+                      )
+                    : null,
+              ),
+              child: c == 0xFF000000
+                  ? Icon(Icons.colorize_rounded, size: 20, color: Colors.white)
+                  : null,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _pickCustom(BuildContext context) async {
+    // Simple color picker via showDialog with HSV sliders
+    final result = await showDialog<Color>(
+      context: context,
+      builder: (ctx) => _ColorPickerDialog(initial: currentColor),
+    );
+    if (result != null) onChanged(result);
+  }
+}
+
+/// Minimal HSV-style color picker dialog.
+class _ColorPickerDialog extends StatefulWidget {
+  final Color initial;
+  const _ColorPickerDialog({required this.initial});
+
+  @override
+  State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
+}
+
+class _ColorPickerDialogState extends State<_ColorPickerDialog> {
+  late double _hue;
+  late double _sat;
+  late double _val;
+  late AppLocalizations _l;
+
+  @override
+  void initState() {
+    super.initState();
+    final hsv = HSVColor.fromColor(widget.initial);
+    _hue = hsv.hue;
+    _sat = hsv.saturation;
+    _val = hsv.value;
+  }
+
+  Color get _current => HSVColor.fromAHSV(1, _hue, _sat, _val).toColor();
+
+  @override
+  Widget build(BuildContext context) {
+    _l = AppLocalizations.of(context);
+    return AlertDialog(
+      title: Text(_l.customColor),
+      content: SizedBox(
+        width: 300,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Preview
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: _current,
+                shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Hue slider
+            _hueSlider(),
+            const SizedBox(height: 12),
+            // Saturation slider
+            _slide(
+              _l.saturation,
+              _sat,
+              (v) => setState(() => _sat = v),
+              HSVColor.fromAHSV(1, _hue, 0, _val).toColor(),
+              HSVColor.fromAHSV(1, _hue, 1, _val).toColor(),
+            ),
+            const SizedBox(height: 12),
+            // Value slider
+            _slide(
+              _l.brightness,
+              _val,
+              (v) => setState(() => _val = v),
+              HSVColor.fromAHSV(1, _hue, _sat, 0).toColor(),
+              HSVColor.fromAHSV(1, _hue, _sat, 1).toColor(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(_l.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_current),
+          child: Text(_l.confirm),
+        ),
+      ],
+    );
+  }
+
+  Widget _hueSlider() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(_l.hue, style: const TextStyle(fontSize: 12)),
+        const SizedBox(height: 4),
+        _GradientSlider(
+          value: _hue,
+          max: 360,
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFFFF0000),
+              Color(0xFFFFFF00),
+              Color(0xFF00FF00),
+              Color(0xFF00FFFF),
+              Color(0xFF0000FF),
+              Color(0xFFFF00FF),
+              Color(0xFFFF0000),
+            ],
+          ),
+          onChanged: (v) => setState(() => _hue = v),
+        ),
+      ],
+    );
+  }
+
+  Widget _slide(
+    String label,
+    double val,
+    ValueChanged<double> onChanged,
+    Color left,
+    Color right,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12)),
+        const SizedBox(height: 4),
+        _GradientSlider(
+          value: val,
+          max: 1,
+          gradient: LinearGradient(colors: [left, right]),
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class _GradientSlider extends StatelessWidget {
+  final double value;
+  final double max;
+  final LinearGradient gradient;
+  final ValueChanged<double> onChanged;
+
+  const _GradientSlider({
+    required this.value,
+    required this.max,
+    required this.gradient,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GestureDetector(
+          onTapDown: (d) => onChanged(
+            (d.localPosition.dx / constraints.maxWidth).clamp(0, 1) * max,
+          ),
+          onHorizontalDragUpdate: (d) => onChanged(
+            (d.localPosition.dx / constraints.maxWidth).clamp(0, 1) * max,
+          ),
+          child: Container(
+            height: 24,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              gradient: gradient,
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: (value / max) * constraints.maxWidth - 10,
+                  top: 0,
+                  child: Container(
+                    width: 20,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black26, blurRadius: 2),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }

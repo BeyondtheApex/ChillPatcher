@@ -1,6 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../models/node_data.dart';
 import '../services/logger.dart';
+
+/// Parse a hex color string ("#RRGGBB" or "AARRGGBB") to Color.
+Color? parseHexColor(String hex) {
+  if (hex.isEmpty) return null;
+  try {
+    final h = hex.replaceFirst('#', '');
+    if (h.length == 6) {
+      return Color(int.parse('FF$h', radix: 16));
+    } else if (h.length == 8) {
+      return Color(int.parse(h, radix: 16));
+    }
+  } catch (_) {}
+  return null;
+}
 
 /// Recursively renders a NodeData tree from JSON into Flutter widgets.
 /// This is the Flutter equivalent of SlintProxyNode.
@@ -51,25 +66,46 @@ class ProxyNodeWidget extends StatelessWidget {
         )
         .toList();
 
-    if (node.direction == 'Horizontal') {
-      return Padding(
+    final bgColor = parseHexColor(node.color);
+
+    // Determine cross-axis alignment from optional property
+    CrossAxisAlignment crossAlign;
+    switch (node.crossAxisAlignment) {
+      case 'start':
+        crossAlign = CrossAxisAlignment.start;
+      case 'center':
+        crossAlign = CrossAxisAlignment.center;
+      case 'end':
+        crossAlign = CrossAxisAlignment.end;
+      case 'stretch':
+        crossAlign = CrossAxisAlignment.stretch;
+      default:
+        crossAlign = CrossAxisAlignment.start;
+    }
+
+    final container = node.direction == 'Horizontal'
+        ? Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                spacing: node.spacing,
+                children: children,
+              )
+              as Widget
+        : Column(
+            crossAxisAlignment: crossAlign,
+            spacing: node.spacing,
+            children: children,
+          );
+
+    if (bgColor != null) {
+      return Container(
+        width: double.infinity,
+        decoration: BoxDecoration(color: bgColor),
         padding: EdgeInsets.all(node.padding),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          spacing: node.spacing,
-          children: children,
-        ),
-      );
-    } else {
-      return Padding(
-        padding: EdgeInsets.all(node.padding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          spacing: node.spacing,
-          children: children,
-        ),
+        child: container,
       );
     }
+    return Padding(padding: EdgeInsets.all(node.padding), child: container);
   }
 
   Widget _buildText(BuildContext context) {
@@ -82,44 +118,37 @@ class ProxyNodeWidget extends StatelessWidget {
   }
 
   Widget _buildInput(BuildContext context) {
-    final controller = TextEditingController(text: node.value);
-    return Row(
-      spacing: 8,
-      children: [
-        if (node.text.isNotEmpty)
-          Text(node.text, style: const TextStyle(fontSize: 14)),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            obscureText: node.inputType == 'password',
-            decoration: InputDecoration(
-              isDense: true,
-              border: const OutlineInputBorder(),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-            ),
-            onSubmitted: (v) => onDispatch(node.id, 'change', v),
-          ),
-        ),
-      ],
-    );
+    return _InputNodeWidget(node: node, onDispatch: onDispatch);
   }
 
   Widget _buildButton(BuildContext context) {
-    final isDanger = node.buttonVariant == 'danger';
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: isDanger
-            ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary,
-        foregroundColor: isDanger
-            ? Theme.of(context).colorScheme.onError
-            : Theme.of(context).colorScheme.onPrimary,
+    // 优先使用 node.color，无则按 variant 降级到主题色
+    final Color textColor;
+    final explicitColor = parseHexColor(node.color);
+    if (explicitColor != null) {
+      textColor = explicitColor;
+    } else {
+      switch (node.buttonVariant) {
+        case 'danger':
+          textColor = Theme.of(context).colorScheme.error;
+        case 'primary':
+          textColor = Theme.of(context).colorScheme.primary;
+        default:
+          textColor = Colors.white;
+      }
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: TextButton(
+        style: TextButton.styleFrom(
+          foregroundColor: textColor,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: () => onDispatch(node.id, 'click', node.value),
+        child: Text(node.text, style: const TextStyle(fontSize: 14)),
       ),
-      onPressed: () => onDispatch(node.id, 'click', ''),
-      child: Text(node.text),
     );
   }
 
@@ -200,18 +229,7 @@ class ProxyNodeWidget extends StatelessWidget {
     );
   }
 
-  Color? _parseColor(String hex) {
-    if (hex.isEmpty) return null;
-    try {
-      final h = hex.replaceFirst('#', '');
-      if (h.length == 6) {
-        return Color(int.parse('FF$h', radix: 16));
-      } else if (h.length == 8) {
-        return Color(int.parse(h, radix: 16));
-      }
-    } catch (_) {}
-    return null;
-  }
+  Color? _parseColor(String hex) => parseHexColor(hex);
 
   BoxFit _parseBoxFit(String fit) {
     switch (fit) {
@@ -224,5 +242,178 @@ class ProxyNodeWidget extends StatelessWidget {
       default:
         return BoxFit.contain;
     }
+  }
+}
+
+/// Stateful input with draft-on-blur workflow:
+///
+///   1. User types → local only
+///   2. Focus leaves → mark "待保存" (pending), keep draft in controller
+///   3. User clicks 保存 → dispatch to backend, clear pending
+///   4. User clicks 取消 → revert to backend value, clear pending
+///   5. Backend push while no pending → sync normally
+///   6. Leave page → draft discarded (cancel implicitly)
+///
+/// This avoids complex focus-vs-push race conditions entirely.
+class _InputNodeWidget extends StatefulWidget {
+  final RawNodeData node;
+  final void Function(String nodeId, String action, String value) onDispatch;
+
+  const _InputNodeWidget({required this.node, required this.onDispatch});
+
+  @override
+  State<_InputNodeWidget> createState() => _InputNodeWidgetState();
+}
+
+class _InputNodeWidgetState extends State<_InputNodeWidget> {
+  late final TextEditingController _controller;
+  final _focusNode = FocusNode();
+  bool _pending =
+      false; // true = draft differs from backend, awaiting save/cancel
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.node.value);
+    _controller.addListener(_onTextChanged);
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(_InputNodeWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && !_pending) {
+      _syncFromBackend();
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChanged);
+    _controller.removeListener(_onTextChanged);
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  bool get _isDirty => _controller.text != widget.node.value;
+
+  void _onTextChanged() {
+    // Update pending state reactively — if user clears draft back to
+    // original value, auto-dismiss save/cancel buttons.
+    if (_pending && !_isDirty) {
+      setState(() => _pending = false);
+    }
+  }
+
+  void _onFocusChanged() {
+    if (!_focusNode.hasFocus && _isDirty && !_pending) {
+      // User finished typing → mark as pending (draft kept in controller)
+      setState(() => _pending = true);
+    }
+  }
+
+  void _syncFromBackend() {
+    final newValue = widget.node.value;
+    if (_controller.text != newValue) {
+      _controller.text = newValue;
+    }
+  }
+
+  void _save() {
+    widget.onDispatch(widget.node.id, 'change', _controller.text);
+    setState(() => _pending = false);
+  }
+
+  void _cancel() {
+    _controller.text = widget.node.value;
+    setState(() => _pending = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      spacing: 6,
+      children: [
+        if (widget.node.text.isNotEmpty)
+          Text(widget.node.text, style: const TextStyle(fontSize: 14)),
+        Expanded(
+          child: TextField(
+            controller: _controller,
+            focusNode: _focusNode,
+            obscureText: widget.node.inputType == 'password',
+            decoration: InputDecoration(
+              isDense: true,
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              suffixIcon: _pending
+                  ? Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.edit_note_rounded,
+                            size: 16,
+                            color: cs.tertiary,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            AppLocalizations.of(context)!.pendingSave,
+                            style: TextStyle(fontSize: 11, color: cs.tertiary),
+                          ),
+                        ],
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+        ),
+        if (_pending) ...[
+          // Save
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: IconButton(
+              icon: const Icon(Icons.check_rounded, size: 20),
+              style: IconButton.styleFrom(
+                backgroundColor: cs.primaryContainer,
+                foregroundColor: cs.onPrimaryContainer,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(32, 32),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+              onPressed: _save,
+              tooltip: AppLocalizations.of(context)!.save,
+            ),
+          ),
+          // Cancel
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: IconButton(
+              icon: const Icon(Icons.close_rounded, size: 20),
+              style: IconButton.styleFrom(
+                backgroundColor: cs.surfaceContainerHighest,
+                foregroundColor: cs.onSurfaceVariant,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(32, 32),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+              onPressed: _cancel,
+              tooltip: AppLocalizations.of(context)!.cancel,
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }

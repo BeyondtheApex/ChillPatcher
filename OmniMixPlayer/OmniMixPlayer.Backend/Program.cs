@@ -179,6 +179,10 @@ namespace OmniMixPlayer.Backend
             // 8b. Initialize GlobalConfigManager
             var globalConfig = new GlobalConfigManager(configDir);
 
+            // ── When global config is saved via API, re-write port files
+            // so newly-added port_file_dirs take effect without restart ──
+            globalConfig.OnConfigSaved = () => WritePortFiles();
+
             // 9. Initialize ModuleLoader
             var contextFactory = new ModuleContextFactory(
                 pluginPath,
@@ -199,7 +203,8 @@ namespace OmniMixPlayer.Backend
                 loggerFactory,
                 EventBus.Instance,
                 MusicRegistry.Instance,
-                streamingService);
+                streamingService,
+                configBaseDir: configDir);
 
             // 11. Create ApiServer
             var apiServer = new ApiServer(playbackInstances, ModuleLoader.Instance,

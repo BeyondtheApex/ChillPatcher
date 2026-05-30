@@ -105,6 +105,7 @@ private:
 
     static std::wstring widen(std::string_view text);
     static std::string json_string(std::string_view body, std::string_view key);
+    static std::string json_object(std::string_view body, std::string_view key);
     static double json_number(std::string_view body, std::string_view key, double fallback);
     static bool json_bool(std::string_view body, std::string_view key, bool fallback);
 

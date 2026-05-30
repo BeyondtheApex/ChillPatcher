@@ -3,6 +3,7 @@
 #include "fh6/ring_buffer.hpp"
 
 #include <winhttp.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cctype>
@@ -13,6 +14,8 @@
 #include <fstream>
 #include <sstream>
 #include <type_traits>
+
+#pragma comment(lib, "winhttp.lib")
 
 namespace fh6::sources {
 
@@ -44,6 +47,66 @@ std::filesystem::path public_omni_dir() {
     if (n == 0 || n >= MAX_PATH) return std::filesystem::temp_directory_path() / "OmniMixPlayer";
     return std::filesystem::path{buf} / "OmniMixPlayer";
 }
+
+/// Resolve the Unix Domain Socket path used by the backend (fallback IPC).
+std::filesystem::path socket_path() {
+    return public_omni_dir() / "omnimix.sock";
+}
+
+/// Check if the socket file exists on disk.
+bool socket_file_exists() {
+    auto path = socket_path();
+    DWORD attr = GetFileAttributesW(path.c_str());
+    return attr != INVALID_FILE_ATTRIBUTES;
+}
+
+/// Try to start the OmniMixPlayer backend (best-effort).
+void try_start_backend() {
+    // 1. Try Windows Service
+    SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (scm) {
+        SC_HANDLE svc = OpenServiceW(scm, L"OmniMixPlayerBackend", SERVICE_QUERY_STATUS | SERVICE_START);
+        if (svc) {
+            SERVICE_STATUS status{};
+            if (QueryServiceStatus(svc, &status)) {
+                if (status.dwCurrentState == SERVICE_STOPPED) {
+                    log::info("[omni] service 'OmniMixPlayerBackend' is stopped; starting...");
+                    StartServiceW(svc, 0, nullptr);
+                }
+            }
+            CloseServiceHandle(svc);
+        } else {
+            // 2. Service not installed — try launching the exe directly
+            log::info("[omni] service not installed; trying direct exe launch...");
+            std::filesystem::path exeDir;
+            // Look for the exe next to the bridge DLL (typical layout)
+            wchar_t modPath[MAX_PATH]{};
+            if (GetModuleFileNameW(nullptr, modPath, MAX_PATH)) {
+                exeDir = std::filesystem::path{modPath}.parent_path();
+            }
+            auto exePath = exeDir / "OmniMixPlayer.Backend.exe";
+            if (std::filesystem::exists(exePath)) {
+                SHELLEXECUTEINFOW sei{sizeof(sei)};
+                sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS;
+                sei.lpVerb = L"open";
+                sei.lpFile = exePath.c_str();
+                sei.nShow = SW_HIDE;
+                if (ShellExecuteExW(&sei) && sei.hProcess) {
+                    log::info("[omni] launched OmniMixPlayer.Backend.exe");
+                    // Don't wait — just fire and forget
+                    CloseHandle(sei.hProcess);
+                } else {
+                    log::warn("[omni] failed to launch OmniMixPlayer.Backend.exe (error {})",
+                              GetLastError());
+                }
+            } else {
+                log::warn("[omni] OmniMixPlayer.Backend.exe not found at {}",
+                          std::filesystem::absolute(exePath).string());
+            }
+        }
+        CloseServiceHandle(scm);
+    }
+}
 } // namespace
 
 bool OmniPcmSource::Api::ready() const noexcept {
@@ -52,7 +115,28 @@ bool OmniPcmSource::Api::ready() const noexcept {
            request_seek && set_audible;
 }
 
-OmniPcmSource::OmniPcmSource(std::string client_id) : client_id_{std::move(client_id)} {}
+// Forward declaration (must precede constructor use)
+static std::string read_instance_id();
+
+OmniPcmSource::OmniPcmSource(std::string client_id)
+    : client_id_{client_id.empty() || client_id == "fh6" ? read_instance_id() : std::move(client_id)} {}
+
+static std::string read_instance_id() {
+    wchar_t exePath[MAX_PATH]{};
+    if (!GetModuleFileNameW(nullptr, exePath, MAX_PATH)) return "fh6";
+    auto exeDir = std::filesystem::path{exePath}.parent_path();
+    auto idFile = exeDir / ".omnimix_instance_id";
+    auto text = read_text_file_w(idFile);
+    if (text.empty()) return "fh6";
+    // Convert wide to narrow
+    int len = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return "fh6";
+    std::string result(len - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, &result[0], len, nullptr, nullptr);
+    while (!result.empty() && isspace(static_cast<unsigned char>(result.back()))) result.pop_back();
+    log::info("[omni] using instance ID from .omnimix_instance_id: {}", result);
+    return result;
+}
 
 OmniPcmSource::~OmniPcmSource() {
     shutdown();
@@ -61,6 +145,10 @@ OmniPcmSource::~OmniPcmSource() {
 bool OmniPcmSource::initialize() {
     std::scoped_lock lk{mutex_};
     if (!load_api()) return false;
+
+    // Best-effort: try to start the backend before discovery
+    try_start_backend();
+
     if (!discover_port()) log::warn("[omni] port discovery failed; falling back to {}", port_);
     connected_ = connect_backend();
     if (connected_) open_shared_memory();
@@ -306,10 +394,17 @@ void OmniPcmSource::refresh_status_if_due(bool force) {
     std::string body;
     if (http_get(L"/api/instances/" + widen(client_id_) + L"/status", body)) {
         playing_ = json_bool(body, "IsPlaying", json_bool(body, "isPlaying", playing_));
+        const std::string track_obj = [&]() {
+            auto obj = json_object(body, "CurrentTrack");
+            if (!obj.empty()) return obj;
+            return json_object(body, "currentTrack");
+        }();
+        const std::string_view track_view =
+            track_obj.empty() ? std::string_view{body} : std::string_view{track_obj};
         TrackInfo t{};
-        t.title = json_string(body, "title");
-        t.artist = json_string(body, "artist");
-        t.duration_ms = static_cast<uint64_t>(json_number(body, "duration", 0) * 1000.0);
+        t.title = json_string(track_view, "title");
+        t.artist = json_string(track_view, "artist");
+        t.duration_ms = static_cast<uint64_t>(json_number(track_view, "duration", 0) * 1000.0);
         t.position_ms = static_cast<uint64_t>(json_number(body, "Position",
             json_number(body, "position", 0)) * 1000.0);
         if (t.title.empty()) t.title = "OmniMixPlayer";
@@ -416,8 +511,21 @@ bool OmniPcmSource::command_post(const std::wstring& path) {
 
 bool OmniPcmSource::discover_port() {
     std::vector<uint16_t> candidates;
+
+    // 1. Port file from PUBLIC/OmniMixPlayer (default shared location)
     auto port_file = public_omni_dir() / "omnimix_port.txt";
     if (auto p = parse_port(read_text_file_w(port_file)); p) candidates.push_back(p);
+
+    // 2. Port file from game's own directory (where Flutter writes during install)
+    wchar_t exePath[MAX_PATH]{};
+    if (GetModuleFileNameW(nullptr, exePath, MAX_PATH)) {
+        auto exeDir = std::filesystem::path{exePath}.parent_path();
+        auto gamePortFile = exeDir / "omnimix_port.txt";
+        if (auto p = parse_port(read_text_file_w(gamePortFile)); p && p != (candidates.empty() ? 0 : candidates[0])) {
+            candidates.insert(candidates.begin(), p);
+        }
+    }
+
     candidates.push_back(17890);
     for (uint16_t p = 17891; p < 17900; ++p) candidates.push_back(p);
 
@@ -426,6 +534,14 @@ bool OmniPcmSource::discover_port() {
         std::string body;
         if (http_get(L"/api/health", body)) return true;
     }
+
+    // TCP port scanning failed; check if socket file exists as fallback
+    if (socket_file_exists()) {
+        log::info("[omni] TCP scan failed but socket file exists; assuming port 17890");
+        port_ = 17890;
+        return true;
+    }
+
     port_ = candidates.front();
     return false;
 }
@@ -591,6 +707,47 @@ std::string OmniPcmSource::json_string(std::string_view body, std::string_view k
         }
     }
     return out;
+}
+
+std::string OmniPcmSource::json_object(std::string_view body, std::string_view key) {
+    std::string needle = "\"" + std::string{key} + "\"";
+    auto p = body.find(needle);
+    if (p == std::string_view::npos) return {};
+    p = body.find(':', p + needle.size());
+    if (p == std::string_view::npos) return {};
+    p = body.find('{', p);
+    if (p == std::string_view::npos) return {};
+
+    int depth = 0;
+    bool in_str = false;
+    bool esc = false;
+    const std::size_t start = p;
+    for (; p < body.size(); ++p) {
+        const char c = body[p];
+        if (in_str) {
+            if (esc) {
+                esc = false;
+            } else if (c == '\\') {
+                esc = true;
+            } else if (c == '"') {
+                in_str = false;
+            }
+            continue;
+        }
+        if (c == '"') {
+            in_str = true;
+            continue;
+        }
+        if (c == '{') {
+            depth++;
+        } else if (c == '}') {
+            depth--;
+            if (depth == 0) {
+                return std::string(body.substr(start, p - start + 1));
+            }
+        }
+    }
+    return {};
 }
 
 double OmniPcmSource::json_number(std::string_view body, std::string_view key, double fallback) {

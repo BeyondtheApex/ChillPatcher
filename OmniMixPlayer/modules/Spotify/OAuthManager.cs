@@ -197,7 +197,7 @@ namespace OmniMixPlayer.Module.Spotify
                     _logger.LogInformation($"OAuth callback received: {callbackUrl}");
                     CleanupCallbackFile();
 
-                    ProcessCallbackUrl(callbackUrl);
+                    ProcessCallbackUrlAsync(callbackUrl);
                     return;
                 }
 
@@ -205,7 +205,7 @@ namespace OmniMixPlayer.Module.Spotify
             }
         }
 
-        private async void ProcessCallbackUrl(string callbackUrl)
+        private async Task ProcessCallbackUrlAsync(string callbackUrl)
         {
             OnStatusChanged?.Invoke("收到授权回调，正在验证...");
 

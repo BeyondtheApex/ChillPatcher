@@ -5,6 +5,8 @@ class GameDeclaration {
   final List<String> signatureFiles;
   final List<String> supportedFrameworks;
   final List<String> supportedMods;
+  final String? websiteUrl;
+  final String? coverAssetPath;
 
   const GameDeclaration({
     required this.id,
@@ -13,6 +15,8 @@ class GameDeclaration {
     required this.signatureFiles,
     required this.supportedFrameworks,
     required this.supportedMods,
+    this.websiteUrl,
+    this.coverAssetPath,
   });
 }
 
@@ -46,6 +50,10 @@ class ModDeclaration {
   final List<String> rootFilesToLink;
   final List<String> rootDirsToLink;
 
+  /// "server" = backend-managed playback (supports playlist/queue offline mgmt)
+  /// "client" = game-managed playback (minimal profile)
+  final String mode;
+
   const ModDeclaration({
     required this.id,
     required this.name,
@@ -55,6 +63,7 @@ class ModDeclaration {
     required this.folderName,
     this.rootFilesToLink = const [],
     this.rootDirsToLink = const [],
+    required this.mode,
   });
 
   bool get usesFramework =>
@@ -75,6 +84,8 @@ final List<GameDeclaration> gameCatalog = [
     signatureFiles: ['Chill With You.exe', 'Chill With You_Data'],
     supportedFrameworks: ['bepinex_5'],
     supportedMods: ['chill_patcher'],
+    websiteUrl: 'https://store.steampowered.com/app/3361180',
+    coverAssetPath: 'assets/covers/chill_with_you.png',
   ),
   const GameDeclaration(
     id: 'forza_horizon_6',
@@ -83,6 +94,8 @@ final List<GameDeclaration> gameCatalog = [
     signatureFiles: ['forzahorizon6.exe'],
     supportedFrameworks: [],
     supportedMods: ['fh6_omni_bridge'],
+    websiteUrl: 'https://forza.net',
+    coverAssetPath: 'assets/covers/forza_horizon_6.png',
   ),
 ];
 
@@ -106,6 +119,7 @@ final List<ModDeclaration> modCatalog = [
     archiveName: 'ChillPatcher.zip',
     targetFramework: 'bepinex_5',
     folderName: 'ChillPatcher',
+    mode: 'client',
   ),
   const ModDeclaration(
     id: 'fh6_omni_bridge',
@@ -114,5 +128,96 @@ final List<ModDeclaration> modCatalog = [
     archiveName: 'FH6OmniBridge.zip',
     folderName: 'fh6-omnimix',
     rootFilesToLink: ['version.dll', 'OmniPcmShared.dll'],
+    mode: 'server',
   ),
 ];
+
+// ═══════════════════════════════════════════════════════════
+//  Instance & Archive Models
+// ═══════════════════════════════════════════════════════════
+
+class InstalledInstance {
+  final String instanceId;
+  final String modId;
+  final String mode;
+  final String gameDir;
+  final String gameName;
+  final DateTime installedAt;
+
+  const InstalledInstance({
+    required this.instanceId,
+    required this.modId,
+    required this.mode,
+    required this.gameDir,
+    required this.gameName,
+    required this.installedAt,
+  });
+
+  factory InstalledInstance.fromJson(Map<String, dynamic> json) {
+    return InstalledInstance(
+      instanceId: json['instanceId'] as String,
+      modId: json['modId'] as String,
+      mode: json['mode'] as String,
+      gameDir: json['gameDir'] as String,
+      gameName: json['gameName'] as String? ?? '',
+      installedAt: DateTime.parse(json['installedAt'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'instanceId': instanceId,
+    'modId': modId,
+    'mode': mode,
+    'gameDir': gameDir,
+    'gameName': gameName,
+    'installedAt': installedAt.toIso8601String(),
+  };
+
+  bool get isServerMode => mode == 'server';
+  bool get isClientMode => mode == 'client';
+}
+
+class ArchiveEntry {
+  final String instanceId;
+  final String modId;
+  final String mode;
+  final String gameDir;
+  final String gameName;
+  final String label;
+  final DateTime archivedAt;
+
+  const ArchiveEntry({
+    required this.instanceId,
+    required this.modId,
+    required this.mode,
+    required this.gameDir,
+    required this.gameName,
+    this.label = '',
+    required this.archivedAt,
+  });
+
+  factory ArchiveEntry.fromJson(Map<String, dynamic> json) {
+    return ArchiveEntry(
+      instanceId: json['instanceId'] as String,
+      modId: json['modId'] as String,
+      mode: json['mode'] as String,
+      gameDir: json['gameDir'] as String,
+      gameName: json['gameName'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+      archivedAt: DateTime.parse(json['archivedAt'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'instanceId': instanceId,
+    'modId': modId,
+    'mode': mode,
+    'gameDir': gameDir,
+    'gameName': gameName,
+    'label': label,
+    'archivedAt': archivedAt.toIso8601String(),
+  };
+
+  String get displayName =>
+      label.isNotEmpty ? label : '$gameName ($instanceId)';
+}

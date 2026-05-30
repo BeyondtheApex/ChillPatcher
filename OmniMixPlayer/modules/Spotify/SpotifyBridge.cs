@@ -395,12 +395,16 @@ namespace OmniMixPlayer.Module.Spotify
 
         private async Task<T> GetAsync<T>(string endpoint, bool allowEmpty = false) where T : class
         {
-            return await SendWithRetryAsync(async () =>
+            var raw = await SendWithRetryAsync(async () =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, ApiBase + endpoint);
                 SetAuthHeader(request);
                 return await _httpClient.SendAsync(request);
-            }, allowEmpty) is string json ? JsonConvert.DeserializeObject<T>(json) : default;
+            }, allowEmpty);
+
+            if (raw is string json && !string.IsNullOrEmpty(json))
+                return JsonConvert.DeserializeObject<T>(json);
+            return default;
         }
 
         private async Task<bool> PutAsync(string endpoint, string body)

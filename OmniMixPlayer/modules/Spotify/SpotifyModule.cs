@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -63,6 +64,7 @@ namespace OmniMixPlayer.Module.Spotify
         // 当前选定的设备
         private string _activeDeviceId;
         private string _activeDeviceName;
+        private List<SpotifyDevice> _cachedDevices = new List<SpotifyDevice>();
         private bool _nativeBridgeLoaded;
 
         // 事件订阅
@@ -102,6 +104,15 @@ namespace OmniMixPlayer.Module.Spotify
         private async Task InitWithClientIdAsync()
         {
             var clientId = _context.ConfigManager.GetString("ClientId", "YOUR_SPOTIFY_CLIENT_ID");
+
+            // 先释放旧对象，避免 HttpClient/内存泄漏
+            var oldBridge = _bridge;
+            var oldOAuth = _oauthManager;
+            _bridge = null;
+            _oauthManager = null;
+            oldBridge?.Dispose();
+            oldOAuth?.Dispose();
+
             _bridge = new SpotifyBridge(clientId, _dataPath, _logger);
             _registry = new SpotifySongRegistry(_context, ModuleId);
 
@@ -298,6 +309,7 @@ namespace OmniMixPlayer.Module.Spotify
             try
             {
                 var devices = await _bridge.GetAvailableDevicesAsync();
+                _cachedDevices = devices ?? new List<SpotifyDevice>();
                 _logger.LogInformation($"[Spotify] Found {devices.Count} devices");
 
                 // 自动选中活跃设备
@@ -437,15 +449,31 @@ namespace OmniMixPlayer.Module.Spotify
 
         private async Task<string> WaitForLibrespotDeviceAsync(string deviceName, CancellationToken cancellationToken)
         {
-            for (int i = 0; i < 30; i++)
+            // 指数退避：500ms → 1s → 2s → 4s → 4s...，30 次总时长约 2 分钟
+            var delay = TimeSpan.FromMilliseconds(500);
+            const double backoffMultiplier = 2.0;
+            const int maxDelayMs = 4000;
+            const int maxRetries = 30;
+
+            for (int i = 0; i < maxRetries; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var devices = await _bridge.GetAvailableDevicesAsync().ConfigureAwait(false);
-                var device = devices.FirstOrDefault(d =>
-                    string.Equals(d.Name, deviceName, StringComparison.OrdinalIgnoreCase));
-                if (device != null)
-                    return device.Id;
-                await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    var devices = await _bridge.GetAvailableDevicesAsync().ConfigureAwait(false);
+                    var device = devices.FirstOrDefault(d =>
+                        string.Equals(d.Name, deviceName, StringComparison.OrdinalIgnoreCase));
+                    if (device != null)
+                        return device.Id;
+                }
+                catch (Exception ex)
+                {
+                    // API 可能限流，退避后重试
+                    _logger.LogWarning("[Spotify] Device poll error (attempt {Attempt}/{Max}): {Message}", i + 1, maxRetries, ex.Message);
+                }
+
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * backoffMultiplier, maxDelayMs));
             }
             return null;
         }
@@ -592,7 +620,12 @@ namespace OmniMixPlayer.Module.Spotify
             return _savedCache.TryGetValue(meta.SpotifyId, out var saved) && saved;
         }
 
-        public async void SetFavorite(string uuid, bool isFavorite)
+        public void SetFavorite(string uuid, bool isFavorite)
+        {
+            _ = SetFavoriteAsync(uuid, isFavorite);
+        }
+
+        private async Task SetFavoriteAsync(string uuid, bool isFavorite)
         {
             var meta = GetTrackMetaByUuid(uuid);
             if (meta == null || _bridge == null || !_bridge.IsLoggedIn) return;
@@ -668,14 +701,15 @@ namespace OmniMixPlayer.Module.Spotify
 
         public Action<SlintNode> PushUI { get; set; }
 
-        public bool HasQuickLinks => _bridge?.IsLoggedIn ?? false;
+        public bool HasQuickLinks => true;
 
         public IReadOnlyList<ModuleLinkEntry> GetQuickLinks()
         {
             return new List<ModuleLinkEntry>
             {
                 new ModuleLinkEntry("devices", "选择设备", "speaker",
-                    "#1db954", "#ffffff")
+                    "#1db954", "#ffffff",
+                    svg: "spotify_icon.png")
             };
         }
 
@@ -725,7 +759,7 @@ namespace OmniMixPlayer.Module.Spotify
                     _ = LogoutSpotifyAsync();
                     break;
 
-                case "refresh_devices":
+                case "open_devices":
                     _ = RefreshDevicesAndPushUI();
                     break;
 
@@ -746,7 +780,7 @@ namespace OmniMixPlayer.Module.Spotify
         private async Task RefreshDevicesAndPushUI()
         {
             await RefreshDevicesAsync();
-            PushUI?.Invoke(BuildUI());
+            PushUI?.Invoke(BuildDeviceListUI());
         }
 
         public SlintNode BuildLinkUI(string linkId)
@@ -758,29 +792,55 @@ namespace OmniMixPlayer.Module.Spotify
             return null;
         }
 
-        public async void HandleLinkUIEvent(string linkId, string nodeId, string action, string value)
+        public void HandleLinkUIEvent(string linkId, string nodeId, string action, string value)
+        {
+            _ = HandleLinkUIEventAsync(linkId, nodeId, action, value);
+        }
+
+        private async Task HandleLinkUIEventAsync(string linkId, string nodeId, string action, string value)
         {
             if (linkId == "devices")
             {
                 if (nodeId == "select_device" && !string.IsNullOrEmpty(value))
                 {
-                    try
+                    if (value == "omnimix_local")
                     {
-                        await _bridge.TransferPlaybackAsync(value, play: false);
-                        var devices = await _bridge.GetAvailableDevicesAsync();
-                        var selected = devices.Find(d => d.Id == value);
-                        if (selected != null)
+                        // 开启本地解码模式
+                        _context?.ConfigManager?.SetValue("PlaybackBackend", "native");
+                        _context?.ConfigManager?.SetValue("UseNativeLibrespotDecoder", true);
+                        _context?.ConfigManager?.Save();
+                        _activeDeviceId = value;
+                        _activeDeviceName = "OmniMix（本地解码）";
+                        _logger?.LogInformation("[Spotify] Switched to native local decode mode");
+                    }
+                    else
+                    {
+                        // 选远程设备 → 关闭本地解码, 走官方 Spotify Connect
+                        _context?.ConfigManager?.SetValue("PlaybackBackend", "connect");
+                        _context?.ConfigManager?.SetValue("UseNativeLibrespotDecoder", false);
+                        _context?.ConfigManager?.Save();
+                        _logger?.LogInformation("[Spotify] Disabled local decode, using Spotify Connect");
+
+                        if (_bridge != null)
                         {
-                            _activeDeviceId = selected.Id;
-                            _activeDeviceName = selected.Name;
+                            try
+                            {
+                                await _bridge.TransferPlaybackAsync(value, play: false);
+                                _activeDeviceId = value;
+                                // 从设备列表中查找设备名
+                                var devices = await _bridge.GetAvailableDevicesAsync();
+                                var device = devices.FirstOrDefault(d => d.Id == value);
+                                _activeDeviceName = device?.Name ?? value;
+                                _logger?.LogInformation($"[Spotify] Device selected: {_activeDeviceName}");
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogWarning($"[Spotify] Failed to select device: {ex.Message}");
+                            }
                         }
-                        _logger?.LogInformation($"[Spotify] Device selected: {_activeDeviceName}");
                     }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogWarning($"[Spotify] Failed to select device: {ex.Message}");
-                    }
-                    PushUI?.Invoke(BuildUI());
+                    // 选完设备后推送设备列表 UI 以显示选中状态
+                    PushUI?.Invoke(BuildDeviceListUI());
                 }
                 else if (nodeId == "refresh_devices_link")
                 {
@@ -832,7 +892,7 @@ namespace OmniMixPlayer.Module.Spotify
                 .AddChild(
                     SlintUi.Row(spacing: 8)
                         .AddChild(SlintUi.Text(deviceName, fontSize: 14))
-                        .AddChild(SlintUi.Button("refresh_devices", "刷新", variant: null))
+                        .AddChild(SlintUi.Button("open_devices", "选择设备 →", variant: null))
                 )
                 .AddChild(
                     SlintUi.Button("logout_btn", "退出登录", variant: "danger")
@@ -848,23 +908,49 @@ namespace OmniMixPlayer.Module.Spotify
 
         private SlintNode BuildDeviceListUI()
         {
-            // 尝试获取设备列表
-            var devices = new List<SpotifyDevice>();
-            try
-            {
-                devices = _bridge?.GetAvailableDevicesAsync().GetAwaiter().GetResult() ?? new List<SpotifyDevice>();
-            }
-            catch { }
+            // 获取设备列表（使用缓存，避免同步阻塞 HTTP 线程）
+            var devices = _cachedDevices ?? new List<SpotifyDevice>();
+            bool isLoggedIn = _bridge?.IsLoggedIn ?? false;
 
-            var column = SlintUi.Column(spacing: 16, padding: 20)
-                .AddChild(SlintUi.Text("选择播放设备", fontSize: 18))
-                .AddChild(SlintUi.Text("选择 Spotify 播放设备", fontSize: 12, color: "#94a3b8"));
+            // 全黑背景容器
+            var column = SlintUi.Column(spacing: 0, padding: 0);
+            column.Color = "#000000";
+            column.CrossAxisAlignment = "center";
 
-            if (devices.Count == 0)
+            // ── 顶部区域：Logo + OmniMix ──
+            var topSection = SlintUi.Column(spacing: 12, padding: 24);
+            topSection.CrossAxisAlignment = "center";
+            // 居中 Logo (通过模块内容 API 提供)
+            topSection.Children.Add(new SlintNode
             {
-                column.AddChild(SlintUi.Text("未找到设备。请打开 Spotify 客户端。", fontSize: 12, color: "#94a3b8"));
-            }
-            else
+                NodeType = "Image",
+                Source = "/api/modules/com.chillpatcher.spotify/content/spotify_icon.png",
+                ImageWidth = 64,
+                ImageHeight = 64,
+                ImageFit = "contain"
+            });
+            topSection.Children.Add(SlintUi.Text("选择播放设备", fontSize: 12, color: "#b3b3b3"));
+            topSection.Children.Add(SlintUi.Text("", fontSize: 4, color: "#000000")); // 间距
+            // OmniMix — 配置按钮
+            var omniBtn = new SlintNode
+            {
+                NodeType = "Button",
+                Id = "select_device",
+                Text = "🎵  OmniMix（本地解码）",
+                Value = "omnimix_local",
+                ButtonVariant = "ghost",
+                Color = "#ffffff"
+            };
+            topSection.Children.Add(omniBtn);
+            column.Children.Add(topSection);
+
+            // ── 分割线 ──
+            column.Children.Add(SlintUi.Text("────────────────────", fontSize: 10, color: "#333333"));
+
+            // ── 中间区域：设备列表 或 未登录提示 ──
+            var middleSection = SlintUi.Column(spacing: 0, padding: 12);
+            middleSection.CrossAxisAlignment = "center";
+            if (isLoggedIn)
             {
                 foreach (var device in devices)
                 {
@@ -873,27 +959,61 @@ namespace OmniMixPlayer.Module.Spotify
                     if (device.VolumePercent.HasValue)
                         deviceLabel += $"  ·  Vol {device.VolumePercent}%";
 
-                    column.AddChild(
-                        SlintUi.Button("select_device_" + device.Id, deviceLabel,
-                            variant: isActive ? "primary" : null)
-                            .SetId("select_device")
-                    );
-                    // Store device id in value
-                    // Note: The last button's value will be used
-                    column.Children[column.Children.Count - 1].Value = device.Id;
+                    var btn = new SlintNode
+                    {
+                        NodeType = "Button",
+                        Id = "select_device",
+                        Text = deviceLabel,
+                        Value = device.Id,
+                        ButtonVariant = isActive ? "primary" : "ghost",
+                        Color = isActive ? "#1db954" : "#ffffff"
+                    };
+                    middleSection.Children.Add(btn);
                 }
             }
+            else
+            {
+                middleSection.Children.Add(
+                    SlintUi.Text("请先登录后再使用", fontSize: 14, color: "#ffffff")
+                );
+            }
+            column.Children.Add(middleSection);
 
-            column.AddChild(
-                SlintUi.Row(spacing: 8)
-                    .AddChild(SlintUi.Button("refresh_devices_link", "刷新", variant: null))
+            // ── 分割线 ──
+            column.Children.Add(SlintUi.Text("────────────────────", fontSize: 10, color: "#333333"));
+
+            // ── 刷新按钮 ──
+            column.Children.Add(
+                SlintUi.Row(spacing: 8, padding: 12)
+                    .AddChild(new SlintNode
+                    {
+                        NodeType = "Button",
+                        Id = "refresh_devices_link",
+                        Text = "🔄 刷新设备",
+                        ButtonVariant = "ghost"
+                    })
             );
 
             return column;
         }
 
-        public Task<byte[]> ServeRawContent(string path) => Task.FromResult<byte[]>(null);
-        public string ServeRawContentType(string path) => null;
+        public Task<byte[]> ServeRawContent(string path)
+        {
+            if (path == "spotify_icon.png")
+            {
+                var assembly = GetType().Assembly;
+                using var stream = assembly.GetManifestResourceStream(
+                    "OmniMixPlayer.Module.Spotify.Resources.spotify_icon.png");
+                if (stream != null)
+                {
+                    using var ms = new MemoryStream();
+                    stream.CopyTo(ms);
+                    return Task.FromResult(ms.ToArray());
+                }
+            }
+            return Task.FromResult<byte[]>(null);
+        }
+        public string ServeRawContentType(string path) => path == "spotify_icon.png" ? "image/png" : null;
 
         private async Task LogoutSpotifyAsync()
         {
@@ -903,12 +1023,17 @@ namespace OmniMixPlayer.Module.Spotify
                 _savedCache.Clear();
                 _activeDeviceId = null;
                 _activeDeviceName = null;
+                _cachedDevices.Clear();
                 _isLoggingIn = false;
+
+                // 取消正在进行的 OAuth 流程
+                _oauthManager?.Cancel();
 
                 _context?.MusicRegistry?.UnregisterAllByModule(ModuleId);
                 _context?.AlbumRegistry?.UnregisterAllByModule(ModuleId);
                 _context?.TagRegistry?.UnregisterAllByModule(ModuleId);
 
+                OnReadyStateChanged?.Invoke(false);
                 PushUI?.Invoke(BuildUI());
 
                 _logger?.LogInformation("[{DisplayName}] 已退出登录", DisplayName);

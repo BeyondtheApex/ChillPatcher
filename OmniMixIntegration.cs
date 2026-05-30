@@ -22,10 +22,49 @@ namespace ChillPatcher
         private static OmniMixIntegration _instance;
         public static OmniMixIntegration Instance => _instance ??= new OmniMixIntegration();
 
+        private OmniMixIntegration()
+        {
+            _clientId = ReadInstanceId() ?? "chillpatcher-" + Guid.NewGuid().ToString("N");
+        }
+
+        /// <summary>
+        /// Read the instance ID from .omnimix_instance_id in the game root.
+        /// Falls back to a random GUID if the file doesn't exist.
+        /// </summary>
+        private static string ReadInstanceId()
+        {
+            try
+            {
+                var dataPath = Application.dataPath;
+                if (!string.IsNullOrEmpty(dataPath))
+                {
+                    var gameRoot = Path.GetDirectoryName(dataPath);
+                    if (!string.IsNullOrEmpty(gameRoot))
+                    {
+                        var idFile = Path.Combine(gameRoot, ".omnimix_instance_id");
+                        if (File.Exists(idFile))
+                        {
+                            var id = File.ReadAllText(idFile).Trim();
+                            if (!string.IsNullOrEmpty(id))
+                            {
+                                Plugin.Log?.LogInfo($"[OmniMix] Using instance ID from file: {id}");
+                                return id;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning($"[OmniMix] Failed to read instance ID: {ex.Message}");
+            }
+            return null;
+        }
+
         private OmniMixPlayerClient _client;
         private OmniPcmShared _shmReader;
         private CancellationTokenSource _heartbeatCts;
-        private readonly string _clientId = "chillpatcher-" + Guid.NewGuid().ToString("N");
+        private readonly string _clientId;
         private bool _connected;
         private bool _disposed;
         private readonly SemaphoreSlim _importSemaphore = new SemaphoreSlim(1, 1);
@@ -101,11 +140,26 @@ namespace ChillPatcher
         /// </summary>
         private static int? ReadPortFile()
         {
-            string[] dirs = {
+            var dirs = new List<string>
+            {
                 Path.GetDirectoryName(typeof(OmniMixIntegration).Assembly.Location) ?? "",
                 Path.Combine(Environment.GetEnvironmentVariable("PUBLIC") ?? Path.GetTempPath(), "OmniMixPlayer"),
                 Path.GetTempPath(),
             };
+
+            // Also check the game root directory (where Flutter writes the port file)
+            try
+            {
+                var dataPath = Application.dataPath;
+                if (!string.IsNullOrEmpty(dataPath))
+                {
+                    var gameRoot = Path.GetDirectoryName(dataPath);
+                    if (!string.IsNullOrEmpty(gameRoot))
+                        dirs.Insert(0, gameRoot);
+                }
+            }
+            catch { /* Unity may not be ready yet */ }
+
             foreach (var dir in dirs)
             {
                 try
@@ -179,7 +233,7 @@ namespace ChillPatcher
         {
             if (_isConnectionLoopRunning) return;
             _isConnectionLoopRunning = true;
-            
+
             // Try starting Windows Service in the background at startup
             _ = System.Threading.Tasks.Task.Run(() => TryStartWindowsService());
 
@@ -424,8 +478,8 @@ namespace ChillPatcher
                     CreateNoWindow = true
                 };
                 using var queryProcess = System.Diagnostics.Process.Start(queryPsi);
-                if (queryProcess == null) return;
-                
+                if (queryProcess == null) { TryDirectExeLaunch(); return; }
+
                 string output = queryProcess.StandardOutput.ReadToEnd();
                 queryProcess.WaitForExit();
 
@@ -434,7 +488,7 @@ namespace ChillPatcher
                     if (!output.ToLower().Contains("running"))
                     {
                         Plugin.Log?.LogInfo("[OmniMix] Service 'OmniMixPlayerBackend' is installed but not running. Attempting to start it...");
-                        
+
                         var startPsi = new System.Diagnostics.ProcessStartInfo
                         {
                             FileName = "sc.exe",
@@ -452,12 +506,65 @@ namespace ChillPatcher
                 }
                 else
                 {
-                    Plugin.Log?.LogDebug("[OmniMix] Service 'OmniMixPlayerBackend' is not installed.");
+                    Plugin.Log?.LogDebug("[OmniMix] Service 'OmniMixPlayerBackend' is not installed. Trying direct exe launch...");
+                    TryDirectExeLaunch();
                 }
             }
             catch (Exception ex)
             {
                 Plugin.Log?.LogWarning($"[OmniMix] Failed to check/start Windows service: {ex.Message}");
+                TryDirectExeLaunch();
+            }
+        }
+
+        /// <summary>
+        /// Try to launch OmniMixPlayer.Backend.exe directly as a fallback
+        /// when the Windows Service is not installed.
+        /// </summary>
+        private static void TryDirectExeLaunch()
+        {
+            try
+            {
+                // Look for the backend exe relative to the mod assembly
+                var modDir = Path.GetDirectoryName(typeof(OmniMixIntegration).Assembly.Location);
+                if (string.IsNullOrEmpty(modDir)) return;
+
+                // Walk up to find OmniMixPlayer.Backend.exe
+                var candidateDirs = new List<string>
+                {
+                    modDir,
+                    Path.Combine(modDir, ".."),
+                    Path.Combine(modDir, "..", ".."),
+                    Path.Combine(modDir, "OmniMixPlayer"),
+                };
+
+                foreach (var dir in candidateDirs)
+                {
+                    try
+                    {
+                        var exePath = Path.GetFullPath(Path.Combine(dir, "OmniMixPlayer.Backend.exe"));
+                        if (File.Exists(exePath))
+                        {
+                            Plugin.Log?.LogInfo($"[OmniMix] Launching backend: {exePath}");
+                            var psi = new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = exePath,
+                                UseShellExecute = true,
+                                CreateNoWindow = true,
+                                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+                            };
+                            System.Diagnostics.Process.Start(psi);
+                            return;
+                        }
+                    }
+                    catch { /* try next candidate */ }
+                }
+
+                Plugin.Log?.LogDebug("[OmniMix] OmniMixPlayer.Backend.exe not found in any candidate directory.");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogDebug($"[OmniMix] Direct exe launch failed: {ex.Message}");
             }
         }
 
@@ -843,7 +950,7 @@ namespace ChillPatcher
                     BitValue = (ulong)(j["bitValue"]?.ToObject<long>() ?? 0),
                     IsGrowableList = j["isGrowable"]?.ToObject<bool>() ?? false
                 }).ToList();
-                
+
                 _growableTags = _allTags.Where(t => t.IsGrowableList).ToList();
                 Plugin.Log?.LogInfo($"[OmniMix] Refreshed {_allTags.Count} custom tags ({_growableTags.Count} growable)");
             }
@@ -867,7 +974,7 @@ namespace ChillPatcher
             _currentTrackPosition = 0f;
             _lastPositionUpdateTime = Time.time;
             OnTrackUpdated?.Invoke(e.Uuid, e.Title, e.Artist, e.Duration);
-            
+
             // 同步播放状态到游戏内，传入事件参数以防未导入时动态生成虚拟轨道
             SyncTrackToGameAsync(e.Uuid, e.Title, e.Artist).Forget();
         }
@@ -875,16 +982,16 @@ namespace ChillPatcher
         private async UniTaskVoid SyncTrackToGameAsync(string uuid, string title, string artist)
         {
             if (string.IsNullOrEmpty(uuid)) return;
-            
+
             await UniTask.SwitchToMainThread();
-            
+
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
             if (musicService == null) return;
-            
+
             // 如果已经是当前播放的歌曲，无需重复触发
             if (musicService.PlayingMusic != null && musicService.PlayingMusic.UUID == uuid)
                 return;
-                
+
             var targetAudio = musicService.AllMusicList?.FirstOrDefault(m => m != null && m.UUID == uuid);
             if (targetAudio == null)
             {
@@ -893,12 +1000,12 @@ namespace ChillPatcher
                 await ImportSongsToGame(replace: false);
                 targetAudio = musicService.AllMusicList?.FirstOrDefault(m => m != null && m.UUID == uuid);
             }
-            
+
             if (targetAudio == null)
             {
                 // 2. 如果依然找不到（例如是通过外部临时播放的单曲/搜索结果），动态生成一个虚拟歌曲信息注入游戏，确保 UI 能够正确显示
                 Plugin.Log?.LogInfo($"[OmniMix] Track {uuid} still not found after refresh, dynamically creating temporary track info...");
-                
+
                 var virtualMusic = new MusicInfo
                 {
                     UUID = uuid,
@@ -908,18 +1015,18 @@ namespace ChillPatcher
                     SourceType = MusicSourceType.Stream,
                     IsUnlocked = true
                 };
-                
+
                 var allMusicList = Traverse.Create(musicService)
                     .Field("_allMusicList")
                     .GetValue<List<GameAudioInfo>>();
-                
+
                 if (allMusicList != null)
                 {
                     targetAudio = ConvertToGameAudio(virtualMusic, new Dictionary<string, ulong>());
                     allMusicList.Add(targetAudio);
                 }
             }
-            
+
             if (targetAudio != null)
             {
                 Plugin.Log?.LogInfo($"[OmniMix] Syncing track change from backend: {targetAudio.AudioClipName}");
@@ -963,7 +1070,7 @@ namespace ChillPatcher
                 else
                     _excludedUuids.Remove(e.Uuid);
             }
-            
+
             try
             {
                 MusicService_Excluded_Patch.RaiseOnSongExcludedChanged(e.Uuid, e.IsExcluded);

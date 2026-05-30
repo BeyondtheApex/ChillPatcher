@@ -10,6 +10,12 @@ namespace OmniMixPlayer.Backend.Http
         private readonly string _configPath;
         private Dictionary<string, JsonElement> _config;
 
+        /// <summary>
+        /// Raised after Save() completes, so callers (e.g. Program) can react
+        /// to config changes without restarting the process.
+        /// </summary>
+        public Action OnConfigSaved;
+
         public GlobalConfigManager(string configDir)
         {
             _configPath = Path.Combine(configDir, "global_config.json");
@@ -49,6 +55,7 @@ namespace OmniMixPlayer.Backend.Http
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
                 File.WriteAllText(_configPath, json);
+                OnConfigSaved?.Invoke();
             }
             catch { }
         }

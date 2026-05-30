@@ -42,14 +42,16 @@ class _OmniMixAppState extends State<OmniMixApp> {
 
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
-        final lightScheme =
-            lightDynamic ?? ColorScheme.fromSeed(seedColor: Colors.deepPurple);
-        final darkScheme =
-            darkDynamic ??
-            ColorScheme.fromSeed(
-              seedColor: Colors.deepPurple,
-              brightness: Brightness.dark,
-            );
+        final seed = Color(st.seedColor);
+        final lightScheme = (st.useSystemColor && lightDynamic != null)
+            ? lightDynamic
+            : ColorScheme.fromSeed(seedColor: seed);
+        final darkScheme = (st.useSystemColor && darkDynamic != null)
+            ? darkDynamic
+            : ColorScheme.fromSeed(
+                seedColor: seed,
+                brightness: Brightness.dark,
+              );
 
         return MaterialApp(
           title: 'OmniMixPlayer',
@@ -158,21 +160,17 @@ class _MainContentState extends State<_MainContent> {
     final isWide = widget.isWide;
     final cs = Theme.of(context).colorScheme;
 
-    // ── Overlay for module link/settings/about ──
-    if (st.hasOverlay) {
-      return _buildOverlay(context, l10n, st, isWide);
-    }
-
-    // ── Wide layout: AppBar + Sidebar ──
+    // ── Wide layout: AppBar + Sidebar (unified color) ──
     if (isWide) {
       return Scaffold(
-        backgroundColor: cs.surface,
+        backgroundColor: cs.surfaceContainer,
         appBar: _buildTopBar(context, l10n, st),
         body: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             NavigationRail(
               selectedIndex: st.currentTab,
-              backgroundColor: cs.surfaceContainerLow,
+              backgroundColor: cs.surfaceContainer,
               indicatorColor: cs.secondaryContainer,
               labelType: NavigationRailLabelType.all,
               onDestinationSelected: (i) => st.selectTab(i),
@@ -193,7 +191,7 @@ class _MainContentState extends State<_MainContent> {
                   icon: const Icon(Icons.extension),
                   label: Text(l10n.modules),
                 ),
-                 NavigationRailDestination(
+                NavigationRailDestination(
                   icon: const Icon(Icons.sports_esports),
                   label: Text(l10n.gameIntegration),
                 ),
@@ -203,8 +201,21 @@ class _MainContentState extends State<_MainContent> {
                 ),
               ],
             ),
-            const VerticalDivider(width: 1),
-            Expanded(child: _buildTabContent(st)),
+            const SizedBox(width: 1),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+                child: Container(
+                  color: cs.surface,
+                  child: st.hasOverlay
+                      ? _buildOverlay(context, l10n, st, isWide)
+                      : _buildTabContent(st),
+                ),
+              ),
+            ),
           ],
         ),
       );
@@ -214,32 +225,22 @@ class _MainContentState extends State<_MainContent> {
     return Scaffold(
       backgroundColor: cs.surface,
       appBar: _buildTopBar(context, l10n, st),
-      body: _buildTabContent(st),
+      body: st.hasOverlay
+          ? _buildOverlay(context, l10n, st, isWide)
+          : _buildTabContent(st),
       bottomNavigationBar: NavigationBar(
         selectedIndex: st.currentTab,
         onDestinationSelected: (i) => st.selectTab(i),
-        destinations: [
-          NavigationDestination(icon: const Icon(Icons.home), label: l10n.home),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.home), label: ' '),
+          NavigationDestination(icon: Icon(Icons.library_music), label: ' '),
           NavigationDestination(
-            icon: const Icon(Icons.library_music),
-            label: l10n.playlist,
+            icon: Icon(Icons.grid_view_rounded),
+            label: ' ',
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.grid_view_rounded),
-            label: l10n.launchpad,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.extension),
-            label: l10n.modules,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.sports_esports),
-            label: l10n.gameIntegration,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.settings),
-            label: l10n.settings,
-          ),
+          NavigationDestination(icon: Icon(Icons.extension), label: ' '),
+          NavigationDestination(icon: Icon(Icons.sports_esports), label: ' '),
+          NavigationDestination(icon: Icon(Icons.settings), label: ' '),
         ],
       ),
     );
@@ -251,52 +252,45 @@ class _MainContentState extends State<_MainContent> {
     AppState st,
   ) {
     final cs = Theme.of(context).colorScheme;
-    final showBack = st.hasModuleDetail || st.hasOverlay;
-
     return AppBar(
+      scrolledUnderElevation: 0,
       backgroundColor: cs.surfaceContainer,
-      title: showBack
-          ? Text(
-              st.overlayTitle.isNotEmpty
-                  ? st.overlayTitle
-                  : st.activeModuleId ?? '',
-            )
-          : null,
-      leading: showBack
-          ? IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () {
-                if (st.hasOverlay) {
-                  st.closeOverlay();
-                } else {
-                  st.closeModule();
-                }
-              },
-            )
-          : null,
-      actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 16),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: st.backendOnline ? Colors.green : Colors.grey,
-                ),
+      automaticallyImplyLeading: false,
+      titleSpacing: 0,
+      title: SizedBox(
+        width: double.infinity,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: _GlobalInstanceDropdown(state: st),
+            ),
+            Positioned(
+              right: 16,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: st.backendOnline ? Colors.green : Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    st.backendOnline ? l10n.connected : l10n.disconnected,
+                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                  ),
+                ],
               ),
-              const SizedBox(width: 6),
-              Text(
-                st.backendOnline ? l10n.connected : l10n.disconnected,
-                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
+      ),
+      centerTitle: true,
     );
   }
 
@@ -308,8 +302,11 @@ class _MainContentState extends State<_MainContent> {
         return PlaylistPage(state: st);
       case 2:
         final allLinks = st.modules.expand((m) => m.linkEntries).toList();
+        final moduleLinks = {for (final m in st.modules) m.id: m.linkEntries};
         return LaunchpadGrid(
           links: allLinks,
+          baseUrl: st.apiBaseUrl,
+          moduleLinks: moduleLinks,
           onTap: (entry) {
             final mod = st.modules.firstWhere(
               (m) => m.linkEntries.contains(entry),
@@ -339,7 +336,12 @@ class _MainContentState extends State<_MainContent> {
     }
 
     // Module link/settings overlay (ProxyNode rendering)
+    final overlayBg = st.overlayUiTree != null
+        ? parseHexColor(st.overlayUiTree!.color)
+        : null;
+
     return Scaffold(
+      backgroundColor: overlayBg,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -349,7 +351,6 @@ class _MainContentState extends State<_MainContent> {
       ),
       body: st.overlayUiTree != null
           ? SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
               child: ProxyNodeWidget(
                 node: st.overlayUiTree!,
                 onDispatch: st.dispatchUiEvent,
@@ -357,6 +358,81 @@ class _MainContentState extends State<_MainContent> {
               ),
             )
           : const Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+class _GlobalInstanceDropdown extends StatelessWidget {
+  final AppState state;
+
+  const _GlobalInstanceDropdown({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final allInstances = state.instances;
+    final onlineIds = state.backendOnline
+        ? state.playbackInstances.map((i) => i.id).toSet()
+        : <String>{};
+    final cs = Theme.of(context).colorScheme;
+
+    if (allInstances.isEmpty) {
+      return Text(
+        '没有实例',
+        style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+      );
+    }
+
+    final activeId = state.activeInstanceId;
+    final displayId =
+        (activeId != null && allInstances.any((i) => i.instanceId == activeId))
+        ? activeId
+        : allInstances.first.instanceId;
+
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: cs.outlineVariant),
+        color: cs.surface,
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: displayId,
+          isExpanded: true,
+          icon: const Icon(Icons.expand_more_rounded),
+          items: allInstances.map((inst) {
+            final online = onlineIds.contains(inst.instanceId);
+            return DropdownMenuItem<String>(
+              value: inst.instanceId,
+              child: Row(
+                children: [
+                  Icon(
+                    online ? Icons.circle : Icons.circle_outlined,
+                    size: 10,
+                    color: online ? Colors.green : Colors.grey,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      inst.gameName,
+                      style: const TextStyle(fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    inst.mode,
+                    style: TextStyle(fontSize: 11, color: cs.outline),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: (v) {
+            if (v != null) state.selectInstance(v);
+          },
+        ),
+      ),
     );
   }
 }

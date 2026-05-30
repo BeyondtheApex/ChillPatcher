@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -58,6 +59,7 @@ namespace OmniMixPlayer.Backend.Audio
         private readonly IEventBus _eventBus;
         private readonly IMusicRegistry _musicRegistry;
         private readonly IStreamingService _streamingService;
+        private readonly string _configBaseDir;
         private readonly CancellationTokenSource _cleanupCts = new CancellationTokenSource();
         private bool _disposed;
 
@@ -71,13 +73,15 @@ namespace OmniMixPlayer.Backend.Audio
             ILoggerFactory loggerFactory,
             IEventBus eventBus,
             IMusicRegistry musicRegistry,
-            IStreamingService streamingService)
+            IStreamingService streamingService,
+            string configBaseDir = null)
         {
             _loggerFactory = loggerFactory;
             _logger = loggerFactory.CreateLogger("PlaybackInstanceManager");
             _eventBus = eventBus;
             _musicRegistry = musicRegistry;
             _streamingService = streamingService;
+            _configBaseDir = configBaseDir;
             _ = Task.Run(() => CleanupLoopAsync(_cleanupCts.Token));
         }
 
@@ -117,13 +121,18 @@ namespace OmniMixPlayer.Backend.Audio
                     if (!sharedMemory.Initialize())
                         _logger.LogWarning("Failed to initialize shared memory for instance {InstanceId}", clientId);
 
+                    var configDir = _configBaseDir != null
+                        ? Path.Combine(_configBaseDir, "instances", clientId)
+                        : null;
+                    if (configDir != null) Directory.CreateDirectory(configDir);
+
                     var controller = new PlaybackController(
                         _loggerFactory.CreateLogger($"Playback.{clientId}"),
                         sharedMemory,
                         _eventBus,
                         _musicRegistry,
                         _streamingService,
-                        configDir: null,
+                        configDir: configDir,
                         mode: mode);
                     WireController(clientId, controller);
 
@@ -324,6 +333,8 @@ namespace OmniMixPlayer.Backend.Audio
             queueCount = instance.Controller.QueueCount,
             queueIndex = instance.Controller.QueueIndex,
             historyCount = instance.Controller.HistoryCount,
+            shuffle = instance.Controller.Shuffle,
+            repeatMode = instance.Controller.RepeatMode.ToString().ToLowerInvariant(),
             sampleRate = instance.SharedMemory?.SampleRate ?? 0,
             channels = instance.SharedMemory?.Channels ?? 0,
             sharedMemoryName = instance.SharedMemoryName,

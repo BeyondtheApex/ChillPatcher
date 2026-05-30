@@ -10,31 +10,36 @@ class TrayManager {
   Future<void> init({
     required VoidCallback onShowHide,
     required VoidCallback onExit,
+    required VoidCallback onExitGui,
+    String showHideLabel = 'Show/Hide Window',
+    String exitGuiLabel = 'Exit GUI',
+    String exitLabel = 'Fully Exit',
   }) async {
     if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) return;
 
     try {
       await _tray.initSystemTray(
         title: 'OmniMixPlayer',
-        iconPath: '', // Will use app icon
+        iconPath: 'assets/tray_icon.ico',
         toolTip: 'OmniMixPlayer',
       );
 
       final menu = Menu();
       await menu.buildFrom([
-        MenuItemLabel(
-          label: Platform.isMacOS ? 'Show/Hide Window' : '显示/隐藏窗口',
-          onClicked: (_) => onShowHide(),
-        ),
+        MenuItemLabel(label: showHideLabel, onClicked: (_) => onShowHide()),
         MenuSeparator(),
-        MenuItemLabel(
-          label: Platform.isMacOS ? 'Fully Exit' : '完全退出',
-          onClicked: (_) => onExit(),
-        ),
+        MenuItemLabel(label: exitGuiLabel, onClicked: (_) => onExitGui()),
+        MenuItemLabel(label: exitLabel, onClicked: (_) => onExit()),
       ]);
 
       await _tray.setContextMenu(menu);
-      _tray.registerSystemTrayEventHandler((event) {});
+      _tray.registerSystemTrayEventHandler((event) {
+        if (event == 'left-click' || event == 'click') {
+          onShowHide();
+        } else if (event == 'right-click') {
+          _tray.popUpContextMenu();
+        }
+      });
 
       _initialized = true;
     } catch (e) {
@@ -46,13 +51,5 @@ class TrayManager {
     if (_initialized) {
       await _tray.destroy();
     }
-  }
-}
-
-/// Windows-specific: minimize to tray instead of closing.
-class WindowHelper {
-  static Future<void> setup() async {
-    // Prevent actual window close; user must use tray menu to fully exit
-    await windowManager.setPreventClose(true);
   }
 }

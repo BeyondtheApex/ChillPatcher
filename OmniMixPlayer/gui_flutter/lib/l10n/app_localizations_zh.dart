@@ -246,4 +246,72 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get serviceAutoStart => '服务自动启动';
+
+  @override
+  String get websiteLink => '官网';
+
+  @override
+  String get save => '保存';
+
+  @override
+  String get cancel => '取消';
+
+  @override
+  String get pendingSave => '待保存';
+
+  @override
+  String get clear => '清除';
+
+  @override
+  String get openFolder => '打开目录';
+
+  @override
+  String installed(String version) {
+    return '已安装 v$version';
+  }
+
+  @override
+  String get closeBehavior => '关闭行为';
+
+  @override
+  String get closeMinimize => '最小化到托盘';
+
+  @override
+  String get closeExit => '退出程序';
+
+  @override
+  String get themeColor => '主题色';
+
+  @override
+  String get customColor => '自定义';
+
+  @override
+  String get hue => '色相';
+
+  @override
+  String get saturation => '饱和度';
+
+  @override
+  String get brightness => '亮度';
+
+  @override
+  String get confirm => '确定';
+
+  @override
+  String get useSystemColor => '使用系统主题色';
+
+  @override
+  String get backendConfig => '后端配置';
+
+  @override
+  String get moduleStatusDisabled => '已禁用 — 下次启动将不再加载';
+
+  @override
+  String get moduleStatusPending => '已加载但下次启动将禁用';
+
+  @override
+  String get moduleStatusActive => '已加载并激活';
+
+  @override
+  String get moduleStatusWillLoad => '下次启动时将加载';
 }

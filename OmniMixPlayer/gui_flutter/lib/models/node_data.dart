@@ -6,6 +6,7 @@ class RawNodeData {
   final double fontSize;
   final String color;
   final String direction;
+  final String crossAxisAlignment;
   final double spacing;
   final double padding;
   final List<RawNodeData> children;
@@ -27,6 +28,7 @@ class RawNodeData {
     this.text = '',
     this.fontSize = 14.0,
     this.color = '',
+    this.crossAxisAlignment = '',
     this.direction = '',
     this.spacing = 8.0,
     this.padding = 0.0,
@@ -51,6 +53,7 @@ class RawNodeData {
       text: json['text'] ?? '',
       fontSize: (json['font-size'] ?? 14.0).toDouble(),
       color: json['color'] ?? '',
+      crossAxisAlignment: json['cross-axis-align'] ?? '',
       direction: json['direction'] ?? '',
       spacing: (json['spacing'] ?? 8.0).toDouble(),
       padding: (json['padding'] ?? 0.0).toDouble(),
@@ -102,9 +105,9 @@ class ModuleInfoResponse {
   final String version;
   final int priority;
   final String loadedAt;
-  final bool hasUi;
-  final bool hasQuickLinks;
+  final bool enabled;
   final bool hasSettingsUi;
+  final bool hasQuickLinks;
   final List<ModuleLinkEntryResponse> linkEntries;
 
   ModuleInfoResponse({
@@ -113,9 +116,9 @@ class ModuleInfoResponse {
     this.version = '',
     this.priority = 0,
     this.loadedAt = '',
-    this.hasUi = false,
-    this.hasQuickLinks = false,
+    this.enabled = true,
     this.hasSettingsUi = false,
+    this.hasQuickLinks = false,
     this.linkEntries = const [],
   });
 
@@ -126,9 +129,9 @@ class ModuleInfoResponse {
       version: json['version'] ?? '',
       priority: json['priority'] ?? 0,
       loadedAt: json['loadedAt'] ?? '',
-      hasUi: json['hasUI'] ?? false,
-      hasQuickLinks: json['hasQuickLinks'] ?? false,
+      enabled: json['enabled'] ?? true,
       hasSettingsUi: json['hasSettingsUI'] ?? false,
+      hasQuickLinks: json['hasQuickLinks'] ?? false,
       linkEntries:
           (json['linkEntries'] as List<dynamic>?)
               ?.map(
@@ -221,6 +224,9 @@ class AppConfig {
   bool minimizeToTray;
   String theme;
   String language;
+  int seedColor;
+  bool useSystemColor;
+  String closeBehavior;
 
   AppConfig({
     this.backendPort = '17890',
@@ -229,6 +235,9 @@ class AppConfig {
     this.minimizeToTray = true,
     this.theme = 'system',
     this.language = 'system',
+    this.seedColor = 0xFF673AB7,
+    this.useSystemColor = true,
+    this.closeBehavior = 'exit',
   });
 
   Map<String, dynamic> toJson() => {
@@ -238,6 +247,9 @@ class AppConfig {
     'minimize_to_tray': minimizeToTray,
     'theme': theme,
     'language': language,
+    'seed_color': seedColor,
+    'use_system_color': useSystemColor,
+    'close_behavior': closeBehavior,
   };
 }
 
@@ -384,6 +396,8 @@ class PlaybackInstanceInfo {
   final int historyCount;
   final int sampleRate;
   final int channels;
+  final bool shuffle;
+  final String repeatMode;
   final TrackInfo? currentTrack;
 
   const PlaybackInstanceInfo({
@@ -400,6 +414,8 @@ class PlaybackInstanceInfo {
     this.historyCount = 0,
     this.sampleRate = 0,
     this.channels = 0,
+    this.shuffle = false,
+    this.repeatMode = 'none',
     this.currentTrack,
   });
 
@@ -418,6 +434,8 @@ class PlaybackInstanceInfo {
       historyCount: json['historyCount'] ?? 0,
       sampleRate: json['sampleRate'] ?? 0,
       channels: json['channels'] ?? 0,
+      shuffle: json['shuffle'] ?? false,
+      repeatMode: (json['repeatMode'] ?? 'none').toString().toLowerCase(),
       currentTrack: json['currentTrack'] == null
           ? null
           : TrackInfo.fromJson(json['currentTrack'] as Map<String, dynamic>),
@@ -458,11 +476,13 @@ class PlaylistSourceInfo {
   final String id;
   final String name;
   final int songCount;
+  final List<String> uuids;
 
   const PlaylistSourceInfo({
     this.id = '',
     this.name = '',
     this.songCount = 0,
+    this.uuids = const [],
   });
 
   factory PlaylistSourceInfo.fromJson(Map<String, dynamic> json) {
@@ -470,6 +490,8 @@ class PlaylistSourceInfo {
       id: json['id'] ?? json['Id'] ?? '',
       name: json['name'] ?? json['Name'] ?? '',
       songCount: json['songCount'] ?? json['SongCount'] ?? 0,
+      uuids:
+          (json['uuids'] ?? json['SongUuids'] as List?)?.cast<String>() ?? [],
     );
   }
 }

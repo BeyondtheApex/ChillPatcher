@@ -78,5 +78,33 @@
   "serviceUninstallFailed": "Service removal failed",
   "processMode": "Process",
   "serviceMode": "Service",
-  "serviceAutoStart": "Service Auto-Start"
+  "serviceAutoStart": "Service Auto-Start",
+  "websiteLink": "Website",
+  "save": "Save",
+  "cancel": "Cancel",
+  "pendingSave": "Pending Save",
+  "clear": "Clear",
+  "openFolder": "Open Folder",
+  "installed": "Installed v{version}",
+  "@installed": {
+    "description": "Shows installed version",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "closeBehavior": "Close Behavior",
+  "closeMinimize": "Minimize to Tray",
+  "closeExit": "Exit App",
+  "themeColor": "Theme Color",
+  "customColor": "Custom",
+  "hue": "Hue",
+  "saturation": "Saturation",
+  "brightness": "Brightness",
+  "confirm": "OK",
+  "useSystemColor": "Use system accent color",
+  "backendConfig": "Backend Config",
+  "moduleStatusDisabled": "Disabled — will not load on next start",
+  "moduleStatusPending": "Loaded but will be disabled on next start",
+  "moduleStatusActive": "Loaded and active",
+  "moduleStatusWillLoad": "Will load on next start"
 }

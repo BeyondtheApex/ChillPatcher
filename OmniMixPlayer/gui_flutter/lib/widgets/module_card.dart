@@ -63,7 +63,7 @@ class ModuleCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (module.hasUi)
+                if (module.hasSettingsUi)
                   FilledButton(onPressed: onTap, child: const Text('Open')),
               ],
             ),

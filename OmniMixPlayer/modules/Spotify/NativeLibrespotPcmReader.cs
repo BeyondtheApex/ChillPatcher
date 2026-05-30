@@ -85,7 +85,8 @@ namespace OmniMixPlayer.Module.Spotify
                     return true;
                 if (_handle != IntPtr.Zero && omni_spotify_last_error(_handle) != 0)
                     return false;
-                Thread.Sleep(50);
+                // 使用 WaitHandle 替代 Thread.Sleep，cancel 时能立即响应
+                cancellationToken.WaitHandle.WaitOne(50);
             }
             return IsReady;
         }

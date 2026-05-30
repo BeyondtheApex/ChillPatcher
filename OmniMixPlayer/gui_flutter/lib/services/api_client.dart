@@ -74,6 +74,14 @@ class ApiClient {
     return RawNodeData.fromJson(json.decode(resp.body) as Map<String, dynamic>);
   }
 
+  Future<void> setModuleEnabled(String moduleId, bool enabled) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/modules/$moduleId'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'enabled': enabled}),
+    );
+  }
+
   Future<RawNodeData> getModuleSettingsUi(String moduleId) async {
     final resp = await _http.get(
       Uri.parse('$_baseUrl/api/modules/$moduleId/settings'),
@@ -92,8 +100,44 @@ class ApiClient {
     );
   }
 
+  /// Send arbitrary key-value pairs to update backend config.
+  Future<void> putConfigRaw(Map<String, dynamic> updates) async {
+    await _http.put(
+      Uri.parse('$_baseUrl/api/config'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(updates),
+    );
+  }
+
+  Future<Map<String, dynamic>> getConfig() async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/config'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as Map<String, dynamic>;
+  }
+
   Future<void> saveConfig() async {
     await _http.post(Uri.parse('$_baseUrl/api/config/save'));
+  }
+
+  Future<Map<String, dynamic>> getInstanceProfile(String instanceId) async {
+    final resp = await _http.get(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/profile'),
+    );
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<void> updateInstanceProfile(
+    String instanceId,
+    Map<String, dynamic> data,
+  ) async {
+    final resp = await _http.put(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/profile'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(data),
+    );
+    if (resp.statusCode == 404) throw Exception('Instance not found');
+    if (resp.statusCode >= 400) throw Exception('HTTP ${resp.statusCode}');
   }
 
   Future<void> stopBackend() async {
@@ -177,11 +221,16 @@ class ApiClient {
     );
   }
 
-  Future<void> pause(String instanceId) => _post('/api/instances/$instanceId/pause');
-  Future<void> resume(String instanceId) => _post('/api/instances/$instanceId/resume');
-  Future<void> toggle(String instanceId) => _post('/api/instances/$instanceId/toggle');
-  Future<void> next(String instanceId) => _post('/api/instances/$instanceId/next');
-  Future<void> previous(String instanceId) => _post('/api/instances/$instanceId/prev');
+  Future<void> pause(String instanceId) =>
+      _post('/api/instances/$instanceId/pause');
+  Future<void> resume(String instanceId) =>
+      _post('/api/instances/$instanceId/resume');
+  Future<void> toggle(String instanceId) =>
+      _post('/api/instances/$instanceId/toggle');
+  Future<void> next(String instanceId) =>
+      _post('/api/instances/$instanceId/next');
+  Future<void> previous(String instanceId) =>
+      _post('/api/instances/$instanceId/prev');
 
   Future<void> seek(String instanceId, double position) async {
     await _http.post(
@@ -192,31 +241,47 @@ class ApiClient {
   }
 
   Future<List<QueueItemInfo>> getInstanceQueue(String instanceId) async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/$instanceId/queue'));
+    final resp = await _http.get(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/queue'),
+    );
     if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
     final list = json.decode(resp.body) as List<dynamic>;
-    return list.map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<QueueItemInfo>> getInstanceHistory(String instanceId) async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/$instanceId/history'));
+    final resp = await _http.get(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/history'),
+    );
     if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
     final list = json.decode(resp.body) as List<dynamic>;
-    return list.map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<QueueItemInfo>> getInstancePlaylist(String instanceId) async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/$instanceId/playlist'));
+    final resp = await _http.get(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist'),
+    );
     if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
     final list = json.decode(resp.body) as List<dynamic>;
-    return list.map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<PlaylistSourceInfo>> getPlaylistSources(String instanceId) async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'));
+    final resp = await _http.get(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
+    );
     if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
     final list = json.decode(resp.body) as List<dynamic>;
-    return list.map((e) => PlaylistSourceInfo.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => PlaylistSourceInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> addToQueue(String instanceId, String uuid) async {
@@ -229,13 +294,65 @@ class ApiClient {
 
   Future<void> removeQueueAt(String instanceId, int index) =>
       _delete('/api/instances/$instanceId/queue/$index');
+  Future<void> moveQueue(String instanceId, int from, int to) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/queue/move'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'from': from, 'to': to}),
+    );
+  }
 
-  Future<void> clearQueue(String instanceId) => _post('/api/instances/$instanceId/queue/clear');
+  Future<void> clearQueue(String instanceId) =>
+      _post('/api/instances/$instanceId/queue/clear');
 
   Future<void> removeHistoryAt(String instanceId, int index) =>
       _delete('/api/instances/$instanceId/history/$index');
+  Future<void> moveHistory(String instanceId, int from, int to) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/history/move'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'from': from, 'to': to}),
+    );
+  }
 
-  Future<void> clearHistory(String instanceId) => _post('/api/instances/$instanceId/history/clear');
+  Future<void> clearHistory(String instanceId) =>
+      _post('/api/instances/$instanceId/history/clear');
+
+  Future<void> insertQueueAt(
+    String instanceId, {
+    required List<String> uuids,
+    required int index,
+  }) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/queue/insert'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'uuids': uuids, 'index': index}),
+    );
+  }
+
+  Future<void> setShuffle(String instanceId, bool enabled) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/shuffle'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'enabled': enabled}),
+    );
+  }
+
+  Future<void> setRepeatMode(String instanceId, String mode) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/repeat'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'mode': mode}),
+    );
+  }
+
+  Future<void> setExcluded(String uuid, bool excluded) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/exclude'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'uuid': uuid, 'isFavorite': excluded}),
+    );
+  }
 
   Future<void> addPlaylistSource(
     String instanceId, {
@@ -247,6 +364,23 @@ class ApiClient {
       Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
+        'source': {'id': id, 'name': name, 'uuids': uuids},
+      }),
+    );
+  }
+
+  Future<void> insertPlaylistSource(
+    String instanceId, {
+    required String id,
+    required String name,
+    required List<String> uuids,
+    int index = -1,
+  }) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'index': index,
         'source': {'id': id, 'name': name, 'uuids': uuids},
       }),
     );

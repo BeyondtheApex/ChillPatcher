@@ -571,6 +571,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Service Auto-Start'**
   String get serviceAutoStart;
+
+  /// No description provided for @websiteLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Website'**
+  String get websiteLink;
+
+  /// No description provided for @save.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get save;
+
+  /// No description provided for @cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancel;
+
+  /// No description provided for @pendingSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending Save'**
+  String get pendingSave;
+
+  /// No description provided for @clear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get clear;
+
+  /// No description provided for @openFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Folder'**
+  String get openFolder;
+
+  /// Shows installed version
+  ///
+  /// In en, this message translates to:
+  /// **'Installed v{version}'**
+  String installed(String version);
+
+  /// No description provided for @closeBehavior.
+  ///
+  /// In en, this message translates to:
+  /// **'Close Behavior'**
+  String get closeBehavior;
+
+  /// No description provided for @closeMinimize.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize to Tray'**
+  String get closeMinimize;
+
+  /// No description provided for @closeExit.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit App'**
+  String get closeExit;
+
+  /// No description provided for @themeColor.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme Color'**
+  String get themeColor;
+
+  /// No description provided for @customColor.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get customColor;
+
+  /// No description provided for @hue.
+  ///
+  /// In en, this message translates to:
+  /// **'Hue'**
+  String get hue;
+
+  /// No description provided for @saturation.
+  ///
+  /// In en, this message translates to:
+  /// **'Saturation'**
+  String get saturation;
+
+  /// No description provided for @brightness.
+  ///
+  /// In en, this message translates to:
+  /// **'Brightness'**
+  String get brightness;
+
+  /// No description provided for @confirm.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get confirm;
+
+  /// No description provided for @useSystemColor.
+  ///
+  /// In en, this message translates to:
+  /// **'Use system accent color'**
+  String get useSystemColor;
+
+  /// No description provided for @backendConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'Backend Config'**
+  String get backendConfig;
+
+  /// No description provided for @moduleStatusDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Disabled — will not load on next start'**
+  String get moduleStatusDisabled;
+
+  /// No description provided for @moduleStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Loaded but will be disabled on next start'**
+  String get moduleStatusPending;
+
+  /// No description provided for @moduleStatusActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Loaded and active'**
+  String get moduleStatusActive;
+
+  /// No description provided for @moduleStatusWillLoad.
+  ///
+  /// In en, this message translates to:
+  /// **'Will load on next start'**
+  String get moduleStatusWillLoad;
 }
 
 class _AppLocalizationsDelegate

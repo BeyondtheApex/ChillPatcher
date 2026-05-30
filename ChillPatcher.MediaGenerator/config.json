@@ -1,0 +1,29 @@
+{
+  "description": "ChillPatcher Media Generator - generates FH6 radio mod media overlay",
+
+  "gameDir": "E:\\SteamLibrary\\steamapps\\common\\ForzaHorizon6",
+  "outputDir": "./media-generated",
+
+  "bank": {
+    "sourceBankStem": "R9_Tracks_CU1",
+    "sampleDurationSec": 300,
+    "sampleRate": 44100,
+    "bitsPerSample": 16,
+    "channels": 1
+  },
+
+  "radioInfo": {
+    "stationNumber": 10,
+    "stationName": "Streamer Mode",
+    "trackSampleName": "HZ6_R9_PeterBroderick_EyesClosedandTraveling",
+    "displayName": "OmniMix Player",
+    "artist": "ChillPatcher"
+  },
+
+  "anthemZip": {
+    "enabled": true,
+    "copyLogoFrom": "HUD/RadioLogos/Horizon_Pulse.swatchbin",
+    "targetSwatchBin": "HUD/RadioLogos/Streamer_Mode.swatchbin",
+    "mode": "partial"
+  }
+}

@@ -1,12 +1,9 @@
-import 'dart:async';
-import 'dart:convert';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:omnimix_gui/l10n/app_localizations.dart';
 
 import '../models/node_data.dart';
 import '../providers/app_state.dart';
-import '../services/api_client.dart';
 
 class HomePage extends StatefulWidget {
   final AppState state;
@@ -17,22 +14,27 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+enum _LibraryView { playlist, album, song }
+
+enum _QueueTab { queue, history }
+
 class _HomePageState extends State<HomePage> {
   List<TagInfo> _tags = [];
   List<AlbumInfo> _albums = [];
   List<SongInfo> _songs = [];
   String _query = '';
-  bool _libraryLoading = false;
+  bool _loading = false;
   String _error = '';
-  bool _wasOnline = false;
-  int _libraryReloadGuard = 0;
+  _LibraryView _libraryView = _LibraryView.song;
+  _QueueTab _queueTab = _QueueTab.queue;
 
   @override
   void initState() {
     super.initState();
-    _wasOnline = widget.state.backendOnline;
     widget.state.addListener(_onStateChanged);
-    if (_wasOnline) _loadLibrary();
+    if (widget.state.backendOnline) {
+      _loadLibrary();
+    }
   }
 
   @override
@@ -43,26 +45,16 @@ class _HomePageState extends State<HomePage> {
 
   void _onStateChanged() {
     if (!mounted) return;
-    final online = widget.state.backendOnline;
-    if (online && !_wasOnline && _tags.isEmpty) {
+    if (widget.state.backendOnline && _songs.isEmpty && !_loading) {
       _loadLibrary();
     }
-    // Reload library when playlist sources change
-    if (online && _tags.isNotEmpty) {
-      final guard = widget.state.playlistSources.length;
-      if (guard != _libraryReloadGuard) {
-        _libraryReloadGuard = guard;
-        _loadLibrary();
-      }
-    }
-    _wasOnline = online;
     setState(() {});
   }
 
   Future<void> _loadLibrary() async {
     if (!widget.state.backendOnline) return;
     setState(() {
-      _libraryLoading = true;
+      _loading = true;
       _error = '';
     });
     try {
@@ -78,37 +70,31 @@ class _HomePageState extends State<HomePage> {
         _songs = results[2] as List<SongInfo>;
       });
     } catch (e) {
-      if (mounted) setState(() => _error = '加载曲库失败: $e');
+      if (!mounted) return;
+      setState(() => _error = 'Failed to load library: $e');
     } finally {
-      if (mounted) setState(() => _libraryLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
-  }
-
-  List<SongInfo> get _filteredSongs {
-    if (_query.isEmpty) return _songs;
-    final q = _query.toLowerCase();
-    return _songs.where((s) {
-      return s.title.toLowerCase().contains(q) ||
-          s.artist.toLowerCase().contains(q);
-    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final busy = widget.state.backendBusy || widget.state.serviceBusy;
-
     if (busy) {
-      return _LoadingHome(title: l10n.appTitle, message: l10n.restarting);
+      return const _LoadingHome(
+        icon: Icons.settings_input_component_rounded,
+        title: '服务启动中',
+        message: '正在连接并初始化播放器服务...',
+      );
     }
 
     if (!widget.state.backendOnline) {
-      return _LoadingHome(title: l10n.appTitle, message: l10n.disconnected);
+      return const _LoadingHome(
+        icon: Icons.cloud_off_rounded,
+        title: '服务未连接',
+        message: '请稍候，正在等待后端服务就绪...',
+      );
     }
-
-    final cs = Theme.of(context).colorScheme;
-    final instance = widget.state.activeInstance;
-    final canControl = widget.state.canControlActiveInstance;
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -116,602 +102,681 @@ class _HomePageState extends State<HomePage> {
         await _loadLibrary();
       },
       child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 980;
-          final content = compact
-              ? Column(
-                  children: [
-                    _buildNowPlaying(cs, instance, canControl),
-                    const SizedBox(height: 16),
-                    _buildLists(cs, compact: true),
-                    const SizedBox(height: 16),
-                    _buildLibrary(cs, compact: true),
-                  ],
-                )
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 11, child: _buildNowPlaying(cs, instance, canControl)),
-                    const SizedBox(width: 18),
-                    Expanded(flex: 13, child: _buildLists(cs)),
-                    const SizedBox(width: 18),
-                    Expanded(flex: 10, child: _buildLibrary(cs)),
-                  ],
-                );
-
+        builder: (_, c) {
+          final canControl = widget.state.canControlActiveInstance;
+          if (!canControl) {
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [_buildNowPlaying(minimalClientMode: true)],
+            );
+          }
+          final compact = c.maxWidth < 1080;
           return ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(24),
-            children: [content],
+            padding: const EdgeInsets.all(16),
+            children: [
+              compact
+                  ? Column(
+                      children: [
+                        _buildNowPlaying(),
+                        const SizedBox(height: 12),
+                        SizedBox(height: 430, child: _buildQueuePanel()),
+                        const SizedBox(height: 12),
+                        SizedBox(height: 520, child: _buildLibraryPanel()),
+                      ],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 10, child: _buildNowPlaying()),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 11,
+                          child: SizedBox(
+                            height: 760,
+                            child: _buildQueuePanel(),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 15,
+                          child: SizedBox(
+                            height: 760,
+                            child: _buildLibraryPanel(),
+                          ),
+                        ),
+                      ],
+                    ),
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _buildNowPlaying(ColorScheme cs, PlaybackInstanceInfo? instance, bool canControl) {
+  Widget _buildNowPlaying({bool minimalClientMode = false}) {
+    final cs = Theme.of(context).colorScheme;
+    final instance = widget.state.activeInstance;
     final track = instance?.currentTrack;
-    final duration = track?.duration ?? 0;
-    final position = instance?.position ?? 0;
+    final canControl = widget.state.canControlActiveInstance;
+    final duration = track?.duration ?? 0.0;
+    final position =
+        ((instance?.position ?? 0.0).clamp(0.0, duration <= 0 ? 1.0 : duration)
+                as num)
+            .toDouble();
 
     return _Panel(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '实例',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-              ),
-              if (widget.state.playbackLoading)
-                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _InstanceSelector(
-            instances: widget.state.playbackInstances,
-            activeId: instance?.id,
-            onSelected: widget.state.selectPlaybackInstance,
-          ),
-          const SizedBox(height: 18),
-          AspectRatio(
-            aspectRatio: 1,
+          const SizedBox(height: 8),
+          SizedBox(
+            width: 230,
+            height: 230,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: _Cover(uuid: track?.uuid ?? '', baseUrl: widget.state.apiBaseUrl),
+              child: _Cover(
+                uuid: track?.uuid ?? '',
+                baseUrl: widget.state.apiBaseUrl,
+              ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
-            track?.title.isNotEmpty == true ? track!.title : '没有正在播放的歌曲',
+            (track?.title.isNotEmpty ?? false)
+                ? track!.title
+                : 'No song playing',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
-            track?.artist.isNotEmpty == true ? track!.artist : instance?.id ?? '等待音频实例连接',
+            [
+              track?.artist ?? '',
+              _albumName(track?.albumId ?? ''),
+            ].where((e) => e.isNotEmpty).join(' • '),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
             style: TextStyle(color: cs.onSurfaceVariant),
           ),
-          const SizedBox(height: 12),
+          if (!minimalClientMode) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                IconButton(
+                  onPressed: canControl
+                      ? () => widget.state.setShuffle(
+                          !(instance?.shuffle ?? false),
+                        )
+                      : null,
+                  icon: Icon(
+                    Icons.shuffle_rounded,
+                    color: (instance?.shuffle ?? false) ? cs.primary : null,
+                  ),
+                  tooltip: '随机',
+                ),
+                IconButton(
+                  onPressed: canControl ? widget.state.previousTrack : null,
+                  icon: const Icon(Icons.skip_previous_rounded),
+                  tooltip: '上一首',
+                ),
+                IconButton(
+                  onPressed: canControl ? widget.state.togglePlayback : null,
+                  icon: Icon(
+                    (instance?.isPlaying ?? false)
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                  ),
+                  tooltip: '播放/暂停',
+                ),
+                IconButton(
+                  onPressed: canControl ? widget.state.nextTrack : null,
+                  icon: const Icon(Icons.skip_next_rounded),
+                  tooltip: '下一首',
+                ),
+                IconButton(
+                  onPressed: canControl
+                      ? () {
+                          final single =
+                              (instance?.repeatMode ?? 'all') == 'one';
+                          widget.state.setRepeatMode(single ? 'all' : 'one');
+                        }
+                      : null,
+                  icon: Icon(
+                    Icons.repeat_one_rounded,
+                    color: (instance?.repeatMode ?? 'all') == 'one'
+                        ? cs.primary
+                        : null,
+                  ),
+                  tooltip: '单曲循环',
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 8),
           Row(
             children: [
-              Text(_formatDuration(position), style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderThemeData(
-                    trackHeight: 4,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    activeTrackColor: cs.primary,
-                    inactiveTrackColor: cs.surfaceContainerHighest,
-                    thumbColor: cs.primary,
-                    overlayColor: cs.primary.withAlpha(20),
-                  ),
-                  child: Slider(
-                    value: duration > 0 ? position.clamp(0, duration) : 0,
-                    min: 0,
-                    max: duration > 0 ? duration : 1,
-                    onChanged: canControl && duration > 0 ? (value) => widget.state.seekActive(value) : null,
-                  ),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  _fmt(position),
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                 ),
               ),
-              Text(_formatDuration(duration), style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
+              Expanded(
+                child: Slider(
+                  value: position.toDouble(),
+                  min: 0,
+                  max: duration > 0 ? duration : 1,
+                  onChanged: canControl && duration > 0
+                      ? widget.state.seekActive
+                      : null,
+                ),
+              ),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  _fmt(duration),
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          _ModeNotice(instance: instance, canControl: canControl),
+          if (!minimalClientMode) ...[
+            const SizedBox(height: 6),
+            Text(
+              canControl
+                  ? 'Server control mode'
+                  : 'Client mode: controls disabled',
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildLists(ColorScheme cs, {bool compact = false}) {
-    final currentSourceName = widget.state.playlistSources.isNotEmpty
-        ? widget.state.playlistSources.first.name
-        : '全部';
-    final hasPlaylist = widget.state.activePlaylist.isNotEmpty;
-
-    return Column(
-      children: [
-        _Panel(
-          child: _SectionList<PlaylistSourceInfo>(
-            title: '激活歌单',
-            icon: Icons.featured_play_list_rounded,
-            items: widget.state.playlistSources,
-            emptyText: '还没有添加歌单',
-            action: widget.state.canControlActiveInstance
-                ? TextButton.icon(
-                    onPressed: _showAddPlaylistSheet,
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('添加'),
-                  )
-                : null,
-            itemBuilder: (source) => ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.queue_music_rounded),
-              title: Text(source.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text('${source.songCount} 首'),
-              trailing: source.id != 'all' && widget.state.canControlActiveInstance
-                  ? IconButton(
-                      tooltip: '移除',
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => widget.state.removePlaylistSource(source.id),
-                    )
-                  : null,
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        _Panel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.playlist_remove_rounded, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    currentSourceName,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  const Spacer(),
-                  if (hasPlaylist)
-                    Text('${widget.state.activePlaylist.length} 首',
-                        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-                ],
-              ),
-              if (!hasPlaylist)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Center(
-                    child: Text('歌单为空',
-                        style: TextStyle(color: cs.onSurfaceVariant.withAlpha(150), fontSize: 13)),
-                  ),
-                )
-              else
-                ...widget.state.activePlaylist.take(20).map((song) => _SongTile(
-                      song: song,
-                      baseUrl: widget.state.apiBaseUrl,
-                      canControl: widget.state.canControlActiveInstance,
-                      onPlay: widget.state.canControlActiveInstance
-                          ? () => widget.state.playSongOnActive(song.uuid)
-                          : null,
-                      onAdd: widget.state.canControlActiveInstance
-                          ? () => widget.state.addSongToActiveQueue(song.uuid)
-                          : null,
-                    )),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _Panel(
-          child: _SectionList<QueueItemInfo>(
-            title: '播放队列',
-            icon: Icons.playlist_play_rounded,
-            items: widget.state.activeQueue,
-            emptyText: '队列为空，可以从歌单或曲库添加',
-            action: widget.state.canControlActiveInstance && widget.state.activeQueue.isNotEmpty
-                ? TextButton(onPressed: widget.state.clearActiveQueue, child: const Text('清空'))
-                : null,
-            itemBuilder: (song) => _SongTile(
-              song: song,
-              baseUrl: widget.state.apiBaseUrl,
-              canControl: widget.state.canControlActiveInstance,
-              onRemove: widget.state.canControlActiveInstance
-                  ? () => widget.state.removeQueueItem(song.index)
-                  : null,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLibrary(ColorScheme cs, {bool compact = false}) {
-    return Column(
-      children: [
-        _Panel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.library_music_rounded, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    '曲库',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  const Spacer(),
-                  if (_tags.isNotEmpty)
-                    Text('${_tags.length} 标签 · ${_albums.length} 专辑 · ${_songs.length} 歌曲',
-                        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                onChanged: (v) => setState(() => _query = v),
-                decoration: InputDecoration(
-                  hintText: '搜索歌曲或艺术家...',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  filled: true,
-                  fillColor: cs.surfaceContainerHighest.withAlpha(100),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: _buildLibraryContent(cs, compact),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLibraryContent(ColorScheme cs, bool compact) {
-    if (_libraryLoading) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-    }
-    if (_error.isNotEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline_rounded, size: 28, color: cs.error),
-            const SizedBox(height: 8),
-            Text(_error, style: TextStyle(color: cs.error, fontSize: 12)),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
-              onPressed: _loadLibrary,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: const Text('重试'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_tags.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.library_music_outlined, size: 40, color: cs.onSurfaceVariant.withAlpha(80)),
-            const SizedBox(height: 8),
-            Text('曲库为空', style: TextStyle(color: cs.onSurfaceVariant)),
-          ],
-        ),
-      );
-    }
-
-    final showSongs = _query.isNotEmpty;
-    final songs = _filteredSongs;
-
-    if (showSongs) {
-      if (songs.isEmpty) {
-        return Center(
-          child: Text('未找到 "$_query"', style: TextStyle(color: cs.onSurfaceVariant)),
-        );
-      }
-      return ListView.separated(
-        itemCount: songs.length,
-        separatorBuilder: (_, __) => Divider(height: 1, indent: 48, color: cs.outlineVariant.withAlpha(60)),
-        itemBuilder: (_, i) {
-          final s = songs[i];
-          return _SongTile(
-            song: QueueItemInfo(
-              index: i,
-              uuid: s.uuid,
-              title: s.title,
-              artist: s.artist,
-              duration: s.duration,
-            ),
-            baseUrl: widget.state.apiBaseUrl,
-            canControl: widget.state.canControlActiveInstance,
-            onPlay: widget.state.canControlActiveInstance
-                ? () => widget.state.playSongOnActive(s.uuid)
-                : null,
-            onAdd: widget.state.canControlActiveInstance
-                ? () => widget.state.addSongToActiveQueue(s.uuid)
-                : null,
-          );
-        },
-      );
-    }
-
-    return DefaultTabController(
-      length: 3,
+  Widget _buildQueuePanel() {
+    final canControl = widget.state.canControlActiveInstance;
+    return _Panel(
       child: Column(
         children: [
-          TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            labelColor: cs.primary,
-            unselectedLabelColor: cs.onSurfaceVariant,
-            indicatorColor: cs.primary,
-            indicatorSize: TabBarIndicatorSize.label,
-            labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            tabs: const [
-              Tab(text: '标签'),
-              Tab(text: '专辑'),
-              Tab(text: '歌曲'),
+          Row(
+            children: [
+              SegmentedButton<_QueueTab>(
+                segments: const [
+                  ButtonSegment(value: _QueueTab.queue, label: Text('Queue')),
+                  ButtonSegment(
+                    value: _QueueTab.history,
+                    label: Text('History'),
+                  ),
+                ],
+                selected: {_queueTab},
+                onSelectionChanged: (s) => setState(() => _queueTab = s.first),
+              ),
+              const Spacer(),
+              if (canControl)
+                TextButton(
+                  onPressed: _queueTab == _QueueTab.queue
+                      ? widget.state.clearActiveQueue
+                      : widget.state.clearActiveHistory,
+                  child: const Text('Clear'),
+                ),
             ],
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: TabBarView(
-              children: [
-                _buildTagList(cs),
-                _buildAlbumList(cs),
-                _buildAllSongsList(cs, compact),
-              ],
-            ),
+            child: _queueTab == _QueueTab.queue
+                ? _buildReorderList(widget.state.activeQueue, isQueue: true)
+                : _buildReorderList(widget.state.activeHistory, isQueue: false),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTagList(ColorScheme cs) {
-    return ListView.separated(
-      itemCount: _tags.length,
-      separatorBuilder: (_, __) => Divider(height: 1, indent: 40, color: cs.outlineVariant.withAlpha(60)),
-      itemBuilder: (_, i) {
-        final t = _tags[i];
-        return ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.folder_rounded, color: cs.primary, size: 22),
-          title: Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(t.moduleId, style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-          trailing: Icon(Icons.chevron_right, size: 18, color: cs.onSurfaceVariant),
-          onTap: widget.state.canControlActiveInstance
-              ? () => widget.state.addTagToActivePlaylist(t)
-              : null,
-        );
-      },
-    );
-  }
+  Widget _buildReorderList(List<QueueItemInfo> items, {required bool isQueue}) {
+    final canControl = widget.state.canControlActiveInstance;
+    if (items.isEmpty) return const Center(child: Text('Empty'));
 
-  Widget _buildAlbumList(ColorScheme cs) {
-    return ListView.separated(
-      itemCount: _albums.length,
-      separatorBuilder: (_, __) => Divider(height: 1, indent: 40, color: cs.outlineVariant.withAlpha(60)),
+    return ReorderableListView.builder(
+      buildDefaultDragHandles: canControl,
+      itemCount: items.length,
+      onReorder: canControl
+          ? (oldIndex, newIndex) async {
+              var to = newIndex;
+              if (newIndex > oldIndex) to -= 1;
+              if (isQueue) {
+                await widget.state.moveQueueItem(oldIndex, to);
+              } else {
+                await widget.state.moveHistoryItem(oldIndex, to);
+              }
+            }
+          : (_, __) {},
       itemBuilder: (_, i) {
-        final a = _albums[i];
-        return ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              width: 32,
-              height: 32,
-              child: a.coverPath.isNotEmpty
-                  ? Image.network(
-                      '${widget.state.apiBaseUrl}/$a.coverPath',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Icon(Icons.album_rounded, color: cs.primary, size: 22),
-                    )
-                  : Icon(Icons.album_rounded, color: cs.primary, size: 22),
-            ),
-          ),
-          title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text('${a.songCount} 首 · ${a.moduleId}', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.state.canControlActiveInstance)
-                IconButton(
-                  tooltip: '添加到歌单',
-                  icon: Icon(Icons.playlist_add_rounded, size: 18, color: cs.primary),
-                  onPressed: () => widget.state.addAlbumToActivePlaylist(a),
-                ),
-              Icon(Icons.chevron_right, size: 18, color: cs.onSurfaceVariant),
-            ],
-          ),
-          onTap: () => _showAlbumSongs(a, cs),
-        );
-      },
-    );
-  }
-
-  Widget _buildAllSongsList(ColorScheme cs, bool compact) {
-    final songs = _filteredSongs;
-    if (songs.isEmpty) {
-      return Center(
-        child: Text('暂无歌曲', style: TextStyle(color: cs.onSurfaceVariant)),
-      );
-    }
-    return ListView.separated(
-      itemCount: songs.length,
-      separatorBuilder: (_, __) => Divider(height: 1, indent: 48, color: cs.outlineVariant.withAlpha(60)),
-      itemBuilder: (_, i) {
-        final s = songs[i];
-        return _SongTile(
-          song: QueueItemInfo(
-            index: i,
-            uuid: s.uuid,
-            title: s.title,
-            artist: s.artist,
-            duration: s.duration,
-          ),
-          baseUrl: widget.state.apiBaseUrl,
-          canControl: widget.state.canControlActiveInstance,
-          onPlay: widget.state.canControlActiveInstance
+        final s = items[i];
+        return _SongRow(
+          key: ValueKey('${isQueue ? 'q' : 'h'}_${s.uuid}_$i'),
+          song: _songWithFallback(s),
+          canControl: canControl,
+          playOnlyButton: true,
+          onPlay: canControl
               ? () => widget.state.playSongOnActive(s.uuid)
               : null,
-          onAdd: widget.state.canControlActiveInstance
+          onAddTail: canControl
               ? () => widget.state.addSongToActiveQueue(s.uuid)
               : null,
+          onNext: canControl
+              ? () => widget.state.addSongNextOnActive(s.uuid)
+              : null,
+          onExcludeToggle: canControl
+              ? () => widget.state.setSongExcluded(s.uuid, !_isExcluded(s.uuid))
+              : null,
+          excluded: _isExcluded(s.uuid),
+          onDelete: canControl
+              ? () => isQueue
+                    ? widget.state.removeQueueItem(i)
+                    : widget.state.removeHistoryItem(i)
+              : null,
+          baseUrl: widget.state.apiBaseUrl,
         );
       },
     );
   }
 
-  void _showAlbumSongs(AlbumInfo album, ColorScheme cs) {
-    showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  Widget _buildLibraryPanel() {
+    if (_loading)
+      return const _Panel(child: Center(child: CircularProgressIndicator()));
+    if (_error.isNotEmpty)
+      return _Panel(child: Center(child: Text('Error: $_error')));
+
+    final canControl = widget.state.canControlActiveInstance;
+    return _Panel(
+      child: Column(
+        children: [
+          Row(
+            children: [
+              SegmentedButton<_LibraryView>(
+                segments: const [
+                  ButtonSegment(
+                    value: _LibraryView.playlist,
+                    label: Text('By Playlist'),
+                  ),
+                  ButtonSegment(
+                    value: _LibraryView.album,
+                    label: Text('By Album'),
+                  ),
+                  ButtonSegment(
+                    value: _LibraryView.song,
+                    label: Text('By Song'),
+                  ),
+                ],
+                selected: {_libraryView},
+                onSelectionChanged: (s) =>
+                    setState(() => _libraryView = s.first),
+              ),
+              const Spacer(),
+              if (canControl)
+                IconButton(
+                  onPressed: _showAddSourceSheet,
+                  tooltip: '添加来源',
+                  icon: const Icon(Icons.add_rounded),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search_rounded),
+              hintText: 'Search songs / artist / album',
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: widget.state.playlistSources
+                  .where((s) => s.id != 'all')
+                  .map((s) {
+                    return InputChip(
+                      label: Text('${s.name} (${s.songCount})'),
+                      onDeleted: canControl
+                          ? () => widget.state.removePlaylistSource(s.id)
+                          : null,
+                    );
+                  })
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(child: _buildLibraryList(canControl)),
+        ],
       ),
-      builder: (ctx) {
-        return _AlbumSongsSheet(
-          album: album,
-          api: widget.state.api,
-          apiBaseUrl: widget.state.apiBaseUrl,
-          canControl: widget.state.canControlActiveInstance,
-          onPlay: widget.state.canControlActiveInstance
-              ? (uuid) {
-                  widget.state.playSongOnActive(uuid);
-                  Navigator.pop(ctx);
-                }
-              : null,
-          onAdd: widget.state.canControlActiveInstance
-              ? (uuid) => widget.state.addSongToActiveQueue(uuid)
-              : null,
-        );
-      },
     );
   }
 
-  void _showAddPlaylistSheet() {
-    final cs = Theme.of(context).colorScheme;
-    showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.7,
-          minChildSize: 0.4,
-          maxChildSize: 0.85,
-          expand: false,
-          builder: (_, scrollController) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40, height: 4,
-                      decoration: BoxDecoration(
-                        color: cs.onSurfaceVariant.withAlpha(80),
-                        borderRadius: BorderRadius.circular(2),
+  Widget _buildLibraryList(bool canControl) {
+    final songs = _filteredSongs();
+    if (widget.state.activePlaylist.isEmpty) {
+      return const Center(child: Text('当前没有激活歌单，请先添加歌单或专辑来源'));
+    }
+    if (_libraryView == _LibraryView.song) {
+      if (songs.isEmpty) return const Center(child: Text('No songs'));
+      return ListView.builder(
+        itemCount: songs.length,
+        itemBuilder: (_, i) {
+          final s = songs[i];
+          return _SongRow(
+            song: s,
+            canControl: canControl,
+            playOnlyButton: true,
+            onPlay: canControl
+                ? () => widget.state.playSongOnActive(s.uuid)
+                : null,
+            onNext: canControl
+                ? () => widget.state.addSongNextOnActive(s.uuid)
+                : null,
+            onAddTail: canControl
+                ? () => widget.state.addSongToActiveQueue(s.uuid)
+                : null,
+            onExcludeToggle: canControl
+                ? () => widget.state.setSongExcluded(s.uuid, !(s.isExcluded))
+                : null,
+            excluded: s.isExcluded,
+            baseUrl: widget.state.apiBaseUrl,
+          );
+        },
+      );
+    }
+
+    final selectedSourceIds = widget.state.playlistSources
+        .map((s) => s.id)
+        .toSet();
+    if (_libraryView == _LibraryView.album) {
+      final selectedAlbumIds = selectedSourceIds
+          .where((id) => id.startsWith('album_'))
+          .map((id) => id.substring('album_'.length))
+          .toSet();
+      final filteredAlbums = _albums.where((a) {
+        if (!selectedAlbumIds.contains(a.id)) return false;
+        if (_query.isEmpty) return true;
+        return a.name.toLowerCase().contains(_query) ||
+            a.moduleId.toLowerCase().contains(_query);
+      }).toList();
+      if (filteredAlbums.isEmpty) {
+        return const Center(child: Text('当前没有已添加的专辑'));
+      }
+      return ListView.builder(
+        itemCount: filteredAlbums.length,
+        itemBuilder: (_, i) {
+          final a = filteredAlbums[i];
+          return ListTile(
+            leading: SizedBox(
+              width: 40,
+              height: 40,
+              child: _AlbumCover(album: a, baseUrl: widget.state.apiBaseUrl),
+            ),
+            title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text('${a.songCount} songs • ${a.moduleId}'),
+            trailing: canControl
+                ? PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'remove')
+                        widget.state.removePlaylistSource('album_${a.id}');
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'remove',
+                        child: Text('从曲库移除'),
                       ),
+                    ],
+                  )
+                : null,
+          );
+        },
+      );
+    }
+
+    final selectedTagIds = selectedSourceIds
+        .where((id) => id.startsWith('tag_'))
+        .map((id) => id.substring('tag_'.length))
+        .toSet();
+    final filteredTags = _tags.where((t) {
+      if (!selectedTagIds.contains(t.id)) return false;
+      return _query.isEmpty ||
+          t.name.toLowerCase().contains(_query) ||
+          t.moduleId.toLowerCase().contains(_query);
+    }).toList();
+    if (filteredTags.isEmpty) {
+      return const Center(child: Text('当前没有已添加的歌单'));
+    }
+    return ListView.builder(
+      itemCount: filteredTags.length,
+      itemBuilder: (_, i) {
+        final t = filteredTags[i];
+        return ListTile(
+          leading: const Icon(Icons.folder_rounded),
+          title: Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(t.moduleId),
+          trailing: canControl
+              ? PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'remove')
+                      widget.state.removePlaylistSource('tag_${t.id}');
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'remove', child: Text('从曲库移除')),
+                  ],
+                )
+              : null,
+        );
+      },
+    );
+  }
+
+  List<SongInfo> _filteredSongs() {
+    final sourceSet = widget.state.activePlaylist.map((e) => e.uuid).toSet();
+    var list = _songs.where((s) => sourceSet.contains(s.uuid)).toList();
+    // Fallback: if _songs is empty (offline instance), convert _activePlaylist items
+    if (list.isEmpty &&
+        _songs.isEmpty &&
+        widget.state.activePlaylist.isNotEmpty) {
+      list = widget.state.activePlaylist
+          .map(
+            (q) => SongInfo(
+              uuid: q.uuid,
+              title: q.title,
+              artist: q.artist,
+              albumId: q.albumId,
+              duration: q.duration,
+              moduleId: q.moduleId,
+            ),
+          )
+          .toList();
+    }
+    if (_query.isNotEmpty) {
+      list = list.where((s) {
+        final album = _albumName(s.albumId).toLowerCase();
+        return s.title.toLowerCase().contains(_query) ||
+            s.artist.toLowerCase().contains(_query) ||
+            album.contains(_query);
+      }).toList();
+    }
+    return list;
+  }
+
+  SongInfo _songWithFallback(TrackInfo s) {
+    final found = _songs.where((e) => e.uuid == s.uuid);
+    if (found.isNotEmpty) return found.first;
+    return SongInfo(
+      uuid: s.uuid,
+      title: s.title,
+      artist: s.artist,
+      albumId: s.albumId,
+      duration: s.duration,
+      moduleId: s.moduleId,
+    );
+  }
+
+  bool _isExcluded(String uuid) {
+    final found = _songs.where((e) => e.uuid == uuid);
+    return found.isNotEmpty && found.first.isExcluded;
+  }
+
+  String _albumName(String albumId) {
+    final m = _albums.where((a) => a.id == albumId);
+    return m.isEmpty ? '' : m.first.name;
+  }
+
+  void _showAddSourceSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final selectedIds = widget.state.playlistSources
+              .map((s) => s.id)
+              .toSet();
+          return SizedBox(
+            height: MediaQuery.of(context).size.height * 0.82,
+            child: DefaultTabController(
+              length: 2,
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text('选择标签或专辑添加到歌单',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: ListView(
-                      controller: scrollController,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+                    child: Row(
                       children: [
-                        if (_tags.isNotEmpty) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text('标签', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant)),
-                          ),
-                          ..._tags.map((t) => ListTile(
-                            dense: true,
-                            leading: Icon(Icons.folder_rounded, color: cs.primary, size: 22),
-                            title: Text(t.name),
-                            subtitle: Text(t.moduleId, style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-                            onTap: () {
-                              widget.state.addTagToActivePlaylist(t);
-                              Navigator.pop(ctx);
-                            },
-                          )),
-                        ],
-                        if (_albums.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text('专辑', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant)),
-                          ),
-                          ..._albums.map((a) => ListTile(
-                            dense: true,
-                            leading: Icon(Icons.album_rounded, color: cs.primary, size: 22),
-                            title: Text(a.name),
-                            subtitle: Text('${a.songCount} 首', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-                            onTap: () {
-                              widget.state.addAlbumToActivePlaylist(a);
-                              Navigator.pop(ctx);
-                            },
-                          )),
-                        ],
-                        if (_tags.isEmpty && _albums.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Center(
-                              child: Text('没有可添加的内容', style: TextStyle(color: cs.onSurfaceVariant)),
-                            ),
-                          ),
+                        const Text(
+                          '选择要加入曲库的来源',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const Spacer(),
+                        Text('已选 ${selectedIds.length}'),
+                      ],
+                    ),
+                  ),
+                  const TabBar(
+                    tabs: [
+                      Tab(text: 'Playlists'),
+                      Tab(text: 'Albums'),
+                    ],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        ListView.builder(
+                          itemCount: _tags.length,
+                          itemBuilder: (_, i) {
+                            final t = _tags[i];
+                            final sourceId = 'tag_${t.id}';
+                            final checked = selectedIds.contains(sourceId);
+                            return CheckboxListTile(
+                              value: checked,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              secondary: const Icon(Icons.folder_rounded),
+                              title: Text(t.name),
+                              subtitle: Text(t.moduleId),
+                              onChanged: (v) async {
+                                if (v == null) return;
+                                if (v) {
+                                  await widget.state.addTagToActivePlaylist(t);
+                                } else {
+                                  await widget.state.removePlaylistSource(
+                                    sourceId,
+                                  );
+                                }
+                                if (mounted) setState(() {});
+                                setSheetState(() {});
+                              },
+                            );
+                          },
+                        ),
+                        ListView.builder(
+                          itemCount: _albums.length,
+                          itemBuilder: (_, i) {
+                            final a = _albums[i];
+                            final sourceId = 'album_${a.id}';
+                            final checked = selectedIds.contains(sourceId);
+                            return CheckboxListTile(
+                              value: checked,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              secondary: SizedBox(
+                                width: 36,
+                                height: 36,
+                                child: _AlbumCover(
+                                  album: a,
+                                  baseUrl: widget.state.apiBaseUrl,
+                                ),
+                              ),
+                              title: Text(a.name),
+                              subtitle: Text(
+                                '${a.songCount} songs • ${a.moduleId}',
+                              ),
+                              onChanged: (v) async {
+                                if (v == null) return;
+                                if (v) {
+                                  await widget.state.addAlbumToActivePlaylist(
+                                    a,
+                                  );
+                                } else {
+                                  await widget.state.removePlaylistSource(
+                                    sourceId,
+                                  );
+                                }
+                                if (mounted) setState(() {});
+                                setSheetState(() {});
+                              },
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),
                 ],
               ),
-            );
-          },
-        );
-      },
+            ),
+          );
+        },
+      ),
     );
   }
 
-  String _formatDuration(double seconds) {
-    if (seconds <= 0) return '0:00';
-    final m = (seconds ~/ 60).toString();
-    final s = (seconds % 60).toInt().toString().padLeft(2, '0');
+  String _fmt(double sec) {
+    if (sec <= 0) return '0:00';
+    final m = (sec ~/ 60).toString();
+    final s = (sec % 60).toInt().toString().padLeft(2, '0');
     return '$m:$s';
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-//  Private widgets used by HomePage
-// ═══════════════════════════════════════════════════════════
-
 class _LoadingHome extends StatelessWidget {
+  final IconData icon;
   final String title;
   final String message;
 
-  const _LoadingHome({required this.title, required this.message});
+  const _LoadingHome({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -720,13 +785,20 @@ class _LoadingHome extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.wifi_tethering_rounded, size: 64, color: cs.primary.withAlpha(120)),
+          Icon(icon, size: 72, color: cs.primary.withAlpha(180)),
           const SizedBox(height: 16),
-          Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700)),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 8),
           Text(message, style: TextStyle(color: cs.onSurfaceVariant)),
-          const SizedBox(height: 24),
-          const CircularProgressIndicator(strokeWidth: 2),
+          const SizedBox(height: 20),
+          const SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
         ],
       ),
     );
@@ -744,76 +816,11 @@ class _Panel extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.outlineVariant.withAlpha(60)),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: child,
-    );
-  }
-}
-
-class _InstanceSelector extends StatelessWidget {
-  final List<PlaybackInstanceInfo> instances;
-  final String? activeId;
-  final ValueChanged<String> onSelected;
-
-  const _InstanceSelector({
-    required this.instances,
-    required this.activeId,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    if (instances.isEmpty) {
-      return Text('没有音频实例', style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13));
-    }
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: cs.outlineVariant.withAlpha(120)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: activeId != null && instances.any((i) => i.id == activeId) ? activeId : instances.first.id,
-          isExpanded: true,
-          icon: Icon(Icons.expand_more_rounded, color: cs.onSurfaceVariant),
-          style: Theme.of(context).textTheme.bodyMedium,
-          items: instances.map((i) {
-            final isActive = i.id == activeId;
-            return DropdownMenuItem(
-              value: i.id,
-              child: Row(
-                children: [
-                  Icon(
-                    i.attached ? Icons.volume_up_rounded : Icons.volume_mute_rounded,
-                    size: 16,
-                    color: isActive ? cs.primary : cs.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      i.mode == 'ServerManaged' ? '${i.id} (服务端)' : i.id,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: isActive ? FontWeight.w700 : FontWeight.normal,
-                        color: isActive ? cs.primary : null,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
-          onChanged: (v) {
-            if (v != null) onSelected(v);
-          },
-        ),
-      ),
+      padding: const EdgeInsets.all(12),
+      child: child,
     );
   }
 }
@@ -830,344 +837,137 @@ class _Cover extends StatelessWidget {
     if (uuid.isEmpty) {
       return Container(
         color: cs.surfaceContainerHighest,
-        child: Center(
-          child: Icon(Icons.music_note_rounded, size: 64, color: cs.onSurfaceVariant.withAlpha(80)),
-        ),
+        child: const Icon(Icons.music_note_rounded),
       );
     }
     return Image.network(
-      '$baseUrl/api/cover/$uuid',
+      '$baseUrl/api/track/cover?uuid=$uuid',
       fit: BoxFit.cover,
       errorBuilder: (_, __, ___) => Container(
         color: cs.surfaceContainerHighest,
-        child: Center(
-          child: Icon(Icons.broken_image_rounded, size: 48, color: cs.onSurfaceVariant.withAlpha(80)),
-        ),
+        child: const Icon(Icons.broken_image_rounded),
       ),
-      loadingBuilder: (_, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          color: cs.surfaceContainerHighest,
-          child: Center(
-            child: CircularProgressIndicator(
-              value: progress.expectedTotalBytes != null
-                  ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
-                  : null,
-              strokeWidth: 2,
-            ),
-          ),
-        );
-      },
     );
   }
 }
 
-class _ModeNotice extends StatelessWidget {
-  final PlaybackInstanceInfo? instance;
-  final bool canControl;
+class _AlbumCover extends StatelessWidget {
+  final AlbumInfo album;
+  final String baseUrl;
 
-  const _ModeNotice({required this.instance, required this.canControl});
+  const _AlbumCover({required this.album, required this.baseUrl});
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    if (instance == null) return const SizedBox.shrink();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: canControl ? cs.primaryContainer.withAlpha(100) : cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+    if (album.coverPath.isEmpty) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: const Icon(Icons.album_rounded),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: Image.network(
+        '$baseUrl/${album.coverPath}',
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.album_rounded),
       ),
-      child: Row(
+    );
+  }
+}
+
+class _SongRow extends StatelessWidget {
+  final SongInfo song;
+  final bool canControl;
+  final bool playOnlyButton;
+  final VoidCallback? onPlay;
+  final VoidCallback? onNext;
+  final VoidCallback? onAddTail;
+  final VoidCallback? onExcludeToggle;
+  final VoidCallback? onDelete;
+  final bool excluded;
+  final String baseUrl;
+
+  const _SongRow({
+    super.key,
+    required this.song,
+    required this.canControl,
+    required this.playOnlyButton,
+    required this.baseUrl,
+    this.onPlay,
+    this.onNext,
+    this.onAddTail,
+    this.onExcludeToggle,
+    this.onDelete,
+    this.excluded = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      key: key,
+      onTap: null,
+      leading: SizedBox(
+        width: 40,
+        height: 40,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: _Cover(uuid: song.uuid, baseUrl: baseUrl),
+        ),
+      ),
+      title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        '${song.artist.isEmpty ? 'Unknown artist' : song.artist} • ${song.albumId}',
+      ),
+      trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            canControl ? Icons.play_circle_fill_rounded : Icons.info_outline_rounded,
-            size: 14,
-            color: canControl ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+          Text(
+            _fmt(song.duration),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(width: 6),
-          Text(
-            canControl ? '服务端管理模式' : '客户端管理模式 — 部分功能受限',
-            style: TextStyle(
-              fontSize: 11,
-              color: canControl ? cs.onPrimaryContainer : cs.onSurfaceVariant,
-            ),
+          Text(song.moduleId, style: Theme.of(context).textTheme.bodySmall),
+          IconButton(
+            onPressed: onPlay,
+            icon: const Icon(Icons.play_circle_fill_rounded),
+            tooltip: 'Play',
+          ),
+          PopupMenuButton<String>(
+            enabled: canControl,
+            onSelected: (v) {
+              if (v == 'next') onNext?.call();
+              if (v == 'tail') onAddTail?.call();
+              if (v == 'exclude') onExcludeToggle?.call();
+              if (v == 'remove') onDelete?.call();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'next', child: Text('Play next')),
+              const PopupMenuItem(
+                value: 'tail',
+                child: Text('Add to queue tail'),
+              ),
+              PopupMenuItem(
+                value: 'exclude',
+                child: Text(excluded ? 'Remove exclusion' : 'Exclude'),
+              ),
+              if (onDelete != null)
+                const PopupMenuItem(value: 'remove', child: Text('Remove')),
+            ],
           ),
         ],
       ),
     );
   }
-}
 
-class _SectionList<T> extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final List<T> items;
-  final String emptyText;
-  final Widget? action;
-  final Widget Function(T) itemBuilder;
-
-  const _SectionList({
-    required this.title,
-    required this.icon,
-    required this.items,
-    required this.emptyText,
-    this.action,
-    required this.itemBuilder,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 8),
-            Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-            const Spacer(),
-            if (action != null) action!,
-          ],
-        ),
-        if (items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: Text(emptyText, style: TextStyle(color: cs.onSurfaceVariant.withAlpha(150), fontSize: 13)),
-            ),
-          )
-        else
-          ...items.map((item) => itemBuilder(item)),
-      ],
-    );
-  }
-}
-
-class _SongTile extends StatelessWidget {
-  final QueueItemInfo song;
-  final String baseUrl;
-  final bool canControl;
-  final VoidCallback? onRemove;
-  final VoidCallback? onPlay;
-  final VoidCallback? onAdd;
-
-  const _SongTile({
-    required this.song,
-    required this.baseUrl,
-    required this.canControl,
-    this.onRemove,
-    this.onPlay,
-    this.onAdd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final menuItems = <PopupMenuEntry<VoidCallback>>[
-      if (onPlay != null)
-        PopupMenuItem(value: onPlay!, child: const ListTile(leading: Icon(Icons.play_arrow_rounded), title: Text('播放'), dense: true, contentPadding: EdgeInsets.zero)),
-      if (onAdd != null)
-        PopupMenuItem(value: onAdd!, child: const ListTile(leading: Icon(Icons.playlist_add_rounded), title: Text('添加到队列'), dense: true, contentPadding: EdgeInsets.zero)),
-      if (onRemove != null)
-        PopupMenuItem(value: onRemove!, child: const ListTile(leading: Icon(Icons.remove_circle_outline_rounded), title: Text('移除'), dense: true, contentPadding: EdgeInsets.zero)),
-    ];
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onPlay,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: SizedBox(
-                width: 36, height: 36,
-                child: _Cover(uuid: song.uuid, baseUrl: baseUrl),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
-                  const SizedBox(height: 2),
-                  Text(song.artist.isNotEmpty ? song.artist : '未知艺术家',
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-                ],
-              ),
-            ),
-            if (song.duration > 0)
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(_formatDuration(song.duration),
-                    style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
-              ),
-            if (menuItems.isNotEmpty)
-              PopupMenuButton(
-                icon: Icon(Icons.more_vert_rounded, size: 16, color: cs.onSurfaceVariant),
-                onSelected: (cb) => cb(),
-              itemBuilder: (_) => menuItems,
-                position: PopupMenuPosition.over,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatDuration(double seconds) {
-    if (seconds <= 0) return '0:00';
-    final m = (seconds ~/ 60).toString();
-    final s = (seconds % 60).toInt().toString().padLeft(2, '0');
+  static String _fmt(double sec) {
+    if (sec <= 0) return '0:00';
+    final m = (sec ~/ 60).toString();
+    final s = (sec % 60).toInt().toString().padLeft(2, '0');
     return '$m:$s';
-  }
-}
-
-class _AlbumSongsSheet extends StatefulWidget {
-  final AlbumInfo album;
-  final ApiClient api;
-  final String apiBaseUrl;
-  final bool canControl;
-  final void Function(String uuid)? onPlay;
-  final void Function(String uuid)? onAdd;
-
-  const _AlbumSongsSheet({
-    required this.album,
-    required this.api,
-    required this.apiBaseUrl,
-    required this.canControl,
-    this.onPlay,
-    this.onAdd,
-  });
-
-  @override
-  State<_AlbumSongsSheet> createState() => _AlbumSongsSheetState();
-}
-
-class _AlbumSongsSheetState extends State<_AlbumSongsSheet> {
-  late Future<List<SongInfo>> _songsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _songsFuture = widget.api.getSongs(albumId: widget.album.id);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.4,
-      maxChildSize: 0.85,
-      expand: false,
-      builder: (_, scrollController) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: cs.onSurfaceVariant.withAlpha(80),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: SizedBox(
-                      width: 48, height: 48,
-                      child: widget.album.coverPath.isNotEmpty
-                          ? Image.network(
-                              '${widget.apiBaseUrl}/${widget.album.coverPath}',
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Icon(Icons.album_rounded, color: cs.primary),
-                            )
-                          : Icon(Icons.album_rounded, color: cs.primary, size: 32),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(widget.album.name,
-                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                        Text('${widget.album.songCount} 首',
-                            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: FutureBuilder<List<SongInfo>>(
-                  future: _songsFuture,
-                  builder: (_, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-                    }
-                    if (snap.hasError) {
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.error_outline, color: cs.error),
-                            const SizedBox(height: 8),
-                            Text('加载失败', style: TextStyle(color: cs.error)),
-                          ],
-                        ),
-                      );
-                    }
-                    final songs = snap.data ?? [];
-                    if (songs.isEmpty) {
-                      return Center(child: Text('暂无歌曲', style: TextStyle(color: cs.onSurfaceVariant)));
-                    }
-                    return ListView.separated(
-                      controller: scrollController,
-                      itemCount: songs.length,
-                      separatorBuilder: (_, __) => Divider(height: 1, indent: 48, color: cs.outlineVariant.withAlpha(60)),
-                      itemBuilder: (_, i) {
-                        final s = songs[i];
-                        return _SongTile(
-                          song: QueueItemInfo(
-                            index: i,
-                            uuid: s.uuid,
-                            title: s.title,
-                            artist: s.artist,
-                            duration: s.duration,
-                          ),
-                          baseUrl: widget.apiBaseUrl,
-                          canControl: widget.canControl,
-                          onPlay: widget.onPlay != null ? () => widget.onPlay!(s.uuid) : null,
-                          onAdd: widget.onAdd != null ? () => widget.onAdd!(s.uuid) : null,
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 }

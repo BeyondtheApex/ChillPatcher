@@ -80,27 +80,18 @@ namespace OmniMixPlayer.Backend.Audio
         public int QueueIndex => Active.QueueIndex;
         public IReadOnlyList<MusicInfo> History => Active.History;
         public int HistoryCount => Active.HistoryCount;
-        public IReadOnlyList<MusicInfo> Playlist {
+        public IReadOnlyList<MusicInfo> Playlist
+        {
             get
             {
-                var p = Active.Playlist;
-                if (p.Count > 0) return p;
-                // No sources → return all music as "全部" playlist
-                var all = _musicRegistry.GetAllMusic();
-                return all;
+                return Active.Playlist;
             }
         }
-        public IReadOnlyList<PlaylistSourceInfo> PlaylistSources {
+        public IReadOnlyList<PlaylistSourceInfo> PlaylistSources
+        {
             get
             {
-                var sources = Active.PlaylistSources;
-                if (sources.Count > 0) return sources;
-                // No sources → return a synthetic "全部" source
-                var count = _musicRegistry.GetAllMusic().Count;
-                return new List<PlaylistSourceInfo>
-                {
-                    new() { Id = "all", Name = "全部", SongCount = count }
-                };
+                return Active.PlaylistSources;
             }
         }
         public int PlaylistCount => Active.PlaylistCount;
@@ -264,7 +255,7 @@ namespace OmniMixPlayer.Backend.Audio
                 }
 
                 if (active.CurrentTrack != null) StartPlayback();
-        }
+            }
         }
 
         public void Pause()
@@ -352,7 +343,7 @@ namespace OmniMixPlayer.Backend.Audio
                 if (_currentReader.Seek(targetFrame))
                 {
                     Position = positionSeconds;
-                    
+
                     // Align the shared memory cursors to the seek target frame
                     _sharedMemory.WriteI64(SharedMemoryProtocol.WriteCursor, shmTargetFrame);
                     _sharedMemory.WriteI64(SharedMemoryProtocol.ReadCursor, shmTargetFrame);
@@ -421,7 +412,7 @@ namespace OmniMixPlayer.Backend.Audio
         public void MoveInQueue(int from, int to) { lock (_lock) { if (Active.MoveInQueue(from, to)) EmitQueueChanged(QueueChangeType.Moved, null); } }
         public void MoveInHistory(int from, int to) { lock (_lock) { if (Active.MoveInHistory(from, to)) EmitQueueChanged(QueueChangeType.Moved, null); } }
         public void ClearQueue() { lock (_lock) { Active.ClearQueue(); EmitQueueChanged(QueueChangeType.Cleared, null); } }
-        public void ClearHistory() { lock (_lock) { Active.ClearHistory(); } }
+        public void ClearHistory() { lock (_lock) { Active.ClearHistory(); EmitQueueChanged(QueueChangeType.Cleared, null); } }
 
         public void SetPlaylist(IEnumerable<string> uuids)
         {
@@ -451,19 +442,7 @@ namespace OmniMixPlayer.Backend.Audio
             {
                 var resolved = ResolvePlaylistSource(source);
                 if (resolved == null) return;
-
-                // If currently only has the synthetic "all" source (no real sources),
-                // and the new source is a real one, replace all sources instead of adding
-                if (Active.PlaylistSources.Count <= 1 &&
-                    Active.PlaylistSources.All(s => s.Id == "all") &&
-                    resolved.Id != "all")
-                {
-                    Active.ReplacePlaylistSources(new[] { resolved });
-                }
-                else
-                {
-                    Active.InsertPlaylistSource(resolved, index);
-                }
+                Active.InsertPlaylistSource(resolved, index);
                 EmitQueueChanged(QueueChangeType.Enqueued, null);
             }
         }
@@ -636,6 +615,46 @@ namespace OmniMixPlayer.Backend.Audio
                 _logger.LogInformation("Restored {Count} queues, active: {Id}", _queues.Count, _activeQueueId);
             }
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to restore playback state"); }
+        }
+
+        /// <summary>
+        /// Return the full profile as a JSON object (for API / offline management).
+        /// </summary>
+        public object GetProfile()
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(_stateFilePath) && File.Exists(_stateFilePath))
+                {
+                    var json = File.ReadAllText(_stateFilePath);
+                    return System.Text.Json.JsonSerializer.Deserialize<object>(json);
+                }
+            }
+            catch { }
+            return new { };
+        }
+
+        /// <summary>
+        /// Update the profile from JSON and restore internal state.
+        /// Returns true on success.
+        /// </summary>
+        public bool UpdateProfile(string json)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_stateFilePath)) return false;
+                var dir = Path.GetDirectoryName(_stateFilePath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+                File.WriteAllText(_stateFilePath, json);
+                RestoreState();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to update profile");
+                return false;
+            }
         }
 
         private class PlaybackStateData
@@ -1077,7 +1096,7 @@ namespace OmniMixPlayer.Backend.Audio
         private IReadOnlyList<MusicInfo> GetPlayablePlaylist()
         {
             var activePlaylist = Active.Playlist;
-            var allSongs = activePlaylist.Count > 0 ? activePlaylist : _musicRegistry.GetAllMusic();
+            var allSongs = activePlaylist;
             var playable = allSongs.Where(m => m != null && !m.IsExcluded).ToList();
             return playable.Count > 0 ? playable : allSongs.Where(m => m != null).ToList();
         }

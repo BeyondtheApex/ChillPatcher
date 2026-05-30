@@ -110,4 +110,17 @@ class PortFile {
       } catch (_) {}
     }
   }
+
+  /// Delete the port file from a specific directory.
+  static void deletePortFile(String dir) {
+    try {
+      final file = File('$dir${Platform.pathSeparator}omnimix_port.txt');
+      if (file.existsSync()) {
+        file.deleteSync();
+        GuiLogger().conn('PortFile: deleted ${file.path}');
+      }
+    } catch (e) {
+      GuiLogger().conn('PortFile: failed to delete from $dir: $e');
+    }
+  }
 }

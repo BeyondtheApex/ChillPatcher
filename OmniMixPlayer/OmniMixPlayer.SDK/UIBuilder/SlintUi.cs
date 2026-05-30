@@ -34,7 +34,7 @@ namespace OmniMixPlayer.SDK.Interfaces
                 NodeType = "Text",
                 Text = text,
                 FontSize = fontSize,
-                Color = color ?? "#e0e0e0"
+                Color = color // null = use theme color on client
             };
         }
 

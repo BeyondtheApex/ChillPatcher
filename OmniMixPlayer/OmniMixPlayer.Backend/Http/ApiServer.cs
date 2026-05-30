@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -31,6 +32,7 @@ namespace OmniMixPlayer.Backend.Http
         private readonly ILogger _logger;
         private readonly List<WebSocket> _wsClients = new List<WebSocket>();
         private readonly object _wsLock = new object();
+        private readonly ConcurrentDictionary<WebSocket, SemaphoreSlim> _wsSendLocks = new ConcurrentDictionary<WebSocket, SemaphoreSlim>();
         private ModuleUIHandler _moduleUIHandler;
         private GlobalConfigManager _globalConfig;
 
@@ -125,7 +127,16 @@ namespace OmniMixPlayer.Backend.Http
             {
                 var instance = _instances.Get(id);
                 return instance != null
-                    ? Results.Json(instance.Controller.Queue.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist, moduleId = m.ModuleId }))
+                    ? Results.Json(instance.Controller.Queue.Select((m, i) => new
+                    {
+                        index = i,
+                        uuid = m.UUID,
+                        title = m.Title,
+                        artist = m.Artist,
+                        albumId = m.AlbumId,
+                        duration = m.Duration,
+                        moduleId = m.ModuleId
+                    }))
                     : Results.NotFound();
             });
             endpoints.MapGet("/api/instances/{id}/playlist", (string id) =>
@@ -156,7 +167,16 @@ namespace OmniMixPlayer.Backend.Http
             {
                 var instance = _instances.Get(id);
                 return instance != null
-                    ? Results.Json(instance.Controller.History.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist }))
+                    ? Results.Json(instance.Controller.History.Select((m, i) => new
+                    {
+                        index = i,
+                        uuid = m.UUID,
+                        title = m.Title,
+                        artist = m.Artist,
+                        albumId = m.AlbumId,
+                        duration = m.Duration,
+                        moduleId = m.ModuleId
+                    }))
                     : Results.NotFound();
             });
             endpoints.MapPost("/api/instances/{id}/history/insert", (string id, QueueInsertRequest req) => WithInstance(id, p => p.InsertIntoHistory(req.uuids ?? Array.Empty<string>(), req.index)));
@@ -211,10 +231,9 @@ namespace OmniMixPlayer.Backend.Http
             // Modules
             endpoints.MapGet("/api/modules", () => Results.Json(_moduleLoader.LoadedModules.Select(m =>
             {
-                var hasUi = m.Module is IModuleUIProvider;
                 var uiProvider = m.Module as IModuleUIProvider;
+                var hasSettingsUI = uiProvider != null;
                 var hasQuickLinks = uiProvider?.HasQuickLinks ?? false;
-                var hasSettingsUI = uiProvider?.HasSettingsUI ?? false;
                 var linkEntries = new List<object>();
                 if (hasQuickLinks)
                 {
@@ -228,6 +247,7 @@ namespace OmniMixPlayer.Backend.Http
                         iconColor = le.IconColor
                     }).ToList();
                 }
+                var isEnabled = _moduleLoader.IsModuleEnabled(m.Module.ModuleId);
                 return new
                 {
                     id = m.Module.ModuleId,
@@ -235,9 +255,9 @@ namespace OmniMixPlayer.Backend.Http
                     version = m.Module.Version,
                     priority = m.Module.Priority,
                     loadedAt = m.LoadedAt.ToString("O"),
-                    hasUI = hasUi,
-                    hasQuickLinks,
+                    enabled = isEnabled,
                     hasSettingsUI,
+                    hasQuickLinks,
                     linkEntries
                 };
             })));
@@ -294,6 +314,32 @@ namespace OmniMixPlayer.Backend.Http
             {
                 _globalConfig?.Save();
                 return Results.Ok(new { message = "Config saved" });
+            });
+
+            // Instance profile (persisted per-instance config for offline management)
+            endpoints.MapGet("/api/instances/{id}/profile", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                if (instance == null) return Results.NotFound();
+                var profile = instance.Controller.GetProfile();
+                return Results.Json(profile);
+            });
+            endpoints.MapPut("/api/instances/{id}/profile", async (string id, HttpContext ctx) =>
+            {
+                var instance = _instances.Get(id);
+                if (instance == null) return Results.NotFound();
+                try
+                {
+                    using var reader = new StreamReader(ctx.Request.Body);
+                    var json = await reader.ReadToEndAsync();
+                    var ok = instance.Controller.UpdateProfile(json);
+                    return ok ? Results.Ok() : Results.Problem("Failed to persist profile", statusCode: 500);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to update profile for instance {Id}", id);
+                    return Results.BadRequest(new { error = ex.Message });
+                }
             });
 
             // Image proxy (CORS / anti-hotlinking)
@@ -625,7 +671,7 @@ namespace OmniMixPlayer.Backend.Http
         {
             if (!context.WebSockets.IsWebSocketRequest) { context.Response.StatusCode = 400; return; }
             var ws = await context.WebSockets.AcceptWebSocketAsync();
-            lock (_wsLock) _wsClients.Add(ws);
+            lock (_wsLock) { _wsClients.Add(ws); _wsSendLocks[ws] = new SemaphoreSlim(1, 1); }
 
             try
             {
@@ -661,6 +707,8 @@ namespace OmniMixPlayer.Backend.Http
             finally
             {
                 lock (_wsLock) _wsClients.Remove(ws);
+                _wsSendLocks.TryRemove(ws, out var sendLock);
+                sendLock?.Dispose();
             }
         }
 
@@ -676,16 +724,30 @@ namespace OmniMixPlayer.Backend.Http
             var dead = new List<WebSocket>();
             foreach (var ws in sockets)
             {
+                if (!_wsSendLocks.TryGetValue(ws, out var sendLock)) continue;
+                await sendLock.WaitAsync();
                 try
                 {
                     if (ws.State == WebSocketState.Open)
                         await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
                 }
                 catch { dead.Add(ws); }
+                finally
+                {
+                    sendLock.Release();
+                }
             }
             if (dead.Count > 0)
             {
-                lock (_wsLock) { foreach (var ws in dead) _wsClients.Remove(ws); }
+                lock (_wsLock)
+                {
+                    foreach (var ws in dead)
+                    {
+                        _wsClients.Remove(ws);
+                        if (_wsSendLocks.TryRemove(ws, out var deadLock))
+                            deadLock.Dispose();
+                    }
+                }
             }
         }
 
@@ -721,5 +783,4 @@ namespace OmniMixPlayer.Backend.Http
     public record ModuleToggleRequest(bool enabled);
     public record InstanceConnectRequest(string clientId, string role, string mode);
 }
-
 

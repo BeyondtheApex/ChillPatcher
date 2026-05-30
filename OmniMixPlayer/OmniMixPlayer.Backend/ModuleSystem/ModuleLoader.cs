@@ -273,7 +273,7 @@ namespace OmniMixPlayer.Backend.ModuleSystem
             _loadedModules.Clear();
         }
 
-        private bool IsModuleEnabled(string moduleId)
+        public bool IsModuleEnabled(string moduleId)
         {
             if (_moduleConfigManager == null) return true;
             return _moduleConfigManager.GetBool($"Enable_{moduleId}", true);

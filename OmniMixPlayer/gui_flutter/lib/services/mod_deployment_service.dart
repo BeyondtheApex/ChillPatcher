@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/mod_manifest.dart';
 import 'logger.dart';
+import 'port_file.dart';
 
 enum BepInExStatus { notInstalled, managed, unmanaged }
 
@@ -207,6 +209,7 @@ class ModDeploymentService {
       File(
         '$gameDir/BepInEx/.omnimix_managed',
       ).writeAsStringSync(framework.version);
+      recordInstalledVersion(framework.id, framework.version);
       log('BepInEx deployment completed successfully.');
       return true;
     } catch (e, st) {
@@ -220,10 +223,18 @@ class ModDeploymentService {
   static Future<bool> deployMod(
     String gameDir,
     ModDeclaration mod,
-    void Function(String) log,
-  ) async {
+    void Function(String) log, {
+    int? backendPort,
+    Future<void> Function(String, bool)? onPortFileDirChanged,
+  }) async {
     if (mod.installsToGameRoot) {
-      return deployRootMod(gameDir, mod, log);
+      return deployRootMod(
+        gameDir,
+        mod,
+        log,
+        backendPort: backendPort,
+        onPortFileDirChanged: onPortFileDirChanged,
+      );
     }
 
     try {
@@ -288,7 +299,27 @@ class ModDeploymentService {
         return false;
       }
 
-      log('${mod.name} deployment completed successfully.');
+      recordInstalledVersion(mod.id, mod.version);
+      // Instance registration — clean up old entry for same directory first
+      _cleanupStaleInstances(gameDir);
+      final instanceId = _generateInstanceId(mod.id);
+      _writeInstanceId(gameDir, instanceId);
+      final inst = InstalledInstance(
+        instanceId: instanceId,
+        modId: mod.id,
+        mode: mod.mode,
+        gameDir: gameDir,
+        gameName: mod.name,
+        installedAt: DateTime.now(),
+      );
+      _saveInstance(inst);
+      if (backendPort != null) {
+        PortFile.writePort(gameDir, backendPort);
+      }
+      await onPortFileDirChanged?.call(gameDir, true);
+      log(
+        '${mod.name} deployment completed successfully. Instance: $instanceId',
+      );
       return true;
     } catch (e, st) {
       log('FATAL ERROR during mod deployment: $e');
@@ -345,6 +376,7 @@ class ModDeploymentService {
         log('  Deleted empty: BepInEx/');
       }
 
+      removeVersionRecord(framework.id);
       log('BepInEx undeployment complete.');
       return true;
     } catch (e) {
@@ -357,10 +389,16 @@ class ModDeploymentService {
   static Future<bool> undeployMod(
     String gameDir,
     ModDeclaration mod,
-    void Function(String) log,
-  ) async {
+    void Function(String) log, {
+    Future<void> Function(String, bool)? onPortFileDirChanged,
+  }) async {
     if (mod.installsToGameRoot) {
-      return undeployRootMod(gameDir, mod, log);
+      return undeployRootMod(
+        gameDir,
+        mod,
+        log,
+        onPortFileDirChanged: onPortFileDirChanged,
+      );
     }
 
     try {
@@ -370,12 +408,96 @@ class ModDeploymentService {
       _deleteLinkSafely(linkPath);
       log('  Removed mod directory symlink: BepInEx/plugins/${mod.folderName}');
 
+      // Archive instance + clean up (only if instance ID exists)
+      final instanceId = _readInstanceId(gameDir);
+      if (instanceId != null && instanceId.isNotEmpty) {
+        final existing = findInstanceByDir(gameDir);
+        if (existing != null) {
+          _archiveInstance(instanceId, gameDir, existing);
+          _removeInstance(instanceId);
+          log('  Archived instance: $instanceId');
+        }
+      }
+      _deleteInstanceId(gameDir);
+      PortFile.deletePortFile(gameDir);
+      removeVersionRecord(mod.id);
+      await onPortFileDirChanged?.call(gameDir, false);
       log('${mod.name} undeployment complete.');
       return true;
     } catch (e) {
       log('ERROR during mod undeployment: $e');
       return false;
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Version Tracking
+  // ═══════════════════════════════════════════════════════════
+
+  /// Path: {managerDir}/installed_versions.json
+  /// Stores map of { modId or frameworkId -> installed_version }.
+  static String get _versionDbPath => '$managerDir/installed_versions.json';
+
+  static Map<String, String> _readVersions() {
+    try {
+      final f = File(_versionDbPath);
+      if (!f.existsSync()) return {};
+      final data = jsonDecode(f.readAsStringSync());
+      if (data is Map) return data.cast<String, String>();
+    } catch (_) {}
+    return {};
+  }
+
+  static void _writeVersions(Map<String, String> versions) {
+    try {
+      final dir = Directory(managerDir);
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      File(_versionDbPath).writeAsStringSync(jsonEncode(versions));
+    } catch (_) {}
+  }
+
+  /// Record that a framework/mod was installed at a specific version.
+  static void recordInstalledVersion(String id, String version) {
+    final v = _readVersions();
+    v[id] = version;
+    _writeVersions(v);
+  }
+
+  /// Remove version record (after uninstall).
+  static void removeVersionRecord(String id) {
+    final v = _readVersions();
+    v.remove(id);
+    _writeVersions(v);
+  }
+
+  /// Get installed version for a framework/mod, or null if not installed.
+  static String? getInstalledVersion(String id) {
+    return _readVersions()[id];
+  }
+
+  /// Get the latest available version from the app's bundled version_info.json.
+  /// Looks in the exe directory first, then falls back to assets.
+  static Future<String?> getLatestModVersion() async {
+    // Try reading from file system (playerbuild/)
+    try {
+      final exeDir = Directory(Platform.resolvedExecutable).parent.path;
+      final verFile = File('$exeDir/version_info.json');
+      if (verFile.existsSync()) {
+        final data = jsonDecode(verFile.readAsStringSync());
+        if (data is Map && data['mod_version'] != null) {
+          return data['mod_version'] as String;
+        }
+      }
+    } catch (_) {}
+    // Fallback: try bundled asset
+    try {
+      final data = await rootBundle.loadString('assets/version_info.json');
+      final parsed = jsonDecode(data);
+      if (parsed is Map && parsed['mod_version'] != null) {
+        return parsed['mod_version'] as String;
+      }
+    } catch (_) {}
+    return null;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -398,8 +520,9 @@ class ModDeploymentService {
   static Future<bool> undeployRootMod(
     String gameDir,
     ModDeclaration mod,
-    void Function(String) log,
-  ) async {
+    void Function(String) log, {
+    Future<void> Function(String, bool)? onPortFileDirChanged,
+  }) async {
     try {
       log('Starting ${mod.name} undeployment...');
       final marker = File('$gameDir/.omnimix_mods/${mod.id}.managed');
@@ -457,6 +580,21 @@ class ModDeploymentService {
         backupRoot.deleteSync();
       }
 
+      // Archive instance + clean up (only if instance ID exists)
+      final instanceId = _readInstanceId(gameDir);
+      if (instanceId != null && instanceId.isNotEmpty) {
+        final existing = findInstanceByDir(gameDir);
+        if (existing != null) {
+          _archiveInstance(instanceId, gameDir, existing);
+          _removeInstance(instanceId);
+          log('  Archived instance: $instanceId');
+        }
+      }
+      _deleteInstanceId(gameDir);
+      PortFile.deletePortFile(gameDir);
+      removeVersionRecord(mod.id);
+      await onPortFileDirChanged?.call(gameDir, false);
+
       log('${mod.name} undeployment complete.');
       return true;
     } catch (e) {
@@ -469,8 +607,10 @@ class ModDeploymentService {
   static Future<bool> deployRootMod(
     String gameDir,
     ModDeclaration mod,
-    void Function(String) log,
-  ) async {
+    void Function(String) log, {
+    int? backendPort,
+    Future<void> Function(String, bool)? onPortFileDirChanged,
+  }) async {
     try {
       log('Starting ${mod.name} deployment...');
       final managerDirObj = Directory(managerDir);
@@ -589,7 +729,27 @@ class ModDeploymentService {
 
       marker.parent.createSync(recursive: true);
       marker.writeAsStringSync(mod.version);
-      log('${mod.name} deployment completed successfully.');
+      recordInstalledVersion(mod.id, mod.version);
+      // Instance registration — clean up old entry for same directory first
+      _cleanupStaleInstances(gameDir);
+      final instanceId = _generateInstanceId(mod.id);
+      _writeInstanceId(gameDir, instanceId);
+      final inst = InstalledInstance(
+        instanceId: instanceId,
+        modId: mod.id,
+        mode: mod.mode,
+        gameDir: gameDir,
+        gameName: mod.name,
+        installedAt: DateTime.now(),
+      );
+      _saveInstance(inst);
+      if (backendPort != null) {
+        PortFile.writePort(gameDir, backendPort);
+      }
+      await onPortFileDirChanged?.call(gameDir, true);
+      log(
+        '${mod.name} deployment completed successfully. Instance: $instanceId',
+      );
       return true;
     } catch (e, st) {
       log('FATAL ERROR during root mod deployment: $e');
@@ -734,5 +894,187 @@ New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
 
   static String _escapePowerShellSingleQuoted(String value) {
     return value.replaceAll("'", "''");
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  Instance Management (UUID-based, with archive)
+  // ═══════════════════════════════════════════════════════════
+
+  /// File marker in game root identifying the instance: .omnimix_instance_id
+  static String _instanceIdPath(String gameDir) =>
+      '$gameDir${Platform.pathSeparator}.omnimix_instance_id';
+
+  static String? _readInstanceId(String gameDir) {
+    try {
+      final f = File(_instanceIdPath(gameDir));
+      if (f.existsSync()) return f.readAsStringSync().trim();
+    } catch (_) {}
+    return null;
+  }
+
+  static void _writeInstanceId(String gameDir, String instanceId) {
+    try {
+      File(_instanceIdPath(gameDir)).writeAsStringSync(instanceId);
+    } catch (e) {
+      GuiLogger().error('Failed to write instance ID to $gameDir', e);
+    }
+  }
+
+  static void _deleteInstanceId(String gameDir) {
+    try {
+      final f = File(_instanceIdPath(gameDir));
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
+  }
+
+  /// Generate a unique instance ID: "inst_{modId}_{8hex}"
+  static String _generateInstanceId(String modId) {
+    final r = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    return 'inst_${modId}_${r.substring(r.length > 8 ? r.length - 8 : 0).padLeft(8, '0')}';
+  }
+
+  // ── installed_instances.json ──
+
+  static String get _instancesDbPath => '$managerDir/installed_instances.json';
+
+  static Map<String, dynamic> _readInstancesDb() {
+    try {
+      final f = File(_instancesDbPath);
+      if (!f.existsSync()) return {};
+      return jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+    } catch (_) {}
+    return {};
+  }
+
+  static void _writeInstancesDb(Map<String, dynamic> data) {
+    try {
+      final d = Directory(managerDir);
+      if (!d.existsSync()) d.createSync(recursive: true);
+      File(_instancesDbPath).writeAsStringSync(jsonEncode(data));
+    } catch (_) {}
+  }
+
+  static void _saveInstance(InstalledInstance inst) {
+    final db = _readInstancesDb();
+    db[inst.instanceId] = inst.toJson();
+    _writeInstancesDb(db);
+  }
+
+  static void _removeInstance(String instanceId) {
+    final db = _readInstancesDb();
+    db.remove(instanceId);
+    _writeInstancesDb(db);
+  }
+
+  /// Remove any installed instances pointing to the same game directory.
+  /// Prevents stale/duplicate entries when re-deploying without proper uninstall.
+  static void _cleanupStaleInstances(String gameDir) {
+    final db = _readInstancesDb();
+    final staleIds = <String>[];
+    for (final entry in db.entries) {
+      if ((entry.value as Map<String, dynamic>)['gameDir'] == gameDir) {
+        staleIds.add(entry.key);
+      }
+    }
+    for (final id in staleIds) {
+      db.remove(id);
+    }
+    if (staleIds.isNotEmpty) _writeInstancesDb(db);
+  }
+
+  /// Load all currently-installed instances.
+  static List<InstalledInstance> loadInstances() {
+    final db = _readInstancesDb();
+    return db.values
+        .map((e) => InstalledInstance.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Find installed instance by game directory, or null.
+  static InstalledInstance? findInstanceByDir(String gameDir) {
+    return loadInstances().where((i) => i.gameDir == gameDir).firstOrNull;
+  }
+
+  /// Returns the previously-recorded game dir for a mod (for cleanup).
+  static String? getRecordedGameDir(String modId) {
+    return loadInstances()
+        .where((i) => i.modId == modId)
+        .map((i) => i.gameDir)
+        .firstOrNull;
+  }
+
+  // ── Archive ──
+
+  static String get _archiveDbPath => '$managerDir/archived_instances.json';
+
+  static Map<String, dynamic> _readArchiveDb() {
+    try {
+      final f = File(_archiveDbPath);
+      if (!f.existsSync()) return {};
+      return jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+    } catch (_) {}
+    return {};
+  }
+
+  static void _writeArchiveDb(Map<String, dynamic> data) {
+    try {
+      final d = Directory(managerDir);
+      if (!d.existsSync()) d.createSync(recursive: true);
+      File(_archiveDbPath).writeAsStringSync(jsonEncode(data));
+    } catch (_) {}
+  }
+
+  /// Archive an instance before removal.
+  static void _archiveInstance(
+    String instanceId,
+    String gameDir,
+    InstalledInstance inst,
+  ) {
+    final db = _readArchiveDb();
+    db[instanceId] = ArchiveEntry(
+      instanceId: instanceId,
+      modId: inst.modId,
+      mode: inst.mode,
+      gameDir: gameDir,
+      gameName: inst.gameName,
+      archivedAt: DateTime.now(),
+    ).toJson();
+    _writeArchiveDb(db);
+  }
+
+  /// Find an archived instance matching modId and mode (for restore).
+  static ArchiveEntry? findArchivedInstance(String modId, String mode) {
+    final db = _readArchiveDb();
+    for (final entry in db.values) {
+      final a = ArchiveEntry.fromJson(entry as Map<String, dynamic>);
+      if (a.modId == modId && a.mode == mode) return a;
+    }
+    return null;
+  }
+
+  /// List all archived instances.
+  static List<ArchiveEntry> listArchives() {
+    final db = _readArchiveDb();
+    return db.values
+        .map((e) => ArchiveEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Delete an archive entry permanently.
+  static void deleteArchive(String instanceId) {
+    final db = _readArchiveDb();
+    db.remove(instanceId);
+    _writeArchiveDb(db);
+  }
+
+  /// Rename (set label) an archived instance.
+  static void renameArchive(String instanceId, String label) {
+    final db = _readArchiveDb();
+    if (db.containsKey(instanceId)) {
+      final existing = db[instanceId] as Map<String, dynamic>;
+      existing['label'] = label;
+      db[instanceId] = existing;
+      _writeArchiveDb(db);
+    }
   }
 }

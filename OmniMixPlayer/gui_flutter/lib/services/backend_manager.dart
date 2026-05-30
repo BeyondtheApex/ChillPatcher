@@ -26,6 +26,13 @@ class BackendManager {
   bool get usingSocket => _usingSocket;
   String get socketPath => PortFile.resolveSocketPath();
 
+  /// The directory containing OmniMixPlayer.Backend.exe (config/ is a child).
+  String? get backendBaseDir {
+    final p = _findBackendExe();
+    if (p == null) return null;
+    return File(p).parent.path;
+  }
+
   // ── 3-step discovery ──
 
   /// Returns: positive port = TCP, -1 = socket mode, null = nothing.

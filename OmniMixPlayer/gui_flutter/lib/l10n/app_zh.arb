@@ -78,5 +78,33 @@
   "serviceUninstallFailed": "服务卸载失败",
   "processMode": "进程",
   "serviceMode": "服务",
-  "serviceAutoStart": "服务自动启动"
+  "serviceAutoStart": "服务自动启动",
+  "websiteLink": "官网",
+  "save": "保存",
+  "cancel": "取消",
+  "pendingSave": "待保存",
+  "clear": "清除",
+  "openFolder": "打开目录",
+  "installed": "已安装 v{version}",
+  "@installed": {
+    "description": "Shows installed version",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "closeBehavior": "关闭行为",
+  "closeMinimize": "最小化到托盘",
+  "closeExit": "退出程序",
+  "themeColor": "主题色",
+  "customColor": "自定义",
+  "hue": "色相",
+  "saturation": "饱和度",
+  "brightness": "亮度",
+  "confirm": "确定",
+  "useSystemColor": "使用系统主题色",
+  "backendConfig": "后端配置",
+  "moduleStatusDisabled": "已禁用 — 下次启动将不再加载",
+  "moduleStatusPending": "已加载但下次启动将禁用",
+  "moduleStatusActive": "已加载并激活",
+  "moduleStatusWillLoad": "下次启动时将加载"
 }

@@ -4,8 +4,16 @@ import '../models/node_data.dart';
 class LaunchpadGrid extends StatelessWidget {
   final List<ModuleLinkEntryResponse> links;
   final void Function(ModuleLinkEntryResponse entry) onTap;
+  final String baseUrl;
+  final Map<String, List<ModuleLinkEntryResponse>> moduleLinks;
 
-  const LaunchpadGrid({super.key, required this.links, required this.onTap});
+  const LaunchpadGrid({
+    super.key,
+    required this.links,
+    required this.onTap,
+    this.baseUrl = '',
+    this.moduleLinks = const {},
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -38,59 +46,36 @@ class LaunchpadGrid extends StatelessWidget {
       itemCount: links.length,
       itemBuilder: (context, index) {
         final link = links[index];
-        return _LinkTile(link: link, onTap: () => onTap(link));
+        return _LinkTile(
+          link: link,
+          onTap: () => onTap(link),
+          baseUrl: baseUrl,
+          moduleId: _moduleIdForLink(link),
+        );
       },
     );
+  }
+
+  String _moduleIdForLink(ModuleLinkEntryResponse link) {
+    for (final entry in moduleLinks.entries) {
+      if (entry.value.contains(link)) return entry.key;
+    }
+    return '';
   }
 }
 
 class _LinkTile extends StatelessWidget {
   final ModuleLinkEntryResponse link;
   final VoidCallback onTap;
+  final String baseUrl;
+  final String moduleId;
 
-  const _LinkTile({required this.link, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final bgColor = link.backgroundColor.isNotEmpty
-        ? _parseColor(link.backgroundColor)
-        : cs.secondaryContainer;
-
-    return Card(
-      elevation: 0,
-      color: bgColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                _iconFromName(link.icon),
-                size: 32,
-                color: _parseColor(link.iconColor) ?? cs.onSecondaryContainer,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                link.title,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _parseColor(link.iconColor) ?? cs.onSecondaryContainer,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  const _LinkTile({
+    required this.link,
+    required this.onTap,
+    this.baseUrl = '',
+    this.moduleId = '',
+  });
 
   Color? _parseColor(String hex) {
     if (hex.isEmpty) return null;
@@ -116,5 +101,66 @@ class _LinkTile extends StatelessWidget {
       default:
         return Icons.widgets;
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final bgColor = link.backgroundColor.isNotEmpty
+        ? _parseColor(link.backgroundColor)
+        : cs.secondaryContainer;
+
+    return Card(
+      elevation: 0,
+      color: bgColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              link.svg.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        '$baseUrl/api/modules/$moduleId/content/${link.svg}',
+                        width: 32,
+                        height: 32,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => Icon(
+                          _iconFromName(link.icon),
+                          size: 32,
+                          color:
+                              _parseColor(link.iconColor) ??
+                              cs.onSecondaryContainer,
+                        ),
+                      ),
+                    )
+                  : Icon(
+                      _iconFromName(link.icon),
+                      size: 32,
+                      color:
+                          _parseColor(link.iconColor) ??
+                          cs.onSecondaryContainer,
+                    ),
+              const SizedBox(height: 8),
+              Text(
+                link.title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _parseColor(link.iconColor) ?? cs.onSecondaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
