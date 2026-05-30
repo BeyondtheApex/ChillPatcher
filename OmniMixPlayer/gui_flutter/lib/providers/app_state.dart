@@ -133,8 +133,31 @@ class AppState extends ChangeNotifier {
           uuids: uuids,
         );
       }).toList();
+
+      // Rebuild _activePlaylist from all playlist sources (dedup by UUID)
+      _rebuildActivePlaylistFromSources();
+
+      // Force library reload so _filteredSongs() re-evaluates with the new
+      // _activePlaylist. This fixes the race where _loadLibrary() completes
+      // before loadActiveProfile() populates the playlist.
+      _libraryGeneration++;
+
       notifyListeners();
     } catch (e) {}
+  }
+
+  /// Rebuild _activePlaylist from _playlistSources, deduplicating by UUID.
+  void _rebuildActivePlaylistFromSources() {
+    final seen = <String>{};
+    final merged = <QueueItemInfo>[];
+    for (final source in _playlistSources) {
+      for (final uuid in source.uuids) {
+        if (seen.add(uuid)) {
+          merged.add(QueueItemInfo(uuid: uuid, title: uuid));
+        }
+      }
+    }
+    _activePlaylist = merged;
   }
 
   /// Save current state to backend via active profile endpoint.
@@ -431,6 +454,7 @@ class AppState extends ChangeNotifier {
       _moduleUiTree = null;
       _activeModuleId = null;
       _stopPlaybackPolling();
+      _playbackLoading = false; // reset guard so future reconnect isn't blocked
       _playbackInstances = [];
       _activeInstanceId = null;
       _activeQueue = [];
@@ -465,8 +489,11 @@ class AppState extends ChangeNotifier {
       final connected = await ws.connectOnce();
       if (connected) {
         await api.connectController();
-        await _loadModules();
+        // refreshPlayback must run before _loadModules so loadActiveProfile()
+        // populates _activePlaylist before HomePage._loadLibrary() is triggered
+        // by _loadModules' notifyListeners call.
         await refreshPlayback();
+        await _loadModules();
         await refreshBackendArchives();
         // Auto-select server instance from backend list if none is active yet.
         if (_activeInstanceId == null) {
@@ -478,9 +505,12 @@ class AppState extends ChangeNotifier {
             api.putConfigRaw({'active_instance': serverInst.id});
             api.saveConfig();
             await loadActiveProfile();
-            notifyListeners();
           }
         }
+        // Always bump generation + notify at the end so HomePage reloads the
+        // library even if loadActiveProfile() returned early (empty profile).
+        _libraryGeneration++;
+        notifyListeners();
       }
     } catch (e, st) {}
   }
@@ -496,9 +526,9 @@ class AppState extends ChangeNotifier {
       final connected = await ws.connectOnce();
       if (connected) {
         await api.connectController();
-        await _loadModules();
-        _libraryGeneration++; // Force library reload after reconnect
+        // Same ordering as _connectAndLoad: refreshPlayback before _loadModules
         await refreshPlayback();
+        await _loadModules();
         await refreshBackendArchives();
         if (_activeInstanceId == null) {
           final serverInst = _playbackInstances
@@ -509,9 +539,12 @@ class AppState extends ChangeNotifier {
             api.putConfigRaw({'active_instance': serverInst.id});
             api.saveConfig();
             await loadActiveProfile();
-            notifyListeners();
           }
         }
+        // Always bump generation + notify at the end so HomePage reloads the
+        // library even if loadActiveProfile() returned early (empty profile).
+        _libraryGeneration++;
+        notifyListeners();
       }
     } catch (e, st) {
       debugPrint('OmniMix Web: _connectDirectly failed: $e\n$st');
@@ -575,10 +608,21 @@ class AppState extends ChangeNotifier {
       }
     };
     ws.onDisconnected = () {
-      // WS dropped – mark offline until detection picks it up again
+      // WS dropped – mark offline and clear playback state so stale data
+      // doesn't linger in the UI. The backend manager will detect when the
+      // backend comes back and trigger a full reconnect.
       if (_backendOnline) {
         _backendOnline = false;
         _backendRunning = false;
+        _playbackLoading =
+            false; // reset guard so reconnect's refreshPlayback is not blocked
+        _playbackInstances = [];
+        _activeInstanceId = null;
+        _activeQueue = [];
+        _activeHistory = [];
+        _activePlaylist = [];
+        _playlistSources = [];
+        _libraryGeneration++; // force library reload on reconnect
         notifyListeners();
       }
     };
@@ -609,6 +653,22 @@ class AppState extends ChangeNotifier {
 
       // Refresh service state
       _serviceState = await PlatformService.getServiceState();
+
+      // Check for binary path mismatch and reinstall if necessary
+      if (_serviceState == 'installed' || _serviceState == 'running') {
+        final currentExe = PlatformService.backendExePath;
+        final registeredExe = await PlatformService.getServiceBinaryPath();
+        if (currentExe != null &&
+            registeredExe != null &&
+            !PlatformService.arePathsEqual(currentExe, registeredExe)) {
+          final ok = await PlatformService.installService();
+          if (ok) {
+            _serviceState = 'installed';
+            await Future.delayed(const Duration(seconds: 1));
+          }
+        }
+      }
+
       // If service says running but unreachable, restart it
       if (_serviceState == 'running') {
         final healthy = await _backendMgr.checkHealth();
@@ -1196,6 +1256,7 @@ class AppState extends ChangeNotifier {
   Future<void> removePlaylistSource(String sourceId) async {
     if (_activeInstanceId == null) return;
     _playlistSources.removeWhere((s) => s.id == sourceId);
+    _rebuildActivePlaylistFromSources();
     notifyListeners();
     saveActive();
   }

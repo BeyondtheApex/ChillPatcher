@@ -139,6 +139,13 @@ namespace OmniMixPlayer.Backend
                     policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
             });
 
+            // Register JSON source generator for trimmed (AOT) publishing.
+            // All API request types must be listed in ApiJsonContext.
+            builder.Services.ConfigureHttpJsonOptions(options =>
+            {
+                options.SerializerOptions.TypeInfoResolverChain.Insert(0, ApiJsonContext.Default);
+            });
+
             var app = builder.Build();
 
             if (!Directory.Exists(configDir))
@@ -237,6 +244,11 @@ namespace OmniMixPlayer.Backend
                     var allSongs = MusicRegistry.Instance.GetAllMusic();
                     logger.LogInformation("Loaded {Count} songs from {ModuleCount} modules",
                         allSongs.Count, ModuleLoader.Instance.LoadedModules.Count);
+
+                    // Re-resolve all profile data now that music registry is fully populated.
+                    // Without this, any PlaybackController created before modules loaded
+                    // would have dropped all songs during RestoreState().
+                    playbackInstances.RefreshAllFromDisk();
 
                     _ = apiServer.BroadcastEvent("playlist.updated", new { songCount = allSongs.Count });
 

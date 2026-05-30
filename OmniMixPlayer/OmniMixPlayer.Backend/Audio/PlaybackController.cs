@@ -620,6 +620,17 @@ namespace OmniMixPlayer.Backend.Audio
         }
 
         /// <summary>
+        /// Re-read the profile from disk and re-resolve all song references.
+        /// Call this after modules finish loading, when the music registry is
+        /// fully populated. Without this, RestoreState() during construction
+        /// may have dropped songs because the registry was empty.
+        /// </summary>
+        public void RefreshFromDisk()
+        {
+            RestoreState();
+        }
+
+        /// <summary>
         /// Return the full profile as a JSON object (for API / offline management).
         /// </summary>
         public object GetProfile()

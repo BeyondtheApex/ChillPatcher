@@ -39,6 +39,8 @@ class PlatformService {
     return null;
   }
 
+  static String? get backendExePath => _backendExePath;
+
   // ═══════════════════════════════════════════════════════════
   //  Windows: elevated helper
   // ═══════════════════════════════════════════════════════════
@@ -244,6 +246,71 @@ class PlatformService {
       ).existsSync();
     }
     return false;
+  }
+
+  /// Get the currently registered backend service binary path from OS.
+  static Future<String?> getServiceBinaryPath() async {
+    try {
+      if (Platform.isWindows) {
+        final result = await Process.run('sc.exe', ['qc', _serviceName]);
+        if (result.exitCode != 0) return null;
+        final output = result.stdout as String;
+        final lines = output.split('\n');
+        for (final line in lines) {
+          if (line.toUpperCase().contains('BINARY_PATH_NAME')) {
+            final parts = line.split(':');
+            if (parts.length >= 2) {
+              var path = parts.sublist(1).join(':').trim();
+              if (path.startsWith('"') && path.endsWith('"')) {
+                path = path.substring(1, path.length - 1);
+              }
+              return path;
+            }
+          }
+        }
+      }
+      if (Platform.isLinux) {
+        final home = Platform.environment['HOME'] ?? '/tmp';
+        final file = File('$home/.config/systemd/user/omnimixplayer-backend.service');
+        if (file.existsSync()) {
+          final content = file.readAsStringSync();
+          final lines = content.split('\n');
+          for (final line in lines) {
+            final trimmedLine = line.trim();
+            if (trimmedLine.startsWith('ExecStart=')) {
+              var path = trimmedLine.substring('ExecStart='.length).trim();
+              if (path.startsWith('"') && path.endsWith('"')) {
+                path = path.substring(1, path.length - 1);
+              }
+              return path;
+            }
+          }
+        }
+      }
+      if (Platform.isMacOS) {
+        final home = Platform.environment['HOME'] ?? '/tmp';
+        final file = File('$home/Library/LaunchAgents/com.omnimixplayer.backend.plist');
+        if (file.existsSync()) {
+          final content = file.readAsStringSync();
+          final match = RegExp(r'<key>ProgramArguments</key>\s*<array>\s*<string>([^<]+)</string>')
+              .firstMatch(content);
+          if (match != null) {
+            return match.group(1);
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Normalize and compare two file paths.
+  static bool arePathsEqual(String p1, String p2) {
+    var n1 = p1.replaceAll('/', '\\').trim();
+    var n2 = p2.replaceAll('/', '\\').trim();
+    if (Platform.isWindows || Platform.isMacOS) {
+      return n1.toLowerCase() == n2.toLowerCase();
+    }
+    return n1 == n2;
   }
 
   /// Check if the backend service is currently running.

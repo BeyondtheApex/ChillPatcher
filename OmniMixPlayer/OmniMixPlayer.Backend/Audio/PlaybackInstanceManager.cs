@@ -308,6 +308,30 @@ namespace OmniMixPlayer.Backend.Audio
             }
         }
 
+        /// <summary>
+        /// Re-resolve all songs in all online instances from disk.
+        /// Call this after modules finish loading so that RestoreState()
+        /// can resolve song UUIDs against the now-populated music registry.
+        /// </summary>
+        public void RefreshAllFromDisk()
+        {
+            lock (_lock)
+            {
+                foreach (var instance in _instances.Values)
+                {
+                    try
+                    {
+                        instance.Controller.RefreshFromDisk();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to refresh instance {Id} from disk", instance.Id);
+                    }
+                }
+            }
+            _logger.LogInformation("Refreshed {Count} instances from disk", _instances.Count);
+        }
+
         // ── Archive management ──
 
         private string ArchiveDir => _configBaseDir != null

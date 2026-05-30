@@ -36,4 +36,7 @@ class PlatformService {
   static Future<bool> uninstallService() async => false;
   static Future<bool> setServiceAutoStart(bool autoStart) async => false;
   static Future<bool> setGuiAutostart(bool v) async => false;
+  static String? get backendExePath => null;
+  static Future<String?> getServiceBinaryPath() async => null;
+  static bool arePathsEqual(String p1, String p2) => false;
 }
