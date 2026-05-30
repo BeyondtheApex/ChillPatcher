@@ -13,6 +13,9 @@
 #include <memory>
 #include <thread>
 
+// Bridge version — parsed by build_all.py for version_info.json
+#define FH6_BRIDGE_VERSION "1.0.0"
+
 namespace fh6 {
 
 namespace {

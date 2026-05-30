@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -501,10 +501,14 @@ class _HomePageState extends State<HomePage> {
         .map((s) => s.id)
         .toSet();
     if (_libraryView == _LibraryView.album) {
-      final selectedAlbumIds = selectedSourceIds
-          .where((id) => id.startsWith('album_'))
-          .map((id) => id.substring('album_'.length))
-          .toSet();
+      final selectedAlbumIds = {
+        ...selectedSourceIds
+            .where((id) => id.startsWith('album_'))
+            .map((id) => id.substring('album_'.length)),
+        ...widget.state.activePlaylist
+            .map((s) => s.albumId)
+            .where((id) => id.isNotEmpty),
+      };
       final filteredAlbums = _albums.where((a) {
         if (!selectedAlbumIds.contains(a.id)) return false;
         if (_query.isEmpty) return true;
@@ -714,7 +718,8 @@ class _HomePageState extends State<HomePage> {
                           itemBuilder: (_, i) {
                             final a = _albums[i];
                             final sourceId = 'album_${a.id}';
-                            final checked = selectedIds.contains(sourceId);
+                            final checked = selectedIds.contains(sourceId) ||
+                                widget.state.activePlaylist.any((s) => s.albumId == a.id);
                             return CheckboxListTile(
                               value: checked,
                               controlAffinity: ListTileControlAffinity.leading,

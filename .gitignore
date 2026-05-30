@@ -12,6 +12,9 @@ NativePlugins/ForzaHorizon6OmniBridge/bin/
 netease_bridge/*.dll
 netease_bridge/*.h
 
+FH6OmniBridge.zip
+ChillPatcher.zip
+
 .vscode/
 
 *.log

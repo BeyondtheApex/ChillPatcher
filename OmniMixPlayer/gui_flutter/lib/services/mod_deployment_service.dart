@@ -226,6 +226,7 @@ class ModDeploymentService {
     void Function(String) log, {
     int? backendPort,
     Future<void> Function(String, bool)? onPortFileDirChanged,
+    Map<String, dynamic> customSettings = const {},
   }) async {
     if (mod.installsToGameRoot) {
       return deployRootMod(
@@ -234,6 +235,7 @@ class ModDeploymentService {
         log,
         backendPort: backendPort,
         onPortFileDirChanged: onPortFileDirChanged,
+        customSettings: customSettings,
       );
     }
 
@@ -317,6 +319,9 @@ class ModDeploymentService {
         PortFile.writePort(gameDir, backendPort);
       }
       await onPortFileDirChanged?.call(gameDir, true);
+
+      await mod.onDeploy(gameDir, log, customSettings);
+
       log(
         '${mod.name} deployment completed successfully. Instance: $instanceId',
       );
@@ -422,6 +427,9 @@ class ModDeploymentService {
       PortFile.deletePortFile(gameDir);
       removeVersionRecord(mod.id);
       await onPortFileDirChanged?.call(gameDir, false);
+
+      await mod.onUndeploy(gameDir, log);
+
       log('${mod.name} undeployment complete.');
       return true;
     } catch (e) {
@@ -469,6 +477,14 @@ class ModDeploymentService {
     v.remove(id);
     _writeVersions(v);
   }
+
+  static String? _latestModVersion;
+
+  static Future<void> loadLatestModVersion() async {
+    _latestModVersion = await getLatestModVersion();
+  }
+
+  static String get latestModVersion => _latestModVersion ?? '1.0.0';
 
   /// Get installed version for a framework/mod, or null if not installed.
   static String? getInstalledVersion(String id) {
@@ -595,6 +611,8 @@ class ModDeploymentService {
       removeVersionRecord(mod.id);
       await onPortFileDirChanged?.call(gameDir, false);
 
+      await mod.onUndeploy(gameDir, log);
+
       log('${mod.name} undeployment complete.');
       return true;
     } catch (e) {
@@ -610,6 +628,7 @@ class ModDeploymentService {
     void Function(String) log, {
     int? backendPort,
     Future<void> Function(String, bool)? onPortFileDirChanged,
+    Map<String, dynamic> customSettings = const {},
   }) async {
     try {
       log('Starting ${mod.name} deployment...');
@@ -674,8 +693,10 @@ class ModDeploymentService {
 
         final existing = File(linkPath);
         final backupPath = '${backupDir.path}/$relativeFile';
+        final isNoBackup = mod.rootFilesNoBackup.contains(relativeFile);
         if (!wasManaged &&
             existing.existsSync() &&
+            !isNoBackup &&
             !File(backupPath).existsSync()) {
           File(backupPath).parent.createSync(recursive: true);
           existing.copySync(backupPath);
@@ -747,6 +768,9 @@ class ModDeploymentService {
         PortFile.writePort(gameDir, backendPort);
       }
       await onPortFileDirChanged?.call(gameDir, true);
+
+      await mod.onDeploy(gameDir, log, customSettings);
+
       log(
         '${mod.name} deployment completed successfully. Instance: $instanceId',
       );

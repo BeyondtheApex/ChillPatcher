@@ -37,6 +37,24 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
+    final st = widget.state;
+
+    final busy = st.backendBusy || st.serviceBusy;
+    if (busy) {
+      return const _LoadingPage(
+        icon: Icons.settings_input_component_rounded,
+        title: '服务启动中',
+        message: '正在连接并初始化播放器服务...',
+      );
+    }
+
+    if (!st.backendOnline) {
+      return const _LoadingPage(
+        icon: Icons.cloud_off_rounded,
+        title: '服务未连接',
+        message: '请稍候，正在等待后端服务就绪以进行 Mod 安装和管理...',
+      );
+    }
 
     if (_activeGameId == null) {
       return _buildGameList(context, l10n, cs);
@@ -567,6 +585,34 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     BepInExStatus bepinexStatus,
     ModStatus modStatus,
   ) {
+    final modId = game.supportedMods.isNotEmpty ? game.supportedMods.first : '';
+    final mod = modCatalog.firstWhere(
+      (m) => m.id == modId,
+      orElse: () => const ModDeclaration(
+        id: '',
+        name: '',
+        version: '',
+        archiveName: '',
+        folderName: '',
+        mode: '',
+      ),
+    );
+    final hasSettings = mod.hasSettings;
+
+    final framework = frameworkCatalog.firstWhere(
+      (f) => f.id == 'bepinex_5',
+      orElse: () => const FrameworkDeclaration(
+        id: '',
+        name: '',
+        version: '',
+        archiveName: '',
+        filesToLink: [],
+        dirsToLink: [],
+        dirsToCreate: [],
+      ),
+    );
+    final bepinexVersion = framework.version;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -576,7 +622,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
               icon: Icons.build_rounded,
               title: 'BepInEx',
               statusBadge: _buildDetailedStatusBadge(bepinexStatus, l10n, cs),
-              versionInfo: _buildVersionInfo('bepinex_5', cs),
+              versionInfo: _buildVersionInfo('bepinex_5', bepinexVersion, cs),
               actions: _buildBepInExActions(st, l10n, cs, game.id),
             ),
           ),
@@ -586,11 +632,11 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
             icon: Icons.extension_rounded,
             title: 'Mod',
             statusBadge: _buildModDetailedStatusBadge(modStatus, l10n, cs),
-            versionInfo: _buildVersionInfo(
-              game.supportedMods.isNotEmpty ? game.supportedMods.first : '',
-              cs,
-            ),
+            versionInfo: _buildVersionInfo(modId, mod.version, cs),
             actions: _buildModActions(st, l10n, cs, game),
+            onSettingsPressed: hasSettings
+                ? () => _showModSettings(context, mod, game.id)
+                : null,
           ),
         ),
       ],
@@ -603,6 +649,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     required Widget statusBadge,
     required Widget? versionInfo,
     required Widget actions,
+    VoidCallback? onSettingsPressed,
   }) {
     final cs = Theme.of(context).colorScheme;
     return Card(
@@ -628,6 +675,15 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const Spacer(),
+                if (onSettingsPressed != null)
+                  IconButton(
+                    icon: const Icon(Icons.settings, size: 18),
+                    onPressed: onSettingsPressed,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: 'Settings',
+                  ),
               ],
             ),
             const SizedBox(height: 8),
@@ -644,14 +700,54 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     );
   }
 
-  Widget? _buildVersionInfo(String id, ColorScheme cs) {
-    final installed = ModDeploymentService.getInstalledVersion(id);
-    if (installed == null) return null;
-    final l = AppLocalizations.of(context)!;
-    return Text(
-      l.installed(installed),
-      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+  void _showModSettings(
+    BuildContext context,
+    ModDeclaration mod,
+    String gameId,
+  ) {
+    final currentSettings = widget.state.settingsForMod(mod.id);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return mod.buildSettingsWidget(
+          context,
+          currentSettings,
+          (newSettings) async {
+            await widget.state.saveModSettings(mod.id, newSettings);
+            if (widget.state.modStatusFor(gameId) == ModStatus.installed) {
+              await widget.state.redeployModSettingsOnly(gameId: gameId);
+            }
+          },
+        );
+      },
     );
+  }
+
+  Widget? _buildVersionInfo(String id, String availableVersion, ColorScheme cs) {
+    final installed = ModDeploymentService.getInstalledVersion(id);
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+
+    if (installed == null) {
+      final text = isZh ? '可安装版本: v$availableVersion' : 'Available: v$availableVersion';
+      return Text(
+        text,
+        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+      );
+    }
+
+    final l = AppLocalizations.of(context)!;
+    if (installed == availableVersion) {
+      return Text(
+        l.installed(installed),
+        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+      );
+    } else {
+      final latestText = isZh ? '最新: v$availableVersion' : 'Latest: v$availableVersion';
+      return Text(
+        '${l.installed(installed)} ($latestText)',
+        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+      );
+    }
   }
 
   // ── Icon-only action buttons ──
@@ -960,6 +1056,47 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
           fontSize: 11,
           fontWeight: FontWeight.bold,
           color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingPage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+
+  const _LoadingPage({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 72, color: cs.primary.withAlpha(180)),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(message, style: TextStyle(color: cs.onSurfaceVariant)),
+            const SizedBox(height: 20),
+            const SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+          ],
         ),
       ),
     );

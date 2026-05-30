@@ -22,6 +22,7 @@ class AppState extends ChangeNotifier {
 
   // Game Integration (Mod Manager)
   final Map<String, String> _gamePaths = {};
+  final Map<String, Map<String, dynamic>> _modSettings = {};
   final Map<String, BepInExStatus> _bepinexStatuses = {};
   final Map<String, ModStatus> _modStatuses = {};
   final List<String> _deploymentLogs = [];
@@ -34,6 +35,26 @@ class AppState extends ChangeNotifier {
   bool get deploymentBusy => _deploymentBusy;
 
   String gamePathFor(String gameId) => _gamePaths[gameId] ?? '';
+  Map<String, dynamic> settingsForMod(String modId) =>
+      _modSettings[modId] ?? {};
+
+  Future<void> saveModSettings(
+    String modId,
+    Map<String, dynamic> settings,
+  ) async {
+    _modSettings[modId] = settings;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'mod_integration_config_$modId',
+        jsonEncode(settings),
+      );
+    } catch (e) {
+      GuiLogger().error('saveModSettings failed', e);
+    }
+  }
+
   BepInExStatus bepinexStatusFor(String gameId) =>
       _bepinexStatuses[gameId] ?? BepInExStatus.notInstalled;
   ModStatus modStatusFor(String gameId) =>
@@ -294,20 +315,20 @@ class AppState extends ChangeNotifier {
   }
 
   bool get canControlActiveInstance {
-    // Online server instance (active or any online)
+    // Online server instance (active)
     if (activeInstance?.isServerManaged == true) return true;
-    // Any online server instance available (even before refreshPlayback completes)
-    if (_backendOnline && _playbackInstances.any((i) => i.isServerManaged))
-      return true;
-    // Offline server instance: allow editing profile when backend is running
+    // Selected offline server instance: allow editing profile when backend is running
     if (_activeInstanceId != null && _backendOnline) {
       final inst = _instances
           .where((i) => i.instanceId == _activeInstanceId)
           .firstOrNull;
       if (inst != null && inst.isServerMode) return true;
     }
-    // Backend online and server instances exist in local storage (even if none active yet)
-    if (_backendOnline && _instances.any((i) => i.isServerMode)) return true;
+    // No instance explicitly selected: fall back to any available server instance
+    if (_activeInstanceId == null && _backendOnline) {
+      if (_playbackInstances.any((i) => i.isServerManaged)) return true;
+      if (_instances.any((i) => i.isServerMode)) return true;
+    }
     return false;
   }
 
@@ -1274,11 +1295,41 @@ class AppState extends ChangeNotifier {
   Future<void> removePlaylistSource(String sourceId) async {
     final instanceId = _resolveWriteTarget();
     if (instanceId == null) return;
+
+    if (sourceId.startsWith('album_')) {
+      final albumId = sourceId.substring('album_'.length);
+      try {
+        final albumSongs = await api.getSongs(albumId: albumId);
+        final albumUuids = albumSongs.map((s) => s.uuid).toSet();
+        if (albumUuids.isNotEmpty) {
+          for (var i = 0; i < _playlistSources.length; i++) {
+            final src = _playlistSources[i];
+            final newUuids = src.uuids
+                .where((u) => !albumUuids.contains(u))
+                .toList();
+            if (newUuids.length != src.uuids.length) {
+              _playlistSources[i] = PlaylistSourceInfo(
+                id: src.id,
+                name: src.name,
+                songCount: newUuids.length,
+                uuids: newUuids,
+              );
+            }
+          }
+        }
+      } catch (e) {
+        GuiLogger().error('Failed to exclude album songs', e);
+      }
+    }
+
     _playlistSources.removeWhere((s) => s.id == sourceId);
-    // Rebuild _activePlaylist from remaining sources
     _activePlaylist = _buildPlaylistFromSources(_playlistSources);
+
     if (_backendInstanceIds.contains(instanceId)) {
-      await api.removePlaylistSource(instanceId, sourceId);
+      final payload = _playlistSources
+          .map((s) => {'id': s.id, 'name': s.name, 'uuids': s.uuids})
+          .toList();
+      await api.replacePlaylistSources(instanceId, sources: payload);
       await refreshPlayback();
     } else {
       saveInstanceProfile(instanceId);
@@ -1506,6 +1557,18 @@ class AppState extends ChangeNotifier {
                 : null) ??
             '';
       }
+      for (final mod in modCatalog) {
+        try {
+          final settingsStr = prefs.getString(
+            'mod_integration_config_${mod.id}',
+          );
+          if (settingsStr != null && settingsStr.isNotEmpty) {
+            _modSettings[mod.id] = Map<String, dynamic>.from(
+              jsonDecode(settingsStr),
+            );
+          }
+        } catch (_) {}
+      }
       refreshModStatuses();
       refreshInstances();
     } catch (e) {
@@ -1657,6 +1720,7 @@ class AppState extends ChangeNotifier {
         addDeploymentLog,
         backendPort: _backendPort,
         onPortFileDirChanged: _onPortFileDirChanged,
+        customSettings: settingsForMod(mod.id),
       );
       refreshModStatuses(gameId);
       refreshInstances();
@@ -1694,6 +1758,33 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<bool> redeployModSettingsOnly({required String gameId}) async {
+    final path = gamePathFor(gameId);
+    if (path.isEmpty || _deploymentBusy) return false;
+    _deploymentBusy = true;
+    clearDeploymentLogs();
+    notifyListeners();
+
+    try {
+      final game = gameCatalog.firstWhere((g) => g.id == gameId);
+      final modId = game.supportedMods.isNotEmpty
+          ? game.supportedMods.first
+          : '';
+      final mod = modCatalog.firstWhere((m) => m.id == modId);
+
+      addDeploymentLog('Re-applying settings for ${mod.name}...');
+      await mod.onDeploy(path, addDeploymentLog, settingsForMod(modId));
+      addDeploymentLog('Settings re-applied successfully.');
+      return true;
+    } catch (e) {
+      addDeploymentLog('ERROR re-applying settings: $e');
+      return false;
+    } finally {
+      _deploymentBusy = false;
+      notifyListeners();
+    }
+  }
+
   /// Callback passed to ModDeploymentService for backend port_file_dirs sync.
   /// Called with (gameDir, true=add / false=remove).
   Future<void> _onPortFileDirChanged(String gameDir, bool add) async {
@@ -1709,9 +1800,16 @@ class AppState extends ChangeNotifier {
     if (!_backendOnline) return;
     try {
       final config = await api.getConfig();
-      final dirs = List<String>.from(
-        (config['port_file_dirs'] as List?)?.cast<String>() ?? [],
-      );
+      final raw = config['port_file_dirs'];
+      List<dynamic>? rawList;
+      if (raw is String) {
+        try {
+          rawList = jsonDecode(raw) as List<dynamic>?;
+        } catch (_) {}
+      } else if (raw is List) {
+        rawList = raw;
+      }
+      final dirs = List<String>.from(rawList?.cast<String>() ?? []);
       if (!dirs.contains(gameDir)) {
         dirs.add(gameDir);
         await api.putConfigRaw({'port_file_dirs': dirs});
@@ -1728,9 +1826,16 @@ class AppState extends ChangeNotifier {
     if (!_backendOnline) return;
     try {
       final config = await api.getConfig();
-      final dirs = List<String>.from(
-        (config['port_file_dirs'] as List?)?.cast<String>() ?? [],
-      );
+      final raw = config['port_file_dirs'];
+      List<dynamic>? rawList;
+      if (raw is String) {
+        try {
+          rawList = jsonDecode(raw) as List<dynamic>?;
+        } catch (_) {}
+      } else if (raw is List) {
+        rawList = raw;
+      }
+      final dirs = List<String>.from(rawList?.cast<String>() ?? []);
       if (dirs.contains(gameDir)) {
         dirs.remove(gameDir);
         await api.putConfigRaw({'port_file_dirs': dirs});

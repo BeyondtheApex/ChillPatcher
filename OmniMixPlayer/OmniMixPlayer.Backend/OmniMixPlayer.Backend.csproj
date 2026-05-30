@@ -25,15 +25,4 @@
     <PackageReference Include="System.Drawing.Common" Version="10.0.*" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="Native\x64\ChillAudioDecoder.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>Native\x64\ChillAudioDecoder.dll</Link>
-    </Content>
-    <Content Include="Native\x64\ChillFlacDecoder.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>Native\x64\ChillFlacDecoder.dll</Link>
-    </Content>
-  </ItemGroup>
-
 </Project>

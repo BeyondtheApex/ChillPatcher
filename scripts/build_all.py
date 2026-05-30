@@ -558,14 +558,26 @@ def cmd_player(full: bool = False, skip_flutter: bool = False, verbose: bool = F
     if dotnet_build(PLAYER_SDK_PROJ, verbose=verbose) != 0:
         sys.exit(1)
 
-    step("2/8", "Publishing OmniMixPlayer.Backend (Self-Contained)...")
+    step("2/8", "Publishing OmniMixPlayer.Backend (Single-File)...")
     if full:
-        # 需要指定 --runtime win-x64 让 restore 生成正确的 assets
         info("Restoring with RuntimeIdentifier win-x64...")
         code = run(["dotnet", "restore", str(PLAYER_BACKEND_PROJ), "--runtime", "win-x64"], verbose=verbose)
         if code != 0:
             sys.exit(1)
-    if dotnet_publish(PLAYER_BACKEND_PROJ, PLAYER_BACKEND_PUBLISH, verbose=verbose) != 0:
+
+    if PLAYER_BACKEND_PUBLISH.exists():
+        shutil.rmtree(PLAYER_BACKEND_PUBLISH)
+    code = run([
+        "dotnet", "publish", str(PLAYER_BACKEND_PROJ),
+        "-c", "Release", "--no-restore",
+        "-o", str(PLAYER_BACKEND_PUBLISH),
+        "--self-contained",
+        "-p:PublishSingleFile=true",
+        "-p:PublishTrimmed=false",
+        "-p:IncludeNativeLibrariesForSelfExtract=true",
+    ], verbose=verbose)
+    if code != 0:
+        info("  FAILED: Backend publish failed")
         sys.exit(1)
 
     # Modules
@@ -582,14 +594,17 @@ def cmd_player(full: bool = False, skip_flutter: bool = False, verbose: bool = F
             sys.exit(1)
 
     # ── MediaGenerator ──
-    step("9/9", "Publishing MediaGenerator (framework-dependent)...")
+    step("9/9", "Publishing MediaGenerator (single-file)...")
     if MEDIA_GEN_PUBLISH.exists():
         shutil.rmtree(MEDIA_GEN_PUBLISH)
     code = run([
         "dotnet", "publish", str(MEDIA_GEN_PROJ),
-        "-c", "Release", "--no-restore",
+        "-c", "Release",
         "-o", str(MEDIA_GEN_PUBLISH),
-        "--no-self-contained",
+        "--self-contained",
+        "-p:PublishSingleFile=true",
+        "-p:PublishTrimmed=false",
+        "-p:IncludeNativeLibrariesForSelfExtract=true",
     ], verbose=verbose)
     if code != 0:
         info("  WARNING: MediaGenerator publish failed")
@@ -634,29 +649,29 @@ def assemble_player(full: bool = False, verbose: bool = False):
     info("Backend...")
     if PLAYER_BACKEND_PUBLISH.exists():
         copy_dir_contents(PLAYER_BACKEND_PUBLISH, PLAYER_BUILD)
-        # 清理 publish 产出中不必要的目录
         _rmtree_ignore_locked(PLAYER_BUILD / "modules")
-        # 将 Native/x64 下的原生解码器移到 native/x64
-        backend_native_src = PLAYER_BUILD / "Native" / "x64"
-        if backend_native_src.exists():
-            native_dst = PLAYER_BUILD / "native" / "x64"
-            native_dst.mkdir(parents=True, exist_ok=True)
-            for f in backend_native_src.glob("*.dll"):
-                _copy_with(f, native_dst)
-            _rmtree_ignore_locked(PLAYER_BUILD / "Native")
-            info("  Native decoders copied")
         info("  Backend published")
     else:
         info("  WARNING: Backend publish output not found")
 
-    # MediaGenerator（只复制 exe 和 pdb，运行时已由后端提供）
+    # Native decoders: only the two audio decoders (other DLLs belong to modules / other projects)
+    native_src = ROOT / "bin" / "native" / "x64"
+    if native_src.exists():
+        native_dst = PLAYER_BUILD / "native" / "x64"
+        native_dst.mkdir(parents=True, exist_ok=True)
+        for dll in ["ChillAudioDecoder.dll", "ChillFlacDecoder.dll"]:
+            src = native_src / dll
+            if src.exists():
+                _copy_with(src, native_dst)
+        info("  Native decoders copied from bin/native/x64")
+
+    # MediaGenerator（单文件发布，只复制 exe + 配置）
     info("MediaGenerator...")
     if MEDIA_GEN_PUBLISH.exists():
         for f in MEDIA_GEN_PUBLISH.glob("chill-gen-media.exe"):
             _copy_with(f, PLAYER_BUILD)
         for f in MEDIA_GEN_PUBLISH.glob("*.pdb"):
             _copy_with(f, PLAYER_BUILD)
-        # 复制 MediaGenerator 特有的配置文件
         for cfg in ["config.json"]:
             src = MEDIA_GEN_PUBLISH / cfg
             if src.exists():
@@ -761,9 +776,18 @@ def write_version_info():
         if m:
             cs_ver = m.group(1)
 
+    # FH6 bridge 版本
+    fh6_ver = "0.0.0"
+    fh6_file = FH6_DIR / "src" / "bridge.cpp"
+    if fh6_file.exists():
+        m = re.search(r'FH6_BRIDGE_VERSION\s+"([^"]+)"', fh6_file.read_text(encoding="utf-8"))
+        if m:
+            fh6_ver = m.group(1)
+
     version_data = {
         "flutter_version": flutter_ver,
         "mod_version": cs_ver,
+        "fh6_bridge_version": fh6_ver,
         "build_time": datetime.now().isoformat(),
     }
 
@@ -775,7 +799,7 @@ def write_version_info():
     asset_dst = PLAYER_FLUTTER_DIR / "assets" / "version_info.json"
     asset_dst.write_text(json.dumps(version_data, indent=2), encoding="utf-8")
 
-    info(f"  Version info: mod={cs_ver} flutter={flutter_ver}")
+    info(f"  Version info: mod={cs_ver} fh6_bridge={fh6_ver} flutter={flutter_ver}")
 
 
 # ════════════════════════════════════════════

@@ -35,13 +35,83 @@ namespace ChillPatcher.UIFramework.Music
             if (songs == null || songs.Count == 0)
                 return result;
 
-            // IPC bridge: ModuleSystem registries removed.
-            // Fall back to simple list mode (no album grouping for module songs).
+            var groups = new List<AlbumGroup>();
+            var groupMap = new Dictionary<string, AlbumGroup>();
+
             for (int i = 0; i < songs.Count; i++)
             {
-                result.Add(PlaylistListItem.CreateSongItem(songs[i], i));
+                var song = songs[i];
+                string albumId = "";
+                var mi = OmniMixIntegration.Instance?.GetCachedSong(song.UUID);
+                if (mi != null && !string.IsNullOrEmpty(mi.AlbumId))
+                {
+                    albumId = mi.AlbumId;
+                }
+
+                if (!groupMap.TryGetValue(albumId, out var group))
+                {
+                    group = new AlbumGroup { AlbumId = albumId, Songs = new List<SongWithIndex>() };
+                    groupMap[albumId] = group;
+                    groups.Add(group);
+                }
+                group.Songs.Add(new SongWithIndex { Song = song, Index = i });
             }
+
+            foreach (var group in groups)
+            {
+                AlbumHeaderInfo header;
+                if (!string.IsNullOrEmpty(group.AlbumId))
+                {
+                    var album = OmniMixIntegration.Instance?.GetCachedAlbum(group.AlbumId);
+                    header = new AlbumHeaderInfo
+                    {
+                        AlbumId = group.AlbumId,
+                        DisplayName = album?.DisplayName ?? "未知专辑",
+                        Artist = album?.Artist ?? "",
+                        TotalSongCount = group.Songs.Count,
+                        EnabledSongCount = group.Songs.Count,
+                        IsOtherAlbum = false
+                    };
+
+                    if (loadCovers && album != null && !string.IsNullOrEmpty(album.CoverPath))
+                    {
+                        header.CoverImage = CoverService.Instance.GetAlbumCoverOrPlaceholder(group.AlbumId);
+                    }
+                }
+                else
+                {
+                    header = new AlbumHeaderInfo
+                    {
+                        AlbumId = "other_songs",
+                        DisplayName = "其它歌曲",
+                        Artist = "",
+                        TotalSongCount = group.Songs.Count,
+                        EnabledSongCount = group.Songs.Count,
+                        IsOtherAlbum = true
+                    };
+                }
+
+                result.Add(PlaylistListItem.CreateAlbumHeader(header));
+
+                foreach (var swi in group.Songs)
+                {
+                    result.Add(PlaylistListItem.CreateSongItem(swi.Song, swi.Index));
+                }
+            }
+
             return result;
+        }
+
+        private class AlbumGroup
+        {
+            public string AlbumId { get; set; }
+            public List<SongWithIndex> Songs { get; set; }
+        }
+
+        private class SongWithIndex
+        {
+            public GameAudioInfo Song { get; set; }
+            public int Index { get; set; }
         }
     }
 }

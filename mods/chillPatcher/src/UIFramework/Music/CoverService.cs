@@ -217,7 +217,41 @@ namespace ChillPatcher.UIFramework.Music
         /// </summary>
         public async Task<Sprite> GetAlbumCoverAsync(string albumId)
         {
-            await Task.Yield();
+            if (string.IsNullOrEmpty(albumId))
+                return GetDefaultAlbumCover();
+
+            var cacheKey = $"album:{albumId}";
+            if (_spriteCache.TryGetValue(cacheKey, out var cached) && cached != null)
+                return cached;
+
+            try
+            {
+                var album = OmniMixIntegration.Instance?.GetCachedAlbum(albumId);
+                if (album != null && !string.IsNullOrEmpty(album.CoverPath))
+                {
+                    var bytesResult = await OmniMixIntegration.Instance.GetAlbumCoverAsync(album.CoverPath);
+                    if (bytesResult.data != null && bytesResult.data.Length > 0)
+                    {
+                        await UniTask.SwitchToMainThread();
+                        var texture = new Texture2D(2, 2);
+                        if (texture.LoadImage(bytesResult.data))
+                        {
+                            var sprite = Sprite.Create(
+                                texture,
+                                new Rect(0, 0, texture.width, texture.height),
+                                new Vector2(0.5f, 0.5f)
+                            );
+                            _spriteCache[cacheKey] = sprite;
+                            return sprite;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug($"GetAlbumCoverAsync failed [{albumId}]: {ex.Message}");
+            }
+
             return GetDefaultAlbumCover();
         }
 

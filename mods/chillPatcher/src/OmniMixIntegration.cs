@@ -76,6 +76,22 @@ namespace ChillPatcher
 
         public IReadOnlyList<TagInfo> GetAllTags() => _allTags;
 
+        // Song and Album cache
+        private Dictionary<string, MusicInfo> _songsCache = new Dictionary<string, MusicInfo>();
+        private Dictionary<string, AlbumInfo> _albumsCache = new Dictionary<string, AlbumInfo>();
+
+        public MusicInfo GetCachedSong(string uuid)
+        {
+            if (string.IsNullOrEmpty(uuid)) return null;
+            return _songsCache.TryGetValue(uuid, out var song) ? song : null;
+        }
+
+        public AlbumInfo GetCachedAlbum(string albumId)
+        {
+            if (string.IsNullOrEmpty(albumId)) return null;
+            return _albumsCache.TryGetValue(albumId, out var album) ? album : null;
+        }
+
         // In-memory exclusions (synced from backend)
         private readonly HashSet<string> _excludedUuids = new HashSet<string>();
 
@@ -611,6 +627,7 @@ namespace ChillPatcher
                 var queueJson = await _client.GetQueue();
                 var songsJson = await _client.GetSongs();
                 var tagsJson = await _client.GetTags();
+                var albumsJson = await _client.GetAlbums();
 
                 // Refresh custom tags and growable tags
                 await RefreshGrowableTags();
@@ -633,6 +650,28 @@ namespace ChillPatcher
                         {
                             tagBitValues[tagId] = bitValue;
                         }
+                    }
+                }
+
+                // Parse albums
+                var albumDict = new Dictionary<string, AlbumInfo>();
+                if (albumsJson is JArray albumsArr)
+                {
+                    foreach (var a in albumsArr)
+                    {
+                        var id = a["id"]?.ToString();
+                        if (string.IsNullOrEmpty(id)) continue;
+
+                        var album = new AlbumInfo
+                        {
+                            AlbumId = id,
+                            DisplayName = a["name"]?.ToString() ?? "",
+                            ModuleId = a["moduleId"]?.ToString() ?? "",
+                            CoverPath = a["coverPath"]?.ToString() ?? "",
+                            SongCount = a["songCount"]?.ToObject<int>() ?? 0,
+                            IsGrowableAlbum = a["isGrowable"]?.ToObject<bool>() ?? false
+                        };
+                        albumDict[id] = album;
                     }
                 }
 
@@ -790,6 +829,9 @@ namespace ChillPatcher
                     Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh custom tag buttons: {ex.Message}");
                 }
 
+                _songsCache = songDict;
+                _albumsCache = albumDict;
+
                 return moduleSongs.Count;
             }
             catch (Exception ex)
@@ -856,6 +898,17 @@ namespace ChillPatcher
         public async UniTask<(byte[] data, string mime)> GetCoverAsync(string uuid)
         {
             try { return await _client.GetTrackCover(uuid); } catch { return (null, null); }
+        }
+
+        public async UniTask<(byte[] data, string mime)> GetAlbumCoverAsync(string coverPath)
+        {
+            if (string.IsNullOrEmpty(coverPath)) return (null, null);
+            try
+            {
+                var path = "/" + coverPath.TrimStart('/');
+                return await _client.GetBytesAsync(path);
+            }
+            catch { return (null, null); }
         }
 
         #endregion

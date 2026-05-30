@@ -1,3 +1,7 @@
+import 'package:flutter/material.dart';
+import '../mods/registry.dart';
+import '../games/registry.dart';
+
 class GameDeclaration {
   final String id;
   final String name;
@@ -49,6 +53,7 @@ class ModDeclaration {
   final String folderName;
   final List<String> rootFilesToLink;
   final List<String> rootDirsToLink;
+  final List<String> rootFilesNoBackup;
 
   /// "server" = backend-managed playback (supports playlist/queue offline mgmt)
   /// "client" = game-managed playback (minimal profile)
@@ -63,6 +68,7 @@ class ModDeclaration {
     required this.folderName,
     this.rootFilesToLink = const [],
     this.rootDirsToLink = const [],
+    this.rootFilesNoBackup = const [],
     required this.mode,
   });
 
@@ -70,34 +76,35 @@ class ModDeclaration {
       targetFramework != null && targetFramework!.isNotEmpty;
   bool get installsToGameRoot =>
       rootFilesToLink.isNotEmpty || rootDirsToLink.isNotEmpty;
+
+  // Mod-level settings & custom hooks
+  bool get hasSettings => false;
+
+  Future<void> onDeploy(
+    String gameDir,
+    void Function(String) log,
+    Map<String, dynamic> settings,
+  ) async {}
+
+  Future<void> onUndeploy(
+    String gameDir,
+    void Function(String) log,
+  ) async {}
+
+  Widget buildSettingsWidget(
+    BuildContext context,
+    Map<String, dynamic> currentSettings,
+    void Function(Map<String, dynamic> newSettings) onSave,
+  ) {
+    return const SizedBox.shrink();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Declarative Catalog Definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
-final List<GameDeclaration> gameCatalog = [
-  const GameDeclaration(
-    id: 'chill_with_you',
-    name: 'Chill With You',
-    exeName: 'Chill With You.exe',
-    signatureFiles: ['Chill With You.exe', 'Chill With You_Data'],
-    supportedFrameworks: ['bepinex_5'],
-    supportedMods: ['chill_patcher'],
-    websiteUrl: 'https://store.steampowered.com/app/3361180',
-    coverAssetPath: 'assets/covers/chill_with_you.png',
-  ),
-  const GameDeclaration(
-    id: 'forza_horizon_6',
-    name: 'Forza Horizon 6',
-    exeName: 'forzahorizon6.exe',
-    signatureFiles: ['forzahorizon6.exe'],
-    supportedFrameworks: [],
-    supportedMods: ['fh6_omni_bridge'],
-    websiteUrl: 'https://forza.net',
-    coverAssetPath: 'assets/covers/forza_horizon_6.png',
-  ),
-];
+final List<GameDeclaration> gameCatalog = registeredGames;
 
 final List<FrameworkDeclaration> frameworkCatalog = [
   const FrameworkDeclaration(
@@ -111,26 +118,8 @@ final List<FrameworkDeclaration> frameworkCatalog = [
   ),
 ];
 
-final List<ModDeclaration> modCatalog = [
-  const ModDeclaration(
-    id: 'chill_patcher',
-    name: 'ChillPatcher',
-    version: '1.0.0',
-    archiveName: 'ChillPatcher.zip',
-    targetFramework: 'bepinex_5',
-    folderName: 'ChillPatcher',
-    mode: 'client',
-  ),
-  const ModDeclaration(
-    id: 'fh6_omni_bridge',
-    name: 'Forza Horizon 6 Omni Bridge',
-    version: '1.0.0',
-    archiveName: 'FH6OmniBridge.zip',
-    folderName: 'fh6-omnimix',
-    rootFilesToLink: ['version.dll', 'OmniPcmShared.dll'],
-    mode: 'server',
-  ),
-];
+final List<ModDeclaration> modCatalog = registeredMods;
+
 
 // ═══════════════════════════════════════════════════════════
 //  Instance & Archive Models

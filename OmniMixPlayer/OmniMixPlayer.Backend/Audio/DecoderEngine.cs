@@ -22,26 +22,27 @@ namespace OmniMixPlayer.Backend.Audio
             _logger = logger;
 
             var arch = IntPtr.Size == 8 ? "x64" : "x86";
-            var nativeDir = Path.Combine(baseDirectory, "Native", arch);
+            var nativeDir = Path.Combine(baseDirectory, "native", arch);
 
-            _audioDecoderAvailable = TryLoadDll(Path.Combine(nativeDir, "ChillAudioDecoder.dll"), "ChillAudioDecoder");
-            _flacDecoderAvailable = TryLoadDll(Path.Combine(nativeDir, "ChillFlacDecoder.dll"), "ChillFlacDecoder");
+            _audioDecoderAvailable = TryLoadDll(nativeDir, "ChillAudioDecoder.dll");
+            _flacDecoderAvailable = TryLoadDll(nativeDir, "ChillFlacDecoder.dll");
         }
 
-        private static bool TryLoadDll(string path, string name)
+        private static bool TryLoadDll(string dir, string fileName)
         {
+            var path = Path.Combine(dir, fileName);
             if (!File.Exists(path))
             {
-                _logger?.LogWarning("[DecoderEngine] {Name} not found at: {Path}", name, path);
+                _logger?.LogWarning("[DecoderEngine] {Name} not found at: {Path}", fileName, path);
                 return false;
             }
             var handle = LoadLibrary(path);
             if (handle == IntPtr.Zero)
             {
-                _logger?.LogWarning("[DecoderEngine] Failed to load {Name}: error {Error}", name, Marshal.GetLastWin32Error());
+                _logger?.LogWarning("[DecoderEngine] Failed to load {Name}: error {Error}", fileName, Marshal.GetLastWin32Error());
                 return false;
             }
-            _logger?.LogInformation("[DecoderEngine] Loaded {Name} from {Path}", name, path);
+            _logger?.LogInformation("[DecoderEngine] Loaded {Name}", fileName);
             return true;
         }
 

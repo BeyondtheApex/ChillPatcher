@@ -5,6 +5,7 @@ import 'providers/app_state.dart';
 import 'services/tray_manager.dart';
 import 'services/logger.dart';
 import 'services/port_file.dart';
+import 'services/mod_deployment_service.dart';
 import 'app.dart';
 
 void main() async {
@@ -28,6 +29,9 @@ void main() async {
   await windowManager.setSize(const Size(900, 650));
   await windowManager.center();
   await windowManager.show();
+
+  // Pre-load latest mod version from assets or playerbuild/ version_info.json
+  await ModDeploymentService.loadLatestModVersion();
 
   final state = AppState();
   state.init(port: port);

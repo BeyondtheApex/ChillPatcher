@@ -24,6 +24,6 @@
     "enabled": true,
     "copyLogoFrom": "HUD/RadioLogos/Horizon_Pulse.swatchbin",
     "targetSwatchBin": "HUD/RadioLogos/Streamer_Mode.swatchbin",
-    "mode": "partial"
+    "mode": "full"
   }
 }

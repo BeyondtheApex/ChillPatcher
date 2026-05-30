@@ -612,6 +612,15 @@ public async Task<string> GetAsync(string path)
     return await _http.GetStringAsync(ApiUrl(path));
 }
 
+public async Task<(byte[] data, string mimeType)> GetBytesAsync(string path)
+{
+    var response = await _http.GetAsync(ApiUrl(path));
+    response.EnsureSuccessStatusCode();
+    var data = await response.Content.ReadAsByteArrayAsync();
+    var mimeType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+    return (data, mimeType);
+}
+
 #endregion
 
 #region Helpers
