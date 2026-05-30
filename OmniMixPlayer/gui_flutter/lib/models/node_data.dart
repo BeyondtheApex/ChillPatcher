@@ -399,6 +399,8 @@ class PlaybackInstanceInfo {
   final bool shuffle;
   final String repeatMode;
   final TrackInfo? currentTrack;
+  final String modId;
+  final String gameName;
 
   const PlaybackInstanceInfo({
     this.id = '',
@@ -417,6 +419,8 @@ class PlaybackInstanceInfo {
     this.shuffle = false,
     this.repeatMode = 'none',
     this.currentTrack,
+    this.modId = '',
+    this.gameName = '',
   });
 
   factory PlaybackInstanceInfo.fromJson(Map<String, dynamic> json) {
@@ -439,6 +443,8 @@ class PlaybackInstanceInfo {
       currentTrack: json['currentTrack'] == null
           ? null
           : TrackInfo.fromJson(json['currentTrack'] as Map<String, dynamic>),
+      modId: json['modId'] ?? '',
+      gameName: json['gameName'] ?? '',
     );
   }
 

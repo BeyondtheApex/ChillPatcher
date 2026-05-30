@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -29,7 +30,7 @@ namespace OmniMixPlayer.Backend.Audio
     {
         public string Id { get; init; }
         public string ClientId { get; init; }
-        public PlaybackMode Mode { get; init; }
+        public PlaybackMode Mode { get; set; }
         public DateTime CreatedAt { get; init; }
         public DateTime LastHeartbeat { get; set; }
         public DateTime? DetachedAt { get; set; }
@@ -147,10 +148,18 @@ namespace OmniMixPlayer.Backend.Audio
                         Controller = controller
                     };
                     _instances[clientId] = instance;
-                    _logger.LogInformation("Created playback instance {InstanceId} sharedMemory={SharedMemory}", clientId, mapName);
+                    SaveInstanceMeta(clientId, mode);
+                    _logger.LogInformation("Created playback instance {InstanceId} mode={Mode} sharedMemory={SharedMemory}", clientId, mode, mapName);
                 }
                 else
                 {
+                    // Update mode on reattach (e.g. if client changed from ClientManaged to ServerManaged or vice versa)
+                    if (instance.Mode != mode)
+                    {
+                        _logger.LogInformation("Updating instance {InstanceId} mode from {OldMode} to {NewMode}", clientId, instance.Mode, mode);
+                        instance.Mode = mode;
+                        SaveInstanceMeta(clientId, mode);
+                    }
                     instance.DetachedAt = null;
                     instance.LastHeartbeat = now;
                     _logger.LogInformation("Reattached playback instance {InstanceId}", clientId);
@@ -200,20 +209,38 @@ namespace OmniMixPlayer.Backend.Audio
         public bool Delete(string id)
         {
             id = SanitizeId(id);
+            bool deleted = false;
             PlaybackInstance instance = null;
             lock (_lock)
             {
                 _clients.Remove(id);
                 if (_instances.TryGetValue(id, out instance))
+                {
                     _instances.Remove(id);
+                    deleted = true;
+                }
             }
             instance?.Dispose();
-            if (instance != null)
+
+            // Also clean up offline profile directory if it exists
+            if (!string.IsNullOrEmpty(_configBaseDir))
             {
-                _logger.LogInformation("Deleted playback instance {InstanceId}", id);
+                var profileDir = Path.Combine(_configBaseDir, "instances", id);
+                if (Directory.Exists(profileDir))
+                {
+                    try { Directory.Delete(profileDir, true); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete profile dir for {Id}", id); }
+                    deleted = true;
+                }
+            }
+
+            if (deleted)
+            {
+                _logger.LogInformation("Deleted instance {InstanceId} (was {State})", id,
+                    instance != null ? "online" : "offline");
                 OnInstancesChanged?.Invoke();
             }
-            return instance != null;
+            return deleted;
         }
 
         public PlaybackInstance Get(string id)
@@ -226,16 +253,392 @@ namespace OmniMixPlayer.Backend.Audio
             }
         }
 
+        /// <summary>
+        /// Get an instance profile. Works both online (via controller) and offline
+        /// (reads from config/instances/{id}/playback_state.json).
+        /// </summary>
+        public object GetProfile(string id)
+        {
+            id = SanitizeId(id);
+            // Online path
+            PlaybackInstance instance;
+            lock (_lock) { _instances.TryGetValue(id, out instance); }
+            if (instance != null)
+                return instance.Controller.GetProfile();
+
+            // Offline path: read from file
+            if (string.IsNullOrEmpty(_configBaseDir)) return null;
+            try
+            {
+                var filePath = Path.Combine(_configBaseDir, "instances", id, "playback_state.json");
+                if (!File.Exists(filePath)) return null;
+                var json = File.ReadAllText(filePath);
+                return System.Text.Json.JsonSerializer.Deserialize<object>(json);
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Update an instance profile — online via controller, offline via file.
+        /// </summary>
+        public bool UpdateProfile(string id, string json)
+        {
+            id = SanitizeId(id);
+            // Online path: use the controller
+            PlaybackInstance instance;
+            lock (_lock) { _instances.TryGetValue(id, out instance); }
+            if (instance != null)
+                return instance.Controller.UpdateProfile(json);
+
+            // Offline path: write directly to config file
+            if (string.IsNullOrEmpty(_configBaseDir)) return false;
+            try
+            {
+                var dir = Path.Combine(_configBaseDir, "instances", id);
+                Directory.CreateDirectory(dir);
+                var filePath = Path.Combine(dir, "playback_state.json");
+                File.WriteAllText(filePath, json);
+                _logger.LogInformation("Updated offline profile for instance {Id} at {Path}", id, filePath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to write offline profile for instance {Id}", id);
+                return false;
+            }
+        }
+
+        // ── Archive management ──
+
+        private string ArchiveDir => _configBaseDir != null
+            ? Path.Combine(_configBaseDir, "instances", ".archive")
+            : null;
+
+        public object ListArchives()
+        {
+            if (ArchiveDir == null || !Directory.Exists(ArchiveDir)) return Array.Empty<object>();
+            var list = new List<object>();
+            foreach (var file in Directory.GetFiles(ArchiveDir, "*.json"))
+            {
+                try
+                {
+                    var json = File.ReadAllText(file);
+                    var entry = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                    if (entry == null) continue;
+                    list.Add(new
+                    {
+                        instanceId = entry.TryGetValue("instanceId", out var v) ? v.GetString() : "",
+                        label = entry.TryGetValue("label", out var l) ? l.GetString() : "",
+                        archivedAt = entry.TryGetValue("archivedAt", out var d) ? d.GetString() : "",
+                        modId = entry.TryGetValue("modId", out var m) ? m.GetString() : "",
+                        mode = entry.TryGetValue("mode", out var md) ? md.GetString() : "",
+                    });
+                }
+                catch { }
+            }
+            return list;
+        }
+
+        public bool DeleteArchive(string id)
+        {
+            if (ArchiveDir == null) return false;
+            // Don't delete if the instance is currently online
+            lock (_lock)
+            {
+                if (_instances.ContainsKey(id))
+                {
+                    _logger.LogWarning("Cannot delete archive {Id}: instance is currently online", id);
+                    return false;
+                }
+            }
+            var path = Path.Combine(ArchiveDir, $"{id}.json");
+            if (!File.Exists(path)) return false;
+            File.Delete(path);
+            _logger.LogInformation("Deleted archive {Id}", id);
+            return true;
+        }
+
+        /// <summary>
+        /// Inherit profile from an archive to a new instance.
+        /// Returns "consumed" if archive is not bound to any existing instance (profile moved).
+        /// Returns "copied" if archive is bound to a live instance (profile copied, archive stays).
+        /// Returns "not_found" if the archive doesn't exist.
+        /// </summary>
+        public string InheritFromArchive(string newInstanceId, string archiveId)
+        {
+            if (string.IsNullOrEmpty(_configBaseDir) || ArchiveDir == null)
+                return "error";
+
+            var archivePath = Path.Combine(ArchiveDir, $"{archiveId}.json");
+            if (!File.Exists(archivePath)) return "not_found";
+
+            // Check if archive is bound to a live instance (online or has profile dir)
+            bool isBound;
+            lock (_lock)
+            {
+                isBound = _instances.ContainsKey(archiveId);
+            }
+            if (!isBound)
+            {
+                var existingProfileDir = Path.Combine(_configBaseDir, "instances", archiveId);
+                isBound = Directory.Exists(existingProfileDir) &&
+                          File.Exists(Path.Combine(existingProfileDir, "playback_state.json"));
+            }
+
+            // Ensure target instance profile directory exists
+            var targetDir = Path.Combine(_configBaseDir, "instances", newInstanceId);
+            Directory.CreateDirectory(targetDir);
+            var targetFile = Path.Combine(targetDir, "playback_state.json");
+
+            if (!isBound)
+            {
+                // Consume: move archive profile to new instance
+                // The archive stores metadata, we need to find the actual profile
+                // Archive JSON contains instanceId pointing to the original profile
+                try
+                {
+                    var archiveJson = File.ReadAllText(archivePath);
+                    using var doc = JsonDocument.Parse(archiveJson);
+                    var originalId = archiveId; // The archive ID is the original instance ID
+
+                    // Try to copy from original instance profile if it still exists
+                    var originalProfile = Path.Combine(_configBaseDir, "instances", originalId, "playback_state.json");
+                    if (File.Exists(originalProfile))
+                    {
+                        File.Copy(originalProfile, targetFile, true);
+                    }
+                    else
+                    {
+                        // No original profile — create empty default
+                        var defaultProfile = "{\"ActiveQueueId\":\"default\",\"Volume\":1.0,\"Queues\":[{\"Id\":\"default\",\"Name\":\"Default\",\"PlaylistSources\":[],\"SongUuids\":[],\"HistoryUuids\":[],\"Index\":-1,\"HistoryPosition\":-1,\"PlaylistPosition\":0,\"Shuffle\":false,\"RepeatMode\":\"none\"}]}";
+                        File.WriteAllText(targetFile, defaultProfile);
+                    }
+
+                    // Delete the archive since it's consumed
+                    File.Delete(archivePath);
+                    _logger.LogInformation("Consumed archive {ArchiveId} → new instance {NewId}", archiveId, newInstanceId);
+                    return "consumed";
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to consume archive {ArchiveId}", archiveId);
+                    return "error";
+                }
+            }
+            else
+            {
+                // Copy: archive is bound, just copy the profile
+                try
+                {
+                    var originalProfile = Path.Combine(_configBaseDir, "instances", archiveId, "playback_state.json");
+                    if (File.Exists(originalProfile))
+                    {
+                        File.Copy(originalProfile, targetFile, true);
+                    }
+                    else
+                    {
+                        var defaultProfile = "{\"ActiveQueueId\":\"default\",\"Volume\":1.0,\"Queues\":[{\"Id\":\"default\",\"Name\":\"Default\",\"PlaylistSources\":[],\"SongUuids\":[],\"HistoryUuids\":[],\"Index\":-1,\"HistoryPosition\":-1,\"PlaylistPosition\":0,\"Shuffle\":false,\"RepeatMode\":\"none\"}]}";
+                        File.WriteAllText(targetFile, defaultProfile);
+                    }
+                    _logger.LogInformation("Copied archive {ArchiveId} profile → new instance {NewId}", archiveId, newInstanceId);
+                    return "copied";
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to copy archive {ArchiveId}", archiveId);
+                    return "error";
+                }
+            }
+        }
+
+        public bool RenameArchive(string id, string label)
+        {
+            if (ArchiveDir == null) return false;
+            var path = Path.Combine(ArchiveDir, $"{id}.json");
+            if (!File.Exists(path)) return false;
+            try
+            {
+                var json = File.ReadAllText(path);
+                using var doc = JsonDocument.Parse(json);
+                var dict = new Dictionary<string, object>();
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                    dict[prop.Name] = prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : prop.Value.GetRawText();
+                dict["label"] = label;
+                File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(dict));
+                return true;
+            }
+            catch { return false; }
+        }
+
+        public bool ArchiveInstance(string id, string label = "", string modId = "", string mode = "")
+        {
+            if (string.IsNullOrEmpty(_configBaseDir)) return false;
+            var profileDir = Path.Combine(_configBaseDir, "instances", id);
+            var profileFile = Path.Combine(profileDir, "playback_state.json");
+            if (!File.Exists(profileFile)) return false;
+            try
+            {
+                var archiveDir = ArchiveDir;
+                Directory.CreateDirectory(archiveDir);
+                var archive = new Dictionary<string, object>
+                {
+                    ["instanceId"] = id,
+                    ["archivedAt"] = DateTime.UtcNow.ToString("O"),
+                    ["label"] = label ?? "",
+                    ["modId"] = modId ?? "",
+                    ["mode"] = mode ?? ""
+                };
+                File.WriteAllText(Path.Combine(archiveDir, $"{id}.json"),
+                    System.Text.Json.JsonSerializer.Serialize(archive));
+                _logger.LogInformation("Archived instance {Id} with label '{Label}'", id, label);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to archive instance {Id}", id);
+                return false;
+            }
+        }
+
         public IReadOnlyList<PlaybackInstance> ListInstances()
         {
             lock (_lock)
                 return _instances.Values.ToList();
         }
 
+        /// <summary>
+        /// Save instance metadata (modId, gameName) alongside the profile.
+        /// </summary>
+        public bool SetInstanceMeta(string id, string modId, string gameName, string mode = "")
+        {
+            if (string.IsNullOrEmpty(_configBaseDir)) return false;
+            try
+            {
+                var dir = Path.Combine(_configBaseDir, "instances", id);
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, "meta.json");
+
+                // Preserve existing fields if present
+                var meta = new Dictionary<string, object>();
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        var existing = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(path));
+                        if (existing != null)
+                        {
+                            foreach (var kv in existing) meta[kv.Key] = kv.Value;
+                        }
+                    }
+                    catch { }
+                }
+
+                meta["modId"] = modId ?? "";
+                meta["gameName"] = gameName ?? "";
+                if (!string.IsNullOrWhiteSpace(mode))
+                    meta["mode"] = NormalizeMode(mode);
+                else if (!meta.ContainsKey("mode"))
+                    meta["mode"] = "ServerManaged";
+
+                File.WriteAllText(path, JsonSerializer.Serialize(meta));
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private (string modId, string gameName) GetInstanceMeta(string id)
+        {
+            if (string.IsNullOrEmpty(_configBaseDir)) return ("", "");
+            try
+            {
+                var path = Path.Combine(_configBaseDir, "instances", id, "meta.json");
+                if (!File.Exists(path)) return ("", "");
+                var json = File.ReadAllText(path);
+                using var doc = JsonDocument.Parse(json);
+                var modId = doc.RootElement.TryGetProperty("modId", out var m) ? m.GetString() ?? "" : "";
+                var gameName = doc.RootElement.TryGetProperty("gameName", out var g) ? g.GetString() ?? "" : "";
+                return (modId, gameName);
+            }
+            catch { return ("", ""); }
+        }
+
         public object ListInstanceDtos()
         {
+            var result = new List<object>();
+            var seenIds = new HashSet<string>();
+
+            // Online instances first
             lock (_lock)
-                return _instances.Values.Select(MapInstance).ToList();
+            {
+                foreach (var inst in _instances.Values)
+                {
+                    seenIds.Add(inst.Id);
+                    var (modId, gameName) = GetInstanceMeta(inst.Id);
+                    result.Add(MapInstanceWithMeta(inst, modId, gameName));
+                }
+            }
+
+            // Offline instances: scan config directory for profile files
+            if (!string.IsNullOrEmpty(_configBaseDir))
+            {
+                var instancesDir = Path.Combine(_configBaseDir, "instances");
+                if (Directory.Exists(instancesDir))
+                {
+                    foreach (var dir in Directory.GetDirectories(instancesDir))
+                    {
+                        var id = Path.GetFileName(dir);
+                        if (seenIds.Contains(id)) continue;
+                        var profileFile = Path.Combine(dir, "playback_state.json");
+                        if (!File.Exists(profileFile)) continue;
+
+                        var (modId, gameName) = GetInstanceMeta(id);
+
+                        int queueCount = 0;
+                        try
+                        {
+                            var json = File.ReadAllText(profileFile);
+                            using var doc = JsonDocument.Parse(json);
+                            var root = doc.RootElement;
+                            if (root.TryGetProperty("Queues", out var queues) && queues.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var q in queues.EnumerateArray())
+                                {
+                                    if (q.TryGetProperty("SongUuids", out var su) && su.ValueKind == JsonValueKind.Array)
+                                        queueCount += su.GetArrayLength();
+                                }
+                            }
+                        }
+                        catch { }
+
+                        var savedMode = ReadInstanceMode(id);
+
+                        result.Add(new
+                        {
+                            id,
+                            clientId = id,
+                            role = "audio",
+                            mode = savedMode,
+                            attached = false,
+                            isPlaying = false,
+                            position = 0.0,
+                            volume = 1.0,
+                            queueCount,
+                            queueIndex = 0,
+                            historyCount = 0,
+                            sampleRate = 0,
+                            channels = 0,
+                            shuffle = false,
+                            repeatMode = "none",
+                            currentTrack = (object)null,
+                            sharedMemoryName = (string)null,
+                            modId,
+                            gameName
+                        });
+                    }
+                }
+            }
+
+            return result;
         }
 
         public object GetStats()
@@ -351,8 +754,109 @@ namespace OmniMixPlayer.Backend.Audio
                 albumId = instance.Controller.CurrentTrack.AlbumId,
                 duration = instance.Controller.CurrentTrack.Duration,
                 moduleId = instance.Controller.CurrentTrack.ModuleId
-            }
+            },
+            modId = "",
+            gameName = ""
         };
+
+        private static object MapInstanceWithMeta(PlaybackInstance instance, string modId, string gameName) => new
+        {
+            id = instance.Id,
+            clientId = instance.ClientId,
+            role = "audio",
+            mode = instance.Mode.ToString(),
+            attached = instance.IsAttached,
+            isPlaying = instance.Controller.IsPlaying,
+            position = instance.Controller.Position,
+            volume = instance.Controller.Volume,
+            queueCount = instance.Controller.QueueCount,
+            queueIndex = instance.Controller.QueueIndex,
+            historyCount = instance.Controller.HistoryCount,
+            shuffle = instance.Controller.Shuffle,
+            repeatMode = instance.Controller.RepeatMode.ToString().ToLowerInvariant(),
+            sampleRate = instance.SharedMemory?.SampleRate ?? 0,
+            channels = instance.SharedMemory?.Channels ?? 0,
+            sharedMemoryName = instance.SharedMemoryName,
+            sharedMemoryBytes = instance.SharedMemory?.TotalSize ?? 0,
+            connectedAt = instance.CreatedAt.ToString("O"),
+            lastHeartbeat = instance.LastHeartbeat.ToString("O"),
+            detachedAt = instance.DetachedAt?.ToString("O"),
+            expiresAt = instance.DetachedAt?.AddSeconds(DetachedTtlSeconds).ToString("O"),
+            currentTrack = instance.Controller.CurrentTrack == null ? null : new
+            {
+                uuid = instance.Controller.CurrentTrack.UUID,
+                title = instance.Controller.CurrentTrack.Title,
+                artist = instance.Controller.CurrentTrack.Artist,
+                albumId = instance.Controller.CurrentTrack.AlbumId,
+                duration = instance.Controller.CurrentTrack.Duration,
+                moduleId = instance.Controller.CurrentTrack.ModuleId
+            },
+            modId,
+            gameName
+        };
+
+        private void SaveInstanceMeta(string id, PlaybackMode mode)
+        {
+            if (string.IsNullOrEmpty(_configBaseDir)) return;
+            try
+            {
+                var dir = Path.Combine(_configBaseDir, "instances", id);
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, "meta.json");
+
+                // Read existing meta (modId, gameName) and merge with mode
+                var meta = new Dictionary<string, object>();
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        var existing = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(path));
+                        if (existing != null)
+                        {
+                            foreach (var kv in existing) meta[kv.Key] = kv.Value;
+                        }
+                    }
+                    catch { }
+                }
+                meta["mode"] = mode.ToString();
+                File.WriteAllText(path, JsonSerializer.Serialize(meta));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to save instance meta for {Id}", id);
+            }
+        }
+
+        private string ReadInstanceMode(string id)
+        {
+            if (string.IsNullOrEmpty(_configBaseDir)) return "ServerManaged";
+            try
+            {
+                var path = Path.Combine(_configBaseDir, "instances", id, "meta.json");
+                if (!File.Exists(path)) return "ServerManaged";
+                var json = File.ReadAllText(path);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("mode", out var modeProp))
+                {
+                    var m = modeProp.GetString();
+                    if (!string.IsNullOrWhiteSpace(m)) return NormalizeMode(m);
+                }
+            }
+            catch { }
+            return "ServerManaged";
+        }
+
+        /// Normalize mode string to PlaybackMode enum format:
+        /// "client"/"ClientManaged" → "ClientManaged", "server"/"ServerManaged" → "ServerManaged"
+        private static string NormalizeMode(string mode)
+        {
+            return mode?.ToLowerInvariant() switch
+            {
+                "client" => "ClientManaged",
+                "server" => "ServerManaged",
+                _ => mode
+            };
+        }
 
         private static string SanitizeId(string id)
         {

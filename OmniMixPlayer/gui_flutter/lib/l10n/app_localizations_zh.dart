@@ -468,6 +468,43 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get deleteInstance => '删除实例';
+
+  @override
+  String deleteInstanceConfirm(String id) {
+    return '确定要删除实例 \"$id\" 吗？这将同时移除配置文件和游戏注册。';
+  }
+
+  @override
+  String get archiveInstanceTooltip => '保存为归档';
+
+  @override
+  String get archiveInstance => '保存实例归档';
+
+  @override
+  String archiveInstanceHint(String id) {
+    return '将实例 \"$id\" 的当前设置保存为归档，之后可在安装时继承。';
+  }
+
+  @override
+  String get archiveAction => '保存归档';
+
+  @override
+  String get inheritArchiveTitle => '继承归档设置';
+
+  @override
+  String get inheritArchiveHint => '选择一个归档来继承播放列表和设置。未绑定的归档会被消费，已绑定的会复制。';
+
+  @override
+  String get archiveBoundWillCopy => '已绑定实例 · 将复制设置';
+
+  @override
+  String get archiveFreeWillConsume => '未绑定 · 将直接消费此归档';
+
+  @override
+  String get skipInherit => '跳过，全新安装';
+
+  @override
   String get uninstallServiceConfirm => '这将停止后端服务并将其从系统中移除。';
 
   @override

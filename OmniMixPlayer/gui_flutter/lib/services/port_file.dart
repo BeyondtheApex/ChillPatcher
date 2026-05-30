@@ -1,7 +1,4 @@
-import 'dart:io';
-import 'logger.dart';
-
-/// Reads the IPC port from omni_port.txt files in known directories.
+import 'dart:io';/// Reads the IPC port from omni_port.txt files in known directories.
 ///
 /// The backend writes `omnimix_port.txt` (containing just the port number)
 /// to configured directories. GUI and game clients read this file to discover
@@ -33,15 +30,12 @@ class PortFile {
           final content = file.readAsStringSync().trim();
           final port = int.tryParse(content);
           if (port != null && port > 0 && port < 65536) {
-            GuiLogger().conn('PortFile: read port $port from ${file.path}');
             return port;
           }
         }
       } catch (e) {
-        GuiLogger().conn('PortFile: failed to read from $dir: $e');
-      }
+        }
     }
-    GuiLogger().conn('PortFile: no port file found in any directory');
     return null;
   }
 
@@ -52,10 +46,8 @@ class PortFile {
       if (!d.existsSync()) d.createSync(recursive: true);
       final file = File('$dir${Platform.pathSeparator}omnimix_port.txt');
       file.writeAsStringSync('$port');
-      GuiLogger().conn('PortFile: wrote port $port to ${file.path}');
-    } catch (e) {
-      GuiLogger().error('PortFile: failed to write to $dir', e);
-    }
+      } catch (e) {
+      }
   }
 
   static String _guiDir() {
@@ -105,8 +97,7 @@ class PortFile {
         final file = File('$dir${Platform.pathSeparator}omnimix_port.txt');
         if (file.existsSync()) {
           file.deleteSync();
-          GuiLogger().conn('PortFile: deleted ${file.path}');
-        }
+          }
       } catch (_) {}
     }
   }
@@ -117,10 +108,8 @@ class PortFile {
       final file = File('$dir${Platform.pathSeparator}omnimix_port.txt');
       if (file.existsSync()) {
         file.deleteSync();
-        GuiLogger().conn('PortFile: deleted ${file.path}');
-      }
+        }
     } catch (e) {
-      GuiLogger().conn('PortFile: failed to delete from $dir: $e');
-    }
+      }
   }
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -56,16 +57,44 @@ class _OmniMixAppState extends State<OmniMixApp> {
         return MaterialApp(
           title: 'OmniMixPlayer',
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            colorScheme: lightScheme,
-            useMaterial3: true,
-            brightness: Brightness.light,
-          ),
-          darkTheme: ThemeData(
-            colorScheme: darkScheme,
-            useMaterial3: true,
-            brightness: Brightness.dark,
-          ),
+          theme:
+              ThemeData(
+                colorScheme: lightScheme,
+                useMaterial3: true,
+                brightness: Brightness.light,
+              ).copyWith(
+                // 修复：必须在 textTheme 里应用字体
+                textTheme: ThemeData(brightness: Brightness.light).textTheme
+                    .apply(
+                      fontFamily: 'PingFang SC',
+                      fontFamilyFallback: const [
+                        'Microsoft YaHei',
+                        'Hiragino Sans GB',
+                        'Heiti SC',
+                        'Noto Sans CJK SC',
+                        'sans-serif',
+                      ],
+                    ),
+              ),
+          darkTheme:
+              ThemeData(
+                colorScheme: darkScheme,
+                useMaterial3: true,
+                brightness: Brightness.dark,
+              ).copyWith(
+                // 修复：必须在 textTheme 里应用字体
+                textTheme: ThemeData(brightness: Brightness.light).textTheme
+                    .apply(
+                      fontFamily: 'PingFang SC',
+                      fontFamilyFallback: const [
+                        'Microsoft YaHei',
+                        'Hiragino Sans GB',
+                        'Heiti SC',
+                        'Noto Sans CJK SC',
+                        'sans-serif',
+                      ],
+                    ),
+              ),
           themeMode: st.themeMode == AppThemeMode.light
               ? ThemeMode.light
               : st.themeMode == AppThemeMode.dark
@@ -164,7 +193,7 @@ class _MainContentState extends State<_MainContent> {
     if (isWide) {
       return Scaffold(
         backgroundColor: cs.surfaceContainer,
-        appBar: _buildTopBar(context, l10n, st),
+        appBar: _buildTopBar(context, l10n, st, isWide),
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -191,10 +220,11 @@ class _MainContentState extends State<_MainContent> {
                   icon: const Icon(Icons.extension),
                   label: Text(l10n.modules),
                 ),
-                NavigationRailDestination(
-                  icon: const Icon(Icons.sports_esports),
-                  label: Text(l10n.gameIntegration),
-                ),
+                if (!kIsWeb)
+                  NavigationRailDestination(
+                    icon: const Icon(Icons.sports_esports),
+                    label: Text(l10n.gameIntegration),
+                  ),
                 NavigationRailDestination(
                   icon: const Icon(Icons.settings),
                   label: Text(l10n.settings),
@@ -224,23 +254,30 @@ class _MainContentState extends State<_MainContent> {
     // ── Narrow layout: AppBar + BottomNav ──
     return Scaffold(
       backgroundColor: cs.surface,
-      appBar: _buildTopBar(context, l10n, st),
+      appBar: _buildTopBar(context, l10n, st, isWide),
       body: st.hasOverlay
           ? _buildOverlay(context, l10n, st, isWide)
           : _buildTabContent(st),
       bottomNavigationBar: NavigationBar(
         selectedIndex: st.currentTab,
         onDestinationSelected: (i) => st.selectTab(i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: ' '),
-          NavigationDestination(icon: Icon(Icons.library_music), label: ' '),
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(icon: Icon(Icons.home), label: ' '),
+          const NavigationDestination(
+            icon: Icon(Icons.library_music),
+            label: ' ',
+          ),
+          const NavigationDestination(
             icon: Icon(Icons.grid_view_rounded),
             label: ' ',
           ),
-          NavigationDestination(icon: Icon(Icons.extension), label: ' '),
-          NavigationDestination(icon: Icon(Icons.sports_esports), label: ' '),
-          NavigationDestination(icon: Icon(Icons.settings), label: ' '),
+          const NavigationDestination(icon: Icon(Icons.extension), label: ' '),
+          if (!kIsWeb)
+            const NavigationDestination(
+              icon: Icon(Icons.sports_esports),
+              label: ' ',
+            ),
+          const NavigationDestination(icon: Icon(Icons.settings), label: ' '),
         ],
       ),
     );
@@ -250,6 +287,7 @@ class _MainContentState extends State<_MainContent> {
     BuildContext context,
     AppLocalizations l10n,
     AppState st,
+    bool isWide,
   ) {
     final cs = Theme.of(context).colorScheme;
     return AppBar(
@@ -263,29 +301,36 @@ class _MainContentState extends State<_MainContent> {
           alignment: Alignment.center,
           children: [
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
+              constraints: const BoxConstraints(maxWidth: 252),
               child: _GlobalInstanceDropdown(state: st),
             ),
             Positioned(
               right: 16,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: st.backendOnline ? Colors.green : Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    st.backendOnline ? l10n.connected : l10n.disconnected,
-                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                  ),
-                ],
-              ),
+              child: isWide
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: st.backendOnline
+                                ? Colors.green
+                                : Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          st.backendOnline ? l10n.connected : l10n.disconnected,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    )
+                  : _RippleStatusDot(online: st.backendOnline),
             ),
           ],
         ),
@@ -295,7 +340,38 @@ class _MainContentState extends State<_MainContent> {
   }
 
   Widget _buildTabContent(AppState st) {
-    switch (st.currentTab) {
+    final tab = st.currentTab;
+    // On web, tabs 0-3 are the same, tab 4 is Settings (game integration skipped)
+    // On desktop, tabs 0-3 same, 4=game integration, 5=settings
+    if (kIsWeb) {
+      switch (tab) {
+        case 0:
+          return HomePage(state: st);
+        case 1:
+          return PlaylistPage(state: st);
+        case 2:
+          final allLinks = st.modules.expand((m) => m.linkEntries).toList();
+          final moduleLinks = {for (final m in st.modules) m.id: m.linkEntries};
+          return LaunchpadGrid(
+            links: allLinks,
+            baseUrl: st.apiBaseUrl,
+            moduleLinks: moduleLinks,
+            onTap: (entry) {
+              final mod = st.modules.firstWhere(
+                (m) => m.linkEntries.contains(entry),
+              );
+              st.openModuleLink(mod.id, entry.id);
+            },
+          );
+        case 3:
+          return ModulesPage(state: st);
+        case 4:
+          return SettingsPage(state: st);
+        default:
+          return HomePage(state: st);
+      }
+    }
+    switch (tab) {
       case 0:
         return HomePage(state: st);
       case 1:
@@ -369,9 +445,15 @@ class _GlobalInstanceDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final allInstances = state.instances;
+    // Use backend instances (includes online + offline) — single source of truth.
+    final allInstances = state.playbackInstances
+        .where((i) => i.gameName.isNotEmpty || i.attached)
+        .toList();
     final onlineIds = state.backendOnline
-        ? state.playbackInstances.map((i) => i.id).toSet()
+        ? state.playbackInstances
+              .where((i) => i.attached)
+              .map((i) => i.id)
+              .toSet()
         : <String>{};
     final cs = Theme.of(context).colorScheme;
 
@@ -384,9 +466,9 @@ class _GlobalInstanceDropdown extends StatelessWidget {
 
     final activeId = state.activeInstanceId;
     final displayId =
-        (activeId != null && allInstances.any((i) => i.instanceId == activeId))
+        (activeId != null && allInstances.any((i) => i.id == activeId))
         ? activeId
-        : allInstances.first.instanceId;
+        : allInstances.first.id;
 
     return Container(
       height: 36,
@@ -402,9 +484,9 @@ class _GlobalInstanceDropdown extends StatelessWidget {
           isExpanded: true,
           icon: const Icon(Icons.expand_more_rounded),
           items: allInstances.map((inst) {
-            final online = onlineIds.contains(inst.instanceId);
+            final online = onlineIds.contains(inst.id);
             return DropdownMenuItem<String>(
-              value: inst.instanceId,
+              value: inst.id,
               child: Row(
                 children: [
                   Icon(
@@ -415,7 +497,7 @@ class _GlobalInstanceDropdown extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      inst.gameName,
+                      inst.gameName.isNotEmpty ? inst.gameName : inst.id,
                       style: const TextStyle(fontSize: 13),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -433,6 +515,62 @@ class _GlobalInstanceDropdown extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+/// A pulsing dot that indicates connection status — used in portrait layout
+/// to save space compared to the full "Connected / Disconnected" text label.
+class _RippleStatusDot extends StatefulWidget {
+  final bool online;
+  const _RippleStatusDot({required this.online});
+
+  @override
+  State<_RippleStatusDot> createState() => _RippleStatusDotState();
+}
+
+class _RippleStatusDotState extends State<_RippleStatusDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.online ? Colors.green : Colors.grey;
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = _ctrl.value; // 0.0 … 1.0
+        return Container(
+          width: 10 + t * 6,
+          height: 10 + t * 6,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color.withAlpha((80 + t * 175).round()),
+            boxShadow: [
+              BoxShadow(
+                color: color.withAlpha((30 + t * 50).round()),
+                blurRadius: 3 + t * 10,
+                spreadRadius: t * 3,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

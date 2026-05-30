@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'providers/app_state.dart';
 import 'services/tray_manager.dart';
-import 'services/logger.dart';
 import 'services/port_file.dart';
 import 'services/mod_deployment_service.dart';
 import 'app.dart';
@@ -11,12 +10,9 @@ import 'app.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  GuiLogger().init();
-  final log = GuiLogger();
 
   // Read IPC port from port file (written by backend)
   final port = PortFile.readPort();
-  log.conn('portFile port=$port');
 
   // Desktop window setup
   await windowManager.ensureInitialized();

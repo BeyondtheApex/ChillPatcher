@@ -71,6 +71,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   bool _loading = false;
   String _error = '';
   int _totalSongs = 0;
+  int _lastLibGen = 0;
 
   @override
   void initState() {
@@ -87,6 +88,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   void _onStateChanged() {
     if (!mounted) return;
+    // Event-driven reload: when modules load/unload or playlist updates
+    if (widget.state.backendOnline &&
+        widget.state.libraryGeneration != _lastLibGen) {
+      _lastLibGen = widget.state.libraryGeneration;
+      _loadTree();
+    }
     if (widget.state.backendOnline && _tree.isEmpty && !_loading) {
       _loadTree();
     }

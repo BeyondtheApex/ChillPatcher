@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/io.dart';
 import '../models/node_data.dart';
-import 'unix_socket_client.dart';
-import 'logger.dart';
+import 'ws_unix_native.dart'
+    if (dart.library.js_interop) '../stubs/ws_unix_web.dart';
 
 /// WebSocket client that talks to the C# backend.
 /// Supports TCP (primary) and Unix Domain Socket (fallback).
@@ -30,44 +28,49 @@ class WsClient {
     : _wsUrl = 'ws://unix/ws',
       _socketPath = socketPath;
 
+  /// Web mode: build full ws:// or wss:// URL from the current page origin.
+  /// The web_socket package's BrowserWebSocket requires an absolute URI with
+  /// scheme (ws:// or wss://); relative paths like /ws are rejected.
+  WsClient.forWeb() : _wsUrl = _buildWebWsUrl(), _socketPath = null;
+
+  /// Construct a full WebSocket URL from the current page's origin.
+  static String _buildWebWsUrl() {
+    final base = Uri.base;
+    final scheme = base.scheme == 'https' ? 'wss' : 'ws';
+    final host = base.host.isNotEmpty ? base.host : 'localhost';
+    final port = base.port != 0 ? ':${base.port}' : '';
+    return '$scheme://$host$port/ws';
+  }
+
   bool get isConnected => _channel != null;
 
   /// Single connection attempt. Returns true on success.
+  /// Uses web_socket_channel which works on both native (dart:io) and web.
   Future<bool> connectOnce() async {
     _intentionalClose = false;
-    GuiLogger().conn('WsClient.connectOnce: $_wsUrl socket=$_socketPath');
     try {
-      WebSocket ws;
       if (_socketPath != null) {
-        final httpClient = createUnixSocketClient(_socketPath!);
-        ws = await WebSocket.connect(
-          _wsUrl,
-          customClient: httpClient,
-        ).timeout(const Duration(seconds: 10));
+        // Unix socket path — only available on native platforms.
+        // connectViaUnixSocket is conditionally imported (web stub throws).
+        _channel = await connectViaUnixSocket(_socketPath!);
       } else {
-        ws = await WebSocket.connect(
-          _wsUrl,
-        ).timeout(const Duration(seconds: 10));
+        // TCP mode — WebSocketChannel.connect works on both native and web
+        _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
       }
-      _channel = IOWebSocketChannel(ws);
       await _channel!.ready;
-      GuiLogger().conn('WsClient.connectOnce: WebSocket ready, listening...');
       _sub = _channel!.stream.listen(
         (data) => _handleMessage(data as String),
         onDone: () {
-          GuiLogger().conn('WsClient stream onDone');
           _cleanup();
           if (!_intentionalClose) onDisconnected?.call();
         },
         onError: (e) {
-          GuiLogger().error('WsClient stream onError', e);
           _cleanup();
           if (!_intentionalClose) onDisconnected?.call();
         },
       );
       return true;
     } catch (e, st) {
-      GuiLogger().error('WsClient.connectOnce FAILED', e, st);
       _cleanup();
       return false;
     }
@@ -106,9 +109,6 @@ class WsClient {
     String linkId = '',
   }) async {
     if (_channel == null) {
-      GuiLogger().warn(
-        'sendUiEvent: channel is null, dropped event nodeId=$nodeId action=$action',
-      );
       return;
     }
     try {
@@ -119,11 +119,8 @@ class WsClient {
         'linkId': linkId,
         'event': {'nodeId': nodeId, 'action': action, 'value': value},
       });
-      GuiLogger().info('sendUiEvent: $msg');
       _channel!.sink.add(msg);
-    } catch (e, st) {
-      GuiLogger().error('sendUiEvent FAILED', e, st);
-    }
+    } catch (e, st) {}
   }
 
   void disconnect() {

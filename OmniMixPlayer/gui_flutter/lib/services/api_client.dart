@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/node_data.dart';
-import 'unix_socket_client.dart';
-import 'logger.dart';
+import 'unix_socket_client.dart'
+    if (dart.library.js_interop) '../stubs/unix_socket_client_web.dart';
 
 /// HTTP REST client that talks to the C# backend.
 /// Supports TCP (primary) and Unix Domain Socket (fallback).
@@ -16,29 +16,27 @@ class ApiClient {
   /// TCP mode.
   ApiClient({required int port})
     : _baseUrl = 'http://127.0.0.1:$port',
-      _http = http.Client() {
-    GuiLogger().conn('ApiClient: TCP mode, baseUrl=$_baseUrl');
-  }
+      _http = http.Client() {}
 
   /// Unix socket mode.
   ApiClient.withSocket({required String socketPath})
     : _baseUrl = 'http://unix',
-      _http = createUnixHttpClient(socketPath) {
-    GuiLogger().conn('ApiClient: socket mode, path=$socketPath');
-  }
+      _http = createUnixHttpClient(socketPath) {}
+
+  /// Web mode: same-origin requests (relative URLs).
+  /// When the Flutter web app is served from the same origin as the backend
+  /// (via ASP.NET UseStaticFiles), all API paths resolve to the correct host.
+  ApiClient.forWeb() : _baseUrl = '', _http = http.Client() {}
 
   void dispose() => _http.close();
 
   Future<bool> checkHealth() async {
     try {
-      GuiLogger().conn('ApiClient.checkHealth: GET $_baseUrl/api/health');
       final resp = await _http
           .get(Uri.parse('$_baseUrl/api/health'))
           .timeout(const Duration(seconds: 3));
-      GuiLogger().conn('ApiClient.checkHealth: statusCode=${resp.statusCode}');
       return resp.statusCode == 200;
     } catch (e, st) {
-      GuiLogger().error('ApiClient.checkHealth FAILED', e, st);
       return false;
     }
   }
@@ -117,6 +115,80 @@ class ApiClient {
 
   Future<void> saveConfig() async {
     await _http.post(Uri.parse('$_baseUrl/api/config/save'));
+  }
+
+  // ── Active instance endpoints (backend routes to active instance) ──
+  Future<Map<String, dynamic>> getActiveProfile() async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/active/profile'));
+    if (resp.statusCode == 404) return {};
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<void> updateActiveProfile(Map<String, dynamic> data) async {
+    final resp = await _http.put(
+      Uri.parse('$_baseUrl/api/active/profile'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(data),
+    );
+    if (resp.statusCode >= 400) throw Exception('HTTP ${resp.statusCode}');
+  }
+
+  Future<List<dynamic>> getArchives() async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/archives'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as List<dynamic>;
+  }
+
+  Future<void> deleteArchive(String id) async {
+    await _http.delete(Uri.parse('$_baseUrl/api/instances/archives/$id'));
+  }
+
+  Future<void> renameArchive(String id, String label) async {
+    await _http.put(
+      Uri.parse('$_baseUrl/api/instances/archives/$id/rename'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'label': label}),
+    );
+  }
+
+  Future<void> archiveInstance(String id, {String label = ''}) async {
+    await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$id/archive'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'label': label}),
+    );
+  }
+
+  Future<void> deleteInstance(String id) async {
+    await _http.delete(Uri.parse('$_baseUrl/api/instances/$id'));
+  }
+
+  /// Set instance metadata (modId, gameName, mode) on the backend.
+  Future<void> setInstanceMeta(
+    String instanceId,
+    String modId,
+    String gameName,
+    String mode,
+  ) async {
+    await _http.put(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/meta'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'modId': modId, 'gameName': gameName, 'mode': mode}),
+    );
+  }
+
+  /// Inherit profile from archive to a new instance.
+  /// Returns: {"inherited": true, "consumed": true/false}
+  Future<Map<String, dynamic>> inheritFromArchive(
+    String instanceId,
+    String archiveId,
+  ) async {
+    final resp = await _http.post(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/inherit/$archiveId'),
+    );
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> getInstanceProfile(String instanceId) async {

@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
 import '../models/mod_manifest.dart';
-import '../services/mod_deployment_service.dart';
+import '../models/node_data.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppState state;
@@ -76,14 +77,6 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 24),
 
         // ═══════════════════════════════════
-        //  Service Management
-        // ═══════════════════════════════════
-        _SectionHeader(title: l10n.backendService),
-        const SizedBox(height: 8),
-        _ServiceStatusCard(state: st, l10n: l10n),
-        const SizedBox(height: 24),
-
-        // ═══════════════════════════════════
         //  Instance & Archive Management
         // ═══════════════════════════════════
         _SectionHeader(title: l10n.instanceManagement),
@@ -92,134 +85,140 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 24),
 
         // ═══════════════════════════════════
-        //  Backend Config (port / bind)
+        //  Backend Config (port / bind) — desktop only
         // ═══════════════════════════════════
-        _SectionHeader(title: l10n.backendConfig),
-        const SizedBox(height: 8),
-        Card(
-          elevation: 0,
-          color: cs.surfaceContainerHighest,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _InputRow(
-                  label: l10n.port,
-                  controller: _portCtrl,
-                  onChanged: (v) => st.setBackendPort(v),
-                ),
-                _InputRow(
-                  label: l10n.bind,
-                  controller: _bindCtrl,
-                  onChanged: (v) => st.setBackendBind(v),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: st.backendBusy
-                          ? null
-                          : () => _doSaveAndRestart(l10n),
-                      icon: st.backendBusy
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.restart_alt, size: 18),
-                      label: Text(
-                        st.backendBusy ? l10n.restarting : l10n.saveAndRestart,
+        if (!kIsWeb) ...[
+          _SectionHeader(title: l10n.backendConfig),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: cs.surfaceContainerHighest,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _InputRow(
+                    label: l10n.port,
+                    controller: _portCtrl,
+                    onChanged: (v) => st.setBackendPort(v),
+                  ),
+                  _InputRow(
+                    label: l10n.bind,
+                    controller: _bindCtrl,
+                    onChanged: (v) => st.setBackendBind(v),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: st.backendBusy
+                            ? null
+                            : () => _doSaveAndRestart(l10n),
+                        icon: st.backendBusy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.restart_alt, size: 18),
+                        label: Text(
+                          st.backendBusy
+                              ? l10n.restarting
+                              : l10n.saveAndRestart,
+                        ),
                       ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: st.backendBusy ? null : () => _doReset(l10n),
-                      icon: const Icon(Icons.restore, size: 18),
-                      label: Text(l10n.resetToDefaults),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: cs.error,
+                      OutlinedButton.icon(
+                        onPressed: st.backendBusy ? null : () => _doReset(l10n),
+                        icon: const Icon(Icons.restore, size: 18),
+                        label: Text(l10n.resetToDefaults),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: cs.error,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 24),
+          const SizedBox(height: 24),
+        ],
 
         // ═══════════════════════════════════
-        //  GUI Settings
+        //  GUI Settings — desktop only
         // ═══════════════════════════════════
-        _SectionHeader(title: l10n.guiSettings),
-        const SizedBox(height: 8),
-        Card(
-          elevation: 0,
-          color: cs.surfaceContainerHighest,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _SwitchRow(
-                  label: l10n.autoStart,
-                  value: st.autostart,
-                  onChanged: (v) => st.setAutostart(v),
-                ),
-                _SwitchRow(
-                  label: l10n.minimizeToTray,
-                  value: st.minimizeToTray,
-                  onChanged: (v) => st.setMinimizeToTray(v),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Text(
-                      l10n.closeBehavior,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    const Spacer(),
-                    DropdownButton<String>(
-                      value: st.closeBehavior,
-                      underline: const SizedBox(),
-                      items: [
-                        DropdownMenuItem(
-                          value: 'minimize',
-                          child: Text(
-                            l10n.closeMinimize,
-                            style: const TextStyle(fontSize: 13),
+        if (!kIsWeb) ...[
+          _SectionHeader(title: l10n.guiSettings),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            color: cs.surfaceContainerHighest,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SwitchRow(
+                    label: l10n.autoStart,
+                    value: st.autostart,
+                    onChanged: (v) => st.setAutostart(v),
+                  ),
+                  _SwitchRow(
+                    label: l10n.minimizeToTray,
+                    value: st.minimizeToTray,
+                    onChanged: (v) => st.setMinimizeToTray(v),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Text(
+                        l10n.closeBehavior,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      const Spacer(),
+                      DropdownButton<String>(
+                        value: st.closeBehavior,
+                        underline: const SizedBox(),
+                        items: [
+                          DropdownMenuItem(
+                            value: 'minimize',
+                            child: Text(
+                              l10n.closeMinimize,
+                              style: const TextStyle(fontSize: 13),
+                            ),
                           ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'exit',
-                          child: Text(
-                            l10n.closeExit,
-                            style: const TextStyle(fontSize: 13),
+                          DropdownMenuItem(
+                            value: 'exit',
+                            child: Text(
+                              l10n.closeExit,
+                              style: const TextStyle(fontSize: 13),
+                            ),
                           ),
-                        ),
-                      ],
-                      onChanged: (v) {
-                        if (v != null) st.setCloseBehavior(v);
-                      },
-                    ),
-                  ],
-                ),
-              ],
+                        ],
+                        onChanged: (v) {
+                          if (v != null) st.setCloseBehavior(v);
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 24),
+          const SizedBox(height: 24),
+        ],
 
         // ═══════════════════════════════════
         //  Appearance
@@ -885,14 +884,30 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
   @override
   void initState() {
     super.initState();
+    widget.state.addListener(_onChange);
     widget.state.refreshInstances();
+    widget.state.refreshBackendArchives();
+  }
+
+  @override
+  void dispose() {
+    widget.state.removeListener(_onChange);
+    super.dispose();
+  }
+
+  void _onChange() {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final st = widget.state;
-    final instances = st.instances;
+    // Use backend instances (includes online + offline). Filter to only show installed ones (have gameName).
+    final allInstances = st.playbackInstances;
+    final instances = allInstances
+        .where((i) => i.gameName.isNotEmpty || i.attached)
+        .toList();
     final archives = st.archives;
     final l10n = widget.l10n;
 
@@ -948,8 +963,8 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
     );
   }
 
-  Widget _buildInstanceTile(InstalledInstance inst, ColorScheme cs) {
-    final online = widget.state.isInstanceOnline(inst.instanceId);
+  Widget _buildInstanceTile(PlaybackInstanceInfo inst, ColorScheme cs) {
+    final online = inst.attached;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -965,7 +980,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  inst.gameName,
+                  inst.gameName.isNotEmpty ? inst.gameName : inst.id,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
@@ -973,7 +988,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
                   ),
                 ),
                 Text(
-                  inst.instanceId,
+                  inst.id,
                   style: TextStyle(fontSize: 11, color: cs.outline),
                 ),
               ],
@@ -982,7 +997,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: inst.isServerMode
+              color: inst.isServerManaged
                   ? Colors.blue.withAlpha(30)
                   : Colors.orange.withAlpha(30),
               borderRadius: BorderRadius.circular(4),
@@ -991,81 +1006,130 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
               inst.mode,
               style: TextStyle(
                 fontSize: 11,
-                color: inst.isServerMode ? Colors.blue : Colors.orange,
+                color: inst.isServerManaged ? Colors.blue : Colors.orange,
               ),
             ),
           ),
+          if (!online)
+            IconButton(
+              icon: Icon(Icons.delete_outline, size: 16, color: cs.error),
+              tooltip: widget.l10n.delete,
+              onPressed: () => _deleteInstance(inst),
+            ),
         ],
       ),
     );
   }
 
-  void _showArchiveDialog(BuildContext context) {
-    final archives = widget.state.archives;
+  void _deleteInstance(PlaybackInstanceInfo inst) async {
     final l10n = widget.l10n;
-    showDialog(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.archiveManagement),
-        content: SizedBox(
-          width: 500,
-          child: archives.isEmpty
-              ? Text(l10n.noArchivedInstances)
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: archives.length,
-                  itemBuilder: (_, i) {
-                    final a = archives[i];
-                    return Card(
-                      child: ListTile(
-                        dense: true,
-                        leading: Icon(
-                          a.mode == 'server' ? Icons.dns : Icons.smartphone,
-                          size: 20,
-                        ),
-                        title: Text(
-                          a.displayName,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                        subtitle: Text(
-                          '${a.gameName} · ${a.mode} · ${a.archivedAt.toLocal().toString().substring(0, 16)}',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 16),
-                              tooltip: l10n.rename,
-                              onPressed: () => _renameArchive(ctx, a),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.delete,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                              tooltip: l10n.delete,
-                              onPressed: () => _deleteArchive(ctx, a),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-        ),
+      builder: (c) => AlertDialog(
+        title: Text(l10n.deleteInstance),
+        content: Text(l10n.deleteInstanceConfirm(inst.id)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.close),
+            onPressed: () => Navigator.pop(c, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(c).colorScheme.error,
+            ),
+            child: Text(l10n.delete),
           ),
         ],
       ),
     );
+    if (confirmed == true) {
+      await widget.state.deleteInstance(inst.id);
+    }
   }
 
-  void _renameArchive(BuildContext ctx, ArchiveEntry a) {
+  void _showArchiveDialog(BuildContext context) {
+    final l10n = widget.l10n;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final archives = widget.state.archives;
+          return AlertDialog(
+            title: Text(l10n.archiveManagement),
+            content: SizedBox(
+              width: 500,
+              child: archives.isEmpty
+                  ? Text(l10n.noArchivedInstances)
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: archives.length,
+                      itemBuilder: (_, i) {
+                        final a = archives[i];
+                        final isOnline = widget.state.isInstanceOnline(
+                          a.instanceId,
+                        );
+                        return Card(
+                          child: ListTile(
+                            dense: true,
+                            leading: Icon(
+                              a.mode == 'server' ? Icons.dns : Icons.smartphone,
+                              size: 20,
+                            ),
+                            title: Text(
+                              a.displayName,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                            subtitle: Text(
+                              '${a.gameName} · ${a.mode} · ${a.archivedAt.toLocal().toString().substring(0, 16)}',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 16),
+                                  tooltip: l10n.rename,
+                                  onPressed: () =>
+                                      _renameArchive(ctx, a, setDialogState),
+                                ),
+                                if (!isOnline)
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.delete,
+                                      size: 16,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
+                                    ),
+                                    tooltip: l10n.delete,
+                                    onPressed: () =>
+                                        _deleteArchive(ctx, a, setDialogState),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(l10n.close),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _renameArchive(
+    BuildContext ctx,
+    ArchiveEntry a,
+    StateSetter setDialogState,
+  ) {
     final l10n = widget.l10n;
     final ctrl = TextEditingController(text: a.label);
     showDialog(
@@ -1085,10 +1149,10 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
             child: Text(l10n.cancel),
           ),
           FilledButton(
-            onPressed: () {
-              ModDeploymentService.renameArchive(a.instanceId, ctrl.text);
-              widget.state.refreshInstances();
-              Navigator.pop(c);
+            onPressed: () async {
+              await widget.state.renameBackendArchive(a.instanceId, ctrl.text);
+              setDialogState(() {});
+              if (c.mounted) Navigator.pop(c);
             },
             child: Text(l10n.save),
           ),
@@ -1097,7 +1161,11 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
     );
   }
 
-  void _deleteArchive(BuildContext ctx, ArchiveEntry a) async {
+  void _deleteArchive(
+    BuildContext ctx,
+    ArchiveEntry a,
+    StateSetter setDialogState,
+  ) async {
     final l10n = widget.l10n;
     final confirmed = await showDialog<bool>(
       context: ctx,
@@ -1120,8 +1188,8 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
       ),
     );
     if (confirmed == true) {
-      ModDeploymentService.deleteArchive(a.instanceId);
-      widget.state.refreshInstances();
+      await widget.state.deleteBackendArchive(a.instanceId);
+      setDialogState(() {});
     }
   }
 }

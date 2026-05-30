@@ -198,6 +198,29 @@
       "name": { "type": "String" }
     }
   },
+  "deleteInstance": "Delete Instance",
+  "deleteInstanceConfirm": "Delete instance \"{id}\"? This will also remove its config and game registration.",
+  "@deleteInstanceConfirm": {
+    "description": "Delete instance confirmation dialog",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "archiveInstanceTooltip": "Save as archive",
+  "archiveInstance": "Archive Instance",
+  "archiveInstanceHint": "Save instance \"{id}\" settings as an archive for later reuse during installation.",
+  "@archiveInstanceHint": {
+    "description": "Archive instance hint dialog",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "archiveAction": "Archive",
+  "inheritArchiveTitle": "Inherit Archive Settings",
+  "inheritArchiveHint": "Choose an archive to inherit playlist and settings from. Unbound archives will be consumed, bound ones will be copied.",
+  "archiveBoundWillCopy": "Bound to instance · Will copy settings",
+  "archiveFreeWillConsume": "Unbound · Will consume this archive",
+  "skipInherit": "Skip, fresh install",
   "uninstallServiceConfirm": "This will stop the backend service and remove it from the system.",
   "serviceAutoStartUpdated": "Service auto-start updated",
   "serviceAutoStartFailed": "Failed to update service auto-start",

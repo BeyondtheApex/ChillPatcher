@@ -28,6 +28,8 @@ class _HomePageState extends State<HomePage> {
   String _error = '';
   _LibraryView _libraryView = _LibraryView.song;
   _QueueTab _queueTab = _QueueTab.queue;
+  int _lastLibGen = 0; // track library generation for event-driven refresh
+  double? _draggingPosition;
 
   @override
   void initState() {
@@ -46,6 +48,12 @@ class _HomePageState extends State<HomePage> {
 
   void _onStateChanged() {
     if (!mounted) return;
+    // Event-driven library reload: when modules load/unload or playlist updates
+    if (widget.state.backendOnline &&
+        widget.state.libraryGeneration != _lastLibGen) {
+      _lastLibGen = widget.state.libraryGeneration;
+      _loadLibrary();
+    }
     if (widget.state.backendOnline && _songs.isEmpty && !_loading) {
       _loadLibrary();
     }
@@ -163,7 +171,7 @@ class _HomePageState extends State<HomePage> {
     final track = instance?.currentTrack;
     final canControl = widget.state.canControlActiveInstance;
     final duration = track?.duration ?? 0.0;
-    final position =
+    final position = _draggingPosition ??
         ((instance?.position ?? 0.0).clamp(0.0, duration <= 0 ? 1.0 : duration)
                 as num)
             .toDouble();
@@ -273,11 +281,25 @@ class _HomePageState extends State<HomePage> {
               ),
               Expanded(
                 child: Slider(
-                  value: position.toDouble(),
+                  value: position,
                   min: 0,
                   max: duration > 0 ? duration : 1,
                   onChanged: canControl && duration > 0
-                      ? widget.state.seekActive
+                      ? (val) {
+                          setState(() {
+                            _draggingPosition = val;
+                          });
+                        }
+                      : null,
+                  onChangeEnd: canControl && duration > 0
+                      ? (val) async {
+                          await widget.state.seekActive(val);
+                          if (mounted) {
+                            setState(() {
+                              _draggingPosition = null;
+                            });
+                          }
+                        }
                       : null,
                 ),
               ),

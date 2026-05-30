@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'logger.dart';
-import 'port_file.dart';
+import 'dart:io';import 'port_file.dart';
 import 'process_runner.dart';
 
 /// Detects and manages the C# backend process lifecycle.
@@ -41,24 +39,20 @@ class BackendManager {
     if (filePort != null && await _tcpHealth(filePort)) {
       _port = filePort;
       _usingSocket = false;
-      GuiLogger().conn('BackendManager.discover: port file → TCP $filePort');
       return filePort;
     }
     const dp = 17890;
     if (filePort != dp && await _tcpHealth(dp)) {
       _port = dp;
       _usingSocket = false;
-      GuiLogger().conn('BackendManager.discover: default port $dp');
       return dp;
     }
     final sp = PortFile.resolveSocketPath();
     if (PortFile.socketExists(sp) && await _socketHealth(sp)) {
       _port = null;
       _usingSocket = true;
-      GuiLogger().conn('BackendManager.discover: socket $sp');
       return -1;
     }
-    GuiLogger().conn('BackendManager.discover: all failed');
     return null;
   }
 
@@ -73,9 +67,6 @@ class BackendManager {
   void startWatching({Duration interval = const Duration(seconds: 2)}) {
     _watchTimer?.cancel();
     bool last = detectSync();
-    GuiLogger().conn(
-      'BackendManager.startWatching initial=$last port=$_port sock=$_usingSocket',
-    );
     _watchTimer = Timer.periodic(interval, (_) async {
       final alive = await detectAsync();
       if (alive != last) {
@@ -136,21 +127,14 @@ class BackendManager {
 
   Future<bool> start() async {
     if (await discover() != null) {
-      GuiLogger().conn(
-        'BackendManager.start: already running (port=$_port sock=$_usingSocket)',
-      );
       return true;
     }
     _backendExePath = _findBackendExe();
     if (_backendExePath == null) {
-      GuiLogger().error('BackendManager.start: exe NOT FOUND');
       return false;
     }
 
     final guiDir = File(Platform.resolvedExecutable).parent.path;
-    GuiLogger().conn(
-      'BackendManager.start: spawning $_backendExePath elevated=${Platform.isWindows}',
-    );
     await ProcessRunner.spawn(
       exePath: _backendExePath!,
       args: ['--port-file-dir=$guiDir'],
@@ -168,11 +152,9 @@ class BackendManager {
       if (i % 4 == 3 &&
           !ProcessRunner.isProcessRunning('OmniMixPlayer.Backend.exe') &&
           i > 2) {
-        GuiLogger().error('BackendManager.start: process died');
         break;
       }
     }
-    GuiLogger().error('BackendManager.start: not detected after 20s');
     return false;
   }
 
@@ -222,15 +204,10 @@ class BackendManager {
   /// Used when service and process coexist — service takes priority.
   Future<bool> forceKillProcess() async {
     const exeName = 'OmniMixPlayer.Backend.exe';
-    GuiLogger().conn('BackendManager.forceKillProcess: killing $exeName');
     final ok = await ProcessRunner.killProcess(exeName);
     if (ok) {
-      GuiLogger().conn('BackendManager.forceKillProcess: killed');
-    } else {
-      GuiLogger().conn(
-        'BackendManager.forceKillProcess: kill failed or not found',
-      );
-    }
+      } else {
+      }
     _port = null;
     _usingSocket = false;
     return ok;

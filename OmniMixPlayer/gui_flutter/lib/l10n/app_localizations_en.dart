@@ -471,6 +471,44 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get deleteInstance => 'Delete Instance';
+
+  @override
+  String deleteInstanceConfirm(String id) {
+    return 'Delete instance \"$id\"? This will also remove its config and game registration.';
+  }
+
+  @override
+  String get archiveInstanceTooltip => 'Save as archive';
+
+  @override
+  String get archiveInstance => 'Archive Instance';
+
+  @override
+  String archiveInstanceHint(String id) {
+    return 'Save instance \"$id\" settings as an archive for later reuse during installation.';
+  }
+
+  @override
+  String get archiveAction => 'Archive';
+
+  @override
+  String get inheritArchiveTitle => 'Inherit Archive Settings';
+
+  @override
+  String get inheritArchiveHint =>
+      'Choose an archive to inherit playlist and settings from. Unbound archives will be consumed, bound ones will be copied.';
+
+  @override
+  String get archiveBoundWillCopy => 'Bound to instance · Will copy settings';
+
+  @override
+  String get archiveFreeWillConsume => 'Unbound · Will consume this archive';
+
+  @override
+  String get skipInherit => 'Skip, fresh install';
+
+  @override
   String get uninstallServiceConfirm =>
       'This will stop the backend service and remove it from the system.';
 

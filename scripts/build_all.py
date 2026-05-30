@@ -619,13 +619,26 @@ def cmd_player(full: bool = False, skip_flutter: bool = False, verbose: bool = F
     # ── Clean ──
     step("0", "Cleaning playerbuild...")
     _rmtree_ignore_locked(PLAYER_BUILD)
-    (PLAYER_BUILD / "modules").mkdir(parents=True)
-    (PLAYER_BUILD / "native" / "x64").mkdir(parents=True)
+    (PLAYER_BUILD / "modules").mkdir(parents=True, exist_ok=True)
+    (PLAYER_BUILD / "native" / "x64").mkdir(parents=True, exist_ok=True)
     info("playerbuild cleaned")
 
     # ── Native builds ──
     step("native", "Building native plugins...")
     build_native_plugins(NATIVE_PROJECTS_ALWAYS, verbose)
+
+    # ── Flutter Web (WASM) — must run BEFORE backend publish so wwwroot is included ──
+    if skip_flutter:
+        info("Flutter Web: SKIPPED")
+    else:
+        step("flutter-web", "Generating l10n + Building Flutter Web (WASM)...")
+        run(["flutter", "gen-l10n"], cwd=PLAYER_FLUTTER_DIR, verbose=verbose)
+        code = run(["flutter", "build", "web", "--wasm", "-t", "lib/main_web.dart"],
+                   cwd=PLAYER_FLUTTER_DIR, verbose=verbose)
+        if code != 0:
+            info("  WARNING: Flutter Web build failed")
+        else:
+            copy_flutter_web(verbose)
 
     # ── C# builds ──
     step("1/8", "Building OmniMixPlayer.SDK...")
@@ -701,6 +714,8 @@ def cmd_player(full: bool = False, skip_flutter: bool = False, verbose: bool = F
     if skip_flutter:
         info("Flutter GUI: SKIPPED")
     else:
+        step("flutter", "Generating l10n...")
+        run(["flutter", "gen-l10n"], cwd=PLAYER_FLUTTER_DIR, verbose=verbose)
         step("flutter", "Building Flutter GUI...")
         code = run(["flutter", "build", "windows", "--release"], cwd=PLAYER_FLUTTER_DIR, verbose=verbose)
         if code != 0:
@@ -812,12 +827,6 @@ def _cleanup_playerbuild():
             f.unlink()
         except:
             pass
-    # *.staticwebassets.* - ASP.NET 静态资源清单
-    for f in PLAYER_BUILD.rglob("*.staticwebassets.*"):
-        try:
-            f.unlink()
-        except:
-            pass
     info("  Unnecessary files cleaned")
 
 
@@ -833,6 +842,25 @@ def copy_flutter(verbose: bool = False):
         else:
             _copy_with(item, PLAYER_BUILD)
     info("  Flutter GUI copied")
+
+
+# Flutter Web build output path
+PLAYER_FLUTTER_WEB_BUILD = PLAYER_FLUTTER_DIR / "build" / "web"
+# Backend wwwroot (ASP.NET UseStaticFiles serves this)
+PLAYER_WWWROOT = PLAYER_DIR / "OmniMixPlayer.Backend" / "wwwroot"
+
+
+def copy_flutter_web(verbose: bool = False):
+    """复制 Flutter Web 构建输出到 Backend wwwroot，
+    这样 dotnet publish 会将其打包进单文件。"""
+    if not PLAYER_FLUTTER_WEB_BUILD.exists():
+        info(f"  WARNING: Flutter Web build output not found")
+        return
+    # Clean and recreate wwwroot
+    _rmtree_ignore_locked(PLAYER_WWWROOT)
+    PLAYER_WWWROOT.mkdir(parents=True, exist_ok=True)
+    copy_dir_contents(PLAYER_FLUTTER_WEB_BUILD, PLAYER_WWWROOT)
+    info(f"  Flutter Web (WASM) copied to wwwroot/")
 
 
 def write_version_info():

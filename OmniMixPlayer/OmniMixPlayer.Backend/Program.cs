@@ -221,6 +221,7 @@ namespace OmniMixPlayer.Backend
             // 12. Configure routes
             app.UseCors();
             app.UseWebSockets();
+            app.UseDefaultFiles();
             app.UseStaticFiles();
             apiServer.Configure(app);
 

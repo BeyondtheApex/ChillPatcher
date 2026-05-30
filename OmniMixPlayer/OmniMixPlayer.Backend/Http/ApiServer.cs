@@ -64,6 +64,13 @@ namespace OmniMixPlayer.Backend.Http
             _globalConfig = config;
         }
 
+        /// <summary>
+        /// Resolve the active instance ID from global config.
+        /// Returns the ID regardless of online status (callers handle offline).
+        /// </summary>
+        private string ActiveInstanceId =>
+            _globalConfig?.GetValue<string>("active_instance", null);
+
         public void Configure(IEndpointRouteBuilder endpoints)
         {
             // Playback instances
@@ -83,7 +90,22 @@ namespace OmniMixPlayer.Backend.Http
             endpoints.MapPost("/api/instances/{id}/disconnect", (string id) =>
                 _instances.Disconnect(id) ? Results.Ok(new { disconnected = true }) : Results.NotFound());
             endpoints.MapDelete("/api/instances/{id}", (string id) =>
-                _instances.Delete(id) ? Results.Ok(new { deleted = true }) : Results.NotFound());
+            {
+                var deleted = _instances.Delete(id);
+                // Remove from port_file_dirs if present
+                if (deleted && _globalConfig != null)
+                {
+                    var dirs = _globalConfig.GetValue<List<string>>("port_file_dirs", null);
+                    if (dirs != null && dirs.Remove(id))
+                    {
+                        _globalConfig.SetValue("port_file_dirs", dirs);
+                        _globalConfig.Save();
+                        _logger.LogInformation("Removed {Id} from port_file_dirs", id);
+                    }
+                }
+                _ = BroadcastEvent("instances.changed", _instances.ListInstanceDtos());
+                return deleted ? Results.Ok(new { deleted = true }) : Results.NotFound();
+            });
             endpoints.MapGet("/api/instances/{id}/status", (string id) =>
             {
                 var instance = _instances.Get(id);
@@ -126,8 +148,8 @@ namespace OmniMixPlayer.Backend.Http
             endpoints.MapGet("/api/instances/{id}/queue", (string id) =>
             {
                 var instance = _instances.Get(id);
-                return instance != null
-                    ? Results.Json(instance.Controller.Queue.Select((m, i) => new
+                if (instance != null)
+                    return Results.Json(instance.Controller.Queue.Select((m, i) => new
                     {
                         index = i,
                         uuid = m.UUID,
@@ -136,20 +158,30 @@ namespace OmniMixPlayer.Backend.Http
                         albumId = m.AlbumId,
                         duration = m.Duration,
                         moduleId = m.ModuleId
-                    }))
-                    : Results.NotFound();
+                    }));
+                // Offline fallback: read from profile file
+                var offline = TryGetOfflineProfile(id);
+                if (offline == null) return Results.NotFound();
+                return Results.Json(offline.Queue);
             });
             endpoints.MapGet("/api/instances/{id}/playlist", (string id) =>
             {
                 var instance = _instances.Get(id);
-                return instance != null
-                    ? Results.Json(instance.Controller.Playlist.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist, albumId = m.AlbumId, moduleId = m.ModuleId }))
-                    : Results.NotFound();
+                if (instance != null)
+                    return Results.Json(instance.Controller.Playlist.Select((m, i) => new { index = i, uuid = m.UUID, title = m.Title, artist = m.Artist, albumId = m.AlbumId, moduleId = m.ModuleId }));
+                // Offline fallback: read from profile file
+                var offline = TryGetOfflineProfile(id);
+                if (offline == null) return Results.NotFound();
+                return Results.Json(offline.Playlist);
             });
             endpoints.MapGet("/api/instances/{id}/playlist/sources", (string id) =>
             {
                 var instance = _instances.Get(id);
-                return instance != null ? Results.Json(instance.Controller.PlaylistSources) : Results.NotFound();
+                if (instance != null) return Results.Json(instance.Controller.PlaylistSources);
+                // Offline fallback: read from profile file
+                var offline = TryGetOfflineProfile(id);
+                if (offline == null) return Results.NotFound();
+                return Results.Json(offline.Sources);
             });
             endpoints.MapPut("/api/instances/{id}/playlist", (string id, QueueReplaceRequest req) => WithInstance(id, p => p.SetPlaylist(req.uuids ?? Array.Empty<string>())));
             endpoints.MapPut("/api/instances/{id}/playlist/sources", (string id, PlaylistSourcesReplaceRequest req) => WithInstance(id, p => p.SetPlaylistSources(req.sources ?? Array.Empty<PlaylistSourceRequest>())));
@@ -166,8 +198,8 @@ namespace OmniMixPlayer.Backend.Http
             endpoints.MapGet("/api/instances/{id}/history", (string id) =>
             {
                 var instance = _instances.Get(id);
-                return instance != null
-                    ? Results.Json(instance.Controller.History.Select((m, i) => new
+                if (instance != null)
+                    return Results.Json(instance.Controller.History.Select((m, i) => new
                     {
                         index = i,
                         uuid = m.UUID,
@@ -176,8 +208,11 @@ namespace OmniMixPlayer.Backend.Http
                         albumId = m.AlbumId,
                         duration = m.Duration,
                         moduleId = m.ModuleId
-                    }))
-                    : Results.NotFound();
+                    }));
+                // Offline fallback: read from profile file
+                var offline = TryGetOfflineProfile(id);
+                if (offline == null) return Results.NotFound();
+                return Results.Json(offline.History);
             });
             endpoints.MapPost("/api/instances/{id}/history/insert", (string id, QueueInsertRequest req) => WithInstance(id, p => p.InsertIntoHistory(req.uuids ?? Array.Empty<string>(), req.index)));
             endpoints.MapDelete("/api/instances/{id}/history/{index}", (string id, int index) => WithInstance(id, p => p.RemoveFromHistory(index)));
@@ -316,23 +351,103 @@ namespace OmniMixPlayer.Backend.Http
                 return Results.Ok(new { message = "Config saved" });
             });
 
-            // Instance profile (persisted per-instance config for offline management)
-            endpoints.MapGet("/api/instances/{id}/profile", (string id) =>
+            // ── Active-instance endpoints (unified routing, online + offline) ──
+            endpoints.MapGet("/api/active/profile", () =>
             {
-                var instance = _instances.Get(id);
-                if (instance == null) return Results.NotFound();
-                var profile = instance.Controller.GetProfile();
-                return Results.Json(profile);
+                var id = ActiveInstanceId;
+                if (string.IsNullOrEmpty(id)) return Results.NotFound();
+                var profile = _instances.GetProfile(id);
+                return profile != null ? Results.Json(profile) : Results.NotFound();
             });
-            endpoints.MapPut("/api/instances/{id}/profile", async (string id, HttpContext ctx) =>
+            endpoints.MapPut("/api/active/profile", async (HttpContext ctx) =>
             {
-                var instance = _instances.Get(id);
-                if (instance == null) return Results.NotFound();
+                var id = ActiveInstanceId;
+                if (string.IsNullOrEmpty(id)) return Results.BadRequest(new { error = "no active instance" });
                 try
                 {
                     using var reader = new StreamReader(ctx.Request.Body);
                     var json = await reader.ReadToEndAsync();
-                    var ok = instance.Controller.UpdateProfile(json);
+                    var ok = _instances.UpdateProfile(id, json);
+                    if (ok) _ = BroadcastEvent("profile.changed", new { instanceId = id });
+                    return ok ? Results.Ok() : Results.Problem("Failed to persist", statusCode: 500);
+                }
+                catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
+            });
+
+            // ── Archive management (backend-side) ──
+            endpoints.MapGet("/api/instances/archives", () =>
+                Results.Json(_instances.ListArchives()));
+            endpoints.MapDelete("/api/instances/archives/{id}", (string id) =>
+            {
+                var ok = _instances.DeleteArchive(id);
+                return ok ? Results.Ok(new { deleted = true })
+                    : Results.Problem("Cannot delete: instance is online or archive not found", statusCode: 409);
+            });
+            endpoints.MapPut("/api/instances/archives/{id}/rename", (string id, ArchiveRenameRequest req) =>
+                _instances.RenameArchive(id, req.label) ? Results.Ok() : Results.NotFound());
+            endpoints.MapPost("/api/instances/{id}/archive", async (string id, HttpContext ctx) =>
+            {
+                try
+                {
+                    string label = "", modId = "", mode = "";
+                    if (ctx.Request.ContentLength > 0)
+                    {
+                        using var reader = new StreamReader(ctx.Request.Body);
+                        var body = await reader.ReadToEndAsync();
+                        if (!string.IsNullOrWhiteSpace(body))
+                        {
+                            using var doc = JsonDocument.Parse(body);
+                            if (doc.RootElement.TryGetProperty("label", out var l))
+                                label = l.GetString() ?? "";
+                            if (doc.RootElement.TryGetProperty("modId", out var mi))
+                                modId = mi.GetString() ?? "";
+                            if (doc.RootElement.TryGetProperty("mode", out var md))
+                                mode = md.GetString() ?? "";
+                        }
+                    }
+                    var ok = _instances.ArchiveInstance(id, label, modId, mode);
+                    return ok ? Results.Ok(new { archived = true })
+                        : Results.Problem("Archive failed", statusCode: 500);
+                }
+                catch { return Results.BadRequest(new { error = "Invalid request body" }); }
+            });
+
+            // ── Inherit from archive ──
+            // If archive is not bound to any existing instance → consume it (move profile).
+            // If archive is bound → copy profile content (archive stays).
+            endpoints.MapPost("/api/instances/{id}/inherit/{archiveId}", (string id, string archiveId) =>
+            {
+                var result = _instances.InheritFromArchive(id, archiveId);
+                return result switch
+                {
+                    "consumed" => Results.Ok(new { inherited = true, consumed = true }),
+                    "copied" => Results.Ok(new { inherited = true, consumed = false }),
+                    "not_found" => Results.NotFound(new { error = "Archive not found" }),
+                    _ => Results.Problem("Failed to inherit from archive", statusCode: 500)
+                };
+            });
+
+            // ── Instance metadata ──
+            endpoints.MapPut("/api/instances/{id}/meta", (string id, InstanceMetaRequest req) =>
+            {
+                var ok = _instances.SetInstanceMeta(id, req.modId ?? "", req.gameName ?? "", req.mode ?? "");
+                return ok ? Results.Ok(new { saved = true }) : Results.Problem("Failed to save metadata", statusCode: 500);
+            });
+
+            // Instance profile (persisted per-instance config for offline management)
+            endpoints.MapGet("/api/instances/{id}/profile", (string id) =>
+            {
+                var profile = _instances.GetProfile(id);
+                return profile != null ? Results.Json(profile) : Results.NotFound();
+            });
+            endpoints.MapPut("/api/instances/{id}/profile", async (string id, HttpContext ctx) =>
+            {
+                try
+                {
+                    using var reader = new StreamReader(ctx.Request.Body);
+                    var json = await reader.ReadToEndAsync();
+                    var ok = _instances.UpdateProfile(id, json);
+                    if (ok) _ = BroadcastEvent("profile.changed", new { instanceId = id });
                     return ok ? Results.Ok() : Results.Problem("Failed to persist profile", statusCode: 500);
                 }
                 catch (Exception ex)
@@ -577,6 +692,141 @@ namespace OmniMixPlayer.Backend.Http
             return Results.Ok();
         }
 
+        /// <summary>
+        /// Try to read queue/playlist/sources/history from the offline profile file.
+        /// Returns null if the profile doesn't exist or can't be parsed.
+        /// </summary>
+        private OfflineProfileData TryGetOfflineProfile(string instanceId)
+        {
+            try
+            {
+                var profile = _instances.GetProfile(instanceId) as JsonElement?;
+                if (profile == null) return null;
+
+                var json = profile.Value;
+                if (!json.TryGetProperty("Queues", out var queues) || queues.ValueKind != JsonValueKind.Array)
+                    return null;
+
+                // Find active queue
+                var activeQueueId = "default";
+                if (json.TryGetProperty("ActiveQueueId", out var aqId))
+                    activeQueueId = aqId.GetString() ?? "default";
+
+                JsonElement activeQueue = default;
+                bool found = false;
+                foreach (var q in queues.EnumerateArray())
+                {
+                    if (q.TryGetProperty("Id", out var qid) && qid.GetString() == activeQueueId)
+                    {
+                        activeQueue = q;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found && queues.GetArrayLength() > 0)
+                    activeQueue = queues[0];
+                if (!found && queues.GetArrayLength() == 0)
+                    return new OfflineProfileData();
+
+                var result = new OfflineProfileData();
+
+                // Parse SongUuids (queue)
+                if (activeQueue.TryGetProperty("SongUuids", out var songUuids) && songUuids.ValueKind == JsonValueKind.Array)
+                {
+                    int index = 0;
+                    foreach (var u in songUuids.EnumerateArray())
+                    {
+                        var uuid = u.GetString();
+                        if (string.IsNullOrEmpty(uuid)) continue;
+                        var m = _musicRegistry.GetMusic(uuid);
+                        result.Queue.Add(new
+                        {
+                            index = index++,
+                            uuid,
+                            title = m?.Title ?? uuid,
+                            artist = m?.Artist ?? "",
+                            albumId = m?.AlbumId ?? "",
+                            duration = m?.Duration ?? 0.0,
+                            moduleId = m?.ModuleId ?? ""
+                        });
+                    }
+                }
+
+                // Parse HistoryUuids
+                if (activeQueue.TryGetProperty("HistoryUuids", out var historyUuids) && historyUuids.ValueKind == JsonValueKind.Array)
+                {
+                    int index = 0;
+                    foreach (var u in historyUuids.EnumerateArray())
+                    {
+                        var uuid = u.GetString();
+                        if (string.IsNullOrEmpty(uuid)) continue;
+                        var m = _musicRegistry.GetMusic(uuid);
+                        result.History.Add(new
+                        {
+                            index = index++,
+                            uuid,
+                            title = m?.Title ?? uuid,
+                            artist = m?.Artist ?? "",
+                            albumId = m?.AlbumId ?? "",
+                            duration = m?.Duration ?? 0.0,
+                            moduleId = m?.ModuleId ?? ""
+                        });
+                    }
+                }
+
+                // Parse PlaylistSources
+                if (activeQueue.TryGetProperty("PlaylistSources", out var sources) && sources.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var s in sources.EnumerateArray())
+                    {
+                        var sid = s.TryGetProperty("Id", out var sidEl) ? sidEl.GetString() ?? "" : "";
+                        var sname = s.TryGetProperty("Name", out var snameEl) ? snameEl.GetString() ?? "" : "";
+                        var songCount = 0;
+                        if (s.TryGetProperty("SongUuids", out var suuids) && suuids.ValueKind == JsonValueKind.Array)
+                        {
+                            songCount = suuids.GetArrayLength();
+                            // Build playlist from all sources
+                            foreach (var u in suuids.EnumerateArray())
+                            {
+                                var uuid = u.GetString();
+                                if (string.IsNullOrEmpty(uuid)) continue;
+                                var m = _musicRegistry.GetMusic(uuid);
+                                result.Playlist.Add(new
+                                {
+                                    index = result.Playlist.Count,
+                                    uuid,
+                                    title = m?.Title ?? uuid,
+                                    artist = m?.Artist ?? "",
+                                    albumId = m?.AlbumId ?? "",
+                                    moduleId = m?.ModuleId ?? ""
+                                });
+                            }
+                        }
+                        result.Sources.Add(new
+                        {
+                            Id = sid,
+                            Name = sname,
+                            SongCount = songCount
+                        });
+                    }
+                }
+
+                return result;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private sealed class OfflineProfileData
+        {
+            public List<object> Queue { get; } = new();
+            public List<object> History { get; } = new();
+            public List<object> Playlist { get; } = new();
+            public List<object> Sources { get; } = new();
+        }
+
         private static PlaybackClientRole ParseRole(string role)
         {
             return role?.ToLowerInvariant() switch
@@ -782,5 +1032,7 @@ namespace OmniMixPlayer.Backend.Http
     public record FavoriteRequest(string uuid, bool isFavorite);
     public record ModuleToggleRequest(bool enabled);
     public record InstanceConnectRequest(string clientId, string role, string mode);
+    public record ArchiveRenameRequest(string label);
+    public record InstanceMetaRequest(string modId, string gameName, string mode);
 }
 

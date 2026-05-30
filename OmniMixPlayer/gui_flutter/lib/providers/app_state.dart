@@ -1,17 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/node_data.dart';
 import '../models/mod_manifest.dart';
+import '../models/mod_enums.dart';
 import '../services/api_client.dart';
 import '../services/ws_client.dart';
-import '../services/backend_manager.dart';
-import '../services/platform_service.dart';
-import '../services/port_file.dart';
-import '../services/logger.dart';
-import '../services/mod_deployment_service.dart';
+import '../services/backend_manager.dart'
+    if (dart.library.js_interop) '../stubs/backend_manager_web.dart';
+import '../services/platform_service.dart'
+    if (dart.library.js_interop) '../stubs/platform_service_web.dart';
+import '../services/port_file.dart'
+    if (dart.library.js_interop) '../stubs/port_file_web.dart';
+import '../services/mod_deployment_service.dart'
+    if (dart.library.js_interop) '../stubs/mod_deployment_service_web.dart';
 
 enum AppThemeMode { light, dark, system }
 
@@ -50,9 +53,7 @@ class AppState extends ChangeNotifier {
         'mod_integration_config_$modId',
         jsonEncode(settings),
       );
-    } catch (e) {
-      GuiLogger().error('saveModSettings failed', e);
-    }
+    } catch (e) {}
   }
 
   BepInExStatus bepinexStatusFor(String gameId) =>
@@ -85,125 +86,63 @@ class AppState extends ChangeNotifier {
   bool isInstanceOnline(String instanceId) =>
       _backendInstanceIds.contains(instanceId);
 
-  /// Select an instance for context. If null, switches to global (no instance).
-  /// For server-mode instances, loads the instance profile.
-  /// For online instances, also selects the playback instance on the backend.
-  /// Auto-saves the previously selected instance before switching.
-  void selectInstance(String? instanceId) {
-    // Save previous instance before switching
-    final prev = _activeInstanceId;
-    if (prev != null && prev != instanceId) {
-      saveInstanceProfile(prev);
-    }
+  /// Check if an instance exists (online or offline), using backend data as source of truth.
+  bool instanceExists(String instanceId) =>
+      _playbackInstances.any((i) => i.id == instanceId);
+
+  /// Select an instance. Backend routes all subsequent API calls to it.
+  Future<void> selectInstance(String? instanceId) async {
     _activeInstanceId = instanceId;
-    if (instanceId != null && _backendInstanceIds.contains(instanceId)) {
-      refreshPlayback();
-    } else if (instanceId != null) {
-      // Offline: try loading profile from file
-      _loadOfflineProfile(instanceId);
+    if (_backendOnline) {
+      api.putConfigRaw({'active_instance': instanceId ?? ''});
+      api.saveConfig();
+      if (instanceId != null) await loadActiveProfile();
     }
     notifyListeners();
   }
 
-  /// Compute the file path for an instance's playback_state.json.
-  String? _instanceProfilePath(String instanceId) {
-    final base = _backendMgr.backendBaseDir;
-    if (base == null) return null;
-    return '$base${Platform.pathSeparator}config${Platform.pathSeparator}instances${Platform.pathSeparator}$instanceId${Platform.pathSeparator}playback_state.json';
-  }
-
-  /// Load instance profile directly from file (offline fallback).
-  void _loadOfflineProfile(String instanceId) {
-    final path = _instanceProfilePath(instanceId);
-    if (path == null) return;
+  /// Load active instance profile from backend (online + offline).
+  Future<void> loadActiveProfile() async {
+    if (_activeInstanceId == null) return;
     try {
-      final f = File(path);
-      if (!f.existsSync()) return;
-      final json = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
-      _activeQueue = _parseQueueItems(json, 'SongUuids');
-      _activeHistory = _parseQueueItems(json, 'HistoryUuids');
-      _playlistSources = _parsePlaylistSources(json);
-      // Rebuild _activePlaylist from playlist sources' persisted UUIDs
-      _activePlaylist = _buildPlaylistFromSources(_playlistSources);
+      final profile = await api.getActiveProfile();
+      if (profile.isEmpty) return;
+      final queues = profile['Queues'] as List?;
+      if (queues == null || queues.isEmpty) return;
+      final activeId = profile['ActiveQueueId'] as String? ?? '';
+      final active = activeId.isNotEmpty
+          ? (queues.cast<Map<String, dynamic>>().firstWhere(
+              (q) => q['Id'] == activeId,
+              orElse: () => queues.first as Map<String, dynamic>,
+            ))
+          : queues.first as Map<String, dynamic>;
+      _activeQueue = ((active['SongUuids'] as List?)?.cast<String>() ?? [])
+          .map((u) => QueueItemInfo(uuid: u, title: u))
+          .toList();
+      _activeHistory = ((active['HistoryUuids'] as List?)?.cast<String>() ?? [])
+          .map((u) => QueueItemInfo(uuid: u, title: u))
+          .toList();
+      _playlistSources = (active['PlaylistSources'] as List? ?? []).map((s) {
+        final m = s as Map<String, dynamic>;
+        final uuids = (m['SongUuids'] as List?)?.cast<String>() ?? <String>[];
+        return PlaylistSourceInfo(
+          id: m['Id'] ?? '',
+          name: m['Name'] ?? '',
+          songCount: uuids.length,
+          uuids: uuids,
+        );
+      }).toList();
       notifyListeners();
-    } catch (e) {
-      GuiLogger().error('_loadOfflineProfile failed', e);
-    }
+    } catch (e) {}
   }
 
-  /// Build _activePlaylist entries from playlist sources' UUIDs.
-  List<QueueItemInfo> _buildPlaylistFromSources(
-    List<PlaylistSourceInfo> sources,
-  ) {
-    final seen = <String>{};
-    final result = <QueueItemInfo>[];
-    for (final src in sources) {
-      for (final uuid in src.uuids) {
-        if (seen.add(uuid)) {
-          result.add(QueueItemInfo(uuid: uuid, title: uuid));
-        }
-      }
-    }
-    return result;
-  }
-
-  List<QueueItemInfo> _parseQueueItems(Map<String, dynamic> json, String key) {
-    final queues = json['Queues'] as List?;
-    if (queues == null || queues.isEmpty) return [];
-    final activeId = json['ActiveQueueId'] as String? ?? '';
-    final active = activeId.isNotEmpty
-        ? (queues.cast<Map<String, dynamic>>().firstWhere(
-            (q) => q['Id'] == activeId,
-            orElse: () => queues.first as Map<String, dynamic>,
-          ))
-        : queues.first as Map<String, dynamic>;
-    final uuids = (active[key] as List?)?.cast<String>() ?? [];
-    return uuids.map((u) => QueueItemInfo(uuid: u, title: u)).toList();
-  }
-
-  List<PlaylistSourceInfo> _parsePlaylistSources(Map<String, dynamic> json) {
-    final queues = json['Queues'] as List?;
-    if (queues == null || queues.isEmpty) return [];
-    final activeId = json['ActiveQueueId'] as String? ?? '';
-    final active = activeId.isNotEmpty
-        ? (queues.cast<Map<String, dynamic>>().firstWhere(
-            (q) => q['Id'] == activeId,
-            orElse: () => queues.first as Map<String, dynamic>,
-          ))
-        : queues.first as Map<String, dynamic>;
-    final sources = active['PlaylistSources'] as List? ?? [];
-    return sources.map((s) {
-      final m = s as Map<String, dynamic>;
-      final uuids = (m['SongUuids'] as List?)?.cast<String>() ?? <String>[];
-      return PlaylistSourceInfo(
-        id: m['Id'] ?? '',
-        name: m['Name'] ?? '',
-        songCount: uuids.length,
-        uuids: uuids,
-      );
-    }).toList();
-  }
-
-  /// Save instance profile — writes current queue/history/sources.
-  Future<void> saveInstanceProfile(String instanceId) async {
+  /// Save current state to backend via active profile endpoint.
+  Future<void> saveActive() async {
+    if (_activeInstanceId == null) return;
     final data = _buildProfileJson();
-    if (_backendOnline) {
-      try {
-        await api.updateInstanceProfile(instanceId, data);
-      } catch (e) {
-        GuiLogger().error('saveInstanceProfile API failed', e);
-      }
-    } else {
-      final path = _instanceProfilePath(instanceId);
-      if (path == null) return;
-      try {
-        final dir = File(path).parent;
-        if (!dir.existsSync()) dir.createSync(recursive: true);
-        File(path).writeAsStringSync(jsonEncode(data));
-      } catch (e) {
-        GuiLogger().error('saveInstanceProfile file failed', e);
-      }
-    }
+    try {
+      await api.updateActiveProfile(data);
+    } catch (e) {}
   }
 
   Map<String, dynamic> _buildProfileJson() {
@@ -267,6 +206,10 @@ class AppState extends ChangeNotifier {
   // Notifications
   String? _lastError;
 
+  // Library version — incremented when tags/albums/songs change, pages watch this to reload
+  int _libraryGeneration = 0;
+  int get libraryGeneration => _libraryGeneration;
+
   // Getters
   String get apiBaseUrl => api.baseUrl;
   bool get backendOnline => _backendOnline;
@@ -319,15 +262,14 @@ class AppState extends ChangeNotifier {
     if (activeInstance?.isServerManaged == true) return true;
     // Selected offline server instance: allow editing profile when backend is running
     if (_activeInstanceId != null && _backendOnline) {
-      final inst = _instances
-          .where((i) => i.instanceId == _activeInstanceId)
+      final inst = _playbackInstances
+          .where((i) => i.id == _activeInstanceId)
           .firstOrNull;
-      if (inst != null && inst.isServerMode) return true;
+      if (inst != null && inst.isServerManaged) return true;
     }
     // No instance explicitly selected: fall back to any available server instance
     if (_activeInstanceId == null && _backendOnline) {
       if (_playbackInstances.any((i) => i.isServerManaged)) return true;
-      if (_instances.any((i) => i.isServerMode)) return true;
     }
     return false;
   }
@@ -346,9 +288,9 @@ class AppState extends ChangeNotifier {
   //  Init & detection
   // ──────────────────────────────────────────────
 
+  /// Desktop entry: discover backend, manage service, auto-start.
   void init({int? port}) {
     final p = port ?? 17890;
-    GuiLogger().conn('AppState.init: port=$p');
     _backendMgr = BackendManager();
 
     // Try discovering backend first — it may be on socket
@@ -369,18 +311,33 @@ class AppState extends ChangeNotifier {
     loadGameIntegrationSettings();
   }
 
+  /// Web entry: backend is already running on the same host, connect directly.
+  /// Uses same-origin relative URLs so the browser resolves them correctly
+  /// whether accessing via localhost or remote IP.
+  void initWeb({int? port}) {
+    _backendMgr = BackendManager();
+    api = ApiClient.forWeb();
+    ws = WsClient.forWeb();
+    _backendPort = port ?? 17890;
+    _setupWs();
+    _loadUiPrefs();
+    _backendOnline = true;
+    _backendRunning = true;
+    notifyListeners();
+    _connectDirectly();
+    _startPlaybackPolling();
+  }
+
   void _createClients(int port) {
     if (_backendMgr.usingSocket) {
       api = ApiClient.withSocket(socketPath: _backendMgr.socketPath);
       ws = WsClient.withSocket(socketPath: _backendMgr.socketPath);
       _backendPort = -1;
-      GuiLogger().conn('AppState._createClients: socket mode');
     } else {
       final p = _backendMgr.port ?? port;
       api = ApiClient(port: p);
       ws = WsClient(port: p);
       _backendPort = p;
-      GuiLogger().conn('AppState._createClients: TCP mode port=$p');
     }
   }
 
@@ -391,26 +348,16 @@ class AppState extends ChangeNotifier {
     try {
       _serviceState = await PlatformService.getServiceState();
       _serviceAutoStart = await PlatformService.isServiceAutoStart();
-      GuiLogger().conn(
-        'AppState._runInitialDetection: serviceState=$_serviceState, serviceAutoStart=$_serviceAutoStart',
-      );
-
       // ═══ Pure service mode: no process fallback ═══
 
       // 1. Service already running → connect directly
       if (_serviceState == 'running') {
         final healthy = await _backendMgr.checkHealth();
         if (healthy) {
-          GuiLogger().conn(
-            'AppState._runInitialDetection: service healthy, connecting...',
-          );
           _applyAliveState(true);
           return;
         }
         // Service stuck → restart it
-        GuiLogger().conn(
-          'AppState._runInitialDetection: service stuck, restarting...',
-        );
         await PlatformService.stopService();
         await Future.delayed(const Duration(seconds: 2));
       }
@@ -421,14 +368,8 @@ class AppState extends ChangeNotifier {
 
       // 3. Service not installed → auto-install
       if (_serviceState == 'not_installed' || _serviceState == 'unknown') {
-        GuiLogger().conn(
-          'AppState._runInitialDetection: auto-installing service...',
-        );
         final ok = await PlatformService.installService();
         if (!ok) {
-          GuiLogger().error(
-            'AppState._runInitialDetection: service install FAILED',
-          );
           _lastError = 'Failed to install backend service';
           notifyListeners();
           return;
@@ -439,18 +380,15 @@ class AppState extends ChangeNotifier {
       }
 
       // 4. Start service and wait for it
-      GuiLogger().conn('AppState._runInitialDetection: starting service...');
       await PlatformService.startService();
       for (var i = 0; i < 20; i++) {
         await Future.delayed(const Duration(milliseconds: 500));
         if (await _backendMgr.checkHealth()) {
-          GuiLogger().conn('AppState._runInitialDetection: service healthy!');
           _serviceState = 'running';
           _applyAliveState(true);
           return;
         }
       }
-      GuiLogger().error('AppState._runInitialDetection: service start FAILED');
       _lastError = 'Backend service failed to start';
       notifyListeners();
     } finally {
@@ -461,9 +399,6 @@ class AppState extends ChangeNotifier {
   }
 
   void _onBackendAliveChanged(bool alive) {
-    GuiLogger().conn(
-      'AppState._onBackendAliveChanged: alive=$alive (prev online=$_backendOnline running=$_backendRunning)',
-    );
     _applyAliveState(alive);
   }
 
@@ -473,7 +408,6 @@ class AppState extends ChangeNotifier {
       return; // no change
     }
 
-    GuiLogger().conn('AppState._applyAliveState: $alive → updating state');
     _backendOnline = alive;
     _backendRunning = alive;
 
@@ -483,7 +417,6 @@ class AppState extends ChangeNotifier {
       _startPlaybackPolling();
     } else {
       // Backend disappeared — clean up
-      GuiLogger().conn('AppState: backend gone, cleaning up');
       ws.disconnect();
       _modules.clear();
       _moduleUiTree = null;
@@ -501,12 +434,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _connectAndLoad() async {
-    GuiLogger().conn('AppState._connectAndLoad: starting...');
     try {
       // Re-discover: port file → default port → socket
       final discovered = await _backendMgr.discover();
       if (discovered == null) {
-        GuiLogger().conn('AppState._connectAndLoad: discovery failed');
         return;
       }
       // Dispose old clients before recreating
@@ -515,39 +446,65 @@ class AppState extends ChangeNotifier {
       _createClients(17890);
       _setupWs();
 
-      GuiLogger().conn('AppState._connectAndLoad: begin health checks...');
       // Give the backend HTTP server a moment to be ready
       for (var i = 0; i < 10; i++) {
         final ok = await _backendMgr.checkHealth();
-        GuiLogger().conn('  health check attempt ${i + 1}: $ok');
         if (ok) break;
         await Future.delayed(const Duration(milliseconds: 300));
       }
 
-      GuiLogger().conn(
-        'AppState._connectAndLoad: health checks done, connecting WS...',
-      );
       final connected = await ws.connectOnce();
-      GuiLogger().conn('AppState._connectAndLoad: WS connected=$connected');
       if (connected) {
         await api.connectController();
         await _loadModules();
         await refreshPlayback();
-        // Auto-select server instance from local storage if none is active yet.
-        // This ensures offline server instances show controls on startup.
+        await refreshBackendArchives();
+        // Auto-select server instance from backend list if none is active yet.
         if (_activeInstanceId == null) {
-          final serverInst = _instances
-              .where((i) => i.isServerMode)
+          final serverInst = _playbackInstances
+              .where((i) => i.isServerManaged)
               .firstOrNull;
           if (serverInst != null) {
-            _activeInstanceId = serverInst.instanceId;
-            _loadOfflineProfile(serverInst.instanceId);
+            _activeInstanceId = serverInst.id;
+            api.putConfigRaw({'active_instance': serverInst.id});
+            api.saveConfig();
+            await loadActiveProfile();
+            notifyListeners();
+          }
+        }
+      }
+    } catch (e, st) {}
+  }
+
+  /// Direct connection without discovery (web mode).
+  Future<void> _connectDirectly() async {
+    try {
+      for (var i = 0; i < 10; i++) {
+        final ok = await api.checkHealth();
+        if (ok) break;
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+      final connected = await ws.connectOnce();
+      if (connected) {
+        await api.connectController();
+        await _loadModules();
+        await refreshPlayback();
+        await refreshBackendArchives();
+        if (_activeInstanceId == null) {
+          final serverInst = _playbackInstances
+              .where((i) => i.isServerManaged)
+              .firstOrNull;
+          if (serverInst != null) {
+            _activeInstanceId = serverInst.id;
+            api.putConfigRaw({'active_instance': serverInst.id});
+            api.saveConfig();
+            await loadActiveProfile();
             notifyListeners();
           }
         }
       }
     } catch (e, st) {
-      GuiLogger().error('AppState._connectAndLoad CRASHED', e, st);
+      debugPrint('OmniMix Web: _connectDirectly failed: $e\n$st');
     }
   }
 
@@ -574,9 +531,21 @@ class AppState extends ChangeNotifier {
           event.type == 'track.changed' ||
           event.type == 'state.changed' ||
           event.type == 'queue.changed' ||
-          event.type == 'playlist.updated' ||
           event.type == 'exclude.changed') {
         refreshPlayback();
+        refreshBackendArchives(); // archives may change when instances are deleted
+      } else if (event.type == 'playlist.updated') {
+        refreshPlayback();
+        _libraryGeneration++;
+        notifyListeners();
+      } else if (event.type == 'module.loaded' ||
+          event.type == 'module.unloaded') {
+        _loadModules();
+        _libraryGeneration++;
+        notifyListeners();
+      } else if (event.type == 'profile.changed') {
+        // Profile was updated (e.g. sources/queue changed) — just reload profile data
+        loadActiveProfile();
       } else if (event.type == 'position') {
         _applyPositionEvent(event.data);
       }
@@ -624,16 +593,12 @@ class AppState extends ChangeNotifier {
     _backendBusy = true;
     notifyListeners();
     try {
-      GuiLogger().conn('startBackend: pure service mode');
-
       // Kill stray process (safety)
       await _backendMgr.forceKillProcess();
       await Future.delayed(const Duration(seconds: 1));
 
       // Refresh service state
       _serviceState = await PlatformService.getServiceState();
-      GuiLogger().conn('startBackend: serviceState=$_serviceState');
-
       // If service says running but unreachable, restart it
       if (_serviceState == 'running') {
         final healthy = await _backendMgr.checkHealth();
@@ -647,10 +612,8 @@ class AppState extends ChangeNotifier {
 
       // Auto-install if missing
       if (_serviceState != 'installed' && _serviceState != 'running') {
-        GuiLogger().conn('startBackend: auto-installing service...');
         final ok = await PlatformService.installService();
         if (!ok) {
-          GuiLogger().error('startBackend: service install FAILED');
           _lastError = 'Failed to install backend service';
           notifyListeners();
           return;
@@ -660,18 +623,15 @@ class AppState extends ChangeNotifier {
       }
 
       // Start service
-      GuiLogger().conn('startBackend: starting service...');
       await PlatformService.startService();
       for (var i = 0; i < 20; i++) {
         await Future.delayed(const Duration(milliseconds: 500));
         if (await _backendMgr.checkHealth()) {
-          GuiLogger().conn('startBackend: service healthy');
           _serviceState = 'running';
           _applyAliveState(true);
           return;
         }
       }
-      GuiLogger().error('startBackend: service start FAILED');
       _lastError = 'Backend service failed to start';
       notifyListeners();
     } finally {
@@ -685,8 +645,6 @@ class AppState extends ChangeNotifier {
     _backendBusy = true;
     notifyListeners();
     try {
-      GuiLogger().conn('stopBackend: stopping...');
-
       // Graceful API stop
       try {
         await api.stopBackend();
@@ -695,7 +653,6 @@ class AppState extends ChangeNotifier {
       // Stop service
       _serviceState = await PlatformService.getServiceState();
       if (_serviceState == 'running') {
-        GuiLogger().conn('stopBackend: stopping service...');
         await PlatformService.stopService();
       }
 
@@ -805,7 +762,6 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       _serviceResult = 'failed';
-      GuiLogger().error('installService failed', e);
     }
     _serviceBusy = false;
     _backendBusy = false;
@@ -832,7 +788,6 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       _serviceResult = 'failed';
-      GuiLogger().error('uninstallService failed', e);
     }
     _serviceBusy = false;
     _backendBusy = false;
@@ -867,7 +822,6 @@ class AppState extends ChangeNotifier {
       }
       return ok;
     } catch (e) {
-      GuiLogger().error('setServiceAutoStart failed', e);
       return false;
     } finally {
       _serviceBusy = false;
@@ -1019,9 +973,7 @@ class AppState extends ChangeNotifier {
         }
       }
       notifyListeners();
-    } catch (e) {
-      GuiLogger().error('setModuleEnabled failed', e);
-    }
+    } catch (e) {}
   }
 
   Future<void> refreshPlayback() async {
@@ -1046,33 +998,26 @@ class AppState extends ChangeNotifier {
                     : null)
                 ?.id;
         if (_activeInstanceId == null) _activeInstanceId = nextActiveId;
+        // Persist auto-selected instance to backend config so profile reads work
+        if (nextActiveId != null) {
+          api.putConfigRaw({'active_instance': nextActiveId});
+          await api.saveConfig();
+        }
       }
 
       // Sync backend online instance IDs for dropdown status
       _backendInstanceIds = instances.map((i) => i.id).toSet();
 
-      List<QueueItemInfo> queue = [];
-      List<QueueItemInfo> history = [];
-      List<QueueItemInfo> playlist = [];
-      List<PlaylistSourceInfo> sources = [];
-      if (nextActiveId != null && nextActiveId.isNotEmpty) {
-        queue = await api.getInstanceQueue(nextActiveId);
-        history = await api.getInstanceHistory(nextActiveId);
-        playlist = await api.getInstancePlaylist(nextActiveId);
-        sources = await api.getPlaylistSources(nextActiveId);
+      _playbackInstances = instances;
+
+      // Load profile data via the unified endpoint (works for both online & offline instances)
+      // Only overwrite if the loaded data matches the user's selection (race-condition guard)
+      if (_activeInstanceId == nextActiveId && _activeInstanceId != null) {
+        await loadActiveProfile();
       }
 
-      _playbackInstances = instances;
-      // Only overwrite queue/history if the loaded data matches the user's selection
-      if (_activeInstanceId == null || _activeInstanceId == nextActiveId) {
-        _activeQueue = queue;
-        _activeHistory = history;
-        _activePlaylist = playlist;
-        _playlistSources = sources;
-      }
       notifyListeners();
     } catch (e) {
-      GuiLogger().error('refreshPlayback failed', e);
     } finally {
       _playbackLoading = false;
     }
@@ -1118,62 +1063,36 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> addSongToActiveQueue(String uuid) async {
-    final instanceId = _resolveWriteTarget();
-    if (instanceId == null) return;
+    if (_activeInstanceId == null) return;
     _activeQueue.add(QueueItemInfo(uuid: uuid, title: uuid));
     notifyListeners();
-    if (_backendInstanceIds.contains(instanceId)) {
-      await api.addToQueue(instanceId, uuid);
-      await refreshPlayback();
-    } else {
-      saveInstanceProfile(instanceId);
-    }
+    saveActive();
   }
 
   Future<void> removeQueueItem(int index) async {
-    final instanceId = _resolveWriteTarget();
-    if (instanceId == null) return;
-    if (index >= 0 && index < _activeQueue.length) {
-      _activeQueue.removeAt(index);
-      notifyListeners();
-    }
-    if (_backendInstanceIds.contains(instanceId)) {
-      await api.removeQueueAt(instanceId, index);
-      await refreshPlayback();
-    } else {
-      saveInstanceProfile(instanceId);
-    }
+    if (_activeInstanceId == null || index < 0 || index >= _activeQueue.length)
+      return;
+    _activeQueue.removeAt(index);
+    notifyListeners();
+    saveActive();
   }
 
   Future<void> clearActiveQueue() async {
-    final instanceId = _resolveWriteTarget();
-    if (instanceId == null) return;
+    if (_activeInstanceId == null) return;
     _activeQueue.clear();
     notifyListeners();
-    if (_backendInstanceIds.contains(instanceId)) {
-      await api.clearQueue(instanceId);
-      await refreshPlayback();
-    } else {
-      saveInstanceProfile(instanceId);
-    }
+    saveActive();
   }
 
   Future<void> clearActiveHistory() async {
-    final instanceId = _resolveWriteTarget();
-    if (instanceId == null) return;
+    if (_activeInstanceId == null) return;
     _activeHistory.clear();
     notifyListeners();
-    if (_backendInstanceIds.contains(instanceId)) {
-      await api.clearHistory(instanceId);
-      await refreshPlayback();
-    } else {
-      saveInstanceProfile(instanceId);
-    }
+    saveActive();
   }
 
   Future<void> moveQueueItem(int from, int to) async {
-    final instanceId = _resolveWriteTarget();
-    if (instanceId == null) return;
+    if (_activeInstanceId == null) return;
     if (from >= 0 &&
         from < _activeQueue.length &&
         to >= 0 &&
@@ -1181,12 +1100,7 @@ class AppState extends ChangeNotifier {
       final item = _activeQueue.removeAt(from);
       _activeQueue.insert(to, item);
       notifyListeners();
-    }
-    if (_backendInstanceIds.contains(instanceId)) {
-      await api.moveQueue(instanceId, from, to);
-      await refreshPlayback();
-    } else {
-      saveInstanceProfile(instanceId);
+      saveActive();
     }
   }
 
@@ -1231,138 +1145,49 @@ class AppState extends ChangeNotifier {
     await refreshPlayback();
   }
 
-  /// Replace all playlist sources with the given list. Empty list = reset to "全部".
-  Future<void> replacePlaylistSources(
-    String instanceId, {
-    required List<Map<String, dynamic>> sources,
-  }) async {
-    await api.replacePlaylistSources(instanceId, sources: sources);
-    await refreshPlayback();
-  }
-
   /// Replace all playlist sources with a single tag source.
   Future<void> addTagToActivePlaylist(TagInfo tag) async {
-    final instanceId = _resolveWriteTarget();
-    if (instanceId == null) return;
+    if (_activeInstanceId == null) return;
     final songs = await api.getSongs(tagId: tag.id);
     final uuids = songs.map((s) => s.uuid).toList();
-    _addSourceInMemory('tag_${tag.id}', tag.name, uuids);
-    // Also populate _activePlaylist so the library panel shows songs
-    _mergeSongsToPlaylist(songs);
-    if (_backendInstanceIds.contains(instanceId)) {
-      try {
-        await api.removePlaylistSource(instanceId, 'tag_${tag.id}');
-      } catch (_) {}
-      await api.insertPlaylistSource(
-        instanceId,
-        id: 'tag_${tag.id}',
-        name: tag.name,
-        uuids: uuids,
-        index: _playlistSources.where((s) => s.id != 'all').length,
-      );
-      await refreshPlayback();
-    } else {
-      saveInstanceProfile(instanceId);
-    }
-  }
-
-  /// Replace all playlist sources with a single album source.
-  Future<void> addAlbumToActivePlaylist(AlbumInfo album) async {
-    final instanceId = _resolveWriteTarget();
-    if (instanceId == null) return;
-    final songs = await api.getSongs(albumId: album.id);
-    final uuids = songs.map((s) => s.uuid).toList();
-    _addSourceInMemory('album_${album.id}', album.name, uuids);
-    // Also populate _activePlaylist so the library panel shows songs
-    _mergeSongsToPlaylist(songs);
-    if (_backendInstanceIds.contains(instanceId)) {
-      try {
-        await api.removePlaylistSource(instanceId, 'album_${album.id}');
-      } catch (_) {}
-      await api.insertPlaylistSource(
-        instanceId,
-        id: 'album_${album.id}',
-        name: album.name,
-        uuids: uuids,
-        index: _playlistSources.where((s) => s.id != 'all').length,
-      );
-      await refreshPlayback();
-    } else {
-      saveInstanceProfile(instanceId);
-    }
-  }
-
-  Future<void> removePlaylistSource(String sourceId) async {
-    final instanceId = _resolveWriteTarget();
-    if (instanceId == null) return;
-
-    if (sourceId.startsWith('album_')) {
-      final albumId = sourceId.substring('album_'.length);
-      try {
-        final albumSongs = await api.getSongs(albumId: albumId);
-        final albumUuids = albumSongs.map((s) => s.uuid).toSet();
-        if (albumUuids.isNotEmpty) {
-          for (var i = 0; i < _playlistSources.length; i++) {
-            final src = _playlistSources[i];
-            final newUuids = src.uuids
-                .where((u) => !albumUuids.contains(u))
-                .toList();
-            if (newUuids.length != src.uuids.length) {
-              _playlistSources[i] = PlaylistSourceInfo(
-                id: src.id,
-                name: src.name,
-                songCount: newUuids.length,
-                uuids: newUuids,
-              );
-            }
-          }
-        }
-      } catch (e) {
-        GuiLogger().error('Failed to exclude album songs', e);
-      }
-    }
-
-    _playlistSources.removeWhere((s) => s.id == sourceId);
-    _activePlaylist = _buildPlaylistFromSources(_playlistSources);
-
-    if (_backendInstanceIds.contains(instanceId)) {
-      final payload = _playlistSources
-          .map((s) => {'id': s.id, 'name': s.name, 'uuids': s.uuids})
-          .toList();
-      await api.replacePlaylistSources(instanceId, sources: payload);
-      await refreshPlayback();
-    } else {
-      saveInstanceProfile(instanceId);
-    }
-    notifyListeners();
-  }
-
-  /// Resolve the target instance for writing operations.
-  /// Returns the online active instance, or the offline selected instance ID,
-  /// or null if neither is available.
-  String? _resolveWriteTarget() {
-    final online = activeInstance;
-    if (online != null && online.isServerManaged) return online.id;
-    if (_activeInstanceId != null && _backendOnline) {
-      final inst = _instances
-          .where((i) => i.instanceId == _activeInstanceId)
-          .firstOrNull;
-      if (inst != null && inst.isServerMode) return inst.instanceId;
-    }
-    return null;
-  }
-
-  void _addSourceInMemory(String id, String name, List<String> uuids) {
-    _playlistSources.removeWhere((s) => s.id == id);
+    _playlistSources.removeWhere((s) => s.id == 'tag_${tag.id}');
     _playlistSources.add(
       PlaylistSourceInfo(
-        id: id,
-        name: name,
+        id: 'tag_${tag.id}',
+        name: tag.name,
         songCount: uuids.length,
         uuids: uuids,
       ),
     );
+    _mergeSongsToPlaylist(songs);
     notifyListeners();
+    saveActive();
+  }
+
+  /// Replace all playlist sources with a single album source.
+  Future<void> addAlbumToActivePlaylist(AlbumInfo album) async {
+    if (_activeInstanceId == null) return;
+    final songs = await api.getSongs(albumId: album.id);
+    final uuids = songs.map((s) => s.uuid).toList();
+    _playlistSources.removeWhere((s) => s.id == 'album_${album.id}');
+    _playlistSources.add(
+      PlaylistSourceInfo(
+        id: 'album_${album.id}',
+        name: album.name,
+        songCount: uuids.length,
+        uuids: uuids,
+      ),
+    );
+    _mergeSongsToPlaylist(songs);
+    notifyListeners();
+    saveActive();
+  }
+
+  Future<void> removePlaylistSource(String sourceId) async {
+    if (_activeInstanceId == null) return;
+    _playlistSources.removeWhere((s) => s.id == sourceId);
+    notifyListeners();
+    saveActive();
   }
 
   /// Merge fetched songs into _activePlaylist, dedup by UUID.
@@ -1387,7 +1212,8 @@ class AppState extends ChangeNotifier {
 
   void _startPlaybackPolling() {
     _playbackPollTimer?.cancel();
-    _playbackPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    // Slow poll as fallback (WebSocket events drive real-time updates)
+    _playbackPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       refreshPlayback();
     });
   }
@@ -1422,6 +1248,8 @@ class AppState extends ChangeNotifier {
         shuffle: instance.shuffle,
         repeatMode: instance.repeatMode,
         currentTrack: instance.currentTrack,
+        modId: instance.modId,
+        gameName: instance.gameName,
       );
     }).toList();
     if (changed) notifyListeners();
@@ -1436,20 +1264,12 @@ class AppState extends ChangeNotifier {
     try {
       _moduleUiTree = await api.getModuleUi(moduleId);
       notifyListeners();
-    } catch (e) {
-      GuiLogger().error('openModule failed: moduleId=$moduleId', e);
-    }
+    } catch (e) {}
   }
 
   void _logImageNodes(RawNodeData? node, String context) {
     if (node == null) return;
-    if (node.nodeType == 'Image') {
-      GuiLogger().info(
-        'UI Tree Image: id=${node.id} source="${node.source}" '
-        'width=${node.imageWidth} height=${node.imageHeight} '
-        'context=$context baseUrl=$apiBaseUrl',
-      );
-    }
+    if (node.nodeType == 'Image') {}
     for (final child in node.children) {
       _logImageNodes(child, context);
     }
@@ -1516,9 +1336,6 @@ class AppState extends ChangeNotifier {
   // ── UI dispatch ──
   void dispatchUiEvent(String nodeId, String action, String value) {
     if (!ws.isConnected) {
-      GuiLogger().warn(
-        'dispatchUiEvent: ws not connected, dropped $nodeId/$action',
-      );
       return;
     }
     ws.sendUiEvent(
@@ -1571,9 +1388,7 @@ class AppState extends ChangeNotifier {
       }
       refreshModStatuses();
       refreshInstances();
-    } catch (e) {
-      GuiLogger().error('loadGameIntegrationSettings failed', e);
-    }
+    } catch (e) {}
   }
 
   Future<void> setGamePath(
@@ -1589,9 +1404,7 @@ class AppState extends ChangeNotifier {
         await prefs.setString('game_integration_path', path);
       }
       refreshModStatuses(gameId);
-    } catch (e) {
-      GuiLogger().error('setGamePath failed', e);
-    }
+    } catch (e) {}
   }
 
   void refreshModStatuses([String? gameId]) {
@@ -1627,11 +1440,95 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Refresh installed instances and archives from local storage.
+  /// Refresh installed instances and archives from local storage + backend.
   void refreshInstances() {
     _instances = ModDeploymentService.loadInstances();
     _archives = ModDeploymentService.listArchives();
     notifyListeners();
+  }
+
+  /// Refresh archives from backend API (server is the source of truth).
+  Future<void> refreshBackendArchives() async {
+    if (!_backendOnline) return;
+    try {
+      final rawList = await api.getArchives();
+      _archives = rawList.map((e) {
+        final m = e as Map<String, dynamic>;
+        return ArchiveEntry(
+          instanceId: m['instanceId'] as String? ?? '',
+          modId: m['modId'] as String? ?? '',
+          mode: m['mode'] as String? ?? '',
+          gameDir: '',
+          gameName: '',
+          label: m['label'] as String? ?? '',
+          archivedAt:
+              DateTime.tryParse(m['archivedAt'] as String? ?? '') ??
+              DateTime.now(),
+        );
+      }).toList();
+      notifyListeners();
+    } catch (e) {}
+  }
+
+  /// Delete an instance (online or offline). Also cleans up local registration and port_file_dir.
+  Future<bool> deleteInstance(String id) async {
+    if (!_backendOnline) return false;
+    try {
+      await api.deleteInstance(id);
+      // Remove local ModDeploymentService registration
+      ModDeploymentService.removeInstance(id);
+      // If this was the active instance, clear it
+      if (_activeInstanceId == id) {
+        _activeInstanceId = null;
+        _activeQueue = [];
+        _activeHistory = [];
+        _activePlaylist = [];
+        _playlistSources = [];
+        api.putConfigRaw({'active_instance': ''});
+        api.saveConfig();
+      }
+      refreshInstances();
+      await refreshPlayback();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Archive an instance with a label.
+  Future<bool> archiveInstanceWithLabel(String id, String label) async {
+    if (!_backendOnline) return false;
+    try {
+      await api.archiveInstance(id, label: label);
+      await refreshBackendArchives();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Delete an archive via backend.
+  Future<bool> deleteBackendArchive(String id) async {
+    if (!_backendOnline) return false;
+    try {
+      await api.deleteArchive(id);
+      await refreshBackendArchives();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Rename an archive via backend.
+  Future<bool> renameBackendArchive(String id, String label) async {
+    if (!_backendOnline) return false;
+    try {
+      await api.renameArchive(id, label);
+      await refreshBackendArchives();
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<bool> installBepInEx({String gameId = 'chill_with_you'}) async {
@@ -1680,7 +1577,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> installMod({String gameId = 'chill_with_you'}) async {
+  Future<bool> installMod({
+    String gameId = 'chill_with_you',
+    String? inheritArchiveId,
+  }) async {
     final path = gamePathFor(gameId);
     if (path.isEmpty || _deploymentBusy) return false;
     _deploymentBusy = true;
@@ -1692,18 +1592,6 @@ class AppState extends ChangeNotifier {
       final mod = modCatalog.firstWhere(
         (m) => m.id == game.supportedMods.first,
       );
-
-      // Check archive for matching modId+mode (restore support)
-      final archived = ModDeploymentService.findArchivedInstance(
-        mod.id,
-        mod.mode,
-      );
-      if (archived != null) {
-        addDeploymentLog(
-          'Found archived instance "${archived.instanceId}" from ${archived.gameDir} — '
-          'archived at ${archived.archivedAt.toLocal()}',
-        );
-      }
 
       // If a previous installation exists at a different path, clean up its
       // backend port_file_dirs entry before adding the new one.
@@ -1722,9 +1610,75 @@ class AppState extends ChangeNotifier {
         onPortFileDirChanged: _onPortFileDirChanged,
         customSettings: settingsForMod(mod.id),
       );
+      if (!success) return false;
+
+      // After deployment: inherit from archive if specified
+      if (inheritArchiveId != null &&
+          inheritArchiveId.isNotEmpty &&
+          _backendOnline) {
+        final inst = ModDeploymentService.findInstanceByDir(path);
+        if (inst != null) {
+          try {
+            final result = await api.inheritFromArchive(
+              inst.instanceId,
+              inheritArchiveId,
+            );
+            final consumed = result['consumed'] == true;
+            addDeploymentLog(
+              consumed
+                  ? 'Consumed archive "$inheritArchiveId" → instance ${inst.instanceId}'
+                  : 'Copied archive "$inheritArchiveId" settings → instance ${inst.instanceId}',
+            );
+            if (consumed) await refreshBackendArchives();
+          } catch (e) {
+            addDeploymentLog(
+              'Warning: failed to inherit archive settings ($e)',
+            );
+          }
+        }
+      }
+
+      // Save instance metadata and create default profile (single source of truth)
+      if (_backendOnline) {
+        final inst = ModDeploymentService.findInstanceByDir(path);
+        if (inst != null) {
+          try {
+            await api.setInstanceMeta(
+              inst.instanceId,
+              mod.id,
+              mod.name,
+              mod.mode,
+            );
+            // Create default empty profile so the instance appears in backend list
+            final defaultProfile = {
+              'ActiveQueueId': 'default',
+              'Volume': 1.0,
+              'Queues': [
+                {
+                  'Id': 'default',
+                  'Name': 'Default',
+                  'PlaylistSources': [],
+                  'SongUuids': [],
+                  'HistoryUuids': [],
+                  'Index': -1,
+                  'HistoryPosition': -1,
+                  'PlaylistPosition': 0,
+                  'Shuffle': false,
+                  'RepeatMode': 'none',
+                },
+              ],
+            };
+            await api.updateInstanceProfile(inst.instanceId, defaultProfile);
+          } catch (e) {
+            addDeploymentLog('Warning: failed to save instance metadata ($e)');
+          }
+        }
+      }
+
       refreshModStatuses(gameId);
       refreshInstances();
-      return success;
+      await refreshPlayback();
+      return true;
     } finally {
       _deploymentBusy = false;
       notifyListeners();
@@ -1849,10 +1803,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
-    // Save active instance profile before shutdown
-    if (_activeInstanceId != null) {
-      saveInstanceProfile(_activeInstanceId!);
-    }
+    if (_activeInstanceId != null) saveActive();
     _serviceResultTimer?.cancel();
     _stopPlaybackPolling();
     _backendMgr.dispose();

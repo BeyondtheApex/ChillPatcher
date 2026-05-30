@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
-import '../models/node_data.dart';
-import '../services/logger.dart';
-
-/// Parse a hex color string ("#RRGGBB" or "AARRGGBB") to Color.
+import '../models/node_data.dart';/// Parse a hex color string ("#RRGGBB" or "AARRGGBB") to Color.
 Color? parseHexColor(String hex) {
   if (hex.isEmpty) return null;
   try {
@@ -167,26 +164,17 @@ class ProxyNodeWidget extends StatelessWidget {
 
   Widget _buildImage(BuildContext context) {
     if (node.source.isEmpty) {
-      GuiLogger().warn('_buildImage: empty source for node id=${node.id}');
       return const SizedBox.shrink();
     }
     final url = node.source.startsWith('/') && imageBaseUrl.isNotEmpty
         ? '$imageBaseUrl${node.source}'
         : node.source;
-    GuiLogger().info(
-      '_buildImage: id=${node.id} source=${node.source} baseUrl=$imageBaseUrl finalUrl=$url',
-    );
     return Image.network(
       url,
       width: node.imageWidth,
       height: node.imageHeight,
       fit: _parseBoxFit(node.imageFit),
       errorBuilder: (ctx, error, stack) {
-        GuiLogger().error(
-          '_buildImage FAILED: id=${node.id} url=$url',
-          error,
-          stack,
-        );
         return const Icon(Icons.broken_image);
       },
     );

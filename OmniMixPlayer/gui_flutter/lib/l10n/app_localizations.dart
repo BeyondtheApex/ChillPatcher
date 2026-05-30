@@ -980,6 +980,72 @@ abstract class AppLocalizations {
   /// **'Are you sure you want to delete the archive of \"{name}\"? This action cannot be undone.'**
   String deleteArchiveConfirm(String name);
 
+  /// No description provided for @deleteInstance.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Instance'**
+  String get deleteInstance;
+
+  /// Delete instance confirmation dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Delete instance \"{id}\"? This will also remove its config and game registration.'**
+  String deleteInstanceConfirm(String id);
+
+  /// No description provided for @archiveInstanceTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Save as archive'**
+  String get archiveInstanceTooltip;
+
+  /// No description provided for @archiveInstance.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive Instance'**
+  String get archiveInstance;
+
+  /// Archive instance hint dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Save instance \"{id}\" settings as an archive for later reuse during installation.'**
+  String archiveInstanceHint(String id);
+
+  /// No description provided for @archiveAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive'**
+  String get archiveAction;
+
+  /// No description provided for @inheritArchiveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Inherit Archive Settings'**
+  String get inheritArchiveTitle;
+
+  /// No description provided for @inheritArchiveHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose an archive to inherit playlist and settings from. Unbound archives will be consumed, bound ones will be copied.'**
+  String get inheritArchiveHint;
+
+  /// No description provided for @archiveBoundWillCopy.
+  ///
+  /// In en, this message translates to:
+  /// **'Bound to instance · Will copy settings'**
+  String get archiveBoundWillCopy;
+
+  /// No description provided for @archiveFreeWillConsume.
+  ///
+  /// In en, this message translates to:
+  /// **'Unbound · Will consume this archive'**
+  String get archiveFreeWillConsume;
+
+  /// No description provided for @skipInherit.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip, fresh install'**
+  String get skipInherit;
+
   /// No description provided for @uninstallServiceConfirm.
   ///
   /// In en, this message translates to:

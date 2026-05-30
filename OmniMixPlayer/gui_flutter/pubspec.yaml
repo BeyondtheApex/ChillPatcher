@@ -12,7 +12,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: any
-
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
   # HTTP + WebSocket
   http: ^1.2.0
   web_socket_channel: ^3.0.0

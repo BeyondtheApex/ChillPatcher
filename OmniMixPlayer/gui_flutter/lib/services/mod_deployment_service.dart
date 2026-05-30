@@ -4,12 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/mod_manifest.dart';
-import 'logger.dart';
-import 'port_file.dart';
-
-enum BepInExStatus { notInstalled, managed, unmanaged }
-
-enum ModStatus { notInstalled, installed }
+import '../models/mod_enums.dart';import 'port_file.dart';
 
 class ModDeploymentService {
   // Manager local storage base path
@@ -33,8 +28,7 @@ class ModDeploymentService {
       );
       return path;
     } catch (e) {
-      GuiLogger().error('selectDirectory failed', e);
-    }
+      }
     return null;
   }
 
@@ -214,7 +208,6 @@ class ModDeploymentService {
       return true;
     } catch (e, st) {
       log('FATAL ERROR during BepInEx deployment: $e');
-      GuiLogger().error('deployBepInEx failed', e, st);
       return false;
     }
   }
@@ -302,9 +295,12 @@ class ModDeploymentService {
       }
 
       recordInstalledVersion(mod.id, mod.version);
-      // Instance registration — clean up old entry for same directory first
-      _cleanupStaleInstances(gameDir);
-      final instanceId = _generateInstanceId(mod.id);
+      // Instance registration — reuse existing ID if reinstalling, generate new otherwise
+      var instanceId = _readInstanceId(gameDir);
+      if (instanceId == null || instanceId.isEmpty) {
+        _cleanupStaleInstances(gameDir);
+        instanceId = _generateInstanceId(mod.id);
+      }
       _writeInstanceId(gameDir, instanceId);
       final inst = InstalledInstance(
         instanceId: instanceId,
@@ -328,7 +324,6 @@ class ModDeploymentService {
       return true;
     } catch (e, st) {
       log('FATAL ERROR during mod deployment: $e');
-      GuiLogger().error('deployMod failed', e, st);
       return false;
     }
   }
@@ -751,9 +746,12 @@ class ModDeploymentService {
       marker.parent.createSync(recursive: true);
       marker.writeAsStringSync(mod.version);
       recordInstalledVersion(mod.id, mod.version);
-      // Instance registration — clean up old entry for same directory first
-      _cleanupStaleInstances(gameDir);
-      final instanceId = _generateInstanceId(mod.id);
+      // Instance registration — reuse existing ID if reinstalling, generate new otherwise
+      var instanceId = _readInstanceId(gameDir);
+      if (instanceId == null || instanceId.isEmpty) {
+        _cleanupStaleInstances(gameDir);
+        instanceId = _generateInstanceId(mod.id);
+      }
       _writeInstanceId(gameDir, instanceId);
       final inst = InstalledInstance(
         instanceId: instanceId,
@@ -777,7 +775,6 @@ class ModDeploymentService {
       return true;
     } catch (e, st) {
       log('FATAL ERROR during root mod deployment: $e');
-      GuiLogger().error('deployRootMod failed', e, st);
       return false;
     }
   }
@@ -837,8 +834,7 @@ New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
 
     final elevated = await _runPowerShellElevated(script);
     if (!elevated) {
-      GuiLogger().error('Symlink failed for $linkPath: ${res.stderr}');
-    }
+      }
     return elevated;
   }
 
@@ -876,10 +872,7 @@ New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
 
     final elevated = await _runPowerShellElevated(script);
     if (!elevated) {
-      GuiLogger().error(
-        'Directory symlink failed for $linkPath: ${res.stderr}',
-      );
-    }
+      }
     return elevated;
   }
 
@@ -907,7 +900,6 @@ New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
       ]);
       return result.exitCode == 0;
     } catch (e) {
-      GuiLogger().error('Elevated PowerShell failed', e);
       return false;
     } finally {
       try {
@@ -940,8 +932,7 @@ New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
     try {
       File(_instanceIdPath(gameDir)).writeAsStringSync(instanceId);
     } catch (e) {
-      GuiLogger().error('Failed to write instance ID to $gameDir', e);
-    }
+      }
   }
 
   static void _deleteInstanceId(String gameDir) {
@@ -988,6 +979,11 @@ New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
     final db = _readInstancesDb();
     db.remove(instanceId);
     _writeInstancesDb(db);
+  }
+
+  /// Public API: remove an instance from the local registration DB.
+  static void removeInstance(String instanceId) {
+    _removeInstance(instanceId);
   }
 
   /// Remove any installed instances pointing to the same game directory.

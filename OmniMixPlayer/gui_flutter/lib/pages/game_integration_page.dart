@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
 import '../models/mod_manifest.dart';
-import '../services/mod_deployment_service.dart';
+import '../models/node_data.dart';
+import '../models/mod_enums.dart';
+import '../services/mod_deployment_service.dart'
+    if (dart.library.js_interop) '../stubs/mod_deployment_service_web.dart';
 
 class GameIntegrationPage extends StatefulWidget {
   final AppState state;
@@ -490,7 +493,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     ColorScheme cs,
   ) {
     final mod = modCatalog.firstWhere((m) => m.id == game.supportedMods.first);
-    final instances = st.instances.where((i) => i.modId == mod.id).toList();
+    final instances = st.playbackInstances
+        .where((i) => i.modId == mod.id)
+        .toList();
     if (instances.isEmpty) return const SizedBox.shrink();
 
     return Card(
@@ -521,7 +526,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
             ),
             const SizedBox(height: 12),
             ...instances.map((inst) {
-              final online = st.isInstanceOnline(inst.instanceId);
+              final online = inst.attached;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
@@ -535,8 +540,8 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     Expanded(
                       child: Text(
                         online
-                            ? l10n.instanceOnline(inst.instanceId)
-                            : l10n.instanceOffline(inst.instanceId),
+                            ? l10n.instanceOnline(inst.id)
+                            : l10n.instanceOffline(inst.id),
                         style: TextStyle(
                           fontSize: 12,
                           color: online ? Colors.green : cs.outline,
@@ -549,7 +554,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: inst.isServerMode
+                        color: inst.isServerManaged
                             ? Colors.blue.withAlpha(30)
                             : Colors.orange.withAlpha(30),
                         borderRadius: BorderRadius.circular(4),
@@ -558,11 +563,17 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                         inst.mode,
                         style: TextStyle(
                           fontSize: 11,
-                          color: inst.isServerMode
+                          color: inst.isServerManaged
                               ? Colors.blue
                               : Colors.orange,
                         ),
                       ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.archive, size: 18),
+                      tooltip: l10n.archiveInstanceTooltip,
+                      onPressed: () => _showArchiveInstanceDialog(inst),
                     ),
                   ],
                 ),
@@ -849,7 +860,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
           label: l10n.installMod,
           color: cs.primaryContainer,
           fg: cs.onPrimaryContainer,
-          onPressed: () => st.installMod(gameId: game.id),
+          onPressed: () => _installWithArchiveChoice(game.id),
         );
       case ModStatus.installed:
         return Row(
@@ -860,7 +871,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
               label: l10n.reinstallMod,
               color: cs.primaryContainer,
               fg: cs.onPrimaryContainer,
-              onPressed: () => st.installMod(gameId: game.id),
+              onPressed: () => _installWithArchiveChoice(game.id),
             ),
             const SizedBox(width: 8),
             _iconAction(
@@ -1046,6 +1057,130 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       case ModStatus.installed:
         return _badge(l10n.modInstalled, Colors.green, cs);
     }
+  }
+
+  void _showArchiveInstanceDialog(PlaybackInstanceInfo inst) {
+    final l10n = AppLocalizations.of(context);
+    final ctrl = TextEditingController(
+      text: inst.gameName.isNotEmpty ? inst.gameName : inst.id,
+    );
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.archiveInstance),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(l10n.archiveInstanceHint(inst.id)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              decoration: InputDecoration(
+                hintText: l10n.archiveNameHint,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              widget.state.archiveInstanceWithLabel(inst.id, ctrl.text);
+              Navigator.pop(ctx);
+            },
+            child: Text(l10n.archiveAction),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show archive selection dialog before installing, so user can inherit settings.
+  Future<void> _installWithArchiveChoice(String gameId) async {
+    final l10n = AppLocalizations.of(context);
+    final st = widget.state;
+
+    // Fetch archives from backend
+    await st.refreshBackendArchives();
+    final archives = st.archives;
+
+    if (!mounted) return;
+
+    // If no archives, install directly
+    if (archives.isEmpty) {
+      await st.installMod(gameId: gameId);
+      return;
+    }
+
+    final chosenId = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.inheritArchiveTitle),
+        content: SizedBox(
+          width: 500,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.inheritArchiveHint),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: archives.length,
+                  itemBuilder: (_, i) {
+                    final a = archives[i];
+                    final isBound = st.instanceExists(a.instanceId);
+                    return Card(
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(
+                          isBound ? Icons.link : Icons.archive,
+                          size: 20,
+                          color: isBound ? Colors.green : Colors.grey,
+                        ),
+                        title: Text(
+                          a.displayName,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        subtitle: Text(
+                          isBound
+                              ? l10n.archiveBoundWillCopy
+                              : l10n.archiveFreeWillConsume,
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        onTap: () => Navigator.pop(ctx, a.instanceId),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ''),
+            child: Text(l10n.skipInherit),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancel),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    if (chosenId == null) return; // cancelled
+    await st.installMod(
+      gameId: gameId,
+      inheritArchiveId: chosenId.isEmpty ? null : chosenId,
+    );
   }
 
   Widget _badge(String text, Color color, ColorScheme cs) {
