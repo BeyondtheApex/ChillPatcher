@@ -1091,6 +1091,38 @@ namespace ChillPatcher.Patches.UIFramework
             
             // 添加 TextMeshPro 文本
             var text = hintObj.AddComponent<TMPro.TextMeshProUGUI>();
+            
+            // 获取游戏原生字体以确保能正常渲染出来
+            TMPro.TMP_FontAsset gameFont = null;
+            if (ChillPatcher.UIFramework.Core.PrefabFactory.PlayListButtonsPrefab != null)
+            {
+                var t = ChillPatcher.UIFramework.Core.PrefabFactory.PlayListButtonsPrefab.GetComponentInChildren<TMPro.TMP_Text>();
+                if (t != null && t.font != null)
+                {
+                    gameFont = t.font;
+                }
+            }
+            if (gameFont == null && ChillPatcher.UIFramework.Core.PrefabFactory.SimpleRectButtonPrefab != null)
+            {
+                var t = ChillPatcher.UIFramework.Core.PrefabFactory.SimpleRectButtonPrefab.GetComponentInChildren<TMPro.TMP_Text>();
+                if (t != null && t.font != null)
+                {
+                    gameFont = t.font;
+                }
+            }
+            if (gameFont == null)
+            {
+                var activeText = UnityEngine.Object.FindObjectOfType<TMPro.TMP_Text>();
+                if (activeText != null && activeText.font != null)
+                {
+                    gameFont = activeText.font;
+                }
+            }
+            if (gameFont != null)
+            {
+                text.font = gameFont;
+            }
+
             text.text = "播放队列为空\n点击「返回列表」返回播放列表";
             text.fontSize = 24;
             text.alignment = TMPro.TextAlignmentOptions.Center;

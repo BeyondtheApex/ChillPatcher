@@ -314,4 +314,335 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get moduleStatusWillLoad => '下次启动时将加载';
+
+  @override
+  String get serviceStarting => '服务启动中';
+
+  @override
+  String get serviceStartingMessage => '正在连接并初始化播放器服务...';
+
+  @override
+  String get serviceNotConnected => '服务未连接';
+
+  @override
+  String get waitingForBackend => '请稍候，正在等待后端服务就绪...';
+
+  @override
+  String get noSongPlaying => '没有正在播放的歌曲';
+
+  @override
+  String get shuffle => '随机';
+
+  @override
+  String get previous => '上一首';
+
+  @override
+  String get next => '下一首';
+
+  @override
+  String get playPause => '播放/暂停';
+
+  @override
+  String get repeatOne => '单曲循环';
+
+  @override
+  String get serverControlMode => '服务端控制模式';
+
+  @override
+  String get clientModeControlsDisabled => '客户端模式：控制已禁用';
+
+  @override
+  String get queue => '队列';
+
+  @override
+  String get history => '历史';
+
+  @override
+  String get empty => '空';
+
+  @override
+  String get byPlaylist => '按歌单';
+
+  @override
+  String get byAlbum => '按专辑';
+
+  @override
+  String get bySong => '按歌曲';
+
+  @override
+  String get addSource => '添加来源';
+
+  @override
+  String get searchHint => '搜索歌曲 / 艺术家 / 专辑';
+
+  @override
+  String get removeFromLibrary => '从曲库移除';
+
+  @override
+  String errorWithMessage(String error) {
+    return '错误：$error';
+  }
+
+  @override
+  String get noActivePlaylist => '当前没有激活歌单，请先添加歌单或专辑来源';
+
+  @override
+  String get noSongs => '没有歌曲';
+
+  @override
+  String get noAlbumsAdded => '当前没有已添加的专辑';
+
+  @override
+  String get noPlaylistsAdded => '当前没有已添加的歌单';
+
+  @override
+  String get selectLibrarySource => '选择要加入曲库的来源';
+
+  @override
+  String selectedCount(int count) {
+    return '已选 $count';
+  }
+
+  @override
+  String get playlistsTab => '歌单';
+
+  @override
+  String get albumsTab => '专辑';
+
+  @override
+  String songCountWithModule(int count, String module) {
+    return '$count 首 · $module';
+  }
+
+  @override
+  String failedToLoadLibrary(String error) {
+    return '加载曲库失败：$error';
+  }
+
+  @override
+  String get instanceManagement => '实例管理';
+
+  @override
+  String get noInstalledInstances => '暂无已安装实例';
+
+  @override
+  String installedInstancesCount(int count) {
+    return '已安装实例 ($count)';
+  }
+
+  @override
+  String archiveCount(int count) {
+    return '归档 ($count)';
+  }
+
+  @override
+  String get instanceAutoRegisterHint => '安装游戏 Mod 后，实例会自动注册';
+
+  @override
+  String get archiveManagement => '归档管理';
+
+  @override
+  String get noArchivedInstances => '暂无归档实例';
+
+  @override
+  String get rename => '重命名';
+
+  @override
+  String get delete => '删除';
+
+  @override
+  String get close => '关闭';
+
+  @override
+  String get renameArchive => '重命名归档';
+
+  @override
+  String get archiveNameHint => '输入归档名称';
+
+  @override
+  String get deleteArchive => '删除归档';
+
+  @override
+  String deleteArchiveConfirm(String name) {
+    return '确定要删除\"$name\"的归档吗？此操作不可撤销。';
+  }
+
+  @override
+  String get uninstallServiceConfirm => '这将停止后端服务并将其从系统中移除。';
+
+  @override
+  String get serviceAutoStartUpdated => '服务开机自启已更新';
+
+  @override
+  String get serviceAutoStartFailed => '服务开机自启更新失败';
+
+  @override
+  String get autoStartSuccess => '开机自启设置成功';
+
+  @override
+  String get autoStartFailed => '开机自启设置失败';
+
+  @override
+  String get waitingForBackendMod => '请稍候，正在等待后端服务就绪以进行 Mod 安装和管理...';
+
+  @override
+  String get omnimixInstance => 'OmniMix 实例';
+
+  @override
+  String instanceOnline(String id) {
+    return '在线 — $id';
+  }
+
+  @override
+  String instanceOffline(String id) {
+    return '离线 — $id';
+  }
+
+  @override
+  String availableVersion(String version) {
+    return '可安装版本: v$version';
+  }
+
+  @override
+  String latestVersion(String version) {
+    return '最新: v$version';
+  }
+
+  @override
+  String get refresh => '刷新';
+
+  @override
+  String get noInstances => '没有实例';
+
+  @override
+  String get exitGui => '退出 GUI';
+
+  @override
+  String get languageChinese => '中文';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languageSystem => '跟随系统';
+
+  @override
+  String get backendNotConnected => '后端未连接';
+
+  @override
+  String get libraryBrowser => '曲库浏览器';
+
+  @override
+  String playlistStats(int tags, int songs) {
+    return '$tags 个歌单 · $songs 首曲目';
+  }
+
+  @override
+  String get libraryEmpty => '曲库为空';
+
+  @override
+  String loadLibraryFailed(String error) {
+    return '加载曲库失败：$error';
+  }
+
+  @override
+  String fromModule(String module) {
+    return '来自 $module';
+  }
+
+  @override
+  String albumCountLabel(int count) {
+    return '$count 个专辑';
+  }
+
+  @override
+  String songCountLabel(int count) {
+    return '$count 首';
+  }
+
+  @override
+  String get unknownArtist => '未知艺术家';
+
+  @override
+  String sourceChipLabel(String name, int count) {
+    return '$name（$count）';
+  }
+
+  @override
+  String get playNext => '下一首播放';
+
+  @override
+  String get addToQueueTail => '添加到队尾';
+
+  @override
+  String get exclude => '排除';
+
+  @override
+  String get removeExclusion => '取消排除';
+
+  @override
+  String get removeShort => '移除';
+
+  @override
+  String get playTooltip => '播放';
+
+  @override
+  String get fh6SettingsTitle => 'Forza Horizon 6 集成设置';
+
+  @override
+  String get mediaOverlaySettings => '媒体覆盖生成器设置';
+
+  @override
+  String get stationNameLabel => 'XML 中的电台名称';
+
+  @override
+  String get stationNameHint => '例如：Streamer Mode';
+
+  @override
+  String get sampleDurationLabel => '采样时长（秒）';
+
+  @override
+  String get sampleDurationHint => '例如：300';
+
+  @override
+  String get displayNameLabel => '游戏显示名称';
+
+  @override
+  String get displayNameHint => '例如：OmniMix Player';
+
+  @override
+  String get artistNameLabel => '艺术家名称';
+
+  @override
+  String get artistNameHint => '例如：ChillPatcher';
+
+  @override
+  String get enableAnthemZip => '启用 Anthem.zip 处理';
+
+  @override
+  String get anthemModeLabel => '国歌模式';
+
+  @override
+  String get modeFull => '完整（保留所有原始条目）';
+
+  @override
+  String get modePartial => '精简（清除空目录）';
+
+  @override
+  String get logoOptionLabel => 'Logo 选项';
+
+  @override
+  String get copyDefaultLogo => '复制默认 Horizon Pulse Logo';
+
+  @override
+  String get injectCustomPng => '注入自定义 PNG 图片';
+
+  @override
+  String get selectLogoPng => '选择 Logo PNG';
+
+  @override
+  String get browse => '浏览';
+
+  @override
+  String get saveAndApply => '保存并应用';
 }

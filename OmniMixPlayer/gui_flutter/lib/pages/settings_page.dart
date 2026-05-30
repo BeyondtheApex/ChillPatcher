@@ -86,9 +86,9 @@ class _SettingsPageState extends State<SettingsPage> {
         // ═══════════════════════════════════
         //  Instance & Archive Management
         // ═══════════════════════════════════
-        _SectionHeader(title: '实例管理'),
+        _SectionHeader(title: l10n.instanceManagement),
         const SizedBox(height: 8),
-        _InstanceManagementCard(state: st),
+        _InstanceManagementCard(state: st, l10n: l10n),
         const SizedBox(height: 24),
 
         // ═══════════════════════════════════
@@ -254,7 +254,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   label: l10n.language,
                   value: st.language,
                   items: const ['zh', 'en', 'system'],
-                  displayNames: const ['中文', 'English', 'System'],
+                  displayNames: [
+                    l10n.languageChinese,
+                    l10n.languageEnglish,
+                    l10n.languageSystem,
+                  ],
                   onChanged: (v) => st.setLanguage(v),
                 ),
                 const SizedBox(height: 8),
@@ -353,7 +357,7 @@ class _SettingsPageState extends State<SettingsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -722,11 +726,11 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
                                   content: Text(
                                     ok
                                         ? (st.language == 'zh'
-                                              ? '开机自启设置成功'
-                                              : 'Service auto-start updated')
+                                              ? l10n.autoStartSuccess
+                                              : l10n.serviceAutoStartUpdated)
                                         : (st.language == 'zh'
-                                              ? '开机自启设置失败'
-                                              : 'Failed to update service auto-start'),
+                                              ? l10n.autoStartFailed
+                                              : l10n.serviceAutoStartFailed),
                                   ),
                                   duration: const Duration(seconds: 2),
                                 ),
@@ -837,13 +841,11 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(widget.l10n.uninstallService),
-        content: const Text(
-          'This will stop the backend service and remove it from the system.',
-        ),
+        content: Text(widget.l10n.uninstallServiceConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(widget.l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -872,7 +874,8 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
 
 class _InstanceManagementCard extends StatefulWidget {
   final AppState state;
-  const _InstanceManagementCard({required this.state});
+  final AppLocalizations l10n;
+  const _InstanceManagementCard({required this.state, required this.l10n});
   @override
   State<_InstanceManagementCard> createState() =>
       _InstanceManagementCardState();
@@ -891,6 +894,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
     final st = widget.state;
     final instances = st.instances;
     final archives = st.archives;
+    final l10n = widget.l10n;
 
     return Card(
       elevation: 0,
@@ -906,7 +910,9 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
                 const Icon(Icons.devices, size: 18),
                 const SizedBox(width: 8),
                 Text(
-                  instances.isEmpty ? '暂无已安装实例' : '已安装实例 (${instances.length})',
+                  instances.isEmpty
+                      ? l10n.noInstalledInstances
+                      : l10n.installedInstancesCount(instances.length),
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -918,7 +924,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
                   onPressed: () => _showArchiveDialog(context),
                   icon: const Icon(Icons.archive, size: 16),
                   label: Text(
-                    '归档 (${archives.length})',
+                    l10n.archiveCount(archives.length),
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),
@@ -928,7 +934,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '安装游戏 Mod 后，实例会自动注册',
+                  l10n.instanceAutoRegisterHint,
                   style: TextStyle(fontSize: 12, color: cs.outline),
                 ),
               ),
@@ -996,14 +1002,15 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
 
   void _showArchiveDialog(BuildContext context) {
     final archives = widget.state.archives;
+    final l10n = widget.l10n;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('归档管理'),
+        title: Text(l10n.archiveManagement),
         content: SizedBox(
           width: 500,
           child: archives.isEmpty
-              ? const Text('暂无归档实例')
+              ? Text(l10n.noArchivedInstances)
               : ListView.builder(
                   shrinkWrap: true,
                   itemCount: archives.length,
@@ -1029,7 +1036,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.edit, size: 16),
-                              tooltip: '重命名',
+                              tooltip: l10n.rename,
                               onPressed: () => _renameArchive(ctx, a),
                             ),
                             IconButton(
@@ -1038,7 +1045,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
                                 size: 16,
                                 color: Theme.of(context).colorScheme.error,
                               ),
-                              tooltip: '删除',
+                              tooltip: l10n.delete,
                               onPressed: () => _deleteArchive(ctx, a),
                             ),
                           ],
@@ -1051,7 +1058,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
+            child: Text(l10n.close),
           ),
         ],
       ),
@@ -1059,22 +1066,23 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
   }
 
   void _renameArchive(BuildContext ctx, ArchiveEntry a) {
+    final l10n = widget.l10n;
     final ctrl = TextEditingController(text: a.label);
     showDialog(
       context: ctx,
       builder: (c) => AlertDialog(
-        title: const Text('重命名归档'),
+        title: Text(l10n.renameArchive),
         content: TextField(
           controller: ctrl,
-          decoration: const InputDecoration(
-            hintText: '输入归档名称',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            hintText: l10n.archiveNameHint,
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -1082,7 +1090,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
               widget.state.refreshInstances();
               Navigator.pop(c);
             },
-            child: const Text('保存'),
+            child: Text(l10n.save),
           ),
         ],
       ),
@@ -1090,22 +1098,23 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
   }
 
   void _deleteArchive(BuildContext ctx, ArchiveEntry a) async {
+    final l10n = widget.l10n;
     final confirmed = await showDialog<bool>(
       context: ctx,
       builder: (c) => AlertDialog(
-        title: const Text('删除归档'),
-        content: Text('确定要删除 "${a.displayName}" 的归档吗？此操作不可撤销。'),
+        title: Text(l10n.deleteArchive),
+        content: Text(l10n.deleteArchiveConfirm(a.displayName)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c, false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(c, true),
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(c).colorScheme.error,
             ),
-            child: const Text('删除'),
+            child: Text(l10n.delete),
           ),
         ],
       ),

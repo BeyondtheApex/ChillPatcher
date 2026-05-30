@@ -242,6 +242,44 @@ namespace ChillPatcher.UIFramework.Music
             statsRT.offsetMax = Vector2.zero;
         }
 
+        private static TMP_FontAsset _cachedGameFont;
+        private static TMP_FontAsset GetGameFont()
+        {
+            if (_cachedGameFont != null) return _cachedGameFont;
+
+            // 1. 尝试从 PlayListButtonsPrefab 获取
+            if (Core.PrefabFactory.PlayListButtonsPrefab != null)
+            {
+                var t = Core.PrefabFactory.PlayListButtonsPrefab.GetComponentInChildren<TMP_Text>();
+                if (t != null && t.font != null)
+                {
+                    _cachedGameFont = t.font;
+                    return _cachedGameFont;
+                }
+            }
+
+            // 2. 尝试从 SimpleRectButtonPrefab 获取
+            if (Core.PrefabFactory.SimpleRectButtonPrefab != null)
+            {
+                var t = Core.PrefabFactory.SimpleRectButtonPrefab.GetComponentInChildren<TMP_Text>();
+                if (t != null && t.font != null)
+                {
+                    _cachedGameFont = t.font;
+                    return _cachedGameFont;
+                }
+            }
+
+            // 3. 尝试从场景中已有的任意 TMP_Text 获取
+            var activeText = UnityEngine.Object.FindObjectOfType<TMP_Text>();
+            if (activeText != null && activeText.font != null)
+            {
+                _cachedGameFont = activeText.font;
+                return _cachedGameFont;
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// 创建文本组件
         /// </summary>
@@ -252,6 +290,12 @@ namespace ChillPatcher.UIFramework.Music
 
             var rt = textGO.AddComponent<RectTransform>();
             var text = textGO.AddComponent<TextMeshProUGUI>();
+            
+            var gameFont = GetGameFont();
+            if (gameFont != null)
+            {
+                text.font = gameFont;
+            }
             
             text.fontSize = fontSize;
             text.fontStyle = style;

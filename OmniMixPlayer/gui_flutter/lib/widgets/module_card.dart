@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../models/node_data.dart';
 
 class ModuleCard extends StatelessWidget {
@@ -64,7 +65,10 @@ class ModuleCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 if (module.hasSettingsUi)
-                  FilledButton(onPressed: onTap, child: const Text('Open')),
+                  FilledButton(
+                    onPressed: onTap,
+                    child: Text(AppLocalizations.of(context)!.open),
+                  ),
               ],
             ),
             if (module.hasSettingsUi || module.linkEntries.isNotEmpty) ...[
@@ -76,7 +80,7 @@ class ModuleCard extends StatelessWidget {
                     TextButton.icon(
                       onPressed: onSettingsTap,
                       icon: const Icon(Icons.settings, size: 18),
-                      label: const Text('Settings'),
+                      label: Text(AppLocalizations.of(context)!.settings),
                     ),
                   for (var i = 0; i < module.linkEntries.length; i++)
                     TextButton(

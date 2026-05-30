@@ -106,5 +106,216 @@
   "moduleStatusDisabled": "已禁用 — 下次启动将不再加载",
   "moduleStatusPending": "已加载但下次启动将禁用",
   "moduleStatusActive": "已加载并激活",
-  "moduleStatusWillLoad": "下次启动时将加载"
+  "moduleStatusWillLoad": "下次启动时将加载",
+
+  "serviceStarting": "服务启动中",
+  "serviceStartingMessage": "正在连接并初始化播放器服务...",
+  "serviceNotConnected": "服务未连接",
+  "waitingForBackend": "请稍候，正在等待后端服务就绪...",
+  "noSongPlaying": "没有正在播放的歌曲",
+  "shuffle": "随机",
+  "previous": "上一首",
+  "next": "下一首",
+  "playPause": "播放/暂停",
+  "repeatOne": "单曲循环",
+  "serverControlMode": "服务端控制模式",
+  "clientModeControlsDisabled": "客户端模式：控制已禁用",
+  "queue": "队列",
+  "history": "历史",
+  "empty": "空",
+  "byPlaylist": "按歌单",
+  "byAlbum": "按专辑",
+  "bySong": "按歌曲",
+  "addSource": "添加来源",
+  "searchHint": "搜索歌曲 / 艺术家 / 专辑",
+  "removeFromLibrary": "从曲库移除",
+  "errorWithMessage": "错误：{error}",
+  "@errorWithMessage": {
+    "description": "包含详细信息的错误消息",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "noActivePlaylist": "当前没有激活歌单，请先添加歌单或专辑来源",
+  "noSongs": "没有歌曲",
+  "noAlbumsAdded": "当前没有已添加的专辑",
+  "noPlaylistsAdded": "当前没有已添加的歌单",
+  "selectLibrarySource": "选择要加入曲库的来源",
+  "selectedCount": "已选 {count}",
+  "@selectedCount": {
+    "description": "已选数量",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "playlistsTab": "歌单",
+  "albumsTab": "专辑",
+  "songCountWithModule": "{count} 首 · {module}",
+  "@songCountWithModule": {
+    "description": "歌曲数量与模块名称",
+    "placeholders": {
+      "count": { "type": "int" },
+      "module": { "type": "String" }
+    }
+  },
+  "failedToLoadLibrary": "加载曲库失败：{error}",
+  "@failedToLoadLibrary": {
+    "description": "加载曲库失败带错误详情",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "instanceManagement": "实例管理",
+  "noInstalledInstances": "暂无已安装实例",
+  "installedInstancesCount": "已安装实例 ({count})",
+  "@installedInstancesCount": {
+    "description": "已安装实例数量",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "archiveCount": "归档 ({count})",
+  "@archiveCount": {
+    "description": "归档数量",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "instanceAutoRegisterHint": "安装游戏 Mod 后，实例会自动注册",
+  "archiveManagement": "归档管理",
+  "noArchivedInstances": "暂无归档实例",
+  "rename": "重命名",
+  "delete": "删除",
+  "close": "关闭",
+  "renameArchive": "重命名归档",
+  "archiveNameHint": "输入归档名称",
+  "deleteArchive": "删除归档",
+  "deleteArchiveConfirm": "确定要删除\"{name}\"的归档吗？此操作不可撤销。",
+  "@deleteArchiveConfirm": {
+    "description": "删除归档确认对话框",
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "uninstallServiceConfirm": "这将停止后端服务并将其从系统中移除。",
+  "serviceAutoStartUpdated": "服务开机自启已更新",
+  "serviceAutoStartFailed": "服务开机自启更新失败",
+  "autoStartSuccess": "开机自启设置成功",
+  "autoStartFailed": "开机自启设置失败",
+
+  "waitingForBackendMod": "请稍候，正在等待后端服务就绪以进行 Mod 安装和管理...",
+  "omnimixInstance": "OmniMix 实例",
+  "instanceOnline": "在线 — {id}",
+  "@instanceOnline": {
+    "description": "实例在线状态",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "instanceOffline": "离线 — {id}",
+  "@instanceOffline": {
+    "description": "实例离线状态",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "availableVersion": "可安装版本: v{version}",
+  "@availableVersion": {
+    "description": "可安装版本",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "latestVersion": "最新: v{version}",
+  "@latestVersion": {
+    "description": "最新版本",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+
+  "refresh": "刷新",
+  "noInstances": "没有实例",
+  "exitGui": "退出 GUI",
+  "languageChinese": "中文",
+  "languageEnglish": "English",
+  "languageSystem": "跟随系统",
+
+  "backendNotConnected": "后端未连接",
+  "libraryBrowser": "曲库浏览器",
+  "playlistStats": "{tags} 个歌单 · {songs} 首曲目",
+  "@playlistStats": {
+    "description": "歌单统计信息",
+    "placeholders": {
+      "tags": { "type": "int" },
+      "songs": { "type": "int" }
+    }
+  },
+  "libraryEmpty": "曲库为空",
+  "loadLibraryFailed": "加载曲库失败：{error}",
+  "@loadLibraryFailed": {
+    "description": "加载曲库失败带错误信息",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "fromModule": "来自 {module}",
+  "@fromModule": {
+    "description": "来自模块名称",
+    "placeholders": {
+      "module": { "type": "String" }
+    }
+  },
+  "albumCountLabel": "{count} 个专辑",
+  "@albumCountLabel": {
+    "description": "专辑数量",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "songCountLabel": "{count} 首",
+  "@songCountLabel": {
+    "description": "歌曲数量",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "unknownArtist": "未知艺术家",
+  "sourceChipLabel": "{name}（{count}）",
+  "@sourceChipLabel": {
+    "description": "来源标签名称与数量",
+    "placeholders": {
+      "name": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "playNext": "下一首播放",
+  "addToQueueTail": "添加到队尾",
+  "exclude": "排除",
+  "removeExclusion": "取消排除",
+  "removeShort": "移除",
+  "playTooltip": "播放",
+
+  "fh6SettingsTitle": "Forza Horizon 6 集成设置",
+  "mediaOverlaySettings": "媒体覆盖生成器设置",
+  "stationNameLabel": "XML 中的电台名称",
+  "stationNameHint": "例如：Streamer Mode",
+  "sampleDurationLabel": "采样时长（秒）",
+  "sampleDurationHint": "例如：300",
+  "displayNameLabel": "游戏显示名称",
+  "displayNameHint": "例如：OmniMix Player",
+  "artistNameLabel": "艺术家名称",
+  "artistNameHint": "例如：ChillPatcher",
+  "enableAnthemZip": "启用 Anthem.zip 处理",
+  "anthemModeLabel": "国歌模式",
+  "modeFull": "完整（保留所有原始条目）",
+  "modePartial": "精简（清除空目录）",
+  "logoOptionLabel": "Logo 选项",
+  "copyDefaultLogo": "复制默认 Horizon Pulse Logo",
+  "injectCustomPng": "注入自定义 PNG 图片",
+  "selectLogoPng": "选择 Logo PNG",
+  "browse": "浏览",
+  "saveAndApply": "保存并应用"
 }

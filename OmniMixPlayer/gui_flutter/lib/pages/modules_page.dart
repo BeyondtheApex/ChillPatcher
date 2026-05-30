@@ -93,7 +93,7 @@ class ModulesPage extends StatelessWidget {
                         OutlinedButton.icon(
                           onPressed: () => state.refreshModules(),
                           icon: const Icon(Icons.refresh, size: 16),
-                          label: const Text('Refresh'),
+                          label: Text(l10n.refresh),
                         ),
                       ],
                     ],

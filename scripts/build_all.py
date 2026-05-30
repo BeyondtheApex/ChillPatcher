@@ -488,6 +488,83 @@ def assemble_mod(verbose: bool = False):
                 _copy_with(f, native_dst)
         info("  Native DLLs copied")
 
+    # VC++ 运行时 DLL（放到 native/x64/，CoreDependencyLoader 从那里加载）
+    lib_dir = MOD_DIR / "lib"
+    if lib_dir.exists():
+        for f in lib_dir.glob("*.dll"):
+            _copy_with(f, native_dst)
+        info("  VC++ runtime DLLs copied")
+
+    # puerts.dll（OneJS V8 引擎，放到 native/x64/）
+    puerts_src = MOD_DIR / "ChillPatcher.OneJS" / "native" / "x64" / "puerts.dll"
+    if puerts_src.exists():
+        _copy_with(puerts_src, native_dst)
+        info("  puerts.dll copied")
+
+    # RIME 输入法引擎
+    rime_dir = NATIVE_PLUGINS_DIR / "rime"
+    rime_dll = rime_dir / "librime" / "build" / "bin" / "Release" / "rime.dll"
+    if rime_dll.exists():
+        _copy_with(rime_dll, MOD_RELEASE)
+        info("  RIME library copied")
+
+    # RIME 词库数据
+    rime_data = MOD_RELEASE / "rime-data"
+    rime_shared = rime_data / "shared"
+    rime_opencc = rime_shared / "opencc"
+    rime_shared.mkdir(parents=True, exist_ok=True)
+    rime_opencc.mkdir(parents=True, exist_ok=True)
+    (rime_data / "user").mkdir(exist_ok=True)
+
+    # prelude
+    prelude = rime_dir / "rime-schemas" / "prelude"
+    for f in ["symbols.yaml", "punctuation.yaml", "key_bindings.yaml"]:
+        src = prelude / f
+        if src.exists():
+            _copy_with(src, rime_shared)
+
+    # default config
+    default_cfg = rime_dir / "RimeDefaultConfig"
+    for f in ["default.yaml", "luna_pinyin.custom.yaml"]:
+        src = default_cfg / f
+        if src.exists():
+            _copy_with(src, rime_shared)
+
+    # essay
+    essay = rime_dir / "rime-schemas" / "essay" / "essay.txt"
+    if essay.exists():
+        _copy_with(essay, rime_shared)
+
+    # luna_pinyin schemas
+    lp = rime_dir / "rime-schemas" / "luna-pinyin"
+    for f in ["luna_pinyin.schema.yaml", "luna_pinyin.dict.yaml", "pinyin.yaml"]:
+        src = lp / f
+        if src.exists():
+            _copy_with(src, rime_shared)
+
+    # stroke
+    st = rime_dir / "rime-schemas" / "stroke"
+    for f in ["stroke.schema.yaml", "stroke.dict.yaml"]:
+        src = st / f
+        if src.exists():
+            _copy_with(src, rime_shared)
+
+    # double_pinyin
+    dp = rime_dir / "rime-schemas" / "double-pinyin"
+    for f in ["double_pinyin.schema.yaml", "double_pinyin_abc.schema.yaml",
+              "double_pinyin_flypy.schema.yaml", "double_pinyin_mspy.schema.yaml"]:
+        src = dp / f
+        if src.exists():
+            _copy_with(src, rime_shared)
+
+    # OpenCC
+    opencc_src = rime_dir / "librime" / "share" / "opencc"
+    if opencc_src.exists():
+        for f in opencc_src.glob("*.json"):
+            _copy_with(f, rime_opencc)
+        for f in opencc_src.glob("*.ocd2"):
+            _copy_with(f, rime_opencc)
+
     info("Mod files assembled")
 
 

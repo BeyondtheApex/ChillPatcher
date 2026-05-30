@@ -703,6 +703,600 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Will load on next start'**
   String get moduleStatusWillLoad;
+
+  /// No description provided for @serviceStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Service Starting'**
+  String get serviceStarting;
+
+  /// No description provided for @serviceStartingMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting and initializing player service...'**
+  String get serviceStartingMessage;
+
+  /// No description provided for @serviceNotConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Service Not Connected'**
+  String get serviceNotConnected;
+
+  /// No description provided for @waitingForBackend.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait, waiting for backend service...'**
+  String get waitingForBackend;
+
+  /// No description provided for @noSongPlaying.
+  ///
+  /// In en, this message translates to:
+  /// **'No song playing'**
+  String get noSongPlaying;
+
+  /// No description provided for @shuffle.
+  ///
+  /// In en, this message translates to:
+  /// **'Shuffle'**
+  String get shuffle;
+
+  /// No description provided for @previous.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous'**
+  String get previous;
+
+  /// No description provided for @next.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get next;
+
+  /// No description provided for @playPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Play/Pause'**
+  String get playPause;
+
+  /// No description provided for @repeatOne.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeat One'**
+  String get repeatOne;
+
+  /// No description provided for @serverControlMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Server control mode'**
+  String get serverControlMode;
+
+  /// No description provided for @clientModeControlsDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Client mode: controls disabled'**
+  String get clientModeControlsDisabled;
+
+  /// No description provided for @queue.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue'**
+  String get queue;
+
+  /// No description provided for @history.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get history;
+
+  /// No description provided for @empty.
+  ///
+  /// In en, this message translates to:
+  /// **'Empty'**
+  String get empty;
+
+  /// No description provided for @byPlaylist.
+  ///
+  /// In en, this message translates to:
+  /// **'By Playlist'**
+  String get byPlaylist;
+
+  /// No description provided for @byAlbum.
+  ///
+  /// In en, this message translates to:
+  /// **'By Album'**
+  String get byAlbum;
+
+  /// No description provided for @bySong.
+  ///
+  /// In en, this message translates to:
+  /// **'By Song'**
+  String get bySong;
+
+  /// No description provided for @addSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Source'**
+  String get addSource;
+
+  /// No description provided for @searchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search songs / artist / album'**
+  String get searchHint;
+
+  /// No description provided for @removeFromLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from Library'**
+  String get removeFromLibrary;
+
+  /// Error message with details
+  ///
+  /// In en, this message translates to:
+  /// **'Error: {error}'**
+  String errorWithMessage(String error);
+
+  /// No description provided for @noActivePlaylist.
+  ///
+  /// In en, this message translates to:
+  /// **'No active playlist, add a playlist or album source first'**
+  String get noActivePlaylist;
+
+  /// No description provided for @noSongs.
+  ///
+  /// In en, this message translates to:
+  /// **'No songs'**
+  String get noSongs;
+
+  /// No description provided for @noAlbumsAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'No albums added'**
+  String get noAlbumsAdded;
+
+  /// No description provided for @noPlaylistsAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'No playlists added'**
+  String get noPlaylistsAdded;
+
+  /// No description provided for @selectLibrarySource.
+  ///
+  /// In en, this message translates to:
+  /// **'Select sources to add to library'**
+  String get selectLibrarySource;
+
+  /// Count of selected items
+  ///
+  /// In en, this message translates to:
+  /// **'Selected {count}'**
+  String selectedCount(int count);
+
+  /// No description provided for @playlistsTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Playlists'**
+  String get playlistsTab;
+
+  /// No description provided for @albumsTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Albums'**
+  String get albumsTab;
+
+  /// Song count with module name
+  ///
+  /// In en, this message translates to:
+  /// **'{count} songs · {module}'**
+  String songCountWithModule(int count, String module);
+
+  /// Failed to load library with error details
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load library: {error}'**
+  String failedToLoadLibrary(String error);
+
+  /// No description provided for @instanceManagement.
+  ///
+  /// In en, this message translates to:
+  /// **'Instance Management'**
+  String get instanceManagement;
+
+  /// No description provided for @noInstalledInstances.
+  ///
+  /// In en, this message translates to:
+  /// **'No installed instances'**
+  String get noInstalledInstances;
+
+  /// Installed instances count
+  ///
+  /// In en, this message translates to:
+  /// **'Installed Instances ({count})'**
+  String installedInstancesCount(int count);
+
+  /// Archive count
+  ///
+  /// In en, this message translates to:
+  /// **'Archive ({count})'**
+  String archiveCount(int count);
+
+  /// No description provided for @instanceAutoRegisterHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Instances will be auto-registered after installing game Mod'**
+  String get instanceAutoRegisterHint;
+
+  /// No description provided for @archiveManagement.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive Management'**
+  String get archiveManagement;
+
+  /// No description provided for @noArchivedInstances.
+  ///
+  /// In en, this message translates to:
+  /// **'No archived instances'**
+  String get noArchivedInstances;
+
+  /// No description provided for @rename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get rename;
+
+  /// No description provided for @delete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get delete;
+
+  /// No description provided for @close.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get close;
+
+  /// No description provided for @renameArchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename Archive'**
+  String get renameArchive;
+
+  /// No description provided for @archiveNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter archive name'**
+  String get archiveNameHint;
+
+  /// No description provided for @deleteArchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Archive'**
+  String get deleteArchive;
+
+  /// Delete archive confirmation dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to delete the archive of \"{name}\"? This action cannot be undone.'**
+  String deleteArchiveConfirm(String name);
+
+  /// No description provided for @uninstallServiceConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'This will stop the backend service and remove it from the system.'**
+  String get uninstallServiceConfirm;
+
+  /// No description provided for @serviceAutoStartUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Service auto-start updated'**
+  String get serviceAutoStartUpdated;
+
+  /// No description provided for @serviceAutoStartFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to update service auto-start'**
+  String get serviceAutoStartFailed;
+
+  /// No description provided for @autoStartSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-start updated successfully'**
+  String get autoStartSuccess;
+
+  /// No description provided for @autoStartFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to update auto-start'**
+  String get autoStartFailed;
+
+  /// No description provided for @waitingForBackendMod.
+  ///
+  /// In en, this message translates to:
+  /// **'Please wait, waiting for backend service for Mod installation and management...'**
+  String get waitingForBackendMod;
+
+  /// No description provided for @omnimixInstance.
+  ///
+  /// In en, this message translates to:
+  /// **'OmniMix Instance'**
+  String get omnimixInstance;
+
+  /// Instance online status
+  ///
+  /// In en, this message translates to:
+  /// **'Online — {id}'**
+  String instanceOnline(String id);
+
+  /// Instance offline status
+  ///
+  /// In en, this message translates to:
+  /// **'Offline — {id}'**
+  String instanceOffline(String id);
+
+  /// Available version
+  ///
+  /// In en, this message translates to:
+  /// **'Available: v{version}'**
+  String availableVersion(String version);
+
+  /// Latest version
+  ///
+  /// In en, this message translates to:
+  /// **'Latest: v{version}'**
+  String latestVersion(String version);
+
+  /// No description provided for @refresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get refresh;
+
+  /// No description provided for @noInstances.
+  ///
+  /// In en, this message translates to:
+  /// **'No instances'**
+  String get noInstances;
+
+  /// No description provided for @exitGui.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit GUI'**
+  String get exitGui;
+
+  /// No description provided for @languageChinese.
+  ///
+  /// In en, this message translates to:
+  /// **'中文'**
+  String get languageChinese;
+
+  /// No description provided for @languageEnglish.
+  ///
+  /// In en, this message translates to:
+  /// **'English'**
+  String get languageEnglish;
+
+  /// No description provided for @languageSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get languageSystem;
+
+  /// No description provided for @backendNotConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Backend Not Connected'**
+  String get backendNotConnected;
+
+  /// No description provided for @libraryBrowser.
+  ///
+  /// In en, this message translates to:
+  /// **'Library Browser'**
+  String get libraryBrowser;
+
+  /// Playlist statistics
+  ///
+  /// In en, this message translates to:
+  /// **'{tags} playlists · {songs} songs'**
+  String playlistStats(int tags, int songs);
+
+  /// No description provided for @libraryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Library is empty'**
+  String get libraryEmpty;
+
+  /// Failed to load library with error
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load library: {error}'**
+  String loadLibraryFailed(String error);
+
+  /// From module name
+  ///
+  /// In en, this message translates to:
+  /// **'from {module}'**
+  String fromModule(String module);
+
+  /// Album count
+  ///
+  /// In en, this message translates to:
+  /// **'{count} albums'**
+  String albumCountLabel(int count);
+
+  /// Song count label
+  ///
+  /// In en, this message translates to:
+  /// **'{count} songs'**
+  String songCountLabel(int count);
+
+  /// No description provided for @unknownArtist.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown artist'**
+  String get unknownArtist;
+
+  /// Source chip label with name and count
+  ///
+  /// In en, this message translates to:
+  /// **'{name} ({count})'**
+  String sourceChipLabel(String name, int count);
+
+  /// No description provided for @playNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Play next'**
+  String get playNext;
+
+  /// No description provided for @addToQueueTail.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to queue tail'**
+  String get addToQueueTail;
+
+  /// No description provided for @exclude.
+  ///
+  /// In en, this message translates to:
+  /// **'Exclude'**
+  String get exclude;
+
+  /// No description provided for @removeExclusion.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove exclusion'**
+  String get removeExclusion;
+
+  /// No description provided for @removeShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get removeShort;
+
+  /// No description provided for @playTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Play'**
+  String get playTooltip;
+
+  /// No description provided for @fh6SettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Forza Horizon 6 Integration Settings'**
+  String get fh6SettingsTitle;
+
+  /// No description provided for @mediaOverlaySettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Media Overlay Generator Settings'**
+  String get mediaOverlaySettings;
+
+  /// No description provided for @stationNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Station Name in XML'**
+  String get stationNameLabel;
+
+  /// No description provided for @stationNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Streamer Mode'**
+  String get stationNameHint;
+
+  /// No description provided for @sampleDurationLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Sample Duration (s)'**
+  String get sampleDurationLabel;
+
+  /// No description provided for @sampleDurationHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. 300'**
+  String get sampleDurationHint;
+
+  /// No description provided for @displayNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Game Display Name'**
+  String get displayNameLabel;
+
+  /// No description provided for @displayNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. OmniMix Player'**
+  String get displayNameHint;
+
+  /// No description provided for @artistNameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Artist Name'**
+  String get artistNameLabel;
+
+  /// No description provided for @artistNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. ChillPatcher'**
+  String get artistNameHint;
+
+  /// No description provided for @enableAnthemZip.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Anthem.zip Processing'**
+  String get enableAnthemZip;
+
+  /// No description provided for @anthemModeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Anthem Mode'**
+  String get anthemModeLabel;
+
+  /// No description provided for @modeFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Full (Keep all original entries)'**
+  String get modeFull;
+
+  /// No description provided for @modePartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Partial (Remove empty directories)'**
+  String get modePartial;
+
+  /// No description provided for @logoOptionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Logo Option'**
+  String get logoOptionLabel;
+
+  /// No description provided for @copyDefaultLogo.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy default Horizon Pulse logo'**
+  String get copyDefaultLogo;
+
+  /// No description provided for @injectCustomPng.
+  ///
+  /// In en, this message translates to:
+  /// **'Inject custom PNG image'**
+  String get injectCustomPng;
+
+  /// No description provided for @selectLogoPng.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Logo PNG'**
+  String get selectLogoPng;
+
+  /// No description provided for @browse.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse'**
+  String get browse;
+
+  /// No description provided for @saveAndApply.
+  ///
+  /// In en, this message translates to:
+  /// **'Save & Apply'**
+  String get saveAndApply;
 }
 
 class _AppLocalizationsDelegate

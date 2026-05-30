@@ -106,5 +106,216 @@
   "moduleStatusDisabled": "Disabled — will not load on next start",
   "moduleStatusPending": "Loaded but will be disabled on next start",
   "moduleStatusActive": "Loaded and active",
-  "moduleStatusWillLoad": "Will load on next start"
+  "moduleStatusWillLoad": "Will load on next start",
+
+  "serviceStarting": "Service Starting",
+  "serviceStartingMessage": "Connecting and initializing player service...",
+  "serviceNotConnected": "Service Not Connected",
+  "waitingForBackend": "Please wait, waiting for backend service...",
+  "noSongPlaying": "No song playing",
+  "shuffle": "Shuffle",
+  "previous": "Previous",
+  "next": "Next",
+  "playPause": "Play/Pause",
+  "repeatOne": "Repeat One",
+  "serverControlMode": "Server control mode",
+  "clientModeControlsDisabled": "Client mode: controls disabled",
+  "queue": "Queue",
+  "history": "History",
+  "empty": "Empty",
+  "byPlaylist": "By Playlist",
+  "byAlbum": "By Album",
+  "bySong": "By Song",
+  "addSource": "Add Source",
+  "searchHint": "Search songs / artist / album",
+  "removeFromLibrary": "Remove from Library",
+  "errorWithMessage": "Error: {error}",
+  "@errorWithMessage": {
+    "description": "Error message with details",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "noActivePlaylist": "No active playlist, add a playlist or album source first",
+  "noSongs": "No songs",
+  "noAlbumsAdded": "No albums added",
+  "noPlaylistsAdded": "No playlists added",
+  "selectLibrarySource": "Select sources to add to library",
+  "selectedCount": "Selected {count}",
+  "@selectedCount": {
+    "description": "Count of selected items",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "playlistsTab": "Playlists",
+  "albumsTab": "Albums",
+  "songCountWithModule": "{count} songs · {module}",
+  "@songCountWithModule": {
+    "description": "Song count with module name",
+    "placeholders": {
+      "count": { "type": "int" },
+      "module": { "type": "String" }
+    }
+  },
+  "failedToLoadLibrary": "Failed to load library: {error}",
+  "@failedToLoadLibrary": {
+    "description": "Failed to load library with error details",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "instanceManagement": "Instance Management",
+  "noInstalledInstances": "No installed instances",
+  "installedInstancesCount": "Installed Instances ({count})",
+  "@installedInstancesCount": {
+    "description": "Installed instances count",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "archiveCount": "Archive ({count})",
+  "@archiveCount": {
+    "description": "Archive count",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "instanceAutoRegisterHint": "Instances will be auto-registered after installing game Mod",
+  "archiveManagement": "Archive Management",
+  "noArchivedInstances": "No archived instances",
+  "rename": "Rename",
+  "delete": "Delete",
+  "close": "Close",
+  "renameArchive": "Rename Archive",
+  "archiveNameHint": "Enter archive name",
+  "deleteArchive": "Delete Archive",
+  "deleteArchiveConfirm": "Are you sure you want to delete the archive of \"{name}\"? This action cannot be undone.",
+  "@deleteArchiveConfirm": {
+    "description": "Delete archive confirmation dialog",
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "uninstallServiceConfirm": "This will stop the backend service and remove it from the system.",
+  "serviceAutoStartUpdated": "Service auto-start updated",
+  "serviceAutoStartFailed": "Failed to update service auto-start",
+  "autoStartSuccess": "Auto-start updated successfully",
+  "autoStartFailed": "Failed to update auto-start",
+
+  "waitingForBackendMod": "Please wait, waiting for backend service for Mod installation and management...",
+  "omnimixInstance": "OmniMix Instance",
+  "instanceOnline": "Online — {id}",
+  "@instanceOnline": {
+    "description": "Instance online status",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "instanceOffline": "Offline — {id}",
+  "@instanceOffline": {
+    "description": "Instance offline status",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "availableVersion": "Available: v{version}",
+  "@availableVersion": {
+    "description": "Available version",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "latestVersion": "Latest: v{version}",
+  "@latestVersion": {
+    "description": "Latest version",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+
+  "refresh": "Refresh",
+  "noInstances": "No instances",
+  "exitGui": "Exit GUI",
+  "languageChinese": "中文",
+  "languageEnglish": "English",
+  "languageSystem": "System",
+
+  "backendNotConnected": "Backend Not Connected",
+  "libraryBrowser": "Library Browser",
+  "playlistStats": "{tags} playlists · {songs} songs",
+  "@playlistStats": {
+    "description": "Playlist statistics",
+    "placeholders": {
+      "tags": { "type": "int" },
+      "songs": { "type": "int" }
+    }
+  },
+  "libraryEmpty": "Library is empty",
+  "loadLibraryFailed": "Failed to load library: {error}",
+  "@loadLibraryFailed": {
+    "description": "Failed to load library with error",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "fromModule": "from {module}",
+  "@fromModule": {
+    "description": "From module name",
+    "placeholders": {
+      "module": { "type": "String" }
+    }
+  },
+  "albumCountLabel": "{count} albums",
+  "@albumCountLabel": {
+    "description": "Album count",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "songCountLabel": "{count} songs",
+  "@songCountLabel": {
+    "description": "Song count label",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "unknownArtist": "Unknown artist",
+  "sourceChipLabel": "{name} ({count})",
+  "@sourceChipLabel": {
+    "description": "Source chip label with name and count",
+    "placeholders": {
+      "name": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "playNext": "Play next",
+  "addToQueueTail": "Add to queue tail",
+  "exclude": "Exclude",
+  "removeExclusion": "Remove exclusion",
+  "removeShort": "Remove",
+  "playTooltip": "Play",
+
+  "fh6SettingsTitle": "Forza Horizon 6 Integration Settings",
+  "mediaOverlaySettings": "Media Overlay Generator Settings",
+  "stationNameLabel": "Station Name in XML",
+  "stationNameHint": "e.g. Streamer Mode",
+  "sampleDurationLabel": "Sample Duration (s)",
+  "sampleDurationHint": "e.g. 300",
+  "displayNameLabel": "Game Display Name",
+  "displayNameHint": "e.g. OmniMix Player",
+  "artistNameLabel": "Artist Name",
+  "artistNameHint": "e.g. ChillPatcher",
+  "enableAnthemZip": "Enable Anthem.zip Processing",
+  "anthemModeLabel": "Anthem Mode",
+  "modeFull": "Full (Keep all original entries)",
+  "modePartial": "Partial (Remove empty directories)",
+  "logoOptionLabel": "Logo Option",
+  "copyDefaultLogo": "Copy default Horizon Pulse logo",
+  "injectCustomPng": "Inject custom PNG image",
+  "selectLogoPng": "Select Logo PNG",
+  "browse": "Browse",
+  "saveAndApply": "Save & Apply"
 }

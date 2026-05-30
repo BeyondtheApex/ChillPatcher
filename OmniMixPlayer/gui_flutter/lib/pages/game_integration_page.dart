@@ -510,7 +510,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                 const Icon(Icons.link, size: 18),
                 const SizedBox(width: 8),
                 Text(
-                  'OmniMix 实例',
+                  l10n.omnimixInstance,
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -535,8 +535,8 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     Expanded(
                       child: Text(
                         online
-                            ? '在线 — ${inst.instanceId}'
-                            : '离线 — ${inst.instanceId}',
+                            ? l10n.instanceOnline(inst.instanceId)
+                            : l10n.instanceOffline(inst.instanceId),
                         style: TextStyle(
                           fontSize: 12,
                           color: online ? Colors.green : cs.outline,
@@ -682,7 +682,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     onPressed: onSettingsPressed,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    tooltip: 'Settings',
+                    tooltip: AppLocalizations.of(context)!.settings,
                   ),
               ],
             ),
@@ -709,26 +709,30 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     showDialog(
       context: context,
       builder: (context) {
-        return mod.buildSettingsWidget(
-          context,
-          currentSettings,
-          (newSettings) async {
-            await widget.state.saveModSettings(mod.id, newSettings);
-            if (widget.state.modStatusFor(gameId) == ModStatus.installed) {
-              await widget.state.redeployModSettingsOnly(gameId: gameId);
-            }
-          },
-        );
+        return mod.buildSettingsWidget(context, currentSettings, (
+          newSettings,
+        ) async {
+          await widget.state.saveModSettings(mod.id, newSettings);
+          if (widget.state.modStatusFor(gameId) == ModStatus.installed) {
+            await widget.state.redeployModSettingsOnly(gameId: gameId);
+          }
+        });
       },
     );
   }
 
-  Widget? _buildVersionInfo(String id, String availableVersion, ColorScheme cs) {
+  Widget? _buildVersionInfo(
+    String id,
+    String availableVersion,
+    ColorScheme cs,
+  ) {
     final installed = ModDeploymentService.getInstalledVersion(id);
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
 
     if (installed == null) {
-      final text = isZh ? '可安装版本: v$availableVersion' : 'Available: v$availableVersion';
+      final text = isZh
+          ? '可安装版本: v$availableVersion'
+          : 'Available: v$availableVersion';
       return Text(
         text,
         style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
@@ -742,7 +746,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
         style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
       );
     } else {
-      final latestText = isZh ? '最新: v$availableVersion' : 'Latest: v$availableVersion';
+      final latestText = isZh
+          ? '最新: v$availableVersion'
+          : 'Latest: v$availableVersion';
       return Text(
         '${l.installed(installed)} ($latestText)',
         style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
 import '../models/node_data.dart';
 
@@ -125,7 +126,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
       _totalSongs = total;
       _rebuildFlatList();
     } catch (e) {
-      if (mounted) _error = '加载曲库失败: $e';
+      if (mounted) {
+        final l10n = context.mounted ? AppLocalizations.of(context) : null;
+        _error = '${l10n?.loadLibraryFailed(e.toString()) ?? '加载曲库失败: $e'}';
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -140,7 +144,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
         _FlatItem(
           kind: _ItemKind.tag,
           label: tagNode.tag.name,
-          subtitle: '来自 ${tagNode.tag.moduleId} · ${tagNode.albums.length} 个专辑',
+          subtitle: '${tagNode.tag.moduleId} · ${tagNode.albums.length} albums',
           indentLevel: 0,
           expandable: tagNode.albums.isNotEmpty,
           expanded: tagNode.expanded,
@@ -212,6 +216,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
 
     if (!widget.state.backendOnline) {
@@ -225,7 +230,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
               color: cs.onSurfaceVariant.withAlpha(100),
             ),
             const SizedBox(height: 12),
-            Text('后端未连接', style: TextStyle(color: cs.onSurfaceVariant)),
+            Text(
+              l10n.backendNotConnected,
+              style: TextStyle(color: cs.onSurfaceVariant),
+            ),
           ],
         ),
       );
@@ -246,7 +254,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
               const Icon(Icons.library_music_rounded, size: 28),
               const SizedBox(width: 12),
               Text(
-                '曲库浏览器',
+                l10n.libraryBrowser,
                 style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
@@ -255,14 +263,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
               const Spacer(),
               if (_totalSongs > 0)
                 Text(
-                  '${_tree.length} 个歌单 · $_totalSongs 首曲目',
+                  l10n.playlistStats(_tree.length, _totalSongs),
                   style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
                 ),
               const SizedBox(width: 8),
               if (_tree.isNotEmpty)
                 IconButton(
                   icon: const Icon(Icons.refresh_rounded, size: 20),
-                  tooltip: '刷新',
+                  tooltip: l10n.refresh,
                   onPressed: _loadTree,
                 ),
             ],
@@ -301,7 +309,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        '曲库为空',
+                        l10n.libraryEmpty,
                         style: TextStyle(
                           color: cs.onSurfaceVariant.withAlpha(150),
                           fontSize: 14,

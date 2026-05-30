@@ -314,4 +314,340 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get moduleStatusWillLoad => 'Will load on next start';
+
+  @override
+  String get serviceStarting => 'Service Starting';
+
+  @override
+  String get serviceStartingMessage =>
+      'Connecting and initializing player service...';
+
+  @override
+  String get serviceNotConnected => 'Service Not Connected';
+
+  @override
+  String get waitingForBackend => 'Please wait, waiting for backend service...';
+
+  @override
+  String get noSongPlaying => 'No song playing';
+
+  @override
+  String get shuffle => 'Shuffle';
+
+  @override
+  String get previous => 'Previous';
+
+  @override
+  String get next => 'Next';
+
+  @override
+  String get playPause => 'Play/Pause';
+
+  @override
+  String get repeatOne => 'Repeat One';
+
+  @override
+  String get serverControlMode => 'Server control mode';
+
+  @override
+  String get clientModeControlsDisabled => 'Client mode: controls disabled';
+
+  @override
+  String get queue => 'Queue';
+
+  @override
+  String get history => 'History';
+
+  @override
+  String get empty => 'Empty';
+
+  @override
+  String get byPlaylist => 'By Playlist';
+
+  @override
+  String get byAlbum => 'By Album';
+
+  @override
+  String get bySong => 'By Song';
+
+  @override
+  String get addSource => 'Add Source';
+
+  @override
+  String get searchHint => 'Search songs / artist / album';
+
+  @override
+  String get removeFromLibrary => 'Remove from Library';
+
+  @override
+  String errorWithMessage(String error) {
+    return 'Error: $error';
+  }
+
+  @override
+  String get noActivePlaylist =>
+      'No active playlist, add a playlist or album source first';
+
+  @override
+  String get noSongs => 'No songs';
+
+  @override
+  String get noAlbumsAdded => 'No albums added';
+
+  @override
+  String get noPlaylistsAdded => 'No playlists added';
+
+  @override
+  String get selectLibrarySource => 'Select sources to add to library';
+
+  @override
+  String selectedCount(int count) {
+    return 'Selected $count';
+  }
+
+  @override
+  String get playlistsTab => 'Playlists';
+
+  @override
+  String get albumsTab => 'Albums';
+
+  @override
+  String songCountWithModule(int count, String module) {
+    return '$count songs · $module';
+  }
+
+  @override
+  String failedToLoadLibrary(String error) {
+    return 'Failed to load library: $error';
+  }
+
+  @override
+  String get instanceManagement => 'Instance Management';
+
+  @override
+  String get noInstalledInstances => 'No installed instances';
+
+  @override
+  String installedInstancesCount(int count) {
+    return 'Installed Instances ($count)';
+  }
+
+  @override
+  String archiveCount(int count) {
+    return 'Archive ($count)';
+  }
+
+  @override
+  String get instanceAutoRegisterHint =>
+      'Instances will be auto-registered after installing game Mod';
+
+  @override
+  String get archiveManagement => 'Archive Management';
+
+  @override
+  String get noArchivedInstances => 'No archived instances';
+
+  @override
+  String get rename => 'Rename';
+
+  @override
+  String get delete => 'Delete';
+
+  @override
+  String get close => 'Close';
+
+  @override
+  String get renameArchive => 'Rename Archive';
+
+  @override
+  String get archiveNameHint => 'Enter archive name';
+
+  @override
+  String get deleteArchive => 'Delete Archive';
+
+  @override
+  String deleteArchiveConfirm(String name) {
+    return 'Are you sure you want to delete the archive of \"$name\"? This action cannot be undone.';
+  }
+
+  @override
+  String get uninstallServiceConfirm =>
+      'This will stop the backend service and remove it from the system.';
+
+  @override
+  String get serviceAutoStartUpdated => 'Service auto-start updated';
+
+  @override
+  String get serviceAutoStartFailed => 'Failed to update service auto-start';
+
+  @override
+  String get autoStartSuccess => 'Auto-start updated successfully';
+
+  @override
+  String get autoStartFailed => 'Failed to update auto-start';
+
+  @override
+  String get waitingForBackendMod =>
+      'Please wait, waiting for backend service for Mod installation and management...';
+
+  @override
+  String get omnimixInstance => 'OmniMix Instance';
+
+  @override
+  String instanceOnline(String id) {
+    return 'Online — $id';
+  }
+
+  @override
+  String instanceOffline(String id) {
+    return 'Offline — $id';
+  }
+
+  @override
+  String availableVersion(String version) {
+    return 'Available: v$version';
+  }
+
+  @override
+  String latestVersion(String version) {
+    return 'Latest: v$version';
+  }
+
+  @override
+  String get refresh => 'Refresh';
+
+  @override
+  String get noInstances => 'No instances';
+
+  @override
+  String get exitGui => 'Exit GUI';
+
+  @override
+  String get languageChinese => '中文';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languageSystem => 'System';
+
+  @override
+  String get backendNotConnected => 'Backend Not Connected';
+
+  @override
+  String get libraryBrowser => 'Library Browser';
+
+  @override
+  String playlistStats(int tags, int songs) {
+    return '$tags playlists · $songs songs';
+  }
+
+  @override
+  String get libraryEmpty => 'Library is empty';
+
+  @override
+  String loadLibraryFailed(String error) {
+    return 'Failed to load library: $error';
+  }
+
+  @override
+  String fromModule(String module) {
+    return 'from $module';
+  }
+
+  @override
+  String albumCountLabel(int count) {
+    return '$count albums';
+  }
+
+  @override
+  String songCountLabel(int count) {
+    return '$count songs';
+  }
+
+  @override
+  String get unknownArtist => 'Unknown artist';
+
+  @override
+  String sourceChipLabel(String name, int count) {
+    return '$name ($count)';
+  }
+
+  @override
+  String get playNext => 'Play next';
+
+  @override
+  String get addToQueueTail => 'Add to queue tail';
+
+  @override
+  String get exclude => 'Exclude';
+
+  @override
+  String get removeExclusion => 'Remove exclusion';
+
+  @override
+  String get removeShort => 'Remove';
+
+  @override
+  String get playTooltip => 'Play';
+
+  @override
+  String get fh6SettingsTitle => 'Forza Horizon 6 Integration Settings';
+
+  @override
+  String get mediaOverlaySettings => 'Media Overlay Generator Settings';
+
+  @override
+  String get stationNameLabel => 'Station Name in XML';
+
+  @override
+  String get stationNameHint => 'e.g. Streamer Mode';
+
+  @override
+  String get sampleDurationLabel => 'Sample Duration (s)';
+
+  @override
+  String get sampleDurationHint => 'e.g. 300';
+
+  @override
+  String get displayNameLabel => 'Game Display Name';
+
+  @override
+  String get displayNameHint => 'e.g. OmniMix Player';
+
+  @override
+  String get artistNameLabel => 'Artist Name';
+
+  @override
+  String get artistNameHint => 'e.g. ChillPatcher';
+
+  @override
+  String get enableAnthemZip => 'Enable Anthem.zip Processing';
+
+  @override
+  String get anthemModeLabel => 'Anthem Mode';
+
+  @override
+  String get modeFull => 'Full (Keep all original entries)';
+
+  @override
+  String get modePartial => 'Partial (Remove empty directories)';
+
+  @override
+  String get logoOptionLabel => 'Logo Option';
+
+  @override
+  String get copyDefaultLogo => 'Copy default Horizon Pulse logo';
+
+  @override
+  String get injectCustomPng => 'Inject custom PNG image';
+
+  @override
+  String get selectLogoPng => 'Select Logo PNG';
+
+  @override
+  String get browse => 'Browse';
+
+  @override
+  String get saveAndApply => 'Save & Apply';
 }

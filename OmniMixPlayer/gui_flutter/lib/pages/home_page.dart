@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:omnimix_gui/l10n/app_localizations.dart';
 
 import '../models/node_data.dart';
 import '../providers/app_state.dart';
@@ -71,7 +72,8 @@ class _HomePageState extends State<HomePage> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'Failed to load library: $e');
+      final l10n = AppLocalizations.of(context);
+      setState(() => _error = l10n!.failedToLoadLibrary('$e'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -79,20 +81,21 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final busy = widget.state.backendBusy || widget.state.serviceBusy;
     if (busy) {
-      return const _LoadingHome(
+      return _LoadingHome(
         icon: Icons.settings_input_component_rounded,
-        title: '服务启动中',
-        message: '正在连接并初始化播放器服务...',
+        title: l10n.serviceStarting,
+        message: l10n.serviceStartingMessage,
       );
     }
 
     if (!widget.state.backendOnline) {
-      return const _LoadingHome(
+      return _LoadingHome(
         icon: Icons.cloud_off_rounded,
-        title: '服务未连接',
-        message: '请稍候，正在等待后端服务就绪...',
+        title: l10n.serviceNotConnected,
+        message: l10n.waitingForBackend,
       );
     }
 
@@ -154,6 +157,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildNowPlaying({bool minimalClientMode = false}) {
+    final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final instance = widget.state.activeInstance;
     final track = instance?.currentTrack;
@@ -183,7 +187,7 @@ class _HomePageState extends State<HomePage> {
           Text(
             (track?.title.isNotEmpty ?? false)
                 ? track!.title
-                : 'No song playing',
+                : l10n.noSongPlaying,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -217,12 +221,12 @@ class _HomePageState extends State<HomePage> {
                     Icons.shuffle_rounded,
                     color: (instance?.shuffle ?? false) ? cs.primary : null,
                   ),
-                  tooltip: '随机',
+                  tooltip: l10n.shuffle,
                 ),
                 IconButton(
                   onPressed: canControl ? widget.state.previousTrack : null,
                   icon: const Icon(Icons.skip_previous_rounded),
-                  tooltip: '上一首',
+                  tooltip: l10n.previous,
                 ),
                 IconButton(
                   onPressed: canControl ? widget.state.togglePlayback : null,
@@ -231,12 +235,12 @@ class _HomePageState extends State<HomePage> {
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
                   ),
-                  tooltip: '播放/暂停',
+                  tooltip: l10n.playPause,
                 ),
                 IconButton(
                   onPressed: canControl ? widget.state.nextTrack : null,
                   icon: const Icon(Icons.skip_next_rounded),
-                  tooltip: '下一首',
+                  tooltip: l10n.next,
                 ),
                 IconButton(
                   onPressed: canControl
@@ -252,7 +256,7 @@ class _HomePageState extends State<HomePage> {
                         ? cs.primary
                         : null,
                   ),
-                  tooltip: '单曲循环',
+                  tooltip: l10n.repeatOne,
                 ),
               ],
             ),
@@ -290,8 +294,8 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 6),
             Text(
               canControl
-                  ? 'Server control mode'
-                  : 'Client mode: controls disabled',
+                  ? l10n.serverControlMode
+                  : l10n.clientModeControlsDisabled,
               style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
             ),
           ],
@@ -301,6 +305,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildQueuePanel() {
+    final l10n = AppLocalizations.of(context)!;
     final canControl = widget.state.canControlActiveInstance;
     return _Panel(
       child: Column(
@@ -308,11 +313,14 @@ class _HomePageState extends State<HomePage> {
           Row(
             children: [
               SegmentedButton<_QueueTab>(
-                segments: const [
-                  ButtonSegment(value: _QueueTab.queue, label: Text('Queue')),
+                segments: [
+                  ButtonSegment(
+                    value: _QueueTab.queue,
+                    label: Text(l10n.queue),
+                  ),
                   ButtonSegment(
                     value: _QueueTab.history,
-                    label: Text('History'),
+                    label: Text(l10n.history),
                   ),
                 ],
                 selected: {_queueTab},
@@ -324,7 +332,7 @@ class _HomePageState extends State<HomePage> {
                   onPressed: _queueTab == _QueueTab.queue
                       ? widget.state.clearActiveQueue
                       : widget.state.clearActiveHistory,
-                  child: const Text('Clear'),
+                  child: Text(l10n.clear),
                 ),
             ],
           ),
@@ -340,8 +348,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildReorderList(List<QueueItemInfo> items, {required bool isQueue}) {
+    final l10n = AppLocalizations.of(context)!;
     final canControl = widget.state.canControlActiveInstance;
-    if (items.isEmpty) return const Center(child: Text('Empty'));
+    if (items.isEmpty) return Center(child: Text(l10n.empty));
 
     return ReorderableListView.builder(
       buildDefaultDragHandles: canControl,
@@ -389,10 +398,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildLibraryPanel() {
+    final l10n = AppLocalizations.of(context)!;
     if (_loading)
       return const _Panel(child: Center(child: CircularProgressIndicator()));
     if (_error.isNotEmpty)
-      return _Panel(child: Center(child: Text('Error: $_error')));
+      return _Panel(child: Center(child: Text(l10n.errorWithMessage(_error))));
 
     final canControl = widget.state.canControlActiveInstance;
     return _Panel(
@@ -401,18 +411,18 @@ class _HomePageState extends State<HomePage> {
           Row(
             children: [
               SegmentedButton<_LibraryView>(
-                segments: const [
+                segments: [
                   ButtonSegment(
                     value: _LibraryView.playlist,
-                    label: Text('By Playlist'),
+                    label: Text(l10n.byPlaylist),
                   ),
                   ButtonSegment(
                     value: _LibraryView.album,
-                    label: Text('By Album'),
+                    label: Text(l10n.byAlbum),
                   ),
                   ButtonSegment(
                     value: _LibraryView.song,
-                    label: Text('By Song'),
+                    label: Text(l10n.bySong),
                   ),
                 ],
                 selected: {_libraryView},
@@ -423,7 +433,7 @@ class _HomePageState extends State<HomePage> {
               if (canControl)
                 IconButton(
                   onPressed: _showAddSourceSheet,
-                  tooltip: '添加来源',
+                  tooltip: l10n.addSource,
                   icon: const Icon(Icons.add_rounded),
                 ),
             ],
@@ -431,9 +441,9 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 8),
           TextField(
             onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search_rounded),
-              hintText: 'Search songs / artist / album',
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search_rounded),
+              hintText: l10n.searchHint,
               isDense: true,
             ),
           ),
@@ -447,7 +457,7 @@ class _HomePageState extends State<HomePage> {
                   .where((s) => s.id != 'all')
                   .map((s) {
                     return InputChip(
-                      label: Text('${s.name} (${s.songCount})'),
+                      label: Text(l10n.sourceChipLabel(s.name, s.songCount)),
                       onDeleted: canControl
                           ? () => widget.state.removePlaylistSource(s.id)
                           : null,
@@ -464,12 +474,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildLibraryList(bool canControl) {
+    final l10n = AppLocalizations.of(context)!;
     final songs = _filteredSongs();
     if (widget.state.activePlaylist.isEmpty) {
-      return const Center(child: Text('当前没有激活歌单，请先添加歌单或专辑来源'));
+      return Center(child: Text(l10n.noActivePlaylist));
     }
     if (_libraryView == _LibraryView.song) {
-      if (songs.isEmpty) return const Center(child: Text('No songs'));
+      if (songs.isEmpty) return Center(child: Text(l10n.noSongs));
       return ListView.builder(
         itemCount: songs.length,
         itemBuilder: (_, i) {
@@ -516,7 +527,7 @@ class _HomePageState extends State<HomePage> {
             a.moduleId.toLowerCase().contains(_query);
       }).toList();
       if (filteredAlbums.isEmpty) {
-        return const Center(child: Text('当前没有已添加的专辑'));
+        return Center(child: Text(l10n.noAlbumsAdded));
       }
       return ListView.builder(
         itemCount: filteredAlbums.length,
@@ -529,7 +540,7 @@ class _HomePageState extends State<HomePage> {
               child: _AlbumCover(album: a, baseUrl: widget.state.apiBaseUrl),
             ),
             title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text('${a.songCount} songs • ${a.moduleId}'),
+            subtitle: Text(l10n.songCountWithModule(a.songCount, a.moduleId)),
             trailing: canControl
                 ? PopupMenuButton<String>(
                     onSelected: (v) {
@@ -537,9 +548,9 @@ class _HomePageState extends State<HomePage> {
                         widget.state.removePlaylistSource('album_${a.id}');
                     },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'remove',
-                        child: Text('从曲库移除'),
+                        child: Text(l10n.removeFromLibrary),
                       ),
                     ],
                   )
@@ -560,7 +571,7 @@ class _HomePageState extends State<HomePage> {
           t.moduleId.toLowerCase().contains(_query);
     }).toList();
     if (filteredTags.isEmpty) {
-      return const Center(child: Text('当前没有已添加的歌单'));
+      return Center(child: Text(l10n.noPlaylistsAdded));
     }
     return ListView.builder(
       itemCount: filteredTags.length,
@@ -577,7 +588,10 @@ class _HomePageState extends State<HomePage> {
                       widget.state.removePlaylistSource('tag_${t.id}');
                   },
                   itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'remove', child: Text('从曲库移除')),
+                    PopupMenuItem(
+                      value: 'remove',
+                      child: Text(l10n.removeFromLibrary),
+                    ),
                   ],
                 )
               : null,
@@ -641,6 +655,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showAddSourceSheet() {
+    final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -668,19 +683,19 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
                     child: Row(
                       children: [
-                        const Text(
-                          '选择要加入曲库的来源',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                        Text(
+                          l10n.selectLibrarySource,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
-                        Text('已选 ${selectedIds.length}'),
+                        Text(l10n.selectedCount(selectedIds.length)),
                       ],
                     ),
                   ),
-                  const TabBar(
+                  TabBar(
                     tabs: [
-                      Tab(text: 'Playlists'),
-                      Tab(text: 'Albums'),
+                      Tab(text: l10n.playlistsTab),
+                      Tab(text: l10n.albumsTab),
                     ],
                   ),
                   Expanded(
@@ -718,8 +733,11 @@ class _HomePageState extends State<HomePage> {
                           itemBuilder: (_, i) {
                             final a = _albums[i];
                             final sourceId = 'album_${a.id}';
-                            final checked = selectedIds.contains(sourceId) ||
-                                widget.state.activePlaylist.any((s) => s.albumId == a.id);
+                            final checked =
+                                selectedIds.contains(sourceId) ||
+                                widget.state.activePlaylist.any(
+                                  (s) => s.albumId == a.id,
+                                );
                             return CheckboxListTile(
                               value: checked,
                               controlAffinity: ListTileControlAffinity.leading,
@@ -733,7 +751,10 @@ class _HomePageState extends State<HomePage> {
                               ),
                               title: Text(a.name),
                               subtitle: Text(
-                                '${a.songCount} songs • ${a.moduleId}',
+                                l10n.songCountWithModule(
+                                  a.songCount,
+                                  a.moduleId,
+                                ),
                               ),
                               onChanged: (v) async {
                                 if (v == null) return;
@@ -926,7 +947,7 @@ class _SongRow extends StatelessWidget {
       ),
       title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '${song.artist.isEmpty ? 'Unknown artist' : song.artist} • ${song.albumId}',
+        '${song.artist.isEmpty ? AppLocalizations.of(context)!.unknownArtist : song.artist} • ${song.albumId}',
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -940,7 +961,7 @@ class _SongRow extends StatelessWidget {
           IconButton(
             onPressed: onPlay,
             icon: const Icon(Icons.play_circle_fill_rounded),
-            tooltip: 'Play',
+            tooltip: AppLocalizations.of(context)!.playTooltip,
           ),
           PopupMenuButton<String>(
             enabled: canControl,
@@ -950,19 +971,19 @@ class _SongRow extends StatelessWidget {
               if (v == 'exclude') onExcludeToggle?.call();
               if (v == 'remove') onDelete?.call();
             },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'next', child: Text('Play next')),
-              const PopupMenuItem(
-                value: 'tail',
-                child: Text('Add to queue tail'),
-              ),
-              PopupMenuItem(
-                value: 'exclude',
-                child: Text(excluded ? 'Remove exclusion' : 'Exclude'),
-              ),
-              if (onDelete != null)
-                const PopupMenuItem(value: 'remove', child: Text('Remove')),
-            ],
+            itemBuilder: (_) {
+              final l10n = AppLocalizations.of(context)!;
+              return [
+                PopupMenuItem(value: 'next', child: Text(l10n.playNext)),
+                PopupMenuItem(value: 'tail', child: Text(l10n.addToQueueTail)),
+                PopupMenuItem(
+                  value: 'exclude',
+                  child: Text(excluded ? l10n.removeExclusion : l10n.exclude),
+                ),
+                if (onDelete != null)
+                  PopupMenuItem(value: 'remove', child: Text(l10n.removeShort)),
+              ];
+            },
           ),
         ],
       ),

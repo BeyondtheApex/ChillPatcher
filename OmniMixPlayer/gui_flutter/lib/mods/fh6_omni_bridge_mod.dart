@@ -2,20 +2,21 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../models/mod_manifest.dart';
 
 class Fh6OmniBridgeMod extends ModDeclaration {
   const Fh6OmniBridgeMod()
-      : super(
-          id: 'fh6_omni_bridge',
-          name: 'Forza Horizon 6 Omni Bridge',
-          version: '1.0.0',
-          archiveName: 'FH6OmniBridge.zip',
-          folderName: 'fh6-omnimix',
-          rootFilesToLink: const ['version.dll', 'OmniPcmShared.dll'],
-          rootFilesNoBackup: const ['version.dll', 'OmniPcmShared.dll'],
-          mode: 'server',
-        );
+    : super(
+        id: 'fh6_omni_bridge',
+        name: 'Forza Horizon 6 Omni Bridge',
+        version: '1.0.0',
+        archiveName: 'FH6OmniBridge.zip',
+        folderName: 'fh6-omnimix',
+        rootFilesToLink: const ['version.dll', 'OmniPcmShared.dll'],
+        rootFilesNoBackup: const ['version.dll', 'OmniPcmShared.dll'],
+        mode: 'server',
+      );
 
   @override
   bool get hasSettings => true;
@@ -39,26 +40,34 @@ class Fh6OmniBridgeMod extends ModDeclaration {
       _backupMediaFiles(gameDir, backupDir);
       log('Backup created successfully.');
     } else {
-      log('Pristine backup for version $version already exists. Skipping backup to protect original assets.');
+      log(
+        'Pristine backup for version $version already exists. Skipping backup to protect original assets.',
+      );
     }
 
     // 2. Generate generator config & Run media generator CLI
     log('Preparing media generator configurations...');
     final anthemZip = configMap['anthemZip'] as Map<String, dynamic>?;
-    final anthemZipEnabled = anthemZip?['enabled'] ?? settings['anthemZipEnabled'] ?? true;
+    final anthemZipEnabled =
+        anthemZip?['enabled'] ?? settings['anthemZipEnabled'] ?? true;
     final logoMode = omnimix['logoMode'] ?? settings['logoMode'] ?? 'copy';
-    final customPngPath = omnimix['customPngPath'] ?? settings['customPngPath'] ?? '';
+    final customPngPath =
+        omnimix['customPngPath'] ?? settings['customPngPath'] ?? '';
 
-    final normalizedGameDir = '$gameDir/.omnimix_backup/media_backup_v$version'.replaceAll('\\', '/');
+    final normalizedGameDir = '$gameDir/.omnimix_backup/media_backup_v$version'
+        .replaceAll('\\', '/');
     final normalizedOutputDir = '$gameDir/media'.replaceAll('\\', '/');
 
     final cliPath = _getCliPath();
     final configPath = _getConfigPath();
     log('Running media generator: $cliPath');
     final args = <String>[
-      '-c', configPath,
-      '-g', normalizedGameDir,
-      '-o', normalizedOutputDir,
+      '-c',
+      configPath,
+      '-g',
+      normalizedGameDir,
+      '-o',
+      normalizedOutputDir,
     ];
     if (logoMode == 'image' && customPngPath.isNotEmpty) {
       args.addAll(['-r', customPngPath]);
@@ -82,10 +91,7 @@ class Fh6OmniBridgeMod extends ModDeclaration {
   }
 
   @override
-  Future<void> onUndeploy(
-    String gameDir,
-    void Function(String) log,
-  ) async {
+  Future<void> onUndeploy(String gameDir, void Function(String) log) async {
     // 1. Media files restore cleanup
     final currentVersion = _getCurrentGameVersion(gameDir);
     log('Detected game version: $currentVersion');
@@ -94,7 +100,9 @@ class Fh6OmniBridgeMod extends ModDeclaration {
       _restoreMediaFiles(gameDir, currentVersion);
       log('Original media assets restored successfully.');
     } else {
-      log('Warning: Game version ($currentVersion) is newer than the highest backed-up version. Skipping restore to protect updated game files.');
+      log(
+        'Warning: Game version ($currentVersion) is newer than the highest backed-up version. Skipping restore to protect updated game files.',
+      );
     }
   }
 
@@ -178,10 +186,14 @@ class Fh6OmniBridgeMod extends ModDeclaration {
 
     for (final entity in backupRootDir.listSync()) {
       if (entity is Directory) {
-        final dirName = entity.uri.pathSegments.lastWhere((s) => s.isNotEmpty, orElse: () => '');
+        final dirName = entity.uri.pathSegments.lastWhere(
+          (s) => s.isNotEmpty,
+          orElse: () => '',
+        );
         if (dirName.startsWith('media_backup_v')) {
           final verStr = dirName.substring('media_backup_v'.length);
-          if (highestVersion == null || _isVersionLower(highestVersion, verStr)) {
+          if (highestVersion == null ||
+              _isVersionLower(highestVersion, verStr)) {
             highestVersion = verStr;
           }
         }
@@ -200,8 +212,14 @@ class Fh6OmniBridgeMod extends ModDeclaration {
   }
 
   bool _isVersionLower(String versionA, String versionB) {
-    final partsA = versionA.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-    final partsB = versionB.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+    final partsA = versionA
+        .split('.')
+        .map((e) => int.tryParse(e) ?? 0)
+        .toList();
+    final partsB = versionB
+        .split('.')
+        .map((e) => int.tryParse(e) ?? 0)
+        .toList();
     for (var i = 0; i < partsA.length && i < partsB.length; i++) {
       if (partsA[i] < partsB[i]) return true;
       if (partsA[i] > partsB[i]) return false;
@@ -300,15 +318,16 @@ class Fh6OmniBridgeMod extends ModDeclaration {
     final omnimix = (config['omnimix'] as Map<String, dynamic>?) ?? {};
     omnimix['logoMode'] = newSettings['logoMode'] ?? 'copy';
     omnimix['customPngPath'] = newSettings['customPngPath'] ?? '';
-    omnimix['serverAddress'] = newSettings['serverAddress'] ?? omnimix['serverAddress'] ?? '127.0.0.1';
-    omnimix['serverPort'] = newSettings['serverPort'] ?? omnimix['serverPort'] ?? 17890;
-    omnimix['enableLog'] = newSettings['enableLog'] ?? omnimix['enableLog'] ?? true;
+    omnimix['serverAddress'] =
+        newSettings['serverAddress'] ?? omnimix['serverAddress'] ?? '127.0.0.1';
+    omnimix['serverPort'] =
+        newSettings['serverPort'] ?? omnimix['serverPort'] ?? 17890;
+    omnimix['enableLog'] =
+        newSettings['enableLog'] ?? omnimix['enableLog'] ?? true;
     config['omnimix'] = omnimix;
 
     // Write back
-    file.writeAsStringSync(
-      const JsonEncoder.withIndent('  ').convert(config),
-    );
+    file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(config));
   }
 }
 
@@ -354,31 +373,57 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
     final omnimix = (configMap['omnimix'] as Map<String, dynamic>?) ?? {};
 
     // Core config defaults
-    final serverAddress = omnimix['serverAddress'] ?? widget.currentSettings['serverAddress'] ?? '127.0.0.1';
-    final serverPort = omnimix['serverPort'] ?? widget.currentSettings['serverPort'] ?? 17890;
-    enableLog = omnimix['enableLog'] ?? widget.currentSettings['enableLog'] ?? true;
+    final serverAddress =
+        omnimix['serverAddress'] ??
+        widget.currentSettings['serverAddress'] ??
+        '127.0.0.1';
+    final serverPort =
+        omnimix['serverPort'] ?? widget.currentSettings['serverPort'] ?? 17890;
+    enableLog =
+        omnimix['enableLog'] ?? widget.currentSettings['enableLog'] ?? true;
 
     serverController = TextEditingController(text: serverAddress);
     portController = TextEditingController(text: serverPort.toString());
 
     // Media config
     durationController = TextEditingController(
-      text: (bank['sampleDurationSec'] ?? widget.currentSettings['sampleDurationSec'] ?? 300).toString(),
+      text:
+          (bank['sampleDurationSec'] ??
+                  widget.currentSettings['sampleDurationSec'] ??
+                  300)
+              .toString(),
     );
     displayNameController = TextEditingController(
-      text: radioInfo['displayName'] ?? widget.currentSettings['displayName'] ?? 'OmniMix Player',
+      text:
+          radioInfo['displayName'] ??
+          widget.currentSettings['displayName'] ??
+          'OmniMix Player',
     );
     artistController = TextEditingController(
-      text: radioInfo['artist'] ?? widget.currentSettings['artist'] ?? 'ChillPatcher',
+      text:
+          radioInfo['artist'] ??
+          widget.currentSettings['artist'] ??
+          'ChillPatcher',
     );
     stationNameController = TextEditingController(
-      text: radioInfo['stationName'] ?? widget.currentSettings['stationName'] ?? 'Streamer Mode',
+      text:
+          radioInfo['stationName'] ??
+          widget.currentSettings['stationName'] ??
+          'Streamer Mode',
     );
-    anthemZipEnabled = anthemZip['enabled'] ?? widget.currentSettings['anthemZipEnabled'] ?? true;
-    anthemMode = anthemZip['mode'] ?? widget.currentSettings['anthemMode'] ?? 'full';
-    logoMode = omnimix['logoMode'] ?? widget.currentSettings['logoMode'] ?? 'copy';
+    anthemZipEnabled =
+        anthemZip['enabled'] ??
+        widget.currentSettings['anthemZipEnabled'] ??
+        true;
+    anthemMode =
+        anthemZip['mode'] ?? widget.currentSettings['anthemMode'] ?? 'full';
+    logoMode =
+        omnimix['logoMode'] ?? widget.currentSettings['logoMode'] ?? 'copy';
     customPngPathController = TextEditingController(
-      text: omnimix['customPngPath'] ?? widget.currentSettings['customPngPath'] ?? '',
+      text:
+          omnimix['customPngPath'] ??
+          widget.currentSettings['customPngPath'] ??
+          '',
     );
   }
 
@@ -397,15 +442,14 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
     return AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
           Icon(Icons.settings, color: cs.primary),
           const SizedBox(width: 10),
-          const Text('Forza Horizon 6 Integration Settings'),
+          Text(l10n.fh6SettingsTitle),
         ],
       ),
       content: SizedBox(
@@ -418,7 +462,7 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
               // Core Config fields removed (always default to local server/port)
               const SizedBox(height: 8),
               Text(
-                'Media Overlay Generator Settings',
+                l10n.mediaOverlaySettings,
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
@@ -431,10 +475,10 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                   Expanded(
                     child: TextField(
                       controller: stationNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Station Name in XML',
-                        hintText: 'e.g. Streamer Mode',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.stationNameLabel,
+                        hintText: l10n.stationNameHint,
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                   ),
@@ -443,10 +487,10 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                     child: TextField(
                       controller: durationController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Sample Duration (s)',
-                        hintText: 'e.g. 300',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.sampleDurationLabel,
+                        hintText: l10n.sampleDurationHint,
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                   ),
@@ -458,10 +502,10 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                   Expanded(
                     child: TextField(
                       controller: displayNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Game Display Name',
-                        hintText: 'e.g. OmniMix Player',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.displayNameLabel,
+                        hintText: l10n.displayNameHint,
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                   ),
@@ -469,10 +513,10 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                   Expanded(
                     child: TextField(
                       controller: artistController,
-                      decoration: const InputDecoration(
-                        labelText: 'Artist Name',
-                        hintText: 'e.g. ChillPatcher',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.artistNameLabel,
+                        hintText: l10n.artistNameHint,
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                   ),
@@ -480,7 +524,7 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
               ),
               const SizedBox(height: 8),
               SwitchListTile(
-                title: const Text('Enable Anthem.zip Processing'),
+                title: Text(l10n.enableAnthemZip),
                 value: anthemZipEnabled,
                 onChanged: (val) {
                   setState(() {
@@ -493,18 +537,15 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: anthemMode,
-                  decoration: const InputDecoration(
-                    labelText: 'Anthem Mode',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: l10n.anthemModeLabel,
+                    border: const OutlineInputBorder(),
                   ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'full',
-                      child: Text('Full (Keep all original entries)'),
-                    ),
+                  items: [
+                    DropdownMenuItem(value: 'full', child: Text(l10n.modeFull)),
                     DropdownMenuItem(
                       value: 'partial',
-                      child: Text('Partial (Remove empty directories)'),
+                      child: Text(l10n.modePartial),
                     ),
                   ],
                   onChanged: (val) {
@@ -518,19 +559,19 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: logoMode,
-                  decoration: const InputDecoration(
-                    labelText: 'Logo Option',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.image, size: 20),
+                  decoration: InputDecoration(
+                    labelText: l10n.logoOptionLabel,
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.image, size: 20),
                   ),
-                  items: const [
+                  items: [
                     DropdownMenuItem(
                       value: 'copy',
-                      child: Text('Copy default Horizon Pulse logo'),
+                      child: Text(l10n.copyDefaultLogo),
                     ),
                     DropdownMenuItem(
                       value: 'image',
-                      child: Text('Inject custom PNG image'),
+                      child: Text(l10n.injectCustomPng),
                     ),
                   ],
                   onChanged: (val) {
@@ -549,9 +590,9 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                         child: TextField(
                           controller: customPngPathController,
                           readOnly: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Custom PNG Path',
-                            border: OutlineInputBorder(),
+                          decoration: InputDecoration(
+                            labelText: l10n.logoOptionLabel,
+                            border: const OutlineInputBorder(),
                           ),
                         ),
                       ),
@@ -572,16 +613,17 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                           final result = await FilePicker.pickFiles(
                             type: FileType.custom,
                             allowedExtensions: ['png'],
-                            dialogTitle: 'Select Logo PNG',
+                            dialogTitle: l10n.selectLogoPng,
                           );
-                          if (result != null && result.files.single.path != null) {
+                          if (result != null &&
+                              result.files.single.path != null) {
                             setState(() {
                               customPngPathController.text =
                                   result.files.single.path!;
                             });
                           }
                         },
-                        child: const Text('Browse'),
+                        child: Text(l10n.browse),
                       ),
                     ],
                   ),
@@ -594,7 +636,7 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
@@ -623,7 +665,7 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
             widget.onSave(newSettings);
             Navigator.of(context).pop();
           },
-          child: const Text('Save & Apply'),
+          child: Text(l10n.saveAndApply),
         ),
       ],
     );
