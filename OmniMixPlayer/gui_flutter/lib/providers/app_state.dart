@@ -64,6 +64,7 @@ class AppState extends ChangeNotifier {
   // Backend
   bool _backendOnline = false;
   bool _backendRunning = false;
+  bool _isWeb = false; // True when running in browser (WASM/JS)
   int _backendPort = 17890;
   String _backendBind = '127.0.0.1';
   bool _backendBusy = false; // True when restarting
@@ -315,12 +316,16 @@ class AppState extends ChangeNotifier {
   /// Uses same-origin relative URLs so the browser resolves them correctly
   /// whether accessing via localhost or remote IP.
   void initWeb({int? port}) {
+    _isWeb = true;
     _backendMgr = BackendManager();
     api = ApiClient.forWeb();
     ws = WsClient.forWeb();
     _backendPort = port ?? 17890;
     _setupWs();
     _loadUiPrefs();
+    // Start health watcher so we can recover after tab suspend / network loss
+    _backendMgr.onAliveChanged = _onBackendAliveChanged;
+    _backendMgr.startWatching();
     _backendOnline = true;
     _backendRunning = true;
     notifyListeners();
@@ -412,8 +417,12 @@ class AppState extends ChangeNotifier {
     _backendRunning = alive;
 
     if (alive) {
-      // Backend appeared — connect & load
-      _connectAndLoad();
+      // Backend appeared — connect & load (web uses direct, desktop uses discovery)
+      if (_isWeb) {
+        _connectDirectly();
+      } else {
+        _connectAndLoad();
+      }
       _startPlaybackPolling();
     } else {
       // Backend disappeared — clean up
@@ -488,6 +497,7 @@ class AppState extends ChangeNotifier {
       if (connected) {
         await api.connectController();
         await _loadModules();
+        _libraryGeneration++; // Force library reload after reconnect
         await refreshPlayback();
         await refreshBackendArchives();
         if (_activeInstanceId == null) {

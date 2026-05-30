@@ -288,7 +288,9 @@ namespace OmniMixPlayer.Backend.Audio
 
         public void Toggle()
         {
-            if (_playState == 1) Pause(); else Play(null);
+            if (_playState == 1) Pause();
+            else if (_playState == 2) Resume();
+            else Play(null);
         }
 
         public void Next()

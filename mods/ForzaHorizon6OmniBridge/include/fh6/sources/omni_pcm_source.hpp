@@ -132,6 +132,7 @@ private:
     std::deque<Segment> segments_;
     int64_t last_audible_input_ = 0;
     int64_t last_seen_seek_generation_ = 0;
+    int64_t current_stream_id_ = 0;
 
     std::chrono::steady_clock::time_point next_connect_attempt_{};
     std::chrono::steady_clock::time_point next_heartbeat_{};

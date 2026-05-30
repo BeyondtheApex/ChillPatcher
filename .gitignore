@@ -12,8 +12,10 @@ NativePlugins/ForzaHorizon6OmniBridge/bin/
 netease_bridge/*.dll
 netease_bridge/*.h
 
-FH6OmniBridge.zip
-ChillPatcher.zip
+# Flutter assets that are built locally and should not be tracked
+OmniMixPlayer/gui_flutter/assets/FH6OmniBridge.zip
+OmniMixPlayer/gui_flutter/assets/ChillPatcher.zip
+OmniMixPlayer/gui_flutter/assets/version_info.json
 
 .vscode/
 
