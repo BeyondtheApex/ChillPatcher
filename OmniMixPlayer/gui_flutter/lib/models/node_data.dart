@@ -177,13 +177,15 @@ class ModuleLinkEntryResponse {
 class WsEvent {
   final String type;
   final dynamic data;
+  final String? senderId;
 
-  WsEvent({this.type = '', this.data});
+  WsEvent({this.type = '', this.data, this.senderId});
 
   factory WsEvent.fromJson(Map<String, dynamic> json) {
     return WsEvent(
       type: (json['type'] ?? json['event'] ?? '') as String,
       data: json['data'],
+      senderId: json['senderId'] as String?,
     );
   }
 }

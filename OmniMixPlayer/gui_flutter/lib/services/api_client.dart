@@ -1,32 +1,73 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import '../models/node_data.dart';
 import 'unix_socket_client.dart'
     if (dart.library.js_interop) '../stubs/unix_socket_client_web.dart';
+
+class ClientIdClient extends http.BaseClient {
+  final http.Client _inner;
+  final String clientId;
+
+  ClientIdClient(this._inner, this.clientId);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.headers['X-Client-Id'] = clientId;
+    return _inner.send(request);
+  }
+
+  @override
+  void close() {
+    _inner.close();
+  }
+}
 
 /// HTTP REST client that talks to the C# backend.
 /// Supports TCP (primary) and Unix Domain Socket (fallback).
 class ApiClient {
   final String _baseUrl;
   final http.Client _http;
+  final String clientId;
 
   /// The backend base URL, used by image widgets to resolve relative paths.
   String get baseUrl => _baseUrl;
 
-  /// TCP mode.
-  ApiClient({required int port})
-    : _baseUrl = 'http://127.0.0.1:$port',
-      _http = http.Client() {}
+  static String _generateClientId() {
+    final random = math.Random();
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    return List.generate(16, (i) => chars[random.nextInt(chars.length)]).join();
+  }
 
-  /// Unix socket mode.
-  ApiClient.withSocket({required String socketPath})
-    : _baseUrl = 'http://unix',
-      _http = createUnixHttpClient(socketPath) {}
+  ApiClient._internal({
+    int? port,
+    String? socketPath,
+    required bool isSocket,
+    required bool isWeb,
+    required String cid,
+  })  : clientId = cid,
+        _baseUrl = isWeb
+            ? ''
+            : (isSocket ? 'http://unix' : 'http://127.0.0.1:$port'),
+        _http = ClientIdClient(
+          isSocket ? createUnixHttpClient(socketPath!) : http.Client(),
+          cid,
+        );
 
-  /// Web mode: same-origin requests (relative URLs).
-  /// When the Flutter web app is served from the same origin as the backend
-  /// (via ASP.NET UseStaticFiles), all API paths resolve to the correct host.
-  ApiClient.forWeb() : _baseUrl = '', _http = http.Client() {}
+  factory ApiClient({required int port}) {
+    final cid = _generateClientId();
+    return ApiClient._internal(port: port, isSocket: false, isWeb: false, cid: cid);
+  }
+
+  factory ApiClient.withSocket({required String socketPath}) {
+    final cid = _generateClientId();
+    return ApiClient._internal(socketPath: socketPath, isSocket: true, isWeb: false, cid: cid);
+  }
+
+  factory ApiClient.forWeb() {
+    final cid = _generateClientId();
+    return ApiClient._internal(isSocket: false, isWeb: true, cid: cid);
+  }
 
   void dispose() => _http.close();
 
@@ -212,6 +253,34 @@ class ApiClient {
     if (resp.statusCode >= 400) throw Exception('HTTP ${resp.statusCode}');
   }
 
+  Future<Map<String, dynamic>> getInstanceEqualizer(String instanceId) async {
+    final resp = await _http.get(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/equalizer'),
+    );
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<void> updateInstanceEqualizer(
+    String instanceId,
+    Map<String, dynamic> data,
+  ) async {
+    final resp = await _http.put(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/equalizer'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(data),
+    );
+    if (resp.statusCode >= 400) throw Exception('HTTP ${resp.statusCode}');
+  }
+
+  Future<Map<String, dynamic>> getInstanceEqualizerPresets(String instanceId) async {
+    final resp = await _http.get(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/equalizer/presets'),
+    );
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as Map<String, dynamic>;
+  }
+
   Future<void> stopBackend() async {
     await _http.post(Uri.parse('$_baseUrl/api/backend/stop'));
   }
@@ -309,6 +378,14 @@ class ApiClient {
       Uri.parse('$_baseUrl/api/instances/$instanceId/seek'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'position': position}),
+    );
+  }
+
+  Future<void> setVolume(String instanceId, double volume) async {
+    await _http.put(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/volume'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'volume': volume}),
     );
   }
 

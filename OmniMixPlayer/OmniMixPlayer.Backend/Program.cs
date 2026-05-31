@@ -144,6 +144,7 @@ namespace OmniMixPlayer.Backend
             builder.Services.ConfigureHttpJsonOptions(options =>
             {
                 options.SerializerOptions.TypeInfoResolverChain.Insert(0, ApiJsonContext.Default);
+                options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
             });
 
             var app = builder.Build();

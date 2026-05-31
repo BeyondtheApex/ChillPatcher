@@ -30,6 +30,10 @@ class _HomePageState extends State<HomePage> {
   _QueueTab _queueTab = _QueueTab.queue;
   int _lastLibGen = 0; // track library generation for event-driven refresh
   double? _draggingPosition;
+  double? _draggingVolume;
+  Timer? _volumeThrottleTimer;
+  DateTime? _lastVolumeSendTime;
+  double? _pendingVolumeValue;
 
   @override
   void initState() {
@@ -43,6 +47,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     widget.state.removeListener(_onStateChanged);
+    _volumeThrottleTimer?.cancel();
     super.dispose();
   }
 
@@ -58,6 +63,46 @@ class _HomePageState extends State<HomePage> {
       _loadLibrary();
     }
     setState(() {});
+  }
+
+  void _updateVolumeThrottled(double val) {
+    setState(() {
+      _draggingVolume = val;
+    });
+
+    _pendingVolumeValue = val;
+
+    final now = DateTime.now();
+    final elapsed = _lastVolumeSendTime == null
+        ? 1000
+        : now.difference(_lastVolumeSendTime!).inMilliseconds;
+
+    if (elapsed >= 150) {
+      _executeSendVolume();
+    } else {
+      if (_volumeThrottleTimer == null) {
+        _volumeThrottleTimer = Timer(Duration(milliseconds: 150 - elapsed), () {
+          _volumeThrottleTimer = null;
+          _executeSendVolume();
+        });
+      }
+    }
+  }
+
+  void _executeSendVolume() {
+    if (_pendingVolumeValue == null) return;
+    final val = _pendingVolumeValue!;
+    _pendingVolumeValue = null;
+    _lastVolumeSendTime = DateTime.now();
+    widget.state.setVolumeActive(val);
+  }
+
+  void _sendVolume(double val) {
+    _pendingVolumeValue = null;
+    _volumeThrottleTimer?.cancel();
+    _volumeThrottleTimer = null;
+    _lastVolumeSendTime = DateTime.now();
+    widget.state.setVolumeActive(val);
   }
 
   Future<void> _loadLibrary() async {
@@ -312,6 +357,39 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
+          if (canControl) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.volume_up, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Slider(
+                    value: _draggingVolume ?? (instance?.volume ?? 1.0),
+                    min: 0.0,
+                    max: 1.0,
+                    onChanged: (val) {
+                      _updateVolumeThrottled(val);
+                    },
+                    onChangeEnd: (val) {
+                      _volumeThrottleTimer?.cancel();
+                      _sendVolume(val);
+                      setState(() {
+                        _draggingVolume = null;
+                      });
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    "${((_draggingVolume ?? (instance?.volume ?? 1.0)) * 100).round()}%",
+                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (!minimalClientMode) ...[
             const SizedBox(height: 6),
             Text(

@@ -61,8 +61,11 @@ namespace OmniMixPlayer.Backend.Audio
         private readonly IMusicRegistry _musicRegistry;
         private readonly IStreamingService _streamingService;
         private readonly string _configBaseDir;
+        private readonly DbService _dbService;
         private readonly CancellationTokenSource _cleanupCts = new CancellationTokenSource();
         private bool _disposed;
+
+        public DbService DbService => _dbService;
 
         public event Action<string, MusicInfo> OnTrackChanged;
         public event Action<string, PlaybackController> OnStateChanged;
@@ -83,6 +86,7 @@ namespace OmniMixPlayer.Backend.Audio
             _musicRegistry = musicRegistry;
             _streamingService = streamingService;
             _configBaseDir = configBaseDir;
+            _dbService = new DbService(configBaseDir, loggerFactory.CreateLogger("DbService"));
             _ = Task.Run(() => CleanupLoopAsync(_cleanupCts.Token));
         }
 
@@ -133,6 +137,8 @@ namespace OmniMixPlayer.Backend.Audio
                         _eventBus,
                         _musicRegistry,
                         _streamingService,
+                        dbService: _dbService,
+                        instanceId: clientId,
                         configDir: configDir,
                         mode: mode);
                     WireController(clientId, controller);
@@ -234,6 +240,12 @@ namespace OmniMixPlayer.Backend.Audio
                 }
             }
 
+            // Delete from LiteDB
+            if (_dbService.DeleteProfile(id))
+            {
+                deleted = true;
+            }
+
             if (deleted)
             {
                 _logger.LogInformation("Deleted instance {InstanceId} (was {State})", id,
@@ -255,9 +267,9 @@ namespace OmniMixPlayer.Backend.Audio
 
         /// <summary>
         /// Get an instance profile. Works both online (via controller) and offline
-        /// (reads from config/instances/{id}/playback_state.json).
+        /// (reads from LiteDB).
         /// </summary>
-        public object GetProfile(string id)
+        public PlaybackStateData GetProfile(string id)
         {
             id = SanitizeId(id);
             // Online path
@@ -266,46 +278,24 @@ namespace OmniMixPlayer.Backend.Audio
             if (instance != null)
                 return instance.Controller.GetProfile();
 
-            // Offline path: read from file
-            if (string.IsNullOrEmpty(_configBaseDir)) return null;
-            try
-            {
-                var filePath = Path.Combine(_configBaseDir, "instances", id, "playback_state.json");
-                if (!File.Exists(filePath)) return null;
-                var json = File.ReadAllText(filePath);
-                return System.Text.Json.JsonSerializer.Deserialize<object>(json);
-            }
-            catch { return null; }
+            // Offline path: read from database
+            return _dbService.GetProfile(id);
         }
 
         /// <summary>
-        /// Update an instance profile — online via controller, offline via file.
+        /// Update an instance profile — online via controller, offline via database.
         /// </summary>
         public bool UpdateProfile(string id, string json)
         {
             id = SanitizeId(id);
-            // Online path: use the controller
+            // Online path: use the controller (which does its own merge)
             PlaybackInstance instance;
             lock (_lock) { _instances.TryGetValue(id, out instance); }
             if (instance != null)
                 return instance.Controller.UpdateProfile(json);
 
-            // Offline path: write directly to config file
-            if (string.IsNullOrEmpty(_configBaseDir)) return false;
-            try
-            {
-                var dir = Path.Combine(_configBaseDir, "instances", id);
-                Directory.CreateDirectory(dir);
-                var filePath = Path.Combine(dir, "playback_state.json");
-                File.WriteAllText(filePath, json);
-                _logger.LogInformation("Updated offline profile for instance {Id} at {Path}", id, filePath);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to write offline profile for instance {Id}", id);
-                return false;
-            }
+            // Offline path: merge into database
+            return _dbService.UpdateProfileFromJson(id, json);
         }
 
         /// <summary>
@@ -404,74 +394,41 @@ namespace OmniMixPlayer.Backend.Audio
             }
             if (!isBound)
             {
-                var existingProfileDir = Path.Combine(_configBaseDir, "instances", archiveId);
-                isBound = Directory.Exists(existingProfileDir) &&
-                          File.Exists(Path.Combine(existingProfileDir, "playback_state.json"));
+                var profile = _dbService.GetProfile(archiveId);
+                isBound = profile.Queues.Count > 0;
             }
 
-            // Ensure target instance profile directory exists
-            var targetDir = Path.Combine(_configBaseDir, "instances", newInstanceId);
-            Directory.CreateDirectory(targetDir);
-            var targetFile = Path.Combine(targetDir, "playback_state.json");
-
-            if (!isBound)
+            try
             {
-                // Consume: move archive profile to new instance
-                // The archive stores metadata, we need to find the actual profile
-                // Archive JSON contains instanceId pointing to the original profile
-                try
+                var originalProfile = _dbService.GetProfile(archiveId);
+                var newProfile = new PlaybackStateData
                 {
-                    var archiveJson = File.ReadAllText(archivePath);
-                    using var doc = JsonDocument.Parse(archiveJson);
-                    var originalId = archiveId; // The archive ID is the original instance ID
+                    Id = newInstanceId,
+                    ActiveQueueId = originalProfile.ActiveQueueId ?? "default",
+                    Volume = originalProfile.Volume,
+                    Queues = originalProfile.Queues ?? new(),
+                    Equalizer = originalProfile.Equalizer
+                };
+                _dbService.SaveProfile(newProfile);
 
-                    // Try to copy from original instance profile if it still exists
-                    var originalProfile = Path.Combine(_configBaseDir, "instances", originalId, "playback_state.json");
-                    if (File.Exists(originalProfile))
-                    {
-                        File.Copy(originalProfile, targetFile, true);
-                    }
-                    else
-                    {
-                        // No original profile — create empty default
-                        var defaultProfile = "{\"ActiveQueueId\":\"default\",\"Volume\":1.0,\"Queues\":[{\"Id\":\"default\",\"Name\":\"Default\",\"PlaylistSources\":[],\"SongUuids\":[],\"HistoryUuids\":[],\"Index\":-1,\"HistoryPosition\":-1,\"PlaylistPosition\":0,\"Shuffle\":false,\"RepeatMode\":\"none\"}]}";
-                        File.WriteAllText(targetFile, defaultProfile);
-                    }
-
-                    // Delete the archive since it's consumed
+                if (!isBound)
+                {
+                    // Consume: delete original database record and archive JSON
+                    _dbService.DeleteProfile(archiveId);
                     File.Delete(archivePath);
                     _logger.LogInformation("Consumed archive {ArchiveId} → new instance {NewId}", archiveId, newInstanceId);
                     return "consumed";
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogWarning(ex, "Failed to consume archive {ArchiveId}", archiveId);
-                    return "error";
-                }
-            }
-            else
-            {
-                // Copy: archive is bound, just copy the profile
-                try
-                {
-                    var originalProfile = Path.Combine(_configBaseDir, "instances", archiveId, "playback_state.json");
-                    if (File.Exists(originalProfile))
-                    {
-                        File.Copy(originalProfile, targetFile, true);
-                    }
-                    else
-                    {
-                        var defaultProfile = "{\"ActiveQueueId\":\"default\",\"Volume\":1.0,\"Queues\":[{\"Id\":\"default\",\"Name\":\"Default\",\"PlaylistSources\":[],\"SongUuids\":[],\"HistoryUuids\":[],\"Index\":-1,\"HistoryPosition\":-1,\"PlaylistPosition\":0,\"Shuffle\":false,\"RepeatMode\":\"none\"}]}";
-                        File.WriteAllText(targetFile, defaultProfile);
-                    }
                     _logger.LogInformation("Copied archive {ArchiveId} profile → new instance {NewId}", archiveId, newInstanceId);
                     return "copied";
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to copy archive {ArchiveId}", archiveId);
-                    return "error";
-                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to inherit from archive {ArchiveId}", archiveId);
+                return "error";
             }
         }
 
@@ -497,9 +454,8 @@ namespace OmniMixPlayer.Backend.Audio
         public bool ArchiveInstance(string id, string label = "", string modId = "", string mode = "")
         {
             if (string.IsNullOrEmpty(_configBaseDir)) return false;
-            var profileDir = Path.Combine(_configBaseDir, "instances", id);
-            var profileFile = Path.Combine(profileDir, "playback_state.json");
-            if (!File.Exists(profileFile)) return false;
+            var profile = _dbService.GetProfile(id);
+            if (profile.Queues.Count == 0 && profile.Equalizer == null) return false;
             try
             {
                 var archiveDir = ArchiveDir;
@@ -602,64 +558,48 @@ namespace OmniMixPlayer.Backend.Audio
                 }
             }
 
-            // Offline instances: scan config directory for profile files
-            if (!string.IsNullOrEmpty(_configBaseDir))
+            // Offline instances: read from LiteDB
+            foreach (var profile in _dbService.GetAllProfiles())
             {
-                var instancesDir = Path.Combine(_configBaseDir, "instances");
-                if (Directory.Exists(instancesDir))
+                var id = profile.Id;
+                if (seenIds.Contains(id)) continue;
+
+                var (modId, gameName) = GetInstanceMeta(id);
+
+                int queueCount = 0;
+                if (profile.Queues != null)
                 {
-                    foreach (var dir in Directory.GetDirectories(instancesDir))
+                    foreach (var q in profile.Queues)
                     {
-                        var id = Path.GetFileName(dir);
-                        if (seenIds.Contains(id)) continue;
-                        var profileFile = Path.Combine(dir, "playback_state.json");
-                        if (!File.Exists(profileFile)) continue;
-
-                        var (modId, gameName) = GetInstanceMeta(id);
-
-                        int queueCount = 0;
-                        try
-                        {
-                            var json = File.ReadAllText(profileFile);
-                            using var doc = JsonDocument.Parse(json);
-                            var root = doc.RootElement;
-                            if (root.TryGetProperty("Queues", out var queues) && queues.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var q in queues.EnumerateArray())
-                                {
-                                    if (q.TryGetProperty("SongUuids", out var su) && su.ValueKind == JsonValueKind.Array)
-                                        queueCount += su.GetArrayLength();
-                                }
-                            }
-                        }
-                        catch { }
-
-                        var savedMode = ReadInstanceMode(id);
-
-                        result.Add(new
-                        {
-                            id,
-                            clientId = id,
-                            role = "audio",
-                            mode = savedMode,
-                            attached = false,
-                            isPlaying = false,
-                            position = 0.0,
-                            volume = 1.0,
-                            queueCount,
-                            queueIndex = 0,
-                            historyCount = 0,
-                            sampleRate = 0,
-                            channels = 0,
-                            shuffle = false,
-                            repeatMode = "none",
-                            currentTrack = (object)null,
-                            sharedMemoryName = (string)null,
-                            modId,
-                            gameName
-                        });
+                        if (q.SongUuids != null)
+                            queueCount += q.SongUuids.Count;
                     }
                 }
+
+                var savedMode = ReadInstanceMode(id);
+
+                result.Add(new
+                {
+                    id,
+                    clientId = id,
+                    role = "audio",
+                    mode = savedMode,
+                    attached = false,
+                    isPlaying = false,
+                    position = 0.0,
+                    volume = profile.Volume,
+                    queueCount,
+                    queueIndex = 0,
+                    historyCount = 0,
+                    sampleRate = 0,
+                    channels = 0,
+                    shuffle = false,
+                    repeatMode = "none",
+                    currentTrack = (object)null,
+                    sharedMemoryName = (string)null,
+                    modId,
+                    gameName
+                });
             }
 
             return result;
@@ -902,6 +842,7 @@ namespace OmniMixPlayer.Backend.Audio
                 _instances.Clear();
                 _clients.Clear();
             }
+            _dbService?.Dispose();
             foreach (var instance in instances)
                 instance.Dispose();
         }

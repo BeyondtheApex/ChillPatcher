@@ -34,24 +34,21 @@ class ModDeploymentService {
 
   /// Verifies if the selected folder is a valid game directory based on signature files.
   static bool verifyGameDirectory(String path, GameDeclaration game) {
-    if (path.isEmpty) return false;
-    final dir = Directory(path);
-    if (!dir.existsSync()) return false;
+    try {
+      if (path.isEmpty) return false;
+      final dir = Directory(path);
+      if (!dir.existsSync()) return false;
 
-    for (final sigFile in game.signatureFiles) {
-      final fullPath = '$path/$sigFile';
-      if (!FileSystemEntity.identicalSync(fullPath, fullPath)) {
-        // Fallback check
-        if (!File(fullPath).existsSync() && !Directory(fullPath).existsSync()) {
-          return false;
-        }
-      } else {
+      for (final sigFile in game.signatureFiles) {
+        final fullPath = '$path/$sigFile';
         if (!File(fullPath).existsSync() && !Directory(fullPath).existsSync()) {
           return false;
         }
       }
+      return true;
+    } catch (_) {
+      return false;
     }
-    return true;
   }
 
   /// Check BepInEx status in the game directory.

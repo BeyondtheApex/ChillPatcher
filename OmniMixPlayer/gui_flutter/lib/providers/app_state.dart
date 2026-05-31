@@ -172,7 +172,7 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> _buildProfileJson() {
     return {
       'ActiveQueueId': 'default',
-      'Volume': 1.0,
+      'Volume': activeInstance?.volume ?? 1.0,
       'Queues': [
         {
           'Id': 'default',
@@ -185,8 +185,8 @@ class AppState extends ChangeNotifier {
           'Index': -1,
           'HistoryPosition': -1,
           'PlaylistPosition': 0,
-          'Shuffle': false,
-          'RepeatMode': 'none',
+          'Shuffle': activeInstance?.shuffle ?? false,
+          'RepeatMode': activeInstance?.repeatMode ?? 'none',
         },
       ],
     };
@@ -233,6 +233,10 @@ class AppState extends ChangeNotifier {
   // Library version — incremented when tags/albums/songs change, pages watch this to reload
   int _libraryGeneration = 0;
   int get libraryGeneration => _libraryGeneration;
+
+  // Equalizer version — incremented on equalizer.changed WS events, EQ page watches this
+  int _equalizerGeneration = 0;
+  int get equalizerGeneration => _equalizerGeneration;
 
   // Getters
   String get apiBaseUrl => api.baseUrl;
@@ -553,6 +557,11 @@ class AppState extends ChangeNotifier {
 
   void _setupWs() {
     ws.onEvent = (event) {
+      if (event.senderId != null && event.senderId == api.clientId) {
+        // Skip events triggered by ourselves to prevent layout rebuilding
+        // and preserve ongoing user interaction (like dragging the equalizer).
+        return;
+      }
       if (event.type == 'backend.state.changed') {
         final data = event.data is Map<String, dynamic>
             ? event.data as Map<String, dynamic>
@@ -577,6 +586,9 @@ class AppState extends ChangeNotifier {
           event.type == 'exclude.changed') {
         refreshPlayback();
         refreshBackendArchives(); // archives may change when instances are deleted
+      } else if (event.type == 'equalizer.changed') {
+        _equalizerGeneration++;
+        notifyListeners();
       } else if (event.type == 'playlist.updated') {
         refreshPlayback();
         _libraryGeneration++;
@@ -1122,6 +1134,13 @@ class AppState extends ChangeNotifier {
     final instance = activeInstance;
     if (instance == null || !instance.isServerManaged) return;
     await api.seek(instance.id, position);
+    await refreshPlayback();
+  }
+
+  Future<void> setVolumeActive(double volume) async {
+    final instance = activeInstance;
+    if (instance == null || !instance.isServerManaged) return;
+    await api.setVolume(instance.id, volume);
     await refreshPlayback();
   }
 

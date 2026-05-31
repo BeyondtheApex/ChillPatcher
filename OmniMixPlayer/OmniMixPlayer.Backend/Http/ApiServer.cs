@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -124,7 +124,34 @@ namespace OmniMixPlayer.Backend.Http
             endpoints.MapPost("/api/instances/{id}/next", (string id) => WithInstance(id, p => p.Next()));
             endpoints.MapPost("/api/instances/{id}/prev", (string id) => WithInstance(id, p => p.Prev()));
             endpoints.MapPost("/api/instances/{id}/seek", (string id, SeekRequest req) => WithInstance(id, p => p.Seek(req.position)));
-            endpoints.MapPut("/api/instances/{id}/volume", (string id, VolumeRequest req) => WithInstance(id, p => p.SetVolume(req.volume)));
+            endpoints.MapGet("/api/instances/{id}/volume", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                if (instance != null)
+                {
+                    return Results.Json(new { volume = instance.Controller.Volume });
+                }
+                var profile = _instances.GetProfile(id);
+                if (profile != null)
+                {
+                    return Results.Json(new { volume = profile.Volume });
+                }
+                return Results.Json(new { volume = 1.0f });
+            });
+            endpoints.MapPut("/api/instances/{id}/volume", (string id, VolumeRequest req, HttpContext ctx) =>
+            {
+                var instance = _instances.Get(id);
+                if (instance != null)
+                {
+                    instance.Controller.SetVolume(req.volume);
+                    _ = BroadcastEvent("instances.changed", _instances.ListInstanceDtos(), GetClientId(ctx));
+                    return Results.Ok(new { saved = true });
+                }
+
+                _instances.DbService.SaveVolume(id, req.volume);
+                _ = BroadcastEvent("instances.changed", _instances.ListInstanceDtos(), GetClientId(ctx));
+                return Results.Ok(new { saved = true });
+            });
             endpoints.MapPost("/api/instances/{id}/shuffle", (string id, ShuffleRequest req) => WithInstance(id, p => p.SetShuffle(req.enabled)));
             endpoints.MapPost("/api/instances/{id}/repeat", (string id, RepeatRequest req) =>
             {
@@ -368,7 +395,7 @@ namespace OmniMixPlayer.Backend.Http
                     using var reader = new StreamReader(ctx.Request.Body);
                     var json = await reader.ReadToEndAsync();
                     var ok = _instances.UpdateProfile(id, json);
-                    if (ok) _ = BroadcastEvent("profile.changed", new { instanceId = id });
+                    if (ok) _ = BroadcastEvent("profile.changed", new { instanceId = id }, GetClientId(ctx));
                     return ok ? Results.Ok() : Results.Problem("Failed to persist", statusCode: 500);
                 }
                 catch (Exception ex) { return Results.BadRequest(new { error = ex.Message }); }
@@ -434,6 +461,101 @@ namespace OmniMixPlayer.Backend.Http
                 return ok ? Results.Ok(new { saved = true }) : Results.Problem("Failed to save metadata", statusCode: 500);
             });
 
+            // ── Instance Equalizer Endpoints ──
+            endpoints.MapGet("/api/instances/{id}/equalizer", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                if (instance != null)
+                {
+                    return Results.Json(instance.Controller.Equalizer.CurrentState);
+                }
+                var profile = _instances.GetProfile(id);
+                if (profile != null && profile.Equalizer != null)
+                {
+                    return Results.Json(profile.Equalizer);
+                }
+                return Results.Json(new EqualizerState());
+            });
+
+            endpoints.MapPut("/api/instances/{id}/equalizer", async (string id, HttpContext ctx) =>
+            {
+                try
+                {
+                    using var reader = new StreamReader(ctx.Request.Body);
+                    var json = await reader.ReadToEndAsync();
+                    var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                    options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+                    var newState = System.Text.Json.JsonSerializer.Deserialize<EqualizerState>(json, options);
+                    if (newState == null) return Results.BadRequest(new { error = "Invalid JSON" });
+
+                    var instance = _instances.Get(id);
+                    if (instance != null)
+                    {
+                        instance.Controller.UpdateEqualizer(newState);
+                        _ = BroadcastEvent("equalizer.changed", new { instanceId = id }, GetClientId(ctx));
+                        return Results.Ok(new { saved = true });
+                    }
+
+                    _instances.DbService.SaveEqualizer(id, newState);
+                    _ = BroadcastEvent("equalizer.changed", new { instanceId = id }, GetClientId(ctx));
+                    return Results.Ok(new { saved = true });
+                }
+                catch (Exception ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
+            });
+
+            endpoints.MapGet("/api/instances/{id}/equalizer/presets", () =>
+            {
+                var presets = new Dictionary<string, object>
+                {
+                    ["Flat"] = new EqualizerState { Enabled = true, GlobalGainDb = 0f, Points = new List<EqualizerPoint>() },
+                    ["Bass Boost"] = new EqualizerState
+                    {
+                        Enabled = true,
+                        GlobalGainDb = -2f,
+                        Points = new List<EqualizerPoint>
+                        {
+                            new EqualizerPoint { Id = "p_bass_1", Frequency = 80f, GainDb = 5.0f, Q = 0.8f, Type = EqualizerFilterType.LowShelf },
+                            new EqualizerPoint { Id = "p_bass_2", Frequency = 250f, GainDb = 2.0f, Q = 1.0f, Type = EqualizerFilterType.Peaking }
+                        }
+                    },
+                    ["Vocal Boost"] = new EqualizerState
+                    {
+                        Enabled = true,
+                        GlobalGainDb = -1.5f,
+                        Points = new List<EqualizerPoint>
+                        {
+                            new EqualizerPoint { Id = "p_voc_1", Frequency = 1000f, GainDb = 3.0f, Q = 1.0f, Type = EqualizerFilterType.Peaking },
+                            new EqualizerPoint { Id = "p_voc_2", Frequency = 3000f, GainDb = 4.0f, Q = 1.2f, Type = EqualizerFilterType.Peaking }
+                        }
+                    },
+                    ["Treble Boost"] = new EqualizerState
+                    {
+                        Enabled = true,
+                        GlobalGainDb = -2f,
+                        Points = new List<EqualizerPoint>
+                        {
+                            new EqualizerPoint { Id = "p_treb_1", Frequency = 8000f, GainDb = 5.0f, Q = 0.707f, Type = EqualizerFilterType.HighShelf }
+                        }
+                    },
+                    ["Classical"] = new EqualizerState
+                    {
+                        Enabled = true,
+                        GlobalGainDb = -2.5f,
+                        Points = new List<EqualizerPoint>
+                        {
+                            new EqualizerPoint { Id = "p_class_1", Frequency = 80f, GainDb = 4.0f, Q = 0.707f, Type = EqualizerFilterType.LowShelf },
+                            new EqualizerPoint { Id = "p_class_2", Frequency = 250f, GainDb = 2.0f, Q = 1.0f, Type = EqualizerFilterType.Peaking },
+                            new EqualizerPoint { Id = "p_class_3", Frequency = 4000f, GainDb = 2.0f, Q = 1.0f, Type = EqualizerFilterType.Peaking },
+                            new EqualizerPoint { Id = "p_class_4", Frequency = 12000f, GainDb = 4.0f, Q = 0.707f, Type = EqualizerFilterType.HighShelf }
+                        }
+                    }
+                };
+                return Results.Json(presets);
+            });
+
             // Instance profile (persisted per-instance config for offline management)
             endpoints.MapGet("/api/instances/{id}/profile", (string id) =>
             {
@@ -447,7 +569,7 @@ namespace OmniMixPlayer.Backend.Http
                     using var reader = new StreamReader(ctx.Request.Body);
                     var json = await reader.ReadToEndAsync();
                     var ok = _instances.UpdateProfile(id, json);
-                    if (ok) _ = BroadcastEvent("profile.changed", new { instanceId = id });
+                    if (ok) _ = BroadcastEvent("profile.changed", new { instanceId = id }, GetClientId(ctx));
                     return ok ? Results.Ok() : Results.Problem("Failed to persist profile", statusCode: 500);
                 }
                 catch (Exception ex)
@@ -700,43 +822,25 @@ namespace OmniMixPlayer.Backend.Http
         {
             try
             {
-                var profile = _instances.GetProfile(instanceId) as JsonElement?;
-                if (profile == null) return null;
-
-                var json = profile.Value;
-                if (!json.TryGetProperty("Queues", out var queues) || queues.ValueKind != JsonValueKind.Array)
-                    return null;
+                var profile = _instances.GetProfile(instanceId);
+                if (profile == null || profile.Queues == null) return null;
 
                 // Find active queue
-                var activeQueueId = "default";
-                if (json.TryGetProperty("ActiveQueueId", out var aqId))
-                    activeQueueId = aqId.GetString() ?? "default";
-
-                JsonElement activeQueue = default;
-                bool found = false;
-                foreach (var q in queues.EnumerateArray())
-                {
-                    if (q.TryGetProperty("Id", out var qid) && qid.GetString() == activeQueueId)
-                    {
-                        activeQueue = q;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found && queues.GetArrayLength() > 0)
-                    activeQueue = queues[0];
-                if (!found && queues.GetArrayLength() == 0)
+                var activeQueueId = profile.ActiveQueueId ?? "default";
+                var activeQueue = profile.Queues.FirstOrDefault(q => q.Id == activeQueueId);
+                if (activeQueue == null && profile.Queues.Count > 0)
+                    activeQueue = profile.Queues[0];
+                if (activeQueue == null)
                     return new OfflineProfileData();
 
                 var result = new OfflineProfileData();
 
                 // Parse SongUuids (queue)
-                if (activeQueue.TryGetProperty("SongUuids", out var songUuids) && songUuids.ValueKind == JsonValueKind.Array)
+                if (activeQueue.SongUuids != null)
                 {
                     int index = 0;
-                    foreach (var u in songUuids.EnumerateArray())
+                    foreach (var uuid in activeQueue.SongUuids)
                     {
-                        var uuid = u.GetString();
                         if (string.IsNullOrEmpty(uuid)) continue;
                         var m = _musicRegistry.GetMusic(uuid);
                         result.Queue.Add(new
@@ -753,12 +857,11 @@ namespace OmniMixPlayer.Backend.Http
                 }
 
                 // Parse HistoryUuids
-                if (activeQueue.TryGetProperty("HistoryUuids", out var historyUuids) && historyUuids.ValueKind == JsonValueKind.Array)
+                if (activeQueue.HistoryUuids != null)
                 {
                     int index = 0;
-                    foreach (var u in historyUuids.EnumerateArray())
+                    foreach (var uuid in activeQueue.HistoryUuids)
                     {
-                        var uuid = u.GetString();
                         if (string.IsNullOrEmpty(uuid)) continue;
                         var m = _musicRegistry.GetMusic(uuid);
                         result.History.Add(new
@@ -775,20 +878,19 @@ namespace OmniMixPlayer.Backend.Http
                 }
 
                 // Parse PlaylistSources
-                if (activeQueue.TryGetProperty("PlaylistSources", out var sources) && sources.ValueKind == JsonValueKind.Array)
+                if (activeQueue.PlaylistSources != null)
                 {
-                    foreach (var s in sources.EnumerateArray())
+                    foreach (var s in activeQueue.PlaylistSources)
                     {
-                        var sid = s.TryGetProperty("Id", out var sidEl) ? sidEl.GetString() ?? "" : "";
-                        var sname = s.TryGetProperty("Name", out var snameEl) ? snameEl.GetString() ?? "" : "";
+                        var sid = s.Id ?? "";
+                        var sname = s.Name ?? "";
                         var songCount = 0;
-                        if (s.TryGetProperty("SongUuids", out var suuids) && suuids.ValueKind == JsonValueKind.Array)
+                        if (s.SongUuids != null)
                         {
-                            songCount = suuids.GetArrayLength();
+                            songCount = s.SongUuids.Count;
                             // Build playlist from all sources
-                            foreach (var u in suuids.EnumerateArray())
+                            foreach (var uuid in s.SongUuids)
                             {
-                                var uuid = u.GetString();
                                 if (string.IsNullOrEmpty(uuid)) continue;
                                 var m = _musicRegistry.GetMusic(uuid);
                                 result.Playlist.Add(new
@@ -962,9 +1064,19 @@ namespace OmniMixPlayer.Backend.Http
             }
         }
 
-        public async Task BroadcastEvent(string eventType, object data)
+        private static string? GetClientId(HttpContext? ctx)
         {
-            var msg = JsonSerializer.Serialize(new { type = eventType, @event = eventType, data, timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
+            if (ctx == null) return null;
+            if (ctx.Request.Headers.TryGetValue("X-Client-Id", out var values))
+            {
+                return values.FirstOrDefault();
+            }
+            return null;
+        }
+
+        public async Task BroadcastEvent(string eventType, object data, string? senderId = null)
+        {
+            var msg = JsonSerializer.Serialize(new { type = eventType, @event = eventType, data, senderId, timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
             var bytes = Encoding.UTF8.GetBytes(msg);
             var segment = new ArraySegment<byte>(bytes);
 

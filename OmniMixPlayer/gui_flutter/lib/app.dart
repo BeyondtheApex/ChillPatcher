@@ -10,6 +10,7 @@ import '../pages/settings_page.dart';
 import '../pages/modules_page.dart';
 import '../pages/about_page.dart';
 import '../pages/game_integration_page.dart';
+import '../pages/equalizer_page.dart';
 import '../widgets/launchpad_grid.dart';
 import '../widgets/proxy_node.dart';
 
@@ -225,6 +226,10 @@ class _MainContentState extends State<_MainContent> {
                     icon: const Icon(Icons.sports_esports),
                     label: Text(l10n.gameIntegration),
                   ),
+                const NavigationRailDestination(
+                  icon: Icon(Icons.graphic_eq),
+                  label: Text('均衡器'),
+                ),
                 NavigationRailDestination(
                   icon: const Icon(Icons.settings),
                   label: Text(l10n.settings),
@@ -277,6 +282,10 @@ class _MainContentState extends State<_MainContent> {
               icon: Icon(Icons.sports_esports),
               label: ' ',
             ),
+          const NavigationDestination(
+            icon: Icon(Icons.graphic_eq),
+            label: ' ',
+          ),
           const NavigationDestination(icon: Icon(Icons.settings), label: ' '),
         ],
       ),
@@ -341,8 +350,8 @@ class _MainContentState extends State<_MainContent> {
 
   Widget _buildTabContent(AppState st) {
     final tab = st.currentTab;
-    // On web, tabs 0-3 are the same, tab 4 is Settings (game integration skipped)
-    // On desktop, tabs 0-3 same, 4=game integration, 5=settings
+    // On web, tabs 0-3 are the same, tab 4 is Equalizer, tab 5 is Settings (game integration skipped)
+    // On desktop, tabs 0-3 same, 4=game integration, 5=Equalizer, 6=settings
     if (kIsWeb) {
       switch (tab) {
         case 0:
@@ -366,6 +375,8 @@ class _MainContentState extends State<_MainContent> {
         case 3:
           return ModulesPage(state: st);
         case 4:
+          return EqualizerPage(state: st);
+        case 5:
           return SettingsPage(state: st);
         default:
           return HomePage(state: st);
@@ -395,6 +406,8 @@ class _MainContentState extends State<_MainContent> {
       case 4:
         return GameIntegrationPage(state: st);
       case 5:
+        return EqualizerPage(state: st);
+      case 6:
         return SettingsPage(state: st);
       default:
         return HomePage(state: st);
