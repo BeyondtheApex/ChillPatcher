@@ -26,6 +26,7 @@ namespace OmniMixPlayer.Backend.Http;
 [JsonSerializable(typeof(ModuleToggleRequest))]
 [JsonSerializable(typeof(ArchiveRenameRequest))]
 [JsonSerializable(typeof(InstanceMetaRequest))]
+[JsonSerializable(typeof(LatencyRequest))]
 internal partial class ApiJsonContext : JsonSerializerContext
 {
 }

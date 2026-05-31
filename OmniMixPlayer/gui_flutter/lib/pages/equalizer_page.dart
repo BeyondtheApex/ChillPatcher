@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
 
 class EqualizerPoint {
@@ -345,11 +346,12 @@ class _EqualizerPageState extends State<EqualizerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final instId = widget.state.activeInstanceId;
 
     if (instId == null) {
-      return const Center(child: Text("没有选中的音频实例"));
+      return Center(child: Text(l10n.noSelectedInstance));
     }
 
     if (_eqState == null || _notifier == null) {
@@ -364,7 +366,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
           Row(
             children: [
               Text(
-                "均衡器控制",
+                l10n.equalizerControl,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -384,14 +386,14 @@ class _EqualizerPageState extends State<EqualizerPage> {
               ),
               const SizedBox(width: 8),
               Text(
-                _eqState!.enabled ? "已启用" : "已禁用",
+                _eqState!.enabled ? l10n.enabled : l10n.disabled,
                 style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
               ),
               const SizedBox(width: 24),
               // Preset Dropdown
               if (_presets.isNotEmpty)
                 DropdownButton<String>(
-                  hint: const Text("选择预设", style: TextStyle(fontSize: 13)),
+                  hint: Text(l10n.selectPreset, style: const TextStyle(fontSize: 13)),
                   style: TextStyle(color: cs.onSurface, fontSize: 13),
                   items: _presets.keys.map((name) {
                     return DropdownMenuItem<String>(
@@ -406,7 +408,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
               const SizedBox(width: 12),
               OutlinedButton.icon(
                 icon: const Icon(Icons.refresh, size: 16),
-                label: const Text("重置", style: TextStyle(fontSize: 12)),
+                label: Text(l10n.reset, style: const TextStyle(fontSize: 12)),
                 onPressed: () {
                   setState(() {
                     _eqState!.points.clear();
@@ -540,9 +542,9 @@ class _EqualizerPageState extends State<EqualizerPage> {
                         children: [
                           const Icon(Icons.volume_up, size: 20),
                           const SizedBox(width: 8),
-                          const Text(
-                            "整体增益 (Preamp):",
-                            style: TextStyle(fontSize: 13),
+                          Text(
+                            l10n.globalGainPreamp,
+                            style: const TextStyle(fontSize: 13),
                           ),
                           Expanded(
                             child: Slider(
@@ -578,9 +580,9 @@ class _EqualizerPageState extends State<EqualizerPage> {
                             },
                           ),
                           const SizedBox(width: 6),
-                          const Text(
-                            "防爆音(软剪切)",
-                            style: TextStyle(fontSize: 12),
+                          Text(
+                            l10n.softClip,
+                            style: const TextStyle(fontSize: 12),
                           ),
                         ],
                       ),
@@ -589,8 +591,8 @@ class _EqualizerPageState extends State<EqualizerPage> {
                         children: [
                           Text(
                             selectedPt != null
-                                ? "控制点设置 (${selectedPt.frequency.round()} Hz)"
-                                : "控制点设置 (未选择)",
+                                ? l10n.controlPointSettingsActive(selectedPt.frequency.round())
+                                : l10n.controlPointSettingsNone,
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
@@ -610,7 +612,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                                   : cs.onSurface.withOpacity(0.3),
                             ),
                             label: Text(
-                              "删除",
+                              l10n.delete,
                               style: TextStyle(
                                 color: selectedPt != null
                                     ? Colors.red
@@ -629,7 +631,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                         children: [
                           // Filter Type
                           Text(
-                            "类型: ",
+                            l10n.typeLabel,
                             style: TextStyle(
                               fontSize: 12,
                               color: selectedPt != null
@@ -647,26 +649,26 @@ class _EqualizerPageState extends State<EqualizerPage> {
                               fontSize: 12,
                             ),
                             underline: const SizedBox(),
-                            items: const [
+                            items: [
                               DropdownMenuItem(
                                 value: 'Peaking',
-                                child: Text('钟形 (Bell)'),
+                                child: Text(l10n.filterTypeBell),
                               ),
                               DropdownMenuItem(
                                 value: 'LowShelf',
-                                child: Text('低架 (Low Shelf)'),
+                                child: Text(l10n.filterTypeLowShelf),
                               ),
                               DropdownMenuItem(
                                 value: 'HighShelf',
-                                child: Text('高架 (High Shelf)'),
+                                child: Text(l10n.filterTypeHighShelf),
                               ),
                               DropdownMenuItem(
                                 value: 'LowPass',
-                                child: Text('低通 (Low Pass)'),
+                                child: Text(l10n.filterTypeLowPass),
                               ),
                               DropdownMenuItem(
                                 value: 'HighPass',
-                                child: Text('高通 (High Pass)'),
+                                child: Text(l10n.filterTypeHighPass),
                               ),
                             ],
                             onChanged: selectedPt != null
@@ -685,7 +687,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                           const SizedBox(width: 24),
                           // Q factor slider
                           Text(
-                            "带宽 (Q值): ",
+                            l10n.qFactorLabel,
                             style: TextStyle(
                               fontSize: 12,
                               color: selectedPt != null
@@ -714,10 +716,10 @@ class _EqualizerPageState extends State<EqualizerPage> {
                             child: Text(
                               "Q: ${(selectedPt?.q ?? 1.0).toStringAsFixed(2)}",
                               style: TextStyle(
-                                fontSize: 12,
-                                color: selectedPt != null
-                                    ? cs.onSurface
-                                    : cs.onSurface.withOpacity(0.4),
+                                  fontSize: 12,
+                                  color: selectedPt != null
+                                      ? cs.onSurface
+                                      : cs.onSurface.withOpacity(0.4),
                               ),
                             ),
                           ),
@@ -730,10 +732,10 @@ class _EqualizerPageState extends State<EqualizerPage> {
             },
           ),
           const SizedBox(height: 8),
-          const Center(
+          Center(
             child: Text(
-              "提示: 在画布上双击可新建控制点，单选控制点可以拖动调节频率与增益",
-              style: TextStyle(fontSize: 11, color: Colors.grey),
+              l10n.equalizerTip,
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ),
         ],

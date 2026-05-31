@@ -393,6 +393,7 @@ class PlaybackInstanceInfo {
   final bool isPlaying;
   final double position;
   final double volume;
+  final double targetLatency;
   final int queueCount;
   final int queueIndex;
   final int historyCount;
@@ -413,6 +414,7 @@ class PlaybackInstanceInfo {
     this.isPlaying = false,
     this.position = 0.0,
     this.volume = 1.0,
+    this.targetLatency = 0.1,
     this.queueCount = 0,
     this.queueIndex = -1,
     this.historyCount = 0,
@@ -435,6 +437,7 @@ class PlaybackInstanceInfo {
       isPlaying: json['isPlaying'] ?? false,
       position: (json['position'] ?? 0.0).toDouble(),
       volume: (json['volume'] ?? 1.0).toDouble(),
+      targetLatency: (json['targetLatency'] ?? 0.1).toDouble(),
       queueCount: json['queueCount'] ?? 0,
       queueIndex: json['queueIndex'] ?? -1,
       historyCount: json['historyCount'] ?? 0,
@@ -492,16 +495,6 @@ class PlaylistSourceInfo {
     this.songCount = 0,
     this.uuids = const [],
   });
-
-  factory PlaylistSourceInfo.fromJson(Map<String, dynamic> json) {
-    return PlaylistSourceInfo(
-      id: json['id'] ?? json['Id'] ?? '',
-      name: json['name'] ?? json['Name'] ?? '',
-      songCount: json['songCount'] ?? json['SongCount'] ?? 0,
-      uuids:
-          (json['uuids'] ?? json['SongUuids'] as List?)?.cast<String>() ?? [],
-    );
-  }
 }
 
 /// Full playlist response from GET /api/playlist

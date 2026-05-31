@@ -120,7 +120,7 @@
   "playPause": "播放/暂停",
   "repeatOne": "单曲循环",
   "serverControlMode": "服务端控制模式",
-  "clientModeControlsDisabled": "客户端模式：控制已禁用",
+  "clientModeControlsDisabled": "客户端模式：播放控制由客户端管理",
   "queue": "队列",
   "history": "历史",
   "empty": "空",
@@ -341,5 +341,33 @@
   "injectCustomPng": "注入自定义 PNG 图片",
   "selectLogoPng": "选择 Logo PNG",
   "browse": "浏览",
-  "saveAndApply": "保存并应用"
+  "saveAndApply": "保存并应用",
+
+  "equalizer": "均衡器",
+  "noSelectedInstance": "没有选中的音频实例",
+  "equalizerControl": "均衡器控制",
+  "enabled": "已启用",
+  "disabled": "已禁用",
+  "selectPreset": "选择预设",
+  "reset": "重置",
+  "globalGainPreamp": "整体增益 (Preamp):",
+  "softClip": "防爆音(软剪切)",
+  "controlPointSettingsActive": "控制点设置 ({frequency} Hz)",
+  "@controlPointSettingsActive": {
+    "description": "Active control point settings with frequency",
+    "placeholders": {
+      "frequency": { "type": "int" }
+    }
+  },
+  "controlPointSettingsNone": "控制点设置 (未选择)",
+  "typeLabel": "类型: ",
+  "filterTypeBell": "钟形 (Bell)",
+  "filterTypeLowShelf": "低架 (Low Shelf)",
+  "filterTypeHighShelf": "高架 (High Shelf)",
+  "filterTypeLowPass": "低通 (Low Pass)",
+  "filterTypeHighPass": "高通 (High Pass)",
+  "qFactorLabel": "带宽 (Q值): ",
+  "equalizerTip": "提示: 在画布上双击可新建控制点，单选控制点可以拖动调节频率与增益",
+  "audioBufferLatencyTip": "物理缓冲区限流延迟（越小响应越快，默认0.05秒）"
 }
+

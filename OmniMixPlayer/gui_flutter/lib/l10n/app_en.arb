@@ -120,7 +120,7 @@
   "playPause": "Play/Pause",
   "repeatOne": "Repeat One",
   "serverControlMode": "Server control mode",
-  "clientModeControlsDisabled": "Client mode: controls disabled",
+  "clientModeControlsDisabled": "Client mode: playback controlled by client",
   "queue": "Queue",
   "history": "History",
   "empty": "Empty",
@@ -341,5 +341,33 @@
   "injectCustomPng": "Inject custom PNG image",
   "selectLogoPng": "Select Logo PNG",
   "browse": "Browse",
-  "saveAndApply": "Save & Apply"
+  "saveAndApply": "Save & Apply",
+
+  "equalizer": "Equalizer",
+  "noSelectedInstance": "No audio instance selected",
+  "equalizerControl": "Equalizer Control",
+  "enabled": "Enabled",
+  "disabled": "Disabled",
+  "selectPreset": "Select Preset",
+  "reset": "Reset",
+  "globalGainPreamp": "Global Gain (Preamp):",
+  "softClip": "Soft Clip (Prevent Clipping)",
+  "controlPointSettingsActive": "Control Point Settings ({frequency} Hz)",
+  "@controlPointSettingsActive": {
+    "description": "Active control point settings with frequency",
+    "placeholders": {
+      "frequency": { "type": "int" }
+    }
+  },
+  "controlPointSettingsNone": "Control Point Settings (None selected)",
+  "typeLabel": "Type: ",
+  "filterTypeBell": "Bell",
+  "filterTypeLowShelf": "Low Shelf",
+  "filterTypeHighShelf": "High Shelf",
+  "filterTypeLowPass": "Low Pass",
+  "filterTypeHighPass": "High Pass",
+  "qFactorLabel": "Q Factor: ",
+  "equalizerTip": "Tip: Double-click on the canvas to create a control point. Select and drag a point to adjust frequency and gain.",
+  "audioBufferLatencyTip": "Audio buffer latency (smaller is faster, default 0.05s)"
 }
+

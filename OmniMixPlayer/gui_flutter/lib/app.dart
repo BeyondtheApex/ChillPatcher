@@ -226,9 +226,9 @@ class _MainContentState extends State<_MainContent> {
                     icon: const Icon(Icons.sports_esports),
                     label: Text(l10n.gameIntegration),
                   ),
-                const NavigationRailDestination(
-                  icon: Icon(Icons.graphic_eq),
-                  label: Text('均衡器'),
+                NavigationRailDestination(
+                  icon: const Icon(Icons.graphic_eq),
+                  label: Text(l10n.equalizer),
                 ),
                 NavigationRailDestination(
                   icon: const Icon(Icons.settings),
@@ -458,6 +458,7 @@ class _GlobalInstanceDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     // Use backend instances (includes online + offline) — single source of truth.
     final allInstances = state.playbackInstances
         .where((i) => i.gameName.isNotEmpty || i.attached)
@@ -472,7 +473,7 @@ class _GlobalInstanceDropdown extends StatelessWidget {
 
     if (allInstances.isEmpty) {
       return Text(
-        '没有实例',
+        l10n.noInstances,
         style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
       );
     }

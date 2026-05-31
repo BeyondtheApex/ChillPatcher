@@ -34,6 +34,10 @@ class _HomePageState extends State<HomePage> {
   Timer? _volumeThrottleTimer;
   DateTime? _lastVolumeSendTime;
   double? _pendingVolumeValue;
+  double? _draggingLatency;
+  Timer? _latencyThrottleTimer;
+  DateTime? _lastLatencySendTime;
+  double? _pendingLatencyValue;
 
   @override
   void initState() {
@@ -48,6 +52,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     widget.state.removeListener(_onStateChanged);
     _volumeThrottleTimer?.cancel();
+    _latencyThrottleTimer?.cancel();
     super.dispose();
   }
 
@@ -103,6 +108,49 @@ class _HomePageState extends State<HomePage> {
     _volumeThrottleTimer = null;
     _lastVolumeSendTime = DateTime.now();
     widget.state.setVolumeActive(val);
+  }
+
+  void _updateLatencyThrottled(double val) {
+    setState(() {
+      _draggingLatency = val;
+    });
+
+    _pendingLatencyValue = val;
+
+    final now = DateTime.now();
+    final elapsed = _lastLatencySendTime == null
+        ? 1000
+        : now.difference(_lastLatencySendTime!).inMilliseconds;
+
+    if (elapsed >= 150) {
+      _executeSendLatency();
+    } else {
+      if (_latencyThrottleTimer == null) {
+        _latencyThrottleTimer = Timer(
+          Duration(milliseconds: 150 - elapsed),
+          () {
+            _latencyThrottleTimer = null;
+            _executeSendLatency();
+          },
+        );
+      }
+    }
+  }
+
+  void _executeSendLatency() {
+    if (_pendingLatencyValue == null) return;
+    final val = _pendingLatencyValue!;
+    _pendingLatencyValue = null;
+    _lastLatencySendTime = DateTime.now();
+    widget.state.setTargetLatencyActive(val);
+  }
+
+  void _sendLatency(double val) {
+    _pendingLatencyValue = null;
+    _latencyThrottleTimer?.cancel();
+    _latencyThrottleTimer = null;
+    _lastLatencySendTime = DateTime.now();
+    widget.state.setTargetLatencyActive(val);
   }
 
   Future<void> _loadLibrary() async {
@@ -216,7 +264,8 @@ class _HomePageState extends State<HomePage> {
     final track = instance?.currentTrack;
     final canControl = widget.state.canControlActiveInstance;
     final duration = track?.duration ?? 0.0;
-    final position = _draggingPosition ??
+    final position =
+        _draggingPosition ??
         ((instance?.position ?? 0.0).clamp(0.0, duration <= 0 ? 1.0 : duration)
                 as num)
             .toDouble();
@@ -357,48 +406,84 @@ class _HomePageState extends State<HomePage> {
               ),
             ],
           ),
-          if (canControl) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.volume_up, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Slider(
-                    value: _draggingVolume ?? (instance?.volume ?? 1.0),
-                    min: 0.0,
-                    max: 1.0,
-                    onChanged: (val) {
-                      _updateVolumeThrottled(val);
-                    },
-                    onChangeEnd: (val) {
-                      _volumeThrottleTimer?.cancel();
-                      _sendVolume(val);
-                      setState(() {
-                        _draggingVolume = null;
-                      });
-                    },
-                  ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.volume_up, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Slider(
+                  value:
+                      _draggingVolume ??
+                      (instance?.volume ?? widget.state.lastVolume ?? 1.0),
+                  min: 0.0,
+                  max: 1.0,
+                  onChanged: (val) {
+                    _updateVolumeThrottled(val);
+                  },
+                  onChangeEnd: (val) {
+                    _volumeThrottleTimer?.cancel();
+                    _sendVolume(val);
+                    setState(() {
+                      _draggingVolume = null;
+                    });
+                  },
                 ),
-                SizedBox(
-                  width: 42,
-                  child: Text(
-                    "${((_draggingVolume ?? (instance?.volume ?? 1.0)) * 100).round()}%",
-                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                  ),
+              ),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  "${((_draggingVolume ?? (instance?.volume ?? widget.state.lastVolume ?? 1.0)) * 100).round()}%",
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                 ),
-              ],
-            ),
-          ],
-          if (!minimalClientMode) ...[
-            const SizedBox(height: 6),
-            Text(
-              canControl
-                  ? l10n.serverControlMode
-                  : l10n.clientModeControlsDisabled,
-              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-            ),
-          ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Tooltip(
+                message: l10n.audioBufferLatencyTip,
+                child: const Icon(Icons.av_timer_rounded, size: 20),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Slider(
+                  value:
+                      _draggingLatency ??
+                      (instance?.targetLatency ??
+                          widget.state.lastTargetLatency ??
+                          0.05),
+                  min: 0.03,
+                  max: 1.0,
+                  onChanged: (val) {
+                    _updateLatencyThrottled(val);
+                  },
+                  onChangeEnd: (val) {
+                    _latencyThrottleTimer?.cancel();
+                    _sendLatency(val);
+                    setState(() {
+                      _draggingLatency = null;
+                    });
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 42,
+                child: Text(
+                  "${(_draggingLatency ?? (instance?.targetLatency ?? widget.state.lastTargetLatency ?? 0.05)).toStringAsFixed(2)}s",
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            canControl
+                ? l10n.serverControlMode
+                : l10n.clientModeControlsDisabled,
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+          ),
         ],
       ),
     );
@@ -548,25 +633,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: widget.state.playlistSources
-                  .where((s) => s.id != 'all')
-                  .map((s) {
-                    return InputChip(
-                      label: Text(l10n.sourceChipLabel(s.name, s.songCount)),
-                      onDeleted: canControl
-                          ? () => widget.state.removePlaylistSource(s.id)
-                          : null,
-                    );
-                  })
-                  .toList(),
-            ),
-          ),
-          const SizedBox(height: 8),
           Expanded(child: _buildLibraryList(canControl)),
         ],
       ),
@@ -612,13 +678,26 @@ class _HomePageState extends State<HomePage> {
         .map((s) => s.id)
         .toSet();
     if (_libraryView == _LibraryView.album) {
+      // Collect album IDs from songs in the active playlist (via full SongInfo)
+      final playlistUuids = widget.state.activePlaylist
+          .map((s) => s.uuid)
+          .toSet();
+      final albumIdsFromSongs = _songs
+          .where((s) => playlistUuids.contains(s.uuid))
+          .map((s) => s.albumId)
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      // Also try active playlist items directly (offline fallback)
+      albumIdsFromSongs.addAll(
+        widget.state.activePlaylist
+            .map((s) => s.albumId)
+            .where((id) => id.isNotEmpty),
+      );
       final selectedAlbumIds = {
         ...selectedSourceIds
             .where((id) => id.startsWith('album_'))
             .map((id) => id.substring('album_'.length)),
-        ...widget.state.activePlaylist
-            .map((s) => s.albumId)
-            .where((id) => id.isNotEmpty),
+        ...albumIdsFromSongs,
       };
       final filteredAlbums = _albums.where((a) {
         if (!selectedAlbumIds.contains(a.id)) return false;
@@ -641,7 +720,7 @@ class _HomePageState extends State<HomePage> {
             ),
             title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(l10n.songCountWithModule(a.songCount, a.moduleId)),
-            trailing: canControl
+            trailing: canControl && selectedSourceIds.contains('album_${a.id}')
                 ? PopupMenuButton<String>(
                     onSelected: (v) {
                       if (v == 'remove')
@@ -833,8 +912,16 @@ class _HomePageState extends State<HomePage> {
                           itemBuilder: (_, i) {
                             final a = _albums[i];
                             final sourceId = 'album_${a.id}';
+                            final playlistUuids = widget.state.activePlaylist
+                                .map((s) => s.uuid)
+                                .toSet();
                             final checked =
                                 selectedIds.contains(sourceId) ||
+                                _songs.any(
+                                  (s) =>
+                                      s.albumId == a.id &&
+                                      playlistUuids.contains(s.uuid),
+                                ) ||
                                 widget.state.activePlaylist.any(
                                   (s) => s.albumId == a.id,
                                 );

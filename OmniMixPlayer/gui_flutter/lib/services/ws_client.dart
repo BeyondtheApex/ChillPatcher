@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:convert' hide json;
+import '../utils/json_utils.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/node_data.dart';
 import 'ws_unix_native.dart'

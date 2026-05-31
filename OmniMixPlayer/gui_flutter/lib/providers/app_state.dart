@@ -226,6 +226,8 @@ class AppState extends ChangeNotifier {
   List<PlaylistSourceInfo> _playlistSources = [];
   bool _playbackLoading = false;
   Timer? _playbackPollTimer;
+  double _lastVolume = 1.0;
+  double _lastTargetLatency = 0.05;
 
   // Notifications
   String? _lastError;
@@ -271,6 +273,8 @@ class AppState extends ChangeNotifier {
   List<QueueItemInfo> get activePlaylist => _activePlaylist;
   List<PlaylistSourceInfo> get playlistSources => _playlistSources;
   bool get playbackLoading => _playbackLoading;
+  double get lastVolume => _lastVolume;
+  double get lastTargetLatency => _lastTargetLatency;
   int get playbackInstanceCount => _playbackInstances.length;
   int get attachedAudioClientCount =>
       _playbackInstances.where((i) => i.attached).length;
@@ -996,6 +1000,8 @@ class AppState extends ChangeNotifier {
         _seedColor = prefs.getInt('ui_seed_color') ?? 0xFF673AB7;
         _useSystemColor = prefs.getBool('ui_use_system_color') ?? true;
         _closeBehavior = prefs.getString('ui_close_behavior') ?? 'exit';
+        _lastVolume = prefs.getDouble('last_volume') ?? 1.0;
+        _lastTargetLatency = prefs.getDouble('last_target_latency') ?? 0.05;
         notifyListeners();
       });
     } catch (_) {}
@@ -1098,6 +1104,16 @@ class AppState extends ChangeNotifier {
         await loadActiveProfile();
       }
 
+      final active = activeInstance;
+      if (active != null) {
+        _lastVolume = active.volume;
+        _lastTargetLatency = active.targetLatency;
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.setDouble('last_volume', _lastVolume);
+          prefs.setDouble('last_target_latency', _lastTargetLatency);
+        }).catchError((_) {});
+      }
+
       notifyListeners();
     } catch (e) {
     } finally {
@@ -1139,8 +1155,19 @@ class AppState extends ChangeNotifier {
 
   Future<void> setVolumeActive(double volume) async {
     final instance = activeInstance;
+    _lastVolume = volume;
+    notifyListeners();
     if (instance == null || !instance.isServerManaged) return;
     await api.setVolume(instance.id, volume);
+    await refreshPlayback();
+  }
+
+  Future<void> setTargetLatencyActive(double latency) async {
+    final instance = activeInstance;
+    _lastTargetLatency = latency;
+    notifyListeners();
+    if (instance == null || !instance.isServerManaged) return;
+    await api.setLatency(instance.id, latency);
     await refreshPlayback();
   }
 

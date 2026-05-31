@@ -352,7 +352,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get serverControlMode => '服务端控制模式';
 
   @override
-  String get clientModeControlsDisabled => '客户端模式：控制已禁用';
+  String get clientModeControlsDisabled => '客户端模式：播放控制由客户端管理';
 
   @override
   String get queue => '队列';
@@ -685,4 +685,63 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get saveAndApply => '保存并应用';
+
+  @override
+  String get equalizer => '均衡器';
+
+  @override
+  String get noSelectedInstance => '没有选中的音频实例';
+
+  @override
+  String get equalizerControl => '均衡器控制';
+
+  @override
+  String get enabled => '已启用';
+
+  @override
+  String get selectPreset => '选择预设';
+
+  @override
+  String get reset => '重置';
+
+  @override
+  String get globalGainPreamp => '整体增益 (Preamp):';
+
+  @override
+  String get softClip => '防爆音(软剪切)';
+
+  @override
+  String controlPointSettingsActive(int frequency) {
+    return '控制点设置 ($frequency Hz)';
+  }
+
+  @override
+  String get controlPointSettingsNone => '控制点设置 (未选择)';
+
+  @override
+  String get typeLabel => '类型: ';
+
+  @override
+  String get filterTypeBell => '钟形 (Bell)';
+
+  @override
+  String get filterTypeLowShelf => '低架 (Low Shelf)';
+
+  @override
+  String get filterTypeHighShelf => '高架 (High Shelf)';
+
+  @override
+  String get filterTypeLowPass => '低通 (Low Pass)';
+
+  @override
+  String get filterTypeHighPass => '高通 (High Pass)';
+
+  @override
+  String get qFactorLabel => '带宽 (Q值): ';
+
+  @override
+  String get equalizerTip => '提示: 在画布上双击可新建控制点，单选控制点可以拖动调节频率与增益';
+
+  @override
+  String get audioBufferLatencyTip => '物理缓冲区限流延迟（越小响应越快，默认0.05秒）';
 }

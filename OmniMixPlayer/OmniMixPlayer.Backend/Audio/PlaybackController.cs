@@ -45,6 +45,7 @@ namespace OmniMixPlayer.Backend.Audio
         private readonly VolumeNode _volumeNode = new VolumeNode();
         public VolumeNode VolumeNode => _volumeNode;
         private volatile int _playState;
+        private float _targetLatency = 0.1f;
         private readonly Random _rng = new Random();
         private readonly object _lock = new object();
 
@@ -76,6 +77,7 @@ namespace OmniMixPlayer.Backend.Audio
         public bool IsPlaying => _playState == 1;
         public float Position { get; private set; }
         public float Volume { get => _volumeNode.Volume; set => _volumeNode.Volume = value; }
+        public float TargetLatency { get => _targetLatency; set => _targetLatency = Math.Clamp(value, 0.03f, 1.0f); }
         public bool Shuffle { get => Active.Shuffle; set => Active.Shuffle = value; }
         public RepeatMode RepeatMode { get => Active.RepeatMode; set => Active.RepeatMode = value; }
 
@@ -376,6 +378,13 @@ namespace OmniMixPlayer.Backend.Audio
             _dbService.SaveVolume(Id, volume);
             FireStateChanged(_playState);
         }
+
+        public void SetTargetLatency(float latency)
+        {
+            TargetLatency = latency;
+            _dbService.SaveTargetLatency(Id, latency);
+            FireStateChanged(_playState);
+        }
         public void SetShuffle(bool enabled) => Shuffle = enabled;
         public void SetRepeatMode(RepeatMode mode) => RepeatMode = mode;
 
@@ -590,6 +599,7 @@ namespace OmniMixPlayer.Backend.Audio
                 var profile = _dbService.GetProfile(Id);
                 profile.ActiveQueueId = _activeQueueId;
                 profile.Volume = Volume;
+                profile.TargetLatency = TargetLatency;
                 lock (_lock)
                 {
                     profile.Queues = _queues.Values.Select(q => q.Serialize()).ToList();
@@ -607,6 +617,7 @@ namespace OmniMixPlayer.Backend.Audio
                 if (_dbService == null) return;
                 var data = _dbService.GetProfile(Id);
                 Volume = data.Volume;
+                TargetLatency = data.TargetLatency > 0 ? data.TargetLatency : 0.1f;
                 _activeQueueId = data.ActiveQueueId ?? DefaultQueueId;
                 if (data.Equalizer != null)
                 {
@@ -940,12 +951,30 @@ namespace OmniMixPlayer.Backend.Audio
                         _lastLoopProgressChangeUtc = DateTime.UtcNow;
                     }
 
-                    // 限流机制：只在缓冲区空余空间不足 2048 帧时睡眠，防止因 Windows 定时器精度不足导致播放卡顿
-                    while (_sharedMemory.GetReadableFrames() > _sharedMemory.BufferFrames - 2048)
+                    // 限流和延迟控制机制：利用 AudibleCursor 追踪客户端实际听到的位置，将积压的总帧数控制在 TargetLatency 以内
+                    long audible = _sharedMemory.GetAudibleCursor();
+                    long read = _sharedMemory.GetReadCursor();
+                    bool supportsAudible = audible > 0 || read < 4096;
+                    long progress = supportsAudible ? audible : read;
+                    long write = _sharedMemory.GetWriteCursor();
+                    long inFlight = write - progress;
+                    int targetBacklogFrames = (int)(sampleRate * TargetLatency);
+                    if (targetBacklogFrames < 1024) targetBacklogFrames = 1024;
+
+                    while (inFlight > targetBacklogFrames)
                     {
                         await Task.Delay(10, ct);
                         if (_playState != 1 || ct.IsCancellationRequested)
                             break;
+
+                        audible = _sharedMemory.GetAudibleCursor();
+                        read = _sharedMemory.GetReadCursor();
+                        supportsAudible = audible > 0 || read < 4096;
+                        progress = supportsAudible ? audible : read;
+                        write = _sharedMemory.GetWriteCursor();
+                        inFlight = write - progress;
+                        targetBacklogFrames = (int)(sampleRate * TargetLatency);
+                        if (targetBacklogFrames < 1024) targetBacklogFrames = 1024;
                     }
                     if (_playState != 1 || ct.IsCancellationRequested) continue;
 

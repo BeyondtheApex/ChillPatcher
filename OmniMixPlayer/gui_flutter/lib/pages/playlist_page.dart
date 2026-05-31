@@ -135,7 +135,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
     } catch (e) {
       if (mounted) {
         final l10n = context.mounted ? AppLocalizations.of(context) : null;
-        _error = '${l10n?.loadLibraryFailed(e.toString()) ?? '加载曲库失败: $e'}';
+        _error = l10n?.loadLibraryFailed(e.toString()) ?? 'Failed to load library: $e';
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -145,13 +145,14 @@ class _PlaylistPageState extends State<PlaylistPage> {
   // ── 根据展开状态重建扁平列表（虚拟滚动数据源） ──
 
   void _rebuildFlatList() {
+    final l10n = AppLocalizations.of(context)!;
     _flatItems.clear();
     for (final tagNode in _tree) {
       _flatItems.add(
         _FlatItem(
           kind: _ItemKind.tag,
           label: tagNode.tag.name,
-          subtitle: '${tagNode.tag.moduleId} · ${tagNode.albums.length} albums',
+          subtitle: '${tagNode.tag.moduleId} · ${l10n.albumCountLabel(tagNode.albums.length)}',
           indentLevel: 0,
           expandable: tagNode.albums.isNotEmpty,
           expanded: tagNode.expanded,
@@ -165,7 +166,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
           _FlatItem(
             kind: _ItemKind.album,
             label: albumNode.album.name,
-            subtitle: '${albumNode.songs.length} 首',
+            subtitle: l10n.songCountLabel(albumNode.songs.length),
             indentLevel: 1,
             expandable: albumNode.songs.isNotEmpty,
             expanded: albumNode.expanded,

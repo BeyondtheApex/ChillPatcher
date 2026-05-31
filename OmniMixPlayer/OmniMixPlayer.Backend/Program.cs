@@ -251,6 +251,11 @@ namespace OmniMixPlayer.Backend
                     // would have dropped all songs during RestoreState().
                     playbackInstances.RefreshAllFromDisk();
 
+                    // Sync profile SongUuids with current tag/album registries.
+                    // This ensures that if a source (e.g. a Netease playlist) gained new songs,
+                    // the profile's UUID list is automatically updated.
+                    playbackInstances.SyncProfileSources(TagRegistry.Instance, AlbumRegistry.Instance);
+
                     _ = apiServer.BroadcastEvent("playlist.updated", new { songCount = allSongs.Count });
 
                     foreach (var loaded in ModuleLoader.Instance.LoadedModules)

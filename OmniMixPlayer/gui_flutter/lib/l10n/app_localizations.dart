@@ -779,7 +779,7 @@ abstract class AppLocalizations {
   /// No description provided for @clientModeControlsDisabled.
   ///
   /// In en, this message translates to:
-  /// **'Client mode: controls disabled'**
+  /// **'Client mode: playback controlled by client'**
   String get clientModeControlsDisabled;
 
   /// No description provided for @queue.
@@ -1369,6 +1369,120 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Save & Apply'**
   String get saveAndApply;
+
+  /// No description provided for @equalizer.
+  ///
+  /// In en, this message translates to:
+  /// **'Equalizer'**
+  String get equalizer;
+
+  /// No description provided for @noSelectedInstance.
+  ///
+  /// In en, this message translates to:
+  /// **'No audio instance selected'**
+  String get noSelectedInstance;
+
+  /// No description provided for @equalizerControl.
+  ///
+  /// In en, this message translates to:
+  /// **'Equalizer Control'**
+  String get equalizerControl;
+
+  /// No description provided for @enabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Enabled'**
+  String get enabled;
+
+  /// No description provided for @selectPreset.
+  ///
+  /// In en, this message translates to:
+  /// **'Select Preset'**
+  String get selectPreset;
+
+  /// No description provided for @reset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get reset;
+
+  /// No description provided for @globalGainPreamp.
+  ///
+  /// In en, this message translates to:
+  /// **'Global Gain (Preamp):'**
+  String get globalGainPreamp;
+
+  /// No description provided for @softClip.
+  ///
+  /// In en, this message translates to:
+  /// **'Soft Clip (Prevent Clipping)'**
+  String get softClip;
+
+  /// Active control point settings with frequency
+  ///
+  /// In en, this message translates to:
+  /// **'Control Point Settings ({frequency} Hz)'**
+  String controlPointSettingsActive(int frequency);
+
+  /// No description provided for @controlPointSettingsNone.
+  ///
+  /// In en, this message translates to:
+  /// **'Control Point Settings (None selected)'**
+  String get controlPointSettingsNone;
+
+  /// No description provided for @typeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Type: '**
+  String get typeLabel;
+
+  /// No description provided for @filterTypeBell.
+  ///
+  /// In en, this message translates to:
+  /// **'Bell'**
+  String get filterTypeBell;
+
+  /// No description provided for @filterTypeLowShelf.
+  ///
+  /// In en, this message translates to:
+  /// **'Low Shelf'**
+  String get filterTypeLowShelf;
+
+  /// No description provided for @filterTypeHighShelf.
+  ///
+  /// In en, this message translates to:
+  /// **'High Shelf'**
+  String get filterTypeHighShelf;
+
+  /// No description provided for @filterTypeLowPass.
+  ///
+  /// In en, this message translates to:
+  /// **'Low Pass'**
+  String get filterTypeLowPass;
+
+  /// No description provided for @filterTypeHighPass.
+  ///
+  /// In en, this message translates to:
+  /// **'High Pass'**
+  String get filterTypeHighPass;
+
+  /// No description provided for @qFactorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Q Factor: '**
+  String get qFactorLabel;
+
+  /// No description provided for @equalizerTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Tip: Double-click on the canvas to create a control point. Select and drag a point to adjust frequency and gain.'**
+  String get equalizerTip;
+
+  /// No description provided for @audioBufferLatencyTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio buffer latency (smaller is faster, default 0.05s)'**
+  String get audioBufferLatencyTip;
 }
 
 class _AppLocalizationsDelegate

@@ -353,7 +353,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get serverControlMode => 'Server control mode';
 
   @override
-  String get clientModeControlsDisabled => 'Client mode: controls disabled';
+  String get clientModeControlsDisabled =>
+      'Client mode: playback controlled by client';
 
   @override
   String get queue => 'Queue';
@@ -691,4 +692,66 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get saveAndApply => 'Save & Apply';
+
+  @override
+  String get equalizer => 'Equalizer';
+
+  @override
+  String get noSelectedInstance => 'No audio instance selected';
+
+  @override
+  String get equalizerControl => 'Equalizer Control';
+
+  @override
+  String get enabled => 'Enabled';
+
+  @override
+  String get selectPreset => 'Select Preset';
+
+  @override
+  String get reset => 'Reset';
+
+  @override
+  String get globalGainPreamp => 'Global Gain (Preamp):';
+
+  @override
+  String get softClip => 'Soft Clip (Prevent Clipping)';
+
+  @override
+  String controlPointSettingsActive(int frequency) {
+    return 'Control Point Settings ($frequency Hz)';
+  }
+
+  @override
+  String get controlPointSettingsNone =>
+      'Control Point Settings (None selected)';
+
+  @override
+  String get typeLabel => 'Type: ';
+
+  @override
+  String get filterTypeBell => 'Bell';
+
+  @override
+  String get filterTypeLowShelf => 'Low Shelf';
+
+  @override
+  String get filterTypeHighShelf => 'High Shelf';
+
+  @override
+  String get filterTypeLowPass => 'Low Pass';
+
+  @override
+  String get filterTypeHighPass => 'High Pass';
+
+  @override
+  String get qFactorLabel => 'Q Factor: ';
+
+  @override
+  String get equalizerTip =>
+      'Tip: Double-click on the canvas to create a control point. Select and drag a point to adjust frequency and gain.';
+
+  @override
+  String get audioBufferLatencyTip =>
+      'Audio buffer latency (smaller is faster, default 0.05s)';
 }

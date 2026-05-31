@@ -44,18 +44,18 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
 
     final busy = st.backendBusy || st.serviceBusy;
     if (busy) {
-      return const _LoadingPage(
+      return _LoadingPage(
         icon: Icons.settings_input_component_rounded,
-        title: '服务启动中',
-        message: '正在连接并初始化播放器服务...',
+        title: l10n.serviceStarting,
+        message: l10n.serviceStartingMessage,
       );
     }
 
     if (!st.backendOnline) {
-      return const _LoadingPage(
+      return _LoadingPage(
         icon: Icons.cloud_off_rounded,
-        title: '服务未连接',
-        message: '请稍候，正在等待后端服务就绪以进行 Mod 安装和管理...',
+        title: l10n.serviceNotConnected,
+        message: l10n.waitingForBackendMod,
       );
     }
 
@@ -738,30 +738,23 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     ColorScheme cs,
   ) {
     final installed = ModDeploymentService.getInstalledVersion(id);
-    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    final l = AppLocalizations.of(context)!;
 
     if (installed == null) {
-      final text = isZh
-          ? '可安装版本: v$availableVersion'
-          : 'Available: v$availableVersion';
       return Text(
-        text,
+        l.availableVersion(availableVersion),
         style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
       );
     }
 
-    final l = AppLocalizations.of(context)!;
     if (installed == availableVersion) {
       return Text(
         l.installed(installed),
         style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
       );
     } else {
-      final latestText = isZh
-          ? '最新: v$availableVersion'
-          : 'Latest: v$availableVersion';
       return Text(
-        '${l.installed(installed)} ($latestText)',
+        '${l.installed(installed)} (${l.latestVersion(availableVersion)})',
         style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
       );
     }

@@ -222,35 +222,102 @@ namespace OmniMixPlayer.Backend.Audio
                 return _currentTrack;
             }
 
-            if (playlist == null || playlist.Count == 0) return null;
+            if (playlist == null || playlist.Count == 0)
+            {
+                _currentTrack = null;
+                return null;
+            }
 
             if (shuffle)
             {
                 var candidates = playlist.Where(m => m != null && !m.IsExcluded).ToList();
                 if (candidates.Count == 0) candidates = playlist.Where(m => m != null).ToList();
-                if (candidates.Count == 0) return null;
+                if (candidates.Count == 0)
+                {
+                    _currentTrack = null;
+                    return null;
+                }
                 var pick = candidates[rng.Next(candidates.Count)];
                 _playlistPosition = (playlist.ToList().FindIndex(m => m.UUID == pick.UUID) + 1) % playlist.Count;
                 _currentTrack = pick;
                 return _currentTrack;
             }
 
-            var start = _playlistPosition;
-            for (int i = 0; i < playlist.Count; i++)
+            int start = _playlistPosition;
+            bool reachedEnd = false;
+
+            if (_currentTrack != null)
             {
-                int idx = (start + i) % playlist.Count;
-                var candidate = playlist[idx];
-                if (candidate != null && !candidate.IsExcluded)
+                int currentIdx = -1;
+                for (int i = 0; i < playlist.Count; i++)
                 {
-                    _playlistPosition = (idx + 1) % playlist.Count;
-                    _currentTrack = candidate;
-                    return _currentTrack;
+                    if (playlist[i]?.UUID == _currentTrack.UUID)
+                    {
+                        currentIdx = i;
+                        break;
+                    }
+                }
+                if (currentIdx >= 0)
+                {
+                    start = currentIdx + 1;
+                    if (start >= playlist.Count)
+                    {
+                        if (RepeatMode == RepeatMode.None)
+                        {
+                            reachedEnd = true;
+                        }
+                        else
+                        {
+                            start = 0;
+                        }
+                    }
                 }
             }
 
-            _playlistPosition = (start + 1) % playlist.Count;
-            _currentTrack = playlist[start % playlist.Count];
-            return _currentTrack;
+            if (reachedEnd)
+            {
+                _currentTrack = null;
+                return null;
+            }
+
+            if (start >= playlist.Count)
+            {
+                start = 0;
+            }
+
+            int nextIdx = -1;
+            for (int i = start; i < playlist.Count; i++)
+            {
+                var candidate = playlist[i];
+                if (candidate != null && !candidate.IsExcluded)
+                {
+                    nextIdx = i;
+                    break;
+                }
+            }
+
+            if (nextIdx == -1 && RepeatMode == RepeatMode.All)
+            {
+                for (int i = 0; i < start; i++)
+                {
+                    var candidate = playlist[i];
+                    if (candidate != null && !candidate.IsExcluded)
+                    {
+                        nextIdx = i;
+                        break;
+                    }
+                }
+            }
+
+            if (nextIdx != -1)
+            {
+                _playlistPosition = (nextIdx + 1) % playlist.Count;
+                _currentTrack = playlist[nextIdx];
+                return _currentTrack;
+            }
+
+            _currentTrack = null;
+            return null;
         }
 
         public void ImportFromPlaylist(IReadOnlyList<MusicInfo> songs, bool replace)

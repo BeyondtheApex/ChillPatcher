@@ -62,6 +62,7 @@ namespace OmniMixPlayer.Backend.Audio
                         Id = instanceId,
                         ActiveQueueId = "default",
                         Volume = 1.0f,
+                        TargetLatency = 0.1f,
                         Queues = new List<QueueSlotData>()
                     };
                 }
@@ -115,6 +116,20 @@ namespace OmniMixPlayer.Backend.Audio
             }
         }
 
+        public void SaveTargetLatency(string instanceId, float latency)
+        {
+            try
+            {
+                var profile = GetProfile(instanceId);
+                profile.TargetLatency = latency;
+                SaveProfile(profile);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to save target latency for instance {InstanceId}", instanceId);
+            }
+        }
+
         public void SaveEqualizer(string instanceId, EqualizerState equalizer)
         {
             try
@@ -164,6 +179,10 @@ namespace OmniMixPlayer.Backend.Audio
                     else if (name == "volume")
                     {
                         profile.Volume = prop.Value.GetSingle();
+                    }
+                    else if (name == "targetlatency" || name == "target_latency")
+                    {
+                        profile.TargetLatency = prop.Value.GetSingle();
                     }
                     else if (name == "equalizer")
                     {

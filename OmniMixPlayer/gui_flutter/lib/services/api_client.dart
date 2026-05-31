@@ -1,4 +1,5 @@
-import 'dart:convert';
+import 'dart:convert' hide json;
+import '../utils/json_utils.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import '../models/node_data.dart';
@@ -45,23 +46,33 @@ class ApiClient {
     required bool isSocket,
     required bool isWeb,
     required String cid,
-  })  : clientId = cid,
-        _baseUrl = isWeb
-            ? ''
-            : (isSocket ? 'http://unix' : 'http://127.0.0.1:$port'),
-        _http = ClientIdClient(
-          isSocket ? createUnixHttpClient(socketPath!) : http.Client(),
-          cid,
-        );
+  }) : clientId = cid,
+       _baseUrl = isWeb
+           ? ''
+           : (isSocket ? 'http://unix' : 'http://127.0.0.1:$port'),
+       _http = ClientIdClient(
+         isSocket ? createUnixHttpClient(socketPath!) : http.Client(),
+         cid,
+       );
 
   factory ApiClient({required int port}) {
     final cid = _generateClientId();
-    return ApiClient._internal(port: port, isSocket: false, isWeb: false, cid: cid);
+    return ApiClient._internal(
+      port: port,
+      isSocket: false,
+      isWeb: false,
+      cid: cid,
+    );
   }
 
   factory ApiClient.withSocket({required String socketPath}) {
     final cid = _generateClientId();
-    return ApiClient._internal(socketPath: socketPath, isSocket: true, isWeb: false, cid: cid);
+    return ApiClient._internal(
+      socketPath: socketPath,
+      isSocket: true,
+      isWeb: false,
+      cid: cid,
+    );
   }
 
   factory ApiClient.forWeb() {
@@ -273,7 +284,9 @@ class ApiClient {
     if (resp.statusCode >= 400) throw Exception('HTTP ${resp.statusCode}');
   }
 
-  Future<Map<String, dynamic>> getInstanceEqualizerPresets(String instanceId) async {
+  Future<Map<String, dynamic>> getInstanceEqualizerPresets(
+    String instanceId,
+  ) async {
     final resp = await _http.get(
       Uri.parse('$_baseUrl/api/instances/$instanceId/equalizer/presets'),
     );
@@ -389,6 +402,14 @@ class ApiClient {
     );
   }
 
+  Future<void> setLatency(String instanceId, double latency) async {
+    await _http.put(
+      Uri.parse('$_baseUrl/api/instances/$instanceId/latency'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'latency': latency}),
+    );
+  }
+
   Future<List<QueueItemInfo>> getInstanceQueue(String instanceId) async {
     final resp = await _http.get(
       Uri.parse('$_baseUrl/api/instances/$instanceId/queue'),
@@ -419,17 +440,6 @@ class ApiClient {
     final list = json.decode(resp.body) as List<dynamic>;
     return list
         .map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  Future<List<PlaylistSourceInfo>> getPlaylistSources(String instanceId) async {
-    final resp = await _http.get(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
-    );
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    final list = json.decode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => PlaylistSourceInfo.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

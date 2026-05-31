@@ -32,5 +32,6 @@ namespace OmniMixPlayer.Backend.Audio
         public float Volume { get; set; } = 1.0f;
         public List<QueueSlotData> Queues { get; set; } = new();
         public EqualizerState Equalizer { get; set; }
+        public float TargetLatency { get; set; } = 0.1f;
     }
 }

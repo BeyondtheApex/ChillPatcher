@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using OmniMixPlayer.Backend.ModuleSystem.Registry;
 using OmniMixPlayer.SDK.Interfaces;
 using OmniMixPlayer.SDK.Models;
 
@@ -212,7 +213,7 @@ namespace OmniMixPlayer.Backend.Audio
             }
         }
 
-        public bool Delete(string id)
+        public bool Delete(string id, bool deletePersistedState = true)
         {
             id = SanitizeId(id);
             bool deleted = false;
@@ -228,28 +229,31 @@ namespace OmniMixPlayer.Backend.Audio
             }
             instance?.Dispose();
 
-            // Also clean up offline profile directory if it exists
-            if (!string.IsNullOrEmpty(_configBaseDir))
+            if (deletePersistedState)
             {
-                var profileDir = Path.Combine(_configBaseDir, "instances", id);
-                if (Directory.Exists(profileDir))
+                // Also clean up offline profile directory if it exists
+                if (!string.IsNullOrEmpty(_configBaseDir))
                 {
-                    try { Directory.Delete(profileDir, true); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete profile dir for {Id}", id); }
+                    var profileDir = Path.Combine(_configBaseDir, "instances", id);
+                    if (Directory.Exists(profileDir))
+                    {
+                        try { Directory.Delete(profileDir, true); }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to delete profile dir for {Id}", id); }
+                        deleted = true;
+                    }
+                }
+
+                // Delete from LiteDB
+                if (_dbService.DeleteProfile(id))
+                {
                     deleted = true;
                 }
             }
 
-            // Delete from LiteDB
-            if (_dbService.DeleteProfile(id))
-            {
-                deleted = true;
-            }
-
             if (deleted)
             {
-                _logger.LogInformation("Deleted instance {InstanceId} (was {State})", id,
-                    instance != null ? "online" : "offline");
+                _logger.LogInformation("Deleted instance {InstanceId} (was {State}, deletePersistedState={DeletePersisted})", id,
+                    instance != null ? "online" : "offline", deletePersistedState);
                 OnInstancesChanged?.Invoke();
             }
             return deleted;
@@ -320,6 +324,83 @@ namespace OmniMixPlayer.Backend.Audio
                 }
             }
             _logger.LogInformation("Refreshed {Count} instances from disk", _instances.Count);
+        }
+
+        /// <summary>
+        /// Sync all offline profiles' playlist sources with current tag/album registries.
+        /// When a tag source (e.g. "tag_netease_favorites") has new songs in the module,
+        /// this updates the profile's SongUuids to match. Call after modules finish loading.
+        /// </summary>
+        public void SyncProfileSources(TagRegistry tagRegistry, AlbumRegistry albumRegistry)
+        {
+            try
+            {
+                _logger.LogInformation("Syncing profile sources with tag/album registries...");
+                var profiles = _dbService.GetAllProfiles().ToList();
+                int updatedCount = 0;
+
+                foreach (var profile in profiles)
+                {
+                    if (profile.Queues == null) continue;
+                    bool changed = false;
+
+                    foreach (var queue in profile.Queues)
+                    {
+                        if (queue.PlaylistSources == null) continue;
+                        foreach (var source in queue.PlaylistSources)
+                        {
+                            if (string.IsNullOrEmpty(source.Id)) continue;
+
+                            // tag_xxx → refresh UUIDs from tag registry
+                            if (source.Id.StartsWith("tag_"))
+                            {
+                                var tagId = source.Id.Substring("tag_".Length);
+                                var currentSongs = _musicRegistry.GetMusicByTag(tagId);
+                                if (currentSongs.Count > 0)
+                                {
+                                    var newUuids = currentSongs.Select(s => s.UUID).ToList();
+                                    if (!newUuids.SequenceEqual(source.SongUuids ?? new List<string>()))
+                                    {
+                                        _logger.LogInformation("Synced source {Id}: {OldCount} → {NewCount} songs",
+                                            source.Id, source.SongUuids?.Count ?? 0, newUuids.Count);
+                                        source.SongUuids = newUuids;
+                                        changed = true;
+                                    }
+                                }
+                            }
+                            // album_xxx → refresh UUIDs from album registry
+                            else if (source.Id.StartsWith("album_"))
+                            {
+                                var albumId = source.Id.Substring("album_".Length);
+                                var currentSongs = _musicRegistry.GetMusicByAlbum(albumId);
+                                if (currentSongs.Count > 0)
+                                {
+                                    var newUuids = currentSongs.Select(s => s.UUID).ToList();
+                                    if (!newUuids.SequenceEqual(source.SongUuids ?? new List<string>()))
+                                    {
+                                        _logger.LogInformation("Synced source {Id}: {OldCount} → {NewCount} songs",
+                                            source.Id, source.SongUuids?.Count ?? 0, newUuids.Count);
+                                        source.SongUuids = newUuids;
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (changed)
+                    {
+                        _dbService.SaveProfile(profile);
+                        updatedCount++;
+                    }
+                }
+
+                _logger.LogInformation("Synced {Count} profiles from tag/album registries", updatedCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync profile sources");
+            }
         }
 
         // ── Archive management ──
@@ -588,6 +669,7 @@ namespace OmniMixPlayer.Backend.Audio
                     isPlaying = false,
                     position = 0.0,
                     volume = profile.Volume,
+                    targetLatency = profile.TargetLatency,
                     queueCount,
                     queueIndex = 0,
                     historyCount = 0,
@@ -596,7 +678,6 @@ namespace OmniMixPlayer.Backend.Audio
                     shuffle = false,
                     repeatMode = "none",
                     currentTrack = (object)null,
-                    sharedMemoryName = (string)null,
                     modId,
                     gameName
                 });
@@ -673,7 +754,7 @@ namespace OmniMixPlayer.Backend.Audio
             }
 
             foreach (var id in expired)
-                Delete(id);
+                Delete(id, deletePersistedState: false);
         }
 
         private static object MapConnectResponse(PlaybackInstance instance) => new
@@ -697,6 +778,7 @@ namespace OmniMixPlayer.Backend.Audio
             isPlaying = instance.Controller.IsPlaying,
             position = instance.Controller.Position,
             volume = instance.Controller.Volume,
+            targetLatency = instance.Controller.TargetLatency,
             queueCount = instance.Controller.QueueCount,
             queueIndex = instance.Controller.QueueIndex,
             historyCount = instance.Controller.HistoryCount,
@@ -704,12 +786,6 @@ namespace OmniMixPlayer.Backend.Audio
             repeatMode = instance.Controller.RepeatMode.ToString().ToLowerInvariant(),
             sampleRate = instance.SharedMemory?.SampleRate ?? 0,
             channels = instance.SharedMemory?.Channels ?? 0,
-            sharedMemoryName = instance.SharedMemoryName,
-            sharedMemoryBytes = instance.SharedMemory?.TotalSize ?? 0,
-            connectedAt = instance.CreatedAt.ToString("O"),
-            lastHeartbeat = instance.LastHeartbeat.ToString("O"),
-            detachedAt = instance.DetachedAt?.ToString("O"),
-            expiresAt = instance.DetachedAt?.AddSeconds(DetachedTtlSeconds).ToString("O"),
             currentTrack = instance.Controller.CurrentTrack == null ? null : new
             {
                 uuid = instance.Controller.CurrentTrack.UUID,
@@ -733,6 +809,7 @@ namespace OmniMixPlayer.Backend.Audio
             isPlaying = instance.Controller.IsPlaying,
             position = instance.Controller.Position,
             volume = instance.Controller.Volume,
+            targetLatency = instance.Controller.TargetLatency,
             queueCount = instance.Controller.QueueCount,
             queueIndex = instance.Controller.QueueIndex,
             historyCount = instance.Controller.HistoryCount,
@@ -740,12 +817,6 @@ namespace OmniMixPlayer.Backend.Audio
             repeatMode = instance.Controller.RepeatMode.ToString().ToLowerInvariant(),
             sampleRate = instance.SharedMemory?.SampleRate ?? 0,
             channels = instance.SharedMemory?.Channels ?? 0,
-            sharedMemoryName = instance.SharedMemoryName,
-            sharedMemoryBytes = instance.SharedMemory?.TotalSize ?? 0,
-            connectedAt = instance.CreatedAt.ToString("O"),
-            lastHeartbeat = instance.LastHeartbeat.ToString("O"),
-            detachedAt = instance.DetachedAt?.ToString("O"),
-            expiresAt = instance.DetachedAt?.AddSeconds(DetachedTtlSeconds).ToString("O"),
             currentTrack = instance.Controller.CurrentTrack == null ? null : new
             {
                 uuid = instance.Controller.CurrentTrack.UUID,

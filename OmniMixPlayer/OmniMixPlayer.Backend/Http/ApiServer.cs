@@ -152,6 +152,34 @@ namespace OmniMixPlayer.Backend.Http
                 _ = BroadcastEvent("instances.changed", _instances.ListInstanceDtos(), GetClientId(ctx));
                 return Results.Ok(new { saved = true });
             });
+            endpoints.MapGet("/api/instances/{id}/latency", (string id) =>
+            {
+                var instance = _instances.Get(id);
+                if (instance != null)
+                {
+                    return Results.Json(new { latency = instance.Controller.TargetLatency });
+                }
+                var profile = _instances.GetProfile(id);
+                if (profile != null)
+                {
+                    return Results.Json(new { latency = profile.TargetLatency });
+                }
+                return Results.Json(new { latency = 0.1f });
+            });
+            endpoints.MapPut("/api/instances/{id}/latency", (string id, LatencyRequest req, HttpContext ctx) =>
+            {
+                var instance = _instances.Get(id);
+                if (instance != null)
+                {
+                    instance.Controller.SetTargetLatency(req.latency);
+                    _ = BroadcastEvent("instances.changed", _instances.ListInstanceDtos(), GetClientId(ctx));
+                    return Results.Ok(new { saved = true });
+                }
+
+                _instances.DbService.SaveTargetLatency(id, req.latency);
+                _ = BroadcastEvent("instances.changed", _instances.ListInstanceDtos(), GetClientId(ctx));
+                return Results.Ok(new { saved = true });
+            });
             endpoints.MapPost("/api/instances/{id}/shuffle", (string id, ShuffleRequest req) => WithInstance(id, p => p.SetShuffle(req.enabled)));
             endpoints.MapPost("/api/instances/{id}/repeat", (string id, RepeatRequest req) =>
             {
@@ -734,16 +762,10 @@ namespace OmniMixPlayer.Backend.Http
                 title = m.Title ?? "",
                 artist = m.Artist ?? "",
                 albumId = m.AlbumId ?? "",
-                tagIds = m.TagIds?.ToArray() ?? Array.Empty<string>(),
                 duration = m.Duration,
                 moduleId = m.ModuleId ?? "",
-                coverUrl = m.CoverUrl ?? "",
-                sourceType = m.SourceType.ToString(),
                 isFavorite = m.IsFavorite,
-                isExcluded = m.IsExcluded,
-                playCount = m.PlayCount,
-                isUnlocked = m.IsUnlocked,
-                sourcePath = m.SourcePath ?? ""
+                isExcluded = m.IsExcluded
             };
         }
 
@@ -1134,6 +1156,7 @@ namespace OmniMixPlayer.Backend.Http
     public record PlayRequest(string uuid);
     public record SeekRequest(float position);
     public record VolumeRequest(float volume);
+    public record LatencyRequest(float latency);
     public record ShuffleRequest(bool enabled);
     public record RepeatRequest(string mode);
     public record MoveRequest(int from, int to);
