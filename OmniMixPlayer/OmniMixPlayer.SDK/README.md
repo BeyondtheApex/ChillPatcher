@@ -1,6 +1,6 @@
 # ChillPatcher SDK
 
-ChillPatcher SDK 为《Chill With You》游戏提供音乐模块开发接口，允许开发者创建自定义音乐源模块。
+ChillPatcher SDK 为项目提供音乐模块开发接口，允许开发者创建自定义音乐源模块。
 
 ## 快速开始
 
