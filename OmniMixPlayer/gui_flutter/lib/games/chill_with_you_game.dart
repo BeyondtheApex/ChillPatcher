@@ -9,7 +9,7 @@ class ChillWithYouGame extends GameDeclaration {
           signatureFiles: const ['Chill With You.exe', 'Chill With You_Data'],
           supportedFrameworks: const ['bepinex_5'],
           supportedMods: const ['chill_patcher'],
-          websiteUrl: 'https://store.steampowered.com/app/3361180',
+          websiteUrl: 'https://store.steampowered.com/app/3548580',
           coverAssetPath: 'assets/covers/chill_with_you.png',
         );
 }
