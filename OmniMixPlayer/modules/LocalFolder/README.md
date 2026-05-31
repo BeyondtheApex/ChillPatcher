@@ -2,7 +2,7 @@
 
 这是 ChillPatcher SDK 的参考实现模块，演示如何使用 SDK 创建自定义音乐源模块。
 
-> **注意**：本文档主要作为 SDK 使用示例，功能说明请参见 [主 README](../README.md) 的"本地文件夹模块设置"部分。
+> **注意**：本文档主要作为 SDK 使用示例，功能说明请参见 [ChillPatcher 主 README](../OmniMixPlayer.SDK/README.md) 的模块开发指南部分。
 
 ## 模块概述
 
@@ -50,8 +50,8 @@ ChillPatcher.Module.LocalFolder/
 使用 `[MusicModule]` 属性声明模块：
 
 ```csharp
-[MusicModule(ModuleInfo.MODULE_ID, ModuleInfo.MODULE_NAME, 
-    Version = ModuleInfo.MODULE_VERSION, 
+[MusicModule(ModuleInfo.MODULE_ID, ModuleInfo.MODULE_NAME,
+    Version = ModuleInfo.MODULE_VERSION,
     Author = ModuleInfo.MODULE_AUTHOR,
     Description = ModuleInfo.MODULE_DESCRIPTION,
     Priority = 10)]
@@ -65,12 +65,12 @@ public class LocalFolderModule : IMusicModule, IMusicSourceProvider, ICoverProvi
 
 本模块实现了以下接口：
 
-| 接口 | 用途 |
-|------|------|
-| `IMusicModule` | 基础模块接口（必须） |
-| `IMusicSourceProvider` | 提供音乐列表和加载功能 |
-| `ICoverProvider` | 提供封面加载功能 |
-| `IFavoriteExcludeHandler` | 管理收藏和排除状态 |
+| 接口                      | 用途                   |
+| ------------------------- | ---------------------- |
+| `IMusicModule`            | 基础模块接口（必须）   |
+| `IMusicSourceProvider`    | 提供音乐列表和加载功能 |
+| `ICoverProvider`          | 提供封面加载功能       |
+| `IFavoriteExcludeHandler` | 管理收藏和排除状态     |
 
 ### 3. 模块能力声明
 
@@ -218,7 +218,7 @@ private void LoadNativeDependencies()
     var moduleDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
     var arch = IntPtr.Size == 8 ? "x64" : "x86";
     var sqlitePath = Path.Combine(moduleDir, "native", arch, "SQLite.Interop.dll");
-    
+
     NativeMethods.LoadLibrary(sqlitePath);
 }
 ```
