@@ -42,13 +42,13 @@ Want to add custom in-game music or audio features to your favorite game? Integr
 - **C# via OmniMixPlayer.SDK** — reference the SDK and consume streams with minimal code.
 - **Native C ABI via OmniPcmShared** — drop-in shared-memory reader for any language/framework (C++, Rust, Unity, Unreal, etc.).
 
-> 👉 See the [🔌 Developer Guidelines](#developer-guidelines--references).
+> 👉 See the [🔌 Developer Guidelines](#dev-guide).
 
 Both SDKs offer a **high level of decoupling** — your module or integration communicates with the backend through well-defined interfaces and shared memory, not tight coupling.
 
 ---
 
-`<a id="quick-install"></a>`
+<a id="quick-install"></a>
 
 ## 🚀 Quick Installation
 
@@ -61,14 +61,14 @@ To install these mods, this platform provides a very convenient one-click deploy
 
 ---
 
-`<a id="game-mods"></a>`
+<a id="game-mods"></a>
 
 ## 🎮 Game Mods & Quick Links
 
 - [**1. Forza Horizon 6 Radio Hijack Mod**](#fh6-mod)
 - [**2. Chill with You : Lo-Fi Story Mod — ChillPatcher**](#chillpatcher-mod)
 
-`<a id="fh6-mod"></a>`
+<a id="fh6-mod"></a>
 
 ### 1. "Forza Horizon 6" Radio Hijack Mod
 
@@ -86,7 +86,7 @@ A C++ dll-injection mod for _Forza Horizon 6_ designed to bring custom streaming
 
 ---
 
-`<a id="chillpatcher-mod"></a>`
+<a id="chillpatcher-mod"></a>
 
 ### 2. "Chill with You : Lo-Fi Story" Mod — ChillPatcher
 
@@ -117,6 +117,8 @@ To feed games and mods with unified audio sources, the project utilizes a shared
 - **Zero API Maintenance**: Retrieve playlists, favorites, and multi-platform media streams directly from the backend, avoiding the need to adapt or maintain dynamic API wrappers for NetEase, QQ Music, or Bilibili.
 
 ---
+
+<a id="dev-guide"></a>
 
 ## 🔌 Developer Guidelines & References
 

@@ -42,13 +42,13 @@
 - **C# 集成（OmniMixPlayer.SDK）** — 引用 SDK，少量代码即可消费音频流。
 - **原生 C ABI 集成（OmniPcmShared）** — 即插即用的共享内存读取器，适用于任何语言/框架（C++、Rust、Unity、Unreal 等）。
 
-> 👉 参考 [🔌 开发者指南](#开发者指南与链接)。
+> 👉 参考 [🔌 开发者指南](#dev-guide)。
 
 两个 SDK 都提供了**高度解耦**的架构——模块或游戏集成通过定义良好的接口和共享内存与后端通信，而非紧耦合。
 
 ---
 
-`<a id="quick-install"></a>`
+<a id="quick-install"></a>
 
 ## 🚀 简易安装方式
 
@@ -61,14 +61,14 @@
 
 ---
 
-`<a id="game-mods"></a>`
+<a id="game-mods"></a>
 
 ## 🎮 游戏 Mod 介绍与快捷链接
 
 - [**1. 《极限竞速：地平线 6》电台劫持 Mod**](#fh6-mod)
 - [**2. 《Chill with You》Mod — ChillPatcher**](#chillpatcher-mod)
 
-`<a id="fh6-mod"></a>`
+<a id="fh6-mod"></a>
 
 ### 1. 《极限竞速：地平线 6 (Forza Horizon 6)》电台劫持 Mod
 
@@ -86,7 +86,7 @@
 
 ---
 
-`<a id="chillpatcher-mod"></a>`
+<a id="chillpatcher-mod"></a>
 
 ### 2. 《放松时光：与你共享Lo-Fi故事 (Chill with You : Lo-Fi Story)》Mod — ChillPatcher
 
@@ -119,6 +119,8 @@
 - **免去繁琐的 API 维护**：你的应用可以直接使用后台获取到的歌单、收藏夹和多平台音源，无需自己去适配网易云、QQ音乐或 B站的动态 API 接口。
 
 ---
+
+<a id="dev-guide"></a>
 
 ## 🔌 开发者指南与链接
 
