@@ -374,6 +374,18 @@ abstract class AppLocalizations {
   /// **'Minimize to tray'**
   String get minimizeToTray;
 
+  /// No description provided for @mediaControls.
+  ///
+  /// In en, this message translates to:
+  /// **'Media controls'**
+  String get mediaControls;
+
+  /// No description provided for @floatingPlayer.
+  ///
+  /// In en, this message translates to:
+  /// **'Floating player'**
+  String get floatingPlayer;
+
   /// No description provided for @appearance.
   ///
   /// In en, this message translates to:
@@ -1567,6 +1579,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'1. Click \'Open\' next to \'Source\' to access the staging folder.\n2. Click \'Open\' next to \'Target\' to access the game folder.\n3. Select and copy ALL items inside the \'Source\' folder.\n4. Paste them directly into the \'Target\' folder. Choose \'Replace\' if prompted.\n5. Click \'Check Installation\' below to verify and finish.'**
   String get manualInstallGuideSteps;
+
+  /// No description provided for @shortcutSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Gamepad Shortcut Settings'**
+  String get shortcutSettings;
+
+  /// No description provided for @shortcutSettingsDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure gamepad shortcut keys to control playback, volume, etc.'**
+  String get shortcutSettingsDesc;
+
+  /// No description provided for @configureShortcutsButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure Shortcuts'**
+  String get configureShortcutsButton;
+
+  /// No description provided for @registeredEvents.
+  ///
+  /// In en, this message translates to:
+  /// **'Registered Shortcut Events'**
+  String get registeredEvents;
+
+  /// No description provided for @prefixKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefix'**
+  String get prefixKey;
+
+  /// No description provided for @negationPrefix.
+  ///
+  /// In en, this message translates to:
+  /// **'Negate Prefix'**
+  String get negationPrefix;
+
+  /// Label for regular key slot
+  ///
+  /// In en, this message translates to:
+  /// **'Key {index}'**
+  String regularKeySlot(int index);
+
+  /// No description provided for @pressGamepadButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Press Gamepad Button...'**
+  String get pressGamepadButton;
+
+  /// No description provided for @clearShortcut.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear Shortcut'**
+  String get clearShortcut;
+
+  /// No description provided for @clearAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear All'**
+  String get clearAll;
+
+  /// No description provided for @shortcutEvaluationError.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefix cannot be configured alone. Please bind at least one regular key.'**
+  String get shortcutEvaluationError;
+
+  /// No description provided for @shortcutPlayPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Play / Pause'**
+  String get shortcutPlayPause;
+
+  /// No description provided for @shortcutNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next Track'**
+  String get shortcutNext;
+
+  /// No description provided for @shortcutPrev.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous Track'**
+  String get shortcutPrev;
+
+  /// No description provided for @shortcutVolUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Volume Up +5%'**
+  String get shortcutVolUp;
+
+  /// No description provided for @shortcutVolDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Volume Down -5%'**
+  String get shortcutVolDown;
+
+  /// No description provided for @shortcutToggleFloatingPlayer.
+  ///
+  /// In en, this message translates to:
+  /// **'Toggle Floating Player Window'**
+  String get shortcutToggleFloatingPlayer;
+
+  /// No description provided for @shortcutCenterLeftQuad.
+  ///
+  /// In en, this message translates to:
+  /// **'Move Floating Player to Left 1/4'**
+  String get shortcutCenterLeftQuad;
 }
 
 class _AppLocalizationsDelegate

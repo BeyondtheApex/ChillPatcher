@@ -5,16 +5,27 @@
 /// state, and all playback control operations.
 
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_client.dart';
+import '../../services/media_control_service.dart';
 import '../../models/node_data.dart';
 
 class PlaybackStateManager extends ChangeNotifier {
   final ApiClient Function() _getApi;
+  final MediaControlService _mediaControlService;
+  late final MediaControlCallbacks _mediaControlCallbacks;
 
-  PlaybackStateManager(this._getApi);
+  PlaybackStateManager(this._getApi)
+    : _mediaControlService = createMediaControlService() {
+    _mediaControlCallbacks = MediaControlCallbacks(
+      play: _mediaPlay,
+      pause: _mediaPause,
+      skipToNext: _mediaSkipToNext,
+      skipToPrevious: _mediaSkipToPrevious,
+      seek: _mediaSeek,
+    );
+  }
 
   // ── State ──
   List<PlaybackInstanceInfo> _instances = [];
@@ -28,6 +39,8 @@ class PlaybackStateManager extends ChangeNotifier {
   double _lastVolume = 1.0;
   double _lastTargetLatency = 0.05;
   Set<String> _backendInstanceIds = {};
+  String? _mediaControlInstanceId;
+  bool _mediaControlsEnabled = true;
 
   // Getters
   List<PlaybackInstanceInfo> get instances => _instances;
@@ -43,6 +56,7 @@ class PlaybackStateManager extends ChangeNotifier {
   int get attachedAudioClientCount =>
       _instances.where((i) => i.attached).length;
   Set<String> get backendInstanceIds => _backendInstanceIds;
+  bool get mediaControlsEnabled => _mediaControlsEnabled;
 
   ApiClient get api => _getApi();
 
@@ -73,6 +87,18 @@ class PlaybackStateManager extends ChangeNotifier {
       _backendInstanceIds.contains(instanceId);
   bool instanceExists(String instanceId) =>
       _instances.any((i) => i.id == instanceId);
+
+  void setMediaControlsEnabled(bool enabled) {
+    if (_mediaControlsEnabled == enabled) return;
+    _mediaControlsEnabled = enabled;
+    if (enabled) {
+      _syncMediaControls();
+    } else {
+      _mediaControlInstanceId = null;
+      _publishMediaControlSnapshot(null);
+    }
+    notifyListeners();
+  }
 
   // ── Instance selection ──
 
@@ -198,6 +224,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
       _backendInstanceIds = list.map((i) => i.id).toSet();
       _instances = list;
+      _syncMediaControls();
 
       if (_activeInstanceId == nextActiveId && _activeInstanceId != null) {
         await loadActiveProfile();
@@ -221,6 +248,82 @@ class PlaybackStateManager extends ChangeNotifier {
     } finally {
       _loading = false;
     }
+  }
+
+  void _syncMediaControls() {
+    if (!_mediaControlsEnabled) {
+      _mediaControlInstanceId = null;
+      _publishMediaControlSnapshot(null);
+      return;
+    }
+
+    final eligible = _instances
+        .where((i) => i.attached && i.isServerManaged)
+        .toList(growable: false);
+
+    PlaybackInstanceInfo? controlled;
+    final currentId = _mediaControlInstanceId;
+    if (currentId != null) {
+      controlled = eligible.where((i) => i.id == currentId).firstOrNull;
+    }
+
+    controlled ??= eligible.firstOrNull;
+    _mediaControlInstanceId = controlled?.id;
+
+    final snapshot = controlled == null
+        ? null
+        : MediaControlSnapshot(instance: controlled, baseUrl: api.baseUrl);
+    _publishMediaControlSnapshot(snapshot);
+  }
+
+  void _publishMediaControlSnapshot(MediaControlSnapshot? snapshot) {
+    unawaited(
+      _mediaControlService
+          .ensureInitialized(_mediaControlCallbacks)
+          .then((_) => _mediaControlService.update(snapshot))
+          .catchError((_) {}),
+    );
+  }
+
+  bool _canMediaControl(String instanceId) {
+    if (!_mediaControlsEnabled) return false;
+    if (_mediaControlInstanceId != instanceId) return false;
+    final instance = _instances.where((i) => i.id == instanceId).firstOrNull;
+    return instance != null && instance.attached && instance.isServerManaged;
+  }
+
+  Future<void> _mediaPlay(String instanceId) async {
+    if (!_canMediaControl(instanceId)) return;
+    try {
+      await api.resume(instanceId);
+    } catch (_) {
+      await api.play(instanceId);
+    }
+    await refreshPlayback();
+  }
+
+  Future<void> _mediaPause(String instanceId) async {
+    if (!_canMediaControl(instanceId)) return;
+    await api.pause(instanceId);
+    await refreshPlayback();
+  }
+
+  Future<void> _mediaSkipToNext(String instanceId) async {
+    if (!_canMediaControl(instanceId)) return;
+    await api.next(instanceId);
+    await refreshPlayback();
+  }
+
+  Future<void> _mediaSkipToPrevious(String instanceId) async {
+    if (!_canMediaControl(instanceId)) return;
+    await api.previous(instanceId);
+    await refreshPlayback();
+  }
+
+  Future<void> _mediaSeek(String instanceId, Duration position) async {
+    if (!_canMediaControl(instanceId)) return;
+    await api.seek(instanceId, position.inMilliseconds / 1000.0);
+    await refreshPlayback();
   }
 
   // ── Playback controls ──
@@ -474,7 +577,10 @@ class PlaybackStateManager extends ChangeNotifier {
         gameName: instance.gameName,
       );
     }).toList();
-    if (changed) notifyListeners();
+    if (changed) {
+      _syncMediaControls();
+      notifyListeners();
+    }
   }
 
   // ── Clear state (on disconnect) ──
@@ -488,11 +594,14 @@ class PlaybackStateManager extends ChangeNotifier {
     _activePlaylist = [];
     _playlistSources = [];
     _backendInstanceIds.clear();
+    _mediaControlInstanceId = null;
+    _publishMediaControlSnapshot(null);
   }
 
   // ── Dispose ──
 
   void disposeManager() {
     stopPolling();
+    unawaited(_mediaControlService.dispose());
   }
 }

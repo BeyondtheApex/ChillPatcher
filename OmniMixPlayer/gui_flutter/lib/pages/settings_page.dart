@@ -4,6 +4,7 @@ import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
 import '../models/mod_manifest.dart';
 import '../models/node_data.dart';
+import 'shortcut_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppState state;
@@ -166,20 +167,31 @@ class _SettingsPageState extends State<SettingsPage> {
         // ═══════════════════════════════════
         //  GUI Settings — desktop only
         // ═══════════════════════════════════
-        if (!kIsWeb) ...[
-          _SectionHeader(title: l10n.guiSettings),
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            color: cs.surfaceContainerHighest,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+        _SectionHeader(title: l10n.guiSettings),
+        const SizedBox(height: 8),
+        Card(
+          elevation: 0,
+          color: cs.surfaceContainerHighest,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SwitchRow(
+                  label: l10n.mediaControls,
+                  value: st.mediaControlsEnabled,
+                  onChanged: (v) => st.setMediaControlsEnabled(v),
+                ),
+                if (!kIsWeb) ...[
+                  const SizedBox(height: 12),
+                  _SwitchRow(
+                    label: l10n.floatingPlayer,
+                    value: st.floatingPlayerVisible,
+                    onChanged: (v) => st.setFloatingPlayerVisible(v),
+                  ),
                   _SwitchRow(
                     label: l10n.autoStart,
                     value: st.autostart,
@@ -223,12 +235,48 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              l10n.shortcutSettings,
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              l10n.shortcutSettingsDesc,
+                              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant.withOpacity(0.8)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      FilledButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ShortcutSettingsPage(appState: st),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.sports_esports, size: 16),
+                        label: Text(l10n.configureShortcutsButton),
+                      ),
+                    ],
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
-        ],
+        ),
+        const SizedBox(height: 24),
 
         // ═══════════════════════════════════
         //  Appearance

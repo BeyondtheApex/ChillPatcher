@@ -149,6 +149,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get minimizeToTray => '最小化到托盘';
 
   @override
+  String get mediaControls => '媒体控制';
+
+  @override
+  String get floatingPlayer => '播放悬浮窗';
+
+  @override
   String get appearance => '外观';
 
   @override
@@ -791,4 +797,60 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get manualInstallGuideSteps =>
       '1. 点击“源目录”旁的“打开”按钮，打开待拷贝文件的文件夹。\n2. 点击“目标目录”旁的“打开”按钮，打开游戏安装文件夹。\n3. 选择并复制“源目录”下的所有文件和文件夹。\n4. 将它们粘贴到“目标目录”中，如果系统提示有同名文件，请选择“覆盖/替换”。\n5. 粘贴完成后，点击本界面下方的“检查安装”按钮进行验证并完成。';
+
+  @override
+  String get shortcutSettings => '手柄快捷键设置';
+
+  @override
+  String get shortcutSettingsDesc => '设置手柄快捷键来控制播放、音量等操作。';
+
+  @override
+  String get configureShortcutsButton => '配置快捷键';
+
+  @override
+  String get registeredEvents => '注册的快捷键事件';
+
+  @override
+  String get prefixKey => '前缀键';
+
+  @override
+  String get negationPrefix => '前缀取反';
+
+  @override
+  String regularKeySlot(int index) {
+    return '常规键 $index';
+  }
+
+  @override
+  String get pressGamepadButton => '按下手柄按键...';
+
+  @override
+  String get clearShortcut => '清除快捷键';
+
+  @override
+  String get clearAll => '清除全部';
+
+  @override
+  String get shortcutEvaluationError => '不能单独设置前缀键，请至少绑定一个常规键。';
+
+  @override
+  String get shortcutPlayPause => '播放 / 暂停';
+
+  @override
+  String get shortcutNext => '下一首';
+
+  @override
+  String get shortcutPrev => '上一首';
+
+  @override
+  String get shortcutVolUp => '音量 +5%';
+
+  @override
+  String get shortcutVolDown => '音量 -5%';
+
+  @override
+  String get shortcutToggleFloatingPlayer => '开启和关闭播放窗口';
+
+  @override
+  String get shortcutCenterLeftQuad => '移至左侧四分之一处';
 }

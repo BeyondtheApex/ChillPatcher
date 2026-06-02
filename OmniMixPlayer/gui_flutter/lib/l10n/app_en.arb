@@ -46,6 +46,8 @@
   "guiSettings": "GUI Settings",
   "autoStart": "Auto-start",
   "minimizeToTray": "Minimize to tray",
+  "mediaControls": "Media controls",
+  "floatingPlayer": "Floating player",
   "appearance": "Appearance",
   "theme": "Theme",
   "themeLight": "Light",
@@ -389,6 +391,224 @@
     }
   },
   "manualInstallGuideTitle": "Manual Installation Steps",
-  "manualInstallGuideSteps": "1. Click 'Open' next to 'Source' to access the staging folder.\n2. Click 'Open' next to 'Target' to access the game folder.\n3. Select and copy ALL items inside the 'Source' folder.\n4. Paste them directly into the 'Target' folder. Choose 'Replace' if prompted.\n5. Click 'Check Installation' below to verify and finish."
-}
+  "manualInstallGuideSteps": "1. Click 'Open' next to 'Source' to access the staging folder.\n2. Click 'Open' next to 'Target' to access the game folder.\n3. Select and copy ALL items inside the 'Source' folder.\n4. Paste them directly into the 'Target' folder. Choose 'Replace' if prompted.\n5. Click 'Check Installation' below to verify and finish.",
+  "shortcutSettings": "Gamepad Shortcut Settings",
+  "shortcutSettingsDesc": "Configure gamepad shortcut keys to control playback, volume, etc.",
+  "configureShortcutsButton": "Configure Shortcuts",
+  "registeredEvents": "Registered Shortcut Events",
+  "prefixKey": "Prefix",
+  "negationPrefix": "Negate Prefix",
+  "regularKeySlot": "Key {index}",
+  "@regularKeySlot": {
+"placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "archiveInstanceTooltip": "Save as archive",
+  "archiveInstance": "Archive Instance",
+  "archiveInstanceHint": "Save instance \"{id}\" settings as an archive for later reuse during installation.",
+  "@archiveInstanceHint": {
+    "description": "Archive instance hint dialog",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "archiveAction": "Archive",
+  "inheritArchiveTitle": "Inherit Archive Settings",
+  "inheritArchiveHint": "Choose an archive to inherit playlist and settings from. Unbound archives will be consumed, bound ones will be copied.",
+  "archiveBoundWillCopy": "Bound to instance · Will copy settings",
+  "archiveFreeWillConsume": "Unbound · Will consume this archive",
+  "skipInherit": "Skip, fresh install",
+  "uninstallServiceConfirm": "This will stop the backend service and remove it from the system.",
+  "serviceAutoStartUpdated": "Service auto-start updated",
+  "serviceAutoStartFailed": "Failed to update service auto-start",
+  "autoStartSuccess": "Auto-start updated successfully",
+  "autoStartFailed": "Failed to update auto-start",
 
+  "waitingForBackendMod": "Please wait, waiting for backend service for Mod installation and management...",
+  "omnimixInstance": "OmniMix Instance",
+  "instanceOnline": "Online — {id}",
+  "@instanceOnline": {
+    "description": "Instance online status",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "instanceOffline": "Offline — {id}",
+  "@instanceOffline": {
+    "description": "Instance offline status",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "availableVersion": "Available: v{version}",
+  "@availableVersion": {
+    "description": "Available version",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "latestVersion": "Latest: v{version}",
+  "@latestVersion": {
+    "description": "Latest version",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+
+  "refresh": "Refresh",
+  "noInstances": "No instances",
+  "exitGui": "Exit GUI",
+  "languageChinese": "中文",
+  "languageEnglish": "English",
+  "languageSystem": "System",
+
+  "backendNotConnected": "Backend Not Connected",
+  "libraryBrowser": "Library Browser",
+  "playlistStats": "{tags} playlists · {songs} songs",
+  "@playlistStats": {
+    "description": "Playlist statistics",
+    "placeholders": {
+      "tags": { "type": "int" },
+      "songs": { "type": "int" }
+    }
+  },
+  "libraryEmpty": "Library is empty",
+  "loadLibraryFailed": "Failed to load library: {error}",
+  "@loadLibraryFailed": {
+    "description": "Failed to load library with error",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "fromModule": "from {module}",
+  "@fromModule": {
+    "description": "From module name",
+    "placeholders": {
+      "module": { "type": "String" }
+    }
+  },
+  "albumCountLabel": "{count} albums",
+  "@albumCountLabel": {
+    "description": "Album count",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "songCountLabel": "{count} songs",
+  "@songCountLabel": {
+    "description": "Song count label",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "unknownArtist": "Unknown artist",
+  "sourceChipLabel": "{name} ({count})",
+  "@sourceChipLabel": {
+    "description": "Source chip label with name and count",
+    "placeholders": {
+      "name": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "playNext": "Play next",
+  "addToQueueTail": "Add to queue tail",
+  "exclude": "Exclude",
+  "removeExclusion": "Remove exclusion",
+  "removeShort": "Remove",
+  "playTooltip": "Play",
+
+  "fh6SettingsTitle": "Forza Horizon 6 Integration Settings",
+  "mediaOverlaySettings": "Media Overlay Generator Settings",
+  "stationNameLabel": "Station Name in XML",
+  "stationNameHint": "e.g. Streamer Mode",
+  "sampleDurationLabel": "Sample Duration (s)",
+  "sampleDurationHint": "e.g. 300",
+  "displayNameLabel": "Game Display Name",
+  "displayNameHint": "e.g. OmniMix Player",
+  "artistNameLabel": "Artist Name",
+  "artistNameHint": "e.g. ChillPatcher",
+  "enableAnthemZip": "Enable Anthem.zip Processing",
+  "anthemModeLabel": "Anthem Mode",
+  "modeFull": "Full (Keep all original entries)",
+  "modePartial": "Partial (Remove empty directories)",
+  "logoOptionLabel": "Logo Option",
+  "copyDefaultLogo": "Copy default Horizon Pulse logo",
+  "injectCustomPng": "Inject custom PNG image",
+  "selectLogoPng": "Select Logo PNG",
+  "browse": "Browse",
+  "saveAndApply": "Save & Apply",
+
+  "equalizer": "Equalizer",
+  "noSelectedInstance": "No audio instance selected",
+  "equalizerControl": "Equalizer Control",
+  "enabled": "Enabled",
+  "disabled": "Disabled",
+  "selectPreset": "Select Preset",
+  "reset": "Reset",
+  "globalGainPreamp": "Global Gain (Preamp):",
+  "softClip": "Soft Clip (Prevent Clipping)",
+  "controlPointSettingsActive": "Control Point Settings ({frequency} Hz)",
+  "@controlPointSettingsActive": {
+    "description": "Active control point settings with frequency",
+    "placeholders": {
+      "frequency": { "type": "int" }
+    }
+  },
+  "controlPointSettingsNone": "Control Point Settings (None selected)",
+  "typeLabel": "Type: ",
+  "filterTypeBell": "Bell",
+  "filterTypeLowShelf": "Low Shelf",
+  "filterTypeHighShelf": "High Shelf",
+  "filterTypeLowPass": "Low Pass",
+  "filterTypeHighPass": "High Pass",
+  "qFactorLabel": "Q Factor: ",
+  "equalizerTip": "Tip: Double-click on the canvas to create a control point. Select and drag a point to adjust frequency and gain.",
+  "audioBufferLatencyTip": "Audio buffer latency (smaller is faster, default 0.05s)",
+  "manualInstall": "Manual Install",
+  "checkInstallation": "Check Installation",
+  "manualInstallTitle": "Manual Installation Mode",
+  "manualInstallHint": "Please copy all files and folders from the staging folder (Source) and paste them directly into your game folder (Target) manually.",
+  "manualInstallSource": "Source (Staging folder containing prepared files):",
+  "manualInstallTarget": "Target (Game folder):",
+  "manualInstallCheckHint": "After copying the files manually, click \"Check Installation\" to verify and register.",
+  "manualInstallErrDb": "Failed to register the manual install in the local database.",
+  "manualInstallErrFwDb": "Failed to register BepInEx in the database.",
+  "manualInstallErrVerify": "Verification failed. Necessary files/directories are still missing in your game folder. Please check if you dragged/copied all files correctly.",
+  "confirmInstall": "Confirm & Install",
+  "manualInstallErrRegFailed": "Verification succeeded, but registration failed: {error}",
+  "@manualInstallErrRegFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "manualInstallGuideTitle": "Manual Installation Steps",
+  "manualInstallGuideSteps": "1. Click 'Open' next to 'Source' to access the staging folder.\n2. Click 'Open' next to 'Target' to access the game folder.\n3. Select and copy ALL items inside the 'Source' folder.\n4. Paste them directly into the 'Target' folder. Choose 'Replace' if prompted.\n5. Click 'Check Installation' below to verify and finish.",
+  "shortcutSettings": "Gamepad Shortcut Settings",
+  "shortcutSettingsDesc": "Configure gamepad shortcut keys to control playback, volume, etc.",
+  "configureShortcutsButton": "Configure Shortcuts",
+  "registeredEvents": "Registered Shortcut Events",
+  "prefixKey": "Prefix",
+  "negationPrefix": "Negate Prefix",
+  "regularKeySlot": "Key {index}",
+  "@regularKeySlot": {
+    "description": "Label for regular key slot",
+    "placeholders": {
+      "index": { "type": "int" }
+    }
+  },
+  "pressGamepadButton": "Press Gamepad Button...",
+  "clearShortcut": "Clear Shortcut",
+  "clearAll": "Clear All",
+  "shortcutEvaluationError": "Prefix cannot be configured alone. Please bind at least one regular key.",
+  "shortcutPlayPause": "Play / Pause",
+  "shortcutNext": "Next Track",
+  "shortcutPrev": "Previous Track",
+  "shortcutVolUp": "Volume Up +5%",
+  "shortcutVolDown": "Volume Down -5%",
+  "shortcutToggleFloatingPlayer": "Toggle Floating Player Window",
+  "shortcutCenterLeftQuad": "Move Floating Player to Left 1/4"
+}

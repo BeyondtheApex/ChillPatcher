@@ -18,11 +18,14 @@ dependencies:
   http: ^1.2.0
   web_socket_channel: ^3.0.0
   url_launcher: ^6.3.1
+  audio_service: ^0.18.18
+  audio_service_win: ^0.0.3
 
   # Material You / Dynamic Color
   dynamic_color: ^1.7.0
 
   # Desktop
+  desktop_multi_window: ^0.3.0
   window_manager: ^0.4.0
   system_tray: ^2.0.0
   process_run: ^1.1.0
@@ -35,6 +38,7 @@ dependencies:
 
   # State management
   flutter_riverpod: ^2.6.1
+  win32: ^5.15.0
 
 dev_dependencies:
   flutter_test:

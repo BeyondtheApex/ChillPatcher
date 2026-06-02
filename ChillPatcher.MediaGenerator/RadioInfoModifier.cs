@@ -9,7 +9,7 @@ static class RadioInfoModifier
     public static void Modify(ConfigModel config, string outputDir)
     {
         var audioDir = Path.Combine(config.GameDir, "media", "Audio");
-        var outAudioDir = Path.Combine(outputDir, "Audio");
+        var outAudioDir = Path.Combine(outputDir, "media", "Audio");
 
         var locales = new[] { "BR", "CN", "DE", "EN", "ES", "IT", "JP", "KO", "MX", "TW" };
 

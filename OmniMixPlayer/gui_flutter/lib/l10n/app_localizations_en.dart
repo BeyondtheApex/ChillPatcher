@@ -149,6 +149,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get minimizeToTray => 'Minimize to tray';
 
   @override
+  String get mediaControls => 'Media controls';
+
+  @override
+  String get floatingPlayer => 'Floating player';
+
+  @override
   String get appearance => 'Appearance';
 
   @override
@@ -805,4 +811,62 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get manualInstallGuideSteps =>
       '1. Click \'Open\' next to \'Source\' to access the staging folder.\n2. Click \'Open\' next to \'Target\' to access the game folder.\n3. Select and copy ALL items inside the \'Source\' folder.\n4. Paste them directly into the \'Target\' folder. Choose \'Replace\' if prompted.\n5. Click \'Check Installation\' below to verify and finish.';
+
+  @override
+  String get shortcutSettings => 'Gamepad Shortcut Settings';
+
+  @override
+  String get shortcutSettingsDesc =>
+      'Configure gamepad shortcut keys to control playback, volume, etc.';
+
+  @override
+  String get configureShortcutsButton => 'Configure Shortcuts';
+
+  @override
+  String get registeredEvents => 'Registered Shortcut Events';
+
+  @override
+  String get prefixKey => 'Prefix';
+
+  @override
+  String get negationPrefix => 'Negate Prefix';
+
+  @override
+  String regularKeySlot(int index) {
+    return 'Key $index';
+  }
+
+  @override
+  String get pressGamepadButton => 'Press Gamepad Button...';
+
+  @override
+  String get clearShortcut => 'Clear Shortcut';
+
+  @override
+  String get clearAll => 'Clear All';
+
+  @override
+  String get shortcutEvaluationError =>
+      'Prefix cannot be configured alone. Please bind at least one regular key.';
+
+  @override
+  String get shortcutPlayPause => 'Play / Pause';
+
+  @override
+  String get shortcutNext => 'Next Track';
+
+  @override
+  String get shortcutPrev => 'Previous Track';
+
+  @override
+  String get shortcutVolUp => 'Volume Up +5%';
+
+  @override
+  String get shortcutVolDown => 'Volume Down -5%';
+
+  @override
+  String get shortcutToggleFloatingPlayer => 'Toggle Floating Player Window';
+
+  @override
+  String get shortcutCenterLeftQuad => 'Move Floating Player to Left 1/4';
 }

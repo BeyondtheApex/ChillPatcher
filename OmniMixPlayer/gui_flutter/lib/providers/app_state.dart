@@ -6,6 +6,7 @@ import '../models/mod_manifest.dart';
 import '../models/mod_enums.dart';
 import '../services/api_client.dart';
 import '../services/ws_client.dart';
+import '../services/floating_window_service.dart';
 import '../services/backend_manager.dart'
     if (dart.library.js_interop) '../stubs/backend_manager_web.dart';
 import '../services/platform_service.dart'
@@ -15,6 +16,7 @@ import 'service/service_state_manager.dart';
 import 'playback/playback_state_manager.dart';
 import 'modules/modules_state_manager.dart';
 import 'game_integration/game_integration_manager.dart';
+import 'input/input_event_controller.dart';
 
 enum AppThemeMode { light, dark, system }
 
@@ -29,6 +31,7 @@ class AppState extends ChangeNotifier {
   late final PlaybackStateManager _playback;
   late final ModulesStateManager _modules;
   late final GameIntegrationManager _game;
+  late final InputEventController _input;
 
   // ── Local state (not yet extracted) ──
   AppThemeMode _themeMode = AppThemeMode.system;
@@ -36,16 +39,21 @@ class AppState extends ChangeNotifier {
   bool _useSystemColor = true;
   String _language = 'system';
   String _closeBehavior = 'exit';
+  bool _mediaControlsEnabled = true;
+  bool _floatingPlayerVisible = false;
   int _currentTab = 0;
   String? _lastError;
   int _libraryGeneration = 0;
   int _equalizerGeneration = 0;
+  double _lastManualX = 0.0;
+  double _lastManualY = 0.0;
 
   // ── Public accessors ──
   BackendManager get backendMgr => _backend.backendMgr;
   ApiClient get api => _backend.api;
   WsClient get ws => _backend.ws;
   String get apiBaseUrl => _backend.apiBaseUrl;
+  InputEventController get input => _input;
 
   // ── Backend ──
   bool get backendOnline => _backend.online;
@@ -238,19 +246,16 @@ class AppState extends ChangeNotifier {
     required String modId,
     String? inheritArchiveId,
   }) => _game.finalizeInstall(
-        gameId: gameId,
-        modId: modId,
-        inheritArchiveId: inheritArchiveId,
-      );
+    gameId: gameId,
+    modId: modId,
+    inheritArchiveId: inheritArchiveId,
+  );
 
   Future<bool> finalizeFrameworkInstall({
     required String gameId,
     required String frameworkId,
-  }) => _game.finalizeFrameworkInstall(
-        gameId: gameId,
-        frameworkId: frameworkId,
-      );
-
+  }) =>
+      _game.finalizeFrameworkInstall(gameId: gameId, frameworkId: frameworkId);
 
   // ── Theme ──
   AppThemeMode get themeMode => _themeMode;
@@ -258,6 +263,8 @@ class AppState extends ChangeNotifier {
   bool get useSystemColor => _useSystemColor;
   String get language => _language;
   String get closeBehavior => _closeBehavior;
+  bool get mediaControlsEnabled => _mediaControlsEnabled;
+  bool get floatingPlayerVisible => _floatingPlayerVisible;
   void setThemeMode(AppThemeMode mode) {
     _themeMode = mode;
     notifyListeners();
@@ -284,6 +291,21 @@ class AppState extends ChangeNotifier {
     if (v != 'minimize' && v != 'exit') return;
     _closeBehavior = v;
     _saveUiPrefs();
+    notifyListeners();
+  }
+
+  void setMediaControlsEnabled(bool v) {
+    _mediaControlsEnabled = v;
+    _playback.setMediaControlsEnabled(v);
+    _saveUiPrefs();
+    notifyListeners();
+  }
+
+  void setFloatingPlayerVisible(bool v) {
+    if (_floatingPlayerVisible == v) return;
+    _floatingPlayerVisible = v;
+    _saveUiPrefs();
+    unawaited(FloatingWindowService.instance.setPlayerVisible(v));
     notifyListeners();
   }
 
@@ -355,6 +377,10 @@ class AppState extends ChangeNotifier {
     _seedColor = 0xFF673AB7;
     _useSystemColor = true;
     _closeBehavior = 'exit';
+    _mediaControlsEnabled = true;
+    _floatingPlayerVisible = false;
+    _playback.setMediaControlsEnabled(true);
+    unawaited(FloatingWindowService.instance.setPlayerVisible(false));
     _saveUiPrefs();
     notifyListeners();
     await saveAndRestart();
@@ -365,9 +391,14 @@ class AppState extends ChangeNotifier {
   void init({int? port}) {
     _createManagers();
     _wireManagers();
+    _initFloatingWindows();
     _loadUiPrefs();
     _backend.init(port: port);
     _game.loadSettings();
+    _input.init();
+    _input.events.listen((event) {
+      FloatingWindowService.instance.handleInputEvent(event);
+    });
   }
 
   void initWeb({int? port}) {
@@ -376,6 +407,10 @@ class AppState extends ChangeNotifier {
     _loadUiPrefs();
     _backend.initWeb(port: port);
     _playback.startPolling();
+    _input.init();
+    _input.events.listen((event) {
+      FloatingWindowService.instance.handleInputEvent(event);
+    });
   }
 
   void _createManagers() {
@@ -383,6 +418,60 @@ class AppState extends ChangeNotifier {
     _service = ServiceStateManager();
     _playback = PlaybackStateManager(() => _backend.api);
     _modules = ModulesStateManager(() => _backend.api);
+    _input = InputEventController();
+
+    // Register default playback shortcut actions
+    _input.registerShortcutAction(
+      ShortcutAction(
+        id: 'playback_play_pause',
+        descriptionKey: 'shortcutPlayPause',
+        onTrigger: () => togglePlayback(),
+      ),
+    );
+    _input.registerShortcutAction(
+      ShortcutAction(
+        id: 'playback_next',
+        descriptionKey: 'shortcutNext',
+        onTrigger: () => nextTrack(),
+      ),
+    );
+    _input.registerShortcutAction(
+      ShortcutAction(
+        id: 'playback_prev',
+        descriptionKey: 'shortcutPrev',
+        onTrigger: () => previousTrack(),
+      ),
+    );
+    _input.registerShortcutAction(
+      ShortcutAction(
+        id: 'playback_vol_up',
+        descriptionKey: 'shortcutVolUp',
+        onTrigger: () => setVolumeActive((lastVolume + 0.05).clamp(0.0, 1.0)),
+      ),
+    );
+    _input.registerShortcutAction(
+      ShortcutAction(
+        id: 'playback_vol_down',
+        descriptionKey: 'shortcutVolDown',
+        onTrigger: () => setVolumeActive((lastVolume - 0.05).clamp(0.0, 1.0)),
+      ),
+    );
+    _input.registerShortcutAction(
+      ShortcutAction(
+        id: 'floating_window_toggle',
+        descriptionKey: 'shortcutToggleFloatingPlayer',
+        onTrigger: () => setFloatingPlayerVisible(!floatingPlayerVisible),
+      ),
+    );
+    _input.registerShortcutAction(
+      ShortcutAction(
+        id: 'floating_window_center_left_quad',
+        descriptionKey: 'shortcutCenterLeftQuad',
+        onTrigger: () =>
+            unawaited(FloatingWindowService.instance.moveToCenterLeftQuad()),
+      ),
+    );
+
     _game = GameIntegrationManager(
       getApi: () => _backend.api,
       isOnline: () => _backend.online,
@@ -405,6 +494,7 @@ class AppState extends ChangeNotifier {
       _playback,
       _modules,
       _game,
+      _input,
     ]) {
       m.addListener(() => notifyListeners());
     }
@@ -459,12 +549,58 @@ class AppState extends ChangeNotifier {
     _backend.onUiPushCallback = (push) => _modules.handleUiPush(push);
   }
 
+  void _initFloatingWindows() {
+    unawaited(
+      FloatingWindowService.instance.init(
+        onTogglePlayback: togglePlayback,
+        onPreviousTrack: previousTrack,
+        onNextTrack: nextTrack,
+        onSeek: seekActive,
+        onUpdateManualPosition: (x, y) async {
+          _lastManualX = x;
+          _lastManualY = y;
+          _saveUiPrefs();
+        },
+      ),
+    );
+    addListener(_syncFloatingPlayer);
+  }
+
+  void _syncFloatingPlayer() {
+    final instance = activeInstance;
+    final track = instance?.currentTrack;
+    unawaited(
+      FloatingWindowService.instance.updatePlayer(
+        FloatingPlayerSnapshot(
+          baseUrl: apiBaseUrl,
+          seedColor: _seedColor,
+          useSystemColor: _useSystemColor,
+          themeMode: _themeMode.name,
+          canControl: canControlActiveInstance,
+          hasTrack: track?.isEmpty == false,
+          isPlaying: instance?.isPlaying ?? false,
+          uuid: track?.uuid ?? '',
+          title: track?.title ?? '',
+          artist: track?.artist ?? '',
+          position: instance?.position ?? 0,
+          duration: track?.duration ?? 0,
+          lastManualX: _lastManualX,
+          lastManualY: _lastManualY,
+        ),
+      ),
+    );
+  }
+
   void _saveUiPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('ui_seed_color', _seedColor);
       await prefs.setBool('ui_use_system_color', _useSystemColor);
       await prefs.setString('ui_close_behavior', _closeBehavior);
+      await prefs.setBool('ui_media_controls_enabled', _mediaControlsEnabled);
+      await prefs.setBool('ui_floating_player_visible', _floatingPlayerVisible);
+      await prefs.setDouble('floating_player_last_manual_x', _lastManualX);
+      await prefs.setDouble('floating_player_last_manual_y', _lastManualY);
     } catch (_) {}
   }
 
@@ -474,6 +610,19 @@ class AppState extends ChangeNotifier {
         _seedColor = prefs.getInt('ui_seed_color') ?? 0xFF673AB7;
         _useSystemColor = prefs.getBool('ui_use_system_color') ?? true;
         _closeBehavior = prefs.getString('ui_close_behavior') ?? 'exit';
+        _mediaControlsEnabled =
+            prefs.getBool('ui_media_controls_enabled') ?? true;
+        _floatingPlayerVisible =
+            prefs.getBool('ui_floating_player_visible') ?? false;
+        _lastManualX = prefs.getDouble('floating_player_last_manual_x') ?? 0.0;
+        _lastManualY = prefs.getDouble('floating_player_last_manual_y') ?? 0.0;
+        _playback.setMediaControlsEnabled(_mediaControlsEnabled);
+
+        _syncFloatingPlayer();
+
+        if (_floatingPlayerVisible) {
+          unawaited(FloatingWindowService.instance.setPlayerVisible(true));
+        }
         notifyListeners();
       });
     } catch (_) {}
@@ -481,9 +630,12 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    removeListener(_syncFloatingPlayer);
     if (_playback.activeInstanceId != null) _playback.saveActive();
+    unawaited(FloatingWindowService.instance.dispose());
     _service.disposeManager();
     _playback.disposeManager();
+    _input.dispose();
     _backend.disposeManager();
     super.dispose();
   }

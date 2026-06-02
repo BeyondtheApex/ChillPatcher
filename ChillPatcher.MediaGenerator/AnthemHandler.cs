@@ -27,7 +27,7 @@ static class AnthemHandler
         }
 
         var uiDir = Path.Combine(config.GameDir, "media", "UI", "Textures");
-        var outUiDir = Path.Combine(outputDir, "UI", "Textures");
+        var outUiDir = Path.Combine(outputDir, "media", "UI", "Textures");
 
         // Process both normal and HiRes
         ProcessAnthemZip(

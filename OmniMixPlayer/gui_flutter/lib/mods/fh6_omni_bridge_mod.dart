@@ -52,15 +52,20 @@ class Fh6OmniBridgeMod extends ModDeclaration {
     log('Detected game version: $version');
 
     // 2. Perform backup of specific media assets to manager backups folder if not exists
-    final managerBackupDir = '${ModDeploymentService.managerDir}/backups/$id/v$version';
+    final managerBackupDir =
+        '${ModDeploymentService.managerDir}/backups/$id/v$version';
     final backupDirObj = Directory(managerBackupDir);
     if (!backupDirObj.existsSync()) {
-      log('Creating original media backup for version $version in manager backups...');
+      log(
+        'Creating original media backup for version $version in manager backups...',
+      );
       backupDirObj.createSync(recursive: true);
       _backupMediaFiles(gameDir, managerBackupDir);
       log('Backup created successfully.');
     } else {
-      log('Pristine backup for version $version already exists in manager backups.');
+      log(
+        'Pristine backup for version $version already exists in manager backups.',
+      );
     }
 
     // 3. Run media generator CLI, outputting to tempDir
@@ -103,7 +108,9 @@ class Fh6OmniBridgeMod extends ModDeclaration {
       } else {
         log('ERROR: Media generator failed with exit code ${result.exitCode}.');
         log(result.stderr);
-        throw Exception('Media generator failed with exit code ${result.exitCode}');
+        throw Exception(
+          'Media generator failed with exit code ${result.exitCode}',
+        );
       }
     } catch (e) {
       log('ERROR: Failed to run media generator executable: $e');
@@ -146,7 +153,7 @@ class Fh6OmniBridgeMod extends ModDeclaration {
 
     final normalizedGameDir = '$gameDir/.omnimix_backup/media_backup_v$version'
         .replaceAll('\\', '/');
-    final normalizedOutputDir = '$gameDir/media'.replaceAll('\\', '/');
+    final normalizedOutputDir = gameDir.replaceAll('\\', '/');
 
     final cliPath = _getCliPath();
     final configPath = _getConfigPath();

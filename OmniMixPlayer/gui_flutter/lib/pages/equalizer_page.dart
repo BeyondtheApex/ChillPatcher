@@ -57,7 +57,8 @@ class EqualizerState {
       enabled: json['enabled'] ?? json['Enabled'] ?? false,
       globalGainDb: (json['globalGainDb'] ?? json['GlobalGainDb'] ?? 0.0)
           .toDouble(),
-      softClipEnabled: json['softClipEnabled'] ?? json['SoftClipEnabled'] ?? true,
+      softClipEnabled:
+          json['softClipEnabled'] ?? json['SoftClipEnabled'] ?? true,
       points: pts
           .map((p) => EqualizerPoint.fromJson(p as Map<String, dynamic>))
           .toList(),
@@ -250,6 +251,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
     if (instId == null) return;
     try {
       final jsonMap = await widget.state.api.getInstanceEqualizer(instId);
+      if (!mounted) return;
       _notifier?.removeListener(_onNotifierChanged);
       final eq = EqualizerState.fromJson(jsonMap);
       setState(() {
@@ -265,9 +267,11 @@ class _EqualizerPageState extends State<EqualizerPage> {
   Future<void> _loadPresets() async {
     final instId = widget.state.activeInstanceId;
     if (instId == null) return;
+    if (!mounted) return;
     setState(() => _loadingPresets = true);
     try {
       final data = await widget.state.api.getInstanceEqualizerPresets(instId);
+      if (!mounted) return;
       final map = <String, EqualizerState>{};
       data.forEach((k, v) {
         map[k] = EqualizerState.fromJson(v as Map<String, dynamic>);
@@ -278,6 +282,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
     } catch (e) {
       debugPrint("Failed to load EQ presets: $e");
     } finally {
+      if (!mounted) return;
       setState(() => _loadingPresets = false);
     }
   }
@@ -393,7 +398,10 @@ class _EqualizerPageState extends State<EqualizerPage> {
               // Preset Dropdown
               if (_presets.isNotEmpty)
                 DropdownButton<String>(
-                  hint: Text(l10n.selectPreset, style: const TextStyle(fontSize: 13)),
+                  hint: Text(
+                    l10n.selectPreset,
+                    style: const TextStyle(fontSize: 13),
+                  ),
                   style: TextStyle(color: cs.onSurface, fontSize: 13),
                   items: _presets.keys.map((name) {
                     return DropdownMenuItem<String>(
@@ -591,7 +599,9 @@ class _EqualizerPageState extends State<EqualizerPage> {
                         children: [
                           Text(
                             selectedPt != null
-                                ? l10n.controlPointSettingsActive(selectedPt.frequency.round())
+                                ? l10n.controlPointSettingsActive(
+                                    selectedPt.frequency.round(),
+                                  )
                                 : l10n.controlPointSettingsNone,
                             style: TextStyle(
                               fontSize: 13,
@@ -716,10 +726,10 @@ class _EqualizerPageState extends State<EqualizerPage> {
                             child: Text(
                               "Q: ${(selectedPt?.q ?? 1.0).toStringAsFixed(2)}",
                               style: TextStyle(
-                                  fontSize: 12,
-                                  color: selectedPt != null
-                                      ? cs.onSurface
-                                      : cs.onSurface.withOpacity(0.4),
+                                fontSize: 12,
+                                color: selectedPt != null
+                                    ? cs.onSurface
+                                    : cs.onSurface.withOpacity(0.4),
                               ),
                             ),
                           ),

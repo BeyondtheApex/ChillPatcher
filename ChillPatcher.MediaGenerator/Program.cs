@@ -14,9 +14,9 @@ Console.WriteLine($"[chill-gen-media] Duration : {config.Bank.SampleDurationSec}
 Console.WriteLine();
 
 Directory.CreateDirectory(options.OutputDir);
-Directory.CreateDirectory(Path.Combine(options.OutputDir, "Audio", "FMODBanks"));
-Directory.CreateDirectory(Path.Combine(options.OutputDir, "UI", "Textures"));
-Directory.CreateDirectory(Path.Combine(options.OutputDir, "UI", "Textures", "HiRes"));
+Directory.CreateDirectory(Path.Combine(options.OutputDir, "media", "Audio", "FMODBanks"));
+Directory.CreateDirectory(Path.Combine(options.OutputDir, "media", "UI", "Textures"));
+Directory.CreateDirectory(Path.Combine(options.OutputDir, "media", "UI", "Textures", "HiRes"));
 
 if (!options.SkipBanks)
     BankGenerator.Generate(config, options.OutputDir);

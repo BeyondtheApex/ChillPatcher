@@ -46,6 +46,8 @@
   "guiSettings": "GUI 设置",
   "autoStart": "开机自启",
   "minimizeToTray": "最小化到托盘",
+  "mediaControls": "媒体控制",
+  "floatingPlayer": "\u64ad\u653e\u60ac\u6d6e\u7a97",
   "appearance": "外观",
   "theme": "主题",
   "themeLight": "浅色",
@@ -389,6 +391,224 @@
     }
   },
   "manualInstallGuideTitle": "手动安装步骤提示",
-  "manualInstallGuideSteps": "1. 点击“源目录”旁的“打开”按钮，打开待拷贝文件的文件夹。\n2. 点击“目标目录”旁的“打开”按钮，打开游戏安装文件夹。\n3. 选择并复制“源目录”下的所有文件和文件夹。\n4. 将它们粘贴到“目标目录”中，如果系统提示有同名文件，请选择“覆盖/替换”。\n5. 粘贴完成后，点击本界面下方的“检查安装”按钮进行验证并完成。"
-}
+  "manualInstallGuideSteps": "1. 点击“源目录”旁的“打开”按钮，打开待拷贝文件的文件夹。\n2. 点击“目标目录”旁的“打开”按钮，打开游戏安装文件夹。\n3. 选择并复制“源目录”下的所有文件和文件夹。\n4. 将它们粘贴到“目标目录”中，如果系统提示有同名文件，请选择“覆盖/替换”。\n5. 粘贴完成后，点击本界面下方的“检查安装”按钮进行验证并完成。",
+  "shortcutSettings": "手柄快捷键设置",
+  "shortcutSettingsDesc": "设置手柄快捷键来控制播放、音量等操作。",
+  "configureShortcutsButton": "配置快捷键",
+  "registeredEvents": "注册的快捷键事件",
+  "prefixKey": "前缀键",
+  "negationPrefix": "前缀取反",
+  "regularKeySlot": "常规键 {index}",
+  "@regularKeySlot": {
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "archiveInstanceTooltip": "保存为归档",
+  "archiveInstance": "保存实例归档",
+  "archiveInstanceHint": "将实例 \"{id}\" 的当前设置保存为归档，之后可在安装时继承。",
+  "@archiveInstanceHint": {
+    "description": "归档实例提示对话框",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "archiveAction": "保存归档",
+  "inheritArchiveTitle": "继承归档设置",
+  "inheritArchiveHint": "选择一个归档来继承播放列表和设置。未绑定的归档会被消费，已绑定的会复制。",
+  "archiveBoundWillCopy": "已绑定实例 · 将复制设置",
+  "archiveFreeWillConsume": "未绑定 · 将直接消费此归档",
+  "skipInherit": "跳过，全新安装",
+  "uninstallServiceConfirm": "这将停止后端服务并将其从系统中移除。",
+  "serviceAutoStartUpdated": "服务开机自启已更新",
+  "serviceAutoStartFailed": "服务开机自启更新失败",
+  "autoStartSuccess": "开机自启设置成功",
+  "autoStartFailed": "开机自启设置失败",
 
+  "waitingForBackendMod": "请稍候，正在等待后端服务就绪以进行 Mod 安装和管理...",
+  "omnimixInstance": "OmniMix 实例",
+  "instanceOnline": "在线 — {id}",
+  "@instanceOnline": {
+    "description": "实例在线状态",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "instanceOffline": "离线 — {id}",
+  "@instanceOffline": {
+    "description": "实例离线状态",
+    "placeholders": {
+      "id": { "type": "String" }
+    }
+  },
+  "availableVersion": "可安装版本: v{version}",
+  "@availableVersion": {
+    "description": "可安装版本",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "latestVersion": "最新: v{version}",
+  "@latestVersion": {
+    "description": "最新版本",
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+
+  "refresh": "刷新",
+  "noInstances": "没有实例",
+  "exitGui": "退出 GUI",
+  "languageChinese": "中文",
+  "languageEnglish": "English",
+  "languageSystem": "跟随系统",
+
+  "backendNotConnected": "后端未连接",
+  "libraryBrowser": "曲库浏览器",
+  "playlistStats": "{tags} 个歌单 · {songs} 首曲目",
+  "@playlistStats": {
+    "description": "歌单统计信息",
+    "placeholders": {
+      "tags": { "type": "int" },
+      "songs": { "type": "int" }
+    }
+  },
+  "libraryEmpty": "曲库为空",
+  "loadLibraryFailed": "加载曲库失败：{error}",
+  "@loadLibraryFailed": {
+    "description": "加载曲库失败带错误信息",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "fromModule": "来自 {module}",
+  "@fromModule": {
+    "description": "来自模块名称",
+    "placeholders": {
+      "module": { "type": "String" }
+    }
+  },
+  "albumCountLabel": "{count} 个专辑",
+  "@albumCountLabel": {
+    "description": "专辑数量",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "songCountLabel": "{count} 首",
+  "@songCountLabel": {
+    "description": "歌曲数量",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "unknownArtist": "未知艺术家",
+  "sourceChipLabel": "{name}（{count}）",
+  "@sourceChipLabel": {
+    "description": "来源标签名称与数量",
+    "placeholders": {
+      "name": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "playNext": "下一首播放",
+  "addToQueueTail": "添加到队尾",
+  "exclude": "排除",
+  "removeExclusion": "取消排除",
+  "removeShort": "移除",
+  "playTooltip": "播放",
+
+  "fh6SettingsTitle": "Forza Horizon 6 集成设置",
+  "mediaOverlaySettings": "媒体覆盖生成器设置",
+  "stationNameLabel": "XML 中的电台名称",
+  "stationNameHint": "例如：Streamer Mode",
+  "sampleDurationLabel": "采样时长（秒）",
+  "sampleDurationHint": "例如：300",
+  "displayNameLabel": "游戏显示名称",
+  "displayNameHint": "例如：OmniMix Player",
+  "artistNameLabel": "艺术家名称",
+  "artistNameHint": "例如：ChillPatcher",
+  "enableAnthemZip": "启用 Anthem.zip 处理",
+  "anthemModeLabel": "国歌模式",
+  "modeFull": "完整（保留所有原始条目）",
+  "modePartial": "精简（清除空目录）",
+  "logoOptionLabel": "Logo 选项",
+  "copyDefaultLogo": "复制默认 Horizon Pulse Logo",
+  "injectCustomPng": "注入自定义 PNG 图片",
+  "selectLogoPng": "选择 Logo PNG",
+  "browse": "浏览",
+  "saveAndApply": "保存并应用",
+
+  "equalizer": "均衡器",
+  "noSelectedInstance": "没有选中的音频实例",
+  "equalizerControl": "均衡器控制",
+  "enabled": "已启用",
+  "disabled": "已禁用",
+  "selectPreset": "选择预设",
+  "reset": "重置",
+  "globalGainPreamp": "整体增益 (Preamp):",
+  "softClip": "防爆音(软剪切)",
+  "controlPointSettingsActive": "控制点设置 ({frequency} Hz)",
+  "@controlPointSettingsActive": {
+    "description": "Active control point settings with frequency",
+    "placeholders": {
+      "frequency": { "type": "int" }
+    }
+  },
+  "controlPointSettingsNone": "控制点设置 (未选择)",
+  "typeLabel": "类型: ",
+  "filterTypeBell": "钟形 (Bell)",
+  "filterTypeLowShelf": "低架 (Low Shelf)",
+  "filterTypeHighShelf": "高架 (High Shelf)",
+  "filterTypeLowPass": "低通 (Low Pass)",
+  "filterTypeHighPass": "高通 (High Pass)",
+  "qFactorLabel": "带宽 (Q值): ",
+  "equalizerTip": "提示: 在画布上双击可新建控制点，单选控制点可以拖动调节频率与增益",
+  "audioBufferLatencyTip": "物理缓冲区限流延迟（越小响应越快，默认0.05秒）",
+  "manualInstall": "手动安装",
+  "checkInstallation": "检查安装",
+  "manualInstallTitle": "手动安装模式",
+  "manualInstallHint": "请手动复制临时文件夹（源目录）下的所有文件和文件夹，并直接粘贴到游戏安装文件夹（目标目录）中。",
+  "manualInstallSource": "源目录（包含已准备好待拷贝文件的临时文件夹）：",
+  "manualInstallTarget": "目标目录（游戏安装文件夹）：",
+  "manualInstallCheckHint": "手动拷贝完成后，请点击“检查安装”按钮以验证并进行系统注册。",
+  "manualInstallErrDb": "在本地数据库中注册手动安装记录失败。",
+  "manualInstallErrFwDb": "在数据库中注册 BepInEx 失败。",
+  "manualInstallErrVerify": "校验失败。游戏目录下仍缺失必要的文件或文件夹，请检查是否已将所有文件正确拖拽拷贝过去。",
+  "confirmInstall": "确认并安装",
+  "manualInstallErrRegFailed": "验证成功，但本地注册失败：{error}",
+  "@manualInstallErrRegFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "manualInstallGuideTitle": "手动安装步骤提示",
+  "manualInstallGuideSteps": "1. 点击“源目录”旁的“打开”按钮，打开待拷贝文件的文件夹。\n2. 点击“目标目录”旁的“打开”按钮，打开游戏安装文件夹。\n3. 选择并复制“源目录”下的所有文件和文件夹。\n4. 将它们粘贴到“目标目录”中，如果系统提示有同名文件，请选择“覆盖/替换”。\n5. 粘贴完成后，点击本界面下方的“检查安装”按钮进行验证并完成。",
+  "shortcutSettings": "手柄快捷键设置",
+  "shortcutSettingsDesc": "设置手柄快捷键来控制播放、音量等操作。",
+  "configureShortcutsButton": "配置快捷键",
+  "registeredEvents": "注册的快捷键事件",
+  "prefixKey": "前缀键",
+  "negationPrefix": "前缀取反",
+  "regularKeySlot": "常规键 {index}",
+  "@regularKeySlot": {
+    "description": "常规按键槽位标签",
+    "placeholders": {
+      "index": { "type": "int" }
+    }
+  },
+  "pressGamepadButton": "按下手柄按键...",
+  "clearShortcut": "清除快捷键",
+  "clearAll": "清除全部",
+  "shortcutEvaluationError": "不能单独设置前缀键，请至少绑定一个常规键。",
+  "shortcutPlayPause": "播放 / 暂停",
+  "shortcutNext": "下一首",
+  "shortcutPrev": "上一首",
+  "shortcutVolUp": "音量 +5%",
+  "shortcutVolDown": "音量 -5%",
+  "shortcutToggleFloatingPlayer": "开启和关闭播放窗口",
+  "shortcutCenterLeftQuad": "移至左侧四分之一处"
+}

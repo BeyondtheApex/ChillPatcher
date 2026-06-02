@@ -20,7 +20,7 @@ static class BankGenerator
         }
 
         // 1) Copy .bank (master) as-is
-        var outMeta = Path.Combine(outputDir, "Audio", "FMODBanks", $"{stem}.bank");
+        var outMeta = Path.Combine(outputDir, "media", "Audio", "FMODBanks", $"{stem}.bank");
         File.Copy(metaFile, outMeta, true);
         Console.WriteLine($"[bank] Copied  {stem}.bank  ({new FileInfo(metaFile).Length} bytes)");
 
@@ -35,7 +35,7 @@ static class BankGenerator
 
         // 3) Rebuild with silent PCM
         var generated = Rebuild(info, config);
-        var outAsset = Path.Combine(outputDir, "Audio", "FMODBanks", $"{stem}.assets.bank");
+        var outAsset = Path.Combine(outputDir, "media", "Audio", "FMODBanks", $"{stem}.assets.bank");
         File.WriteAllBytes(outAsset, generated);
         Console.WriteLine($"[bank] Generated {stem}.assets.bank  ({generated.Length:N0} bytes)");
     }
