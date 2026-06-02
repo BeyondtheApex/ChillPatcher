@@ -202,9 +202,16 @@ namespace OmniMixPlayer.Module.Spotify
             while (true)
             {
                 var page = await GetAsync<SpotifyPaged<SpotifyPlaylistTrackItem>>(
-                    $"/playlists/{playlistId}/tracks?limit={limit}&offset={offset}&fields=items(track(id,name,uri,duration_ms,explicit,popularity,artists(id,name),album(id,name,uri,images,release_date))),total,limit,offset,next");
+                    $"/playlists/{playlistId}/tracks?limit={limit}&offset={offset}&fields=items(track(id,name,uri,duration_ms,explicit,popularity,artists(id,name),album(id,name,uri,images,release_date))),total,limit,offset,next",
+                    logErrors: false);
 
-                if (page?.Items == null || page.Items.Count == 0) break;
+                if (page == null)
+                {
+                    _logger.LogWarning($"Skipping playlist {playlistId}: Spotify denied access to its tracks");
+                    break;
+                }
+
+                if (page.Items == null || page.Items.Count == 0) break;
 
                 foreach (var item in page.Items)
                 {
@@ -357,9 +364,12 @@ namespace OmniMixPlayer.Module.Spotify
             return await PostAsync("/me/player/previous");
         }
 
-        public async Task<bool> SeekAsync(int positionMs)
+        public async Task<bool> SeekAsync(int positionMs, string deviceId = null)
         {
-            return await PutAsync($"/me/player/seek?position_ms={positionMs}", null);
+            var url = $"/me/player/seek?position_ms={positionMs}";
+            if (!string.IsNullOrEmpty(deviceId))
+                url += $"&device_id={Uri.EscapeDataString(deviceId)}";
+            return await PutAsync(url, null);
         }
 
         public async Task<bool> SetVolumeAsync(int volumePercent)
@@ -393,14 +403,14 @@ namespace OmniMixPlayer.Module.Spotify
         // HTTP 辅助方法（带 401 自动刷新重试）
         // =====================================================================
 
-        private async Task<T> GetAsync<T>(string endpoint, bool allowEmpty = false) where T : class
+        private async Task<T> GetAsync<T>(string endpoint, bool allowEmpty = false, bool logErrors = true) where T : class
         {
             var raw = await SendWithRetryAsync(async () =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, ApiBase + endpoint);
                 SetAuthHeader(request);
                 return await _httpClient.SendAsync(request);
-            }, allowEmpty);
+            }, allowEmpty, logErrors);
 
             if (raw is string json && !string.IsNullOrEmpty(json))
                 return JsonConvert.DeserializeObject<T>(json);
@@ -447,7 +457,7 @@ namespace OmniMixPlayer.Module.Spotify
         /// 发送请求，401 时自动刷新 token 并重试一次。
         /// 返回响应 body 字符串，或空请求返回 ""。失败返回 null。
         /// </summary>
-        private async Task<string> SendWithRetryAsync(Func<Task<HttpResponseMessage>> requestFunc, bool allowEmpty = false)
+        private async Task<string> SendWithRetryAsync(Func<Task<HttpResponseMessage>> requestFunc, bool allowEmpty = false, bool logErrors = true)
         {
             if (!await EnsureTokenValidAsync())
             {
@@ -479,7 +489,8 @@ namespace OmniMixPlayer.Module.Spotify
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning($"Spotify API error {(int)response.StatusCode}: {errorBody}");
+                if (logErrors)
+                    _logger.LogWarning($"Spotify API error {(int)response.StatusCode}: {errorBody}");
                 return null;
             }
 

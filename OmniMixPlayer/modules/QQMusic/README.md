@@ -114,12 +114,10 @@ ChillPatcher.Module.QQMusic/
 ├── ModuleInfo.cs                        # 模块元数据
 ├── QQMusicModule.cs                     # 主模块类
 ├── QQMusicBridge.cs                     # P/Invoke 桥接
-├── QQMusicPcmStreamReader.cs            # PCM 流读取器
 ├── QQMusicSongRegistry.cs               # 歌曲注册管理
 ├── QQMusicCoverLoader.cs                # 封面加载器
 ├── QQMusicFavoriteManager.cs            # 收藏管理器
 ├── QRLoginManager.cs                    # 二维码登录
-├── SilentPcmReader.cs                   # 静音播放器
 └── README.md                            # 本文件
 
 qqmusic_bridge/

@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import 'providers/app_state.dart';
+import 'providers/core/app_state_bridge.dart';
 import 'services/tray_manager.dart';
 import 'services/port_file.dart';
 import 'services/mod_deployment_service.dart';
@@ -9,7 +11,6 @@ import 'app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
 
   // Read IPC port from port file (written by backend)
   final port = PortFile.readPort();
@@ -69,7 +70,12 @@ void main() async {
     );
   }
 
-  runApp(OmniMixApp(state: state));
+  runApp(
+    ProviderScope(
+      overrides: [appStateProvider.overrideWith((ref) => state)],
+      child: const OmniMixApp(),
+    ),
+  );
 }
 
 /// WindowListener that minimizes to tray or exits based on AppState setting.

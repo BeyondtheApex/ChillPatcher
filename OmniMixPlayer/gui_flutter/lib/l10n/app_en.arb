@@ -368,6 +368,27 @@
   "filterTypeHighPass": "High Pass",
   "qFactorLabel": "Q Factor: ",
   "equalizerTip": "Tip: Double-click on the canvas to create a control point. Select and drag a point to adjust frequency and gain.",
-  "audioBufferLatencyTip": "Audio buffer latency (smaller is faster, default 0.05s)"
+  "audioBufferLatencyTip": "Audio buffer latency (smaller is faster, default 0.05s)",
+  "manualInstall": "Manual Install",
+  "checkInstallation": "Check Installation",
+  "manualInstallTitle": "Manual Installation Mode",
+  "manualInstallHint": "Please copy all files and folders from the staging folder (Source) and paste them directly into your game folder (Target) manually.",
+  "manualInstallSource": "Source (Staging folder containing prepared files):",
+  "manualInstallTarget": "Target (Game folder):",
+  "manualInstallCheckHint": "After copying the files manually, click \"Check Installation\" to verify and register.",
+  "manualInstallErrDb": "Failed to register the manual install in the local database.",
+  "manualInstallErrFwDb": "Failed to register BepInEx in the database.",
+  "manualInstallErrVerify": "Verification failed. Necessary files/directories are still missing in your game folder. Please check if you dragged/copied all files correctly.",
+  "confirmInstall": "Confirm & Install",
+  "manualInstallErrRegFailed": "Verification succeeded, but registration failed: {error}",
+  "@manualInstallErrRegFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "manualInstallGuideTitle": "Manual Installation Steps",
+  "manualInstallGuideSteps": "1. Click 'Open' next to 'Source' to access the staging folder.\n2. Click 'Open' next to 'Target' to access the game folder.\n3. Select and copy ALL items inside the 'Source' folder.\n4. Paste them directly into the 'Target' folder. Choose 'Replace' if prompted.\n5. Click 'Check Installation' below to verify and finish."
 }
 

@@ -10,7 +10,7 @@ namespace ChillPatcher.Native
     /// </summary>
     public static class AudioDecoder
     {
-        private const string DLL_NAME = "ChillAudioDecoder";
+        private const string DLL_NAME = "OmniAudioDecoder";
         private static IntPtr DllHandle = IntPtr.Zero;
 
         static AudioDecoder()
@@ -19,7 +19,7 @@ namespace ChillPatcher.Native
             {
                 var pluginDir = Path.GetDirectoryName(typeof(Plugin).Assembly.Location);
                 var arch = IntPtr.Size == 8 ? "x64" : "x86";
-                var dllPath = Path.Combine(pluginDir, "native", arch, "ChillAudioDecoder.dll");
+                var dllPath = Path.Combine(pluginDir, "native", arch, "OmniAudioDecoder.dll");
 
                 if (!File.Exists(dllPath))
                 {
@@ -52,7 +52,8 @@ namespace ChillPatcher.Native
             out int sampleRate,
             out int channels,
             out ulong totalFrames,
-            [Out] byte[] format);
+            [Out] byte[] format,
+            [MarshalAs(UnmanagedType.U1)] bool isGrowing);
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern long AudioDecoder_ReadFrames(
@@ -128,7 +129,7 @@ namespace ChillPatcher.Native
             {
                 var formatBuf = new byte[16];
                 _handle = AudioDecoder_OpenFile(filePath,
-                    out int sr, out int ch, out ulong frames, formatBuf);
+                    out int sr, out int ch, out ulong frames, formatBuf, false);
 
                 if (_handle == IntPtr.Zero)
                     throw new Exception($"Failed to open audio: {GetError()}");

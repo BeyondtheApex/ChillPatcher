@@ -1,29 +1,33 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Win32;
 using Newtonsoft.Json;
 
 namespace OmniMixPlayer.Module.Spotify
 {
     /// <summary>
-    /// Spotify OAuth 2.0 PKCE 认证管理器。
-    /// 使用 fullstop:// 自定义 URI 协议接收回调，与 sfo 项目保持一致。
+    /// Spotify OAuth 2.0 PKCE manager.
+    /// Uses a loopback HTTP callback so it also works when the backend runs as a Windows service.
     /// </summary>
     public class OAuthManager : IDisposable
     {
         private const string AuthorizeUrl = "https://accounts.spotify.com/authorize";
         private const string TokenUrl = "https://accounts.spotify.com/api/token";
-        private const string ProtocolScheme = "fullstop";
-        private const string RedirectUri = "fullstop://callback";
+        private const string LoopbackHost = "127.0.0.1";
+        private const string CallbackPath = "/callback";
 
-        private static readonly string[] Scopes = new[]
+        private static readonly int[] CallbackPorts = { 17891, 17892, 17893, 17894, 17895 };
+        public const string DashboardRedirectUris = "http://127.0.0.1:17891/callback, http://127.0.0.1:17892/callback, http://127.0.0.1:17893/callback, http://127.0.0.1:17894/callback, http://127.0.0.1:17895/callback";
+
+        private static readonly string[] Scopes =
         {
             "user-read-private",
             "user-read-playback-state",
@@ -37,179 +41,214 @@ namespace OmniMixPlayer.Module.Spotify
         };
 
         private readonly string _clientId;
-        private readonly string _dataPath;
         private readonly ILogger _logger;
         private readonly HttpClient _httpClient;
-        private readonly string _callbackFilePath;
-        private readonly string _handlerScriptPath;
 
         private string _codeVerifier;
-        private string _codeChallenge;
         private string _state;
+        private string _redirectUri;
         private CancellationTokenSource _cts;
 
         public event Action<SpotifyTokenResponse> OnTokenReceived;
         public event Action<string> OnLoginFailed;
         public event Action<string> OnStatusChanged;
+        public event Action<string> OnAuthorizationUrlReady;
 
         public OAuthManager(string clientId, string dataPath, ILogger logger)
         {
             _clientId = clientId;
-            _dataPath = dataPath;
             _logger = logger;
             _httpClient = new HttpClient();
-
-            _callbackFilePath = Path.Combine(Path.GetTempPath(), "fullstop_callback.txt");
-            _handlerScriptPath = Path.Combine(dataPath, "fullstop_handler.ps1");
-
-            EnsureProtocolRegistered();
         }
 
-        // =====================================================================
-        // 自定义 URI 协议注册
-        // =====================================================================
-
-        private void EnsureProtocolRegistered()
-        {
-            try
-            {
-                // 创建 PowerShell 处理脚本
-                Directory.CreateDirectory(_dataPath);
-                var scriptContent = $"[IO.File]::WriteAllText(\"{_callbackFilePath.Replace("\\", "\\\\")}\", $args[0])";
-                File.WriteAllText(_handlerScriptPath, scriptContent, Encoding.UTF8);
-                _logger.LogInformation($"Protocol handler script created: {_handlerScriptPath}");
-
-                // 注册 fullstop:// 协议到 Windows 注册表
-                using (var key = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{ProtocolScheme}"))
-                {
-                    key.SetValue("", $"URL:{ProtocolScheme} Protocol");
-                    key.SetValue("URL Protocol", "");
-
-                    using (var commandKey = key.CreateSubKey(@"shell\open\command"))
-                    {
-                        var command = $"powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"{_handlerScriptPath}\" \"%1\"";
-                        commandKey.SetValue("", command);
-                    }
-                }
-
-                _logger.LogInformation($"Registered '{ProtocolScheme}://' protocol handler");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Failed to register protocol handler: {ex.Message}");
-            }
-        }
-
-        // =====================================================================
-        // OAuth 登录流程
-        // =====================================================================
-
-        /// <summary>
-        /// 启动 OAuth 登录流程：生成 PKCE、打开浏览器、等待回调文件。
-        /// </summary>
         public async Task StartLoginAsync(CancellationToken externalToken = default)
         {
             _cts?.Cancel();
             _cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
 
-            // 清理旧的回调文件
-            CleanupCallbackFile();
-
-            // 生成 PKCE
-            (_codeVerifier, _codeChallenge) = GeneratePKCE();
+            (_codeVerifier, var codeChallenge) = GeneratePKCE();
             _state = GenerateRandomString(16);
 
-            // 构建授权 URL
-            var scope = string.Join(" ", Scopes);
-            var authUrl = $"{AuthorizeUrl}" +
-                $"?client_id={Uri.EscapeDataString(_clientId)}" +
-                $"&response_type=code" +
-                $"&redirect_uri={Uri.EscapeDataString(RedirectUri)}" +
-                $"&scope={Uri.EscapeDataString(scope)}" +
-                $"&code_challenge={_codeChallenge}" +
-                $"&code_challenge_method=S256" +
-                $"&state={_state}";
-
-            // 打开浏览器
-            OnStatusChanged?.Invoke("正在打开浏览器...");
-            try
+            var listener = TryStartLoopbackListener(out var selectedPort);
+            if (listener == null)
             {
-                System.Diagnostics.Process.Start(authUrl);
-                _logger.LogInformation("Opened browser for Spotify authorization");
-                OnStatusChanged?.Invoke("等待浏览器授权...");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Failed to open browser: {ex.Message}");
-                OnLoginFailed?.Invoke("无法打开浏览器，请手动访问授权页面");
+                OnLoginFailed?.Invoke("无法启动本地授权回调监听，预设端口均被占用");
                 return;
             }
 
-            // 轮询回调文件（5 分钟超时）
-            try
+            using (listener)
             {
-                var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-                var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, timeoutCts.Token);
-                await PollForCallbackFileAsync(linkedCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("OAuth flow timed out or was cancelled");
-                OnLoginFailed?.Invoke("登录超时或已取消");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"OAuth error: {ex.Message}");
-                OnLoginFailed?.Invoke($"登录失败: {ex.Message}");
-            }
-            finally
-            {
-                CleanupCallbackFile();
+                _redirectUri = $"http://{LoopbackHost}:{selectedPort}{CallbackPath}";
+                _logger.LogInformation($"Listening for Spotify OAuth callback: {_redirectUri}");
+
+                var authUrl = BuildAuthorizationUrl(codeChallenge, _redirectUri);
+                _logger.LogInformation($"Spotify authorization URL: {authUrl}");
+                OnAuthorizationUrlReady?.Invoke(authUrl);
+                OnStatusChanged?.Invoke("请在界面中打开 Spotify 授权页面...");
+
+                try
+                {
+                    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, timeoutCts.Token);
+                    var callbackUrl = await WaitForLoopbackCallbackAsync(listener, linkedCts.Token).ConfigureAwait(false);
+                    _logger.LogInformation($"OAuth callback received: {callbackUrl}");
+                    await ProcessCallbackUrlAsync(callbackUrl).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogWarning("OAuth flow timed out or was cancelled");
+                    OnLoginFailed?.Invoke("登录超时或已取消");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"OAuth error: {ex.Message}");
+                    OnLoginFailed?.Invoke($"登录失败: {ex.Message}");
+                }
             }
         }
 
-        /// <summary>
-        /// 轮询临时文件，等待协议处理器写入回调 URL。
-        /// </summary>
-        private async Task PollForCallbackFileAsync(CancellationToken token)
+        private TcpListener TryStartLoopbackListener(out int selectedPort)
         {
-            _logger.LogInformation($"Polling for callback file: {_callbackFilePath}");
-
-            while (!token.IsCancellationRequested)
+            foreach (var port in CallbackPorts)
             {
-                if (File.Exists(_callbackFilePath))
+                var listener = new TcpListener(IPAddress.Loopback, port);
+                try
                 {
-                    // 短暂等待确保文件写入完成
-                    await Task.Delay(200, token);
-
-                    string callbackUrl;
+                    listener.Start();
+                    selectedPort = port;
+                    return listener;
+                }
+                catch (SocketException ex)
+                {
+                    _logger.LogWarning($"Spotify OAuth callback port {port} unavailable: {ex.Message}");
                     try
                     {
-                        callbackUrl = File.ReadAllText(_callbackFilePath).Trim();
+                        listener.Stop();
                     }
-                    catch (IOException)
-                    {
-                        // 文件可能还在被写入，等一下重试
-                        await Task.Delay(500, token);
-                        continue;
-                    }
+                    catch { }
+                }
+            }
 
-                    _logger.LogInformation($"OAuth callback received: {callbackUrl}");
-                    CleanupCallbackFile();
+            selectedPort = 0;
+            _logger.LogError($"All Spotify OAuth callback ports are unavailable: {string.Join(", ", CallbackPorts)}");
+            return null;
+        }
 
-                    ProcessCallbackUrlAsync(callbackUrl);
-                    return;
+        private string BuildAuthorizationUrl(string codeChallenge, string redirectUri)
+        {
+            var scope = string.Join(" ", Scopes);
+            return $"{AuthorizeUrl}" +
+                $"?client_id={Uri.EscapeDataString(_clientId)}" +
+                $"&response_type=code" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
+                $"&scope={Uri.EscapeDataString(scope)}" +
+                $"&code_challenge={codeChallenge}" +
+                $"&code_challenge_method=S256" +
+                $"&state={_state}";
+        }
+
+        private async Task<string> WaitForLoopbackCallbackAsync(TcpListener listener, CancellationToken token)
+        {
+            using var stopRegistration = token.Register(() => listener.Stop());
+
+            while (true)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync().ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException) when (token.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(token);
+                }
+                catch (SocketException) when (token.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(token);
                 }
 
-                await Task.Delay(500, token);
+                using (client)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var request = await ReadHttpRequestAsync(client, token).ConfigureAwait(false);
+                    var callbackUrl = TryExtractCallbackUrl(request);
+
+                    if (!string.IsNullOrEmpty(callbackUrl))
+                    {
+                        await WriteHttpResponseAsync(
+                            client,
+                            "Spotify authorization complete. You can return to OmniMixPlayer.",
+                            token).ConfigureAwait(false);
+                        return callbackUrl;
+                    }
+
+                    await WriteHttpResponseAsync(
+                        client,
+                        "OmniMixPlayer Spotify OAuth callback endpoint.",
+                        token).ConfigureAwait(false);
+                }
             }
+        }
+
+        private static async Task<string> ReadHttpRequestAsync(TcpClient client, CancellationToken token)
+        {
+            var stream = client.GetStream();
+            var buffer = new byte[1024];
+            using var ms = new MemoryStream();
+
+            while (ms.Length < 8192)
+            {
+                var read = await stream.ReadAsync(buffer, 0, buffer.Length, token).ConfigureAwait(false);
+                if (read <= 0)
+                    break;
+
+                ms.Write(buffer, 0, read);
+                var text = Encoding.UTF8.GetString(ms.ToArray());
+                if (text.Contains("\r\n\r\n"))
+                    return text;
+            }
+
+            return Encoding.UTF8.GetString(ms.ToArray());
+        }
+
+        private static string TryExtractCallbackUrl(string request)
+        {
+            if (string.IsNullOrEmpty(request))
+                return null;
+
+            var firstLineEnd = request.IndexOf("\r\n", StringComparison.Ordinal);
+            var firstLine = firstLineEnd >= 0 ? request.Substring(0, firstLineEnd) : request;
+            var parts = firstLine.Split(' ');
+            if (parts.Length < 2 || !string.Equals(parts[0], "GET", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var target = parts[1];
+            if (!target.StartsWith(CallbackPath, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            return $"http://{LoopbackHost}{target}";
+        }
+
+        private static async Task WriteHttpResponseAsync(TcpClient client, string message, CancellationToken token)
+        {
+            var body = "<!doctype html><meta charset=\"utf-8\"><title>OmniMixPlayer Spotify</title>" +
+                $"<body style=\"font-family: sans-serif; padding: 32px;\">{WebUtility.HtmlEncode(message)}</body>";
+            var bodyBytes = Encoding.UTF8.GetBytes(body);
+            var headerBytes = Encoding.UTF8.GetBytes(
+                "HTTP/1.1 200 OK\r\n" +
+                "Content-Type: text/html; charset=utf-8\r\n" +
+                $"Content-Length: {bodyBytes.Length}\r\n" +
+                "Connection: close\r\n\r\n");
+
+            var stream = client.GetStream();
+            await stream.WriteAsync(headerBytes, 0, headerBytes.Length, token).ConfigureAwait(false);
+            await stream.WriteAsync(bodyBytes, 0, bodyBytes.Length, token).ConfigureAwait(false);
         }
 
         private async Task ProcessCallbackUrlAsync(string callbackUrl)
         {
             OnStatusChanged?.Invoke("收到授权回调，正在验证...");
 
-            // 解析 URL 参数: fullstop://callback?code=xxx&state=yyy
             var queryParams = ParseQueryString(callbackUrl);
 
             var error = GetParam(queryParams, "error");
@@ -235,7 +274,7 @@ namespace OmniMixPlayer.Module.Spotify
             }
 
             OnStatusChanged?.Invoke("正在交换 Token...");
-            await ExchangeCodeAsync(code);
+            await ExchangeCodeAsync(code).ConfigureAwait(false);
         }
 
         private async Task ExchangeCodeAsync(string code)
@@ -244,15 +283,15 @@ namespace OmniMixPlayer.Module.Spotify
             {
                 ["grant_type"] = "authorization_code",
                 ["code"] = code,
-                ["redirect_uri"] = RedirectUri,
+                ["redirect_uri"] = _redirectUri,
                 ["client_id"] = _clientId,
                 ["code_verifier"] = _codeVerifier
             });
 
             try
             {
-                var response = await _httpClient.PostAsync(TokenUrl, content);
-                var json = await response.Content.ReadAsStringAsync();
+                var response = await _httpClient.PostAsync(TokenUrl, content).ConfigureAwait(false);
+                var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -272,35 +311,17 @@ namespace OmniMixPlayer.Module.Spotify
             }
         }
 
-        // =====================================================================
-        // 辅助方法
-        // =====================================================================
-
         public void Cancel()
         {
             _cts?.Cancel();
-            CleanupCallbackFile();
         }
 
-        private void CleanupCallbackFile()
-        {
-            try
-            {
-                if (File.Exists(_callbackFilePath))
-                    File.Delete(_callbackFilePath);
-            }
-            catch { }
-        }
-
-        /// <summary>
-        /// 手动解析 URL 中的查询参数（避免依赖 System.Web）。
-        /// 支持 fullstop://callback?code=xxx&amp;state=yyy 格式。
-        /// </summary>
         private static Dictionary<string, string> ParseQueryString(string url)
         {
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var queryStart = url.IndexOf('?');
-            if (queryStart < 0) return result;
+            if (queryStart < 0)
+                return result;
 
             var query = url.Substring(queryStart + 1);
             foreach (var pair in query.Split('&'))
@@ -319,10 +340,6 @@ namespace OmniMixPlayer.Module.Spotify
         {
             return dict.TryGetValue(key, out var val) ? val : null;
         }
-
-        // =====================================================================
-        // PKCE
-        // =====================================================================
 
         private static (string verifier, string challenge) GeneratePKCE()
         {

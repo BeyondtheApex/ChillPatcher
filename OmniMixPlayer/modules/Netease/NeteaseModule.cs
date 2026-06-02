@@ -378,41 +378,19 @@ namespace OmniMixPlayer.Module.Netease
                         ? _fileCache.GetCachePath(songInfo.Id, artist, songName, format)
                         : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "chillpatcher_audio_cache", $"netease_{songInfo.Id}.{format}"));
 
-                // 使用主插件流式服务创建 PCM 流
-                if (!_context.StreamingService.IsAvailable)
-                {
-                    _context.Logger.LogError($"[{DisplayName}] 流式服务不可用 (原生解码器未加载)");
-                    return null;
-                }
-
-                var reader = await _context.StreamingService.CreateStreamAndWaitAsync(
-                    localPath != null ? "" : songUrl.Url,
-                    format,
-                    (float)songInfo.Duration,
-                    cachePath,
-                    readyTimeoutMs,
-                    new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" },
-                    cancellationToken,
-                    useCachePath: true);
-
-                if (reader == null)
-                {
-                    _context.Logger.LogWarning($"[{DisplayName}] PCM 流创建/准备失败: {songInfo.Name} (尝试 {attempt}/{maxRetries})");
-                    if (attempt < maxRetries)
-                    {
-                        await Task.Delay(1000, cancellationToken);
-                        continue;
-                    }
-                    return null;
-                }
-
-                _context.Logger.LogInformation($"[{DisplayName}] PCM 流已就绪: {songInfo.Name} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch, {reader.Info.Format ?? format}]");
-
                 // 记录待写标签信息，在歌曲资源释放后异步写入
                 _pendingTags[uuid] = (cachePath, songInfo, songUrl.Size);
 
-                // 返回 PCM 流源
-                return PlayableSource.FromPcmStream(uuid, reader, audioFormat);
+                return new PlayableSource
+                {
+                    UUID = uuid,
+                    SourceType = PlayableSourceType.Remote,
+                    Url = songUrl.Url ?? "",
+                    Format = audioFormat,
+                    Headers = new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" },
+                    CachePath = cachePath,
+                    UseCachePath = true
+                };
             }
 
             return null;
@@ -450,9 +428,7 @@ namespace OmniMixPlayer.Module.Netease
             // 强制刷新封面缓存
             _context.EventBus.Publish(new CoverInvalidatedEvent { MusicUuid = uuid, Reason = "login song played" });
 
-            // 返回静音流（使用传入的 uuid）
-            var silentReader = new SilentPcmReader(44100, 2, LOGIN_SONG_DURATION);
-            return PlayableSource.FromPcmStream(uuid, silentReader, AudioFormat.Mp3);
+            return null;
         }
 
         #endregion

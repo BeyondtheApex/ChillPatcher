@@ -170,8 +170,7 @@ PLAYER_MODULE_MAP = [
 # ── 原生插件 ──
 NATIVE_PLUGINS_DIR = ROOT / "NativePlugins"
 NATIVE_PROJECTS_ALWAYS = [
-    "AudioDecoder",
-    "FlacDecoder",
+    "OmniAudioDecoder",
     "OmniPcmShared",
     "SpotifyLibrespotBridge",
     "EsbuildBridge",
@@ -332,7 +331,7 @@ def dotnet_restore(proj: Path, verbose: bool = False) -> int:
 
 def dotnet_build(proj: Path, config: str = "Release", verbose: bool = False) -> int:
     info(f"Building {proj.name} ({config})...")
-    return run(["dotnet", "build", str(proj), "-c", config, "--no-restore"], verbose=verbose)
+    return run(["dotnet", "build", str(proj), "-c", config], verbose=verbose)
 
 def dotnet_publish(proj: Path, output: Path, config: str = "Release", verbose: bool = False) -> int:
     """发布 .NET 项目（Self-Contained + Trimmed）。"""
@@ -342,7 +341,6 @@ def dotnet_publish(proj: Path, output: Path, config: str = "Release", verbose: b
     return run([
         "dotnet", "publish", str(proj),
         "-c", config,
-        "--no-restore",
         "-o", str(output),
         "--self-contained",
     ], verbose=verbose)
@@ -659,7 +657,7 @@ def cmd_player(full: bool = False, skip_flutter: bool = False, verbose: bool = F
         shutil.rmtree(PLAYER_BACKEND_PUBLISH)
     code = run([
         "dotnet", "publish", str(PLAYER_BACKEND_PROJ),
-        "-c", "Release", "--no-restore",
+        "-c", "Release",
         "-o", str(PLAYER_BACKEND_PUBLISH),
         "--self-contained",
         "-p:PublishSingleFile=true",
@@ -751,7 +749,7 @@ def assemble_player(full: bool = False, verbose: bool = False):
     if native_src.exists():
         native_dst = PLAYER_BUILD / "native" / "x64"
         native_dst.mkdir(parents=True, exist_ok=True)
-        for dll in ["ChillAudioDecoder.dll", "ChillFlacDecoder.dll"]:
+        for dll in ["OmniAudioDecoder.dll", "ChillAudioDecoder.dll", "ChillFlacDecoder.dll"]:
             src = native_src / dll
             if src.exists():
                 _copy_with(src, native_dst)

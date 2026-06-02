@@ -4,7 +4,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/mod_manifest.dart';
-import '../models/mod_enums.dart';import 'port_file.dart';
+import '../models/mod_enums.dart';
+import 'port_file.dart';
+import 'script_generator.dart';
 
 class ModDeploymentService {
   // Manager local storage base path
@@ -17,6 +19,8 @@ class ModDeploymentService {
   }
 
   static String get bepinexExtractDir => '$managerDir/bepinex_core';
+  static String frameworkExtractDir(FrameworkDeclaration framework) =>
+      '$managerDir/frameworks/${framework.id}';
   static String get modsExtractDir => '$managerDir/mods';
   static String get rootModsExtractDir => '$managerDir/root_mods';
 
@@ -53,28 +57,44 @@ class ModDeploymentService {
 
   /// Check BepInEx status in the game directory.
   static BepInExStatus checkBepInExStatus(String gameDir) {
+    final framework = frameworkById('bepinex_5');
+    if (framework == null) return BepInExStatus.notInstalled;
+    return checkFrameworkStatus(gameDir, framework);
+  }
+
+  static BepInExStatus checkFrameworkStatus(
+    String gameDir,
+    FrameworkDeclaration framework,
+  ) {
     if (gameDir.isEmpty) return BepInExStatus.notInstalled;
 
-    final winhttp = File('$gameDir/winhttp.dll');
-    final coreDll = File('$gameDir/BepInEx/core/BepInEx.dll');
-    final managedMarker = File('$gameDir/BepInEx/.omnimix_managed');
+    final statusFiles = framework.statusFiles.isNotEmpty
+        ? framework.statusFiles
+        : framework.filesToLink;
+    final statusDirs = framework.statusDirs.isNotEmpty
+        ? framework.statusDirs
+        : framework.dirsToLink;
 
-    final exists = winhttp.existsSync() || coreDll.existsSync();
-    if (exists) {
-      if (managedMarker.existsSync()) {
-        return BepInExStatus.managed;
-      } else {
-        return BepInExStatus.unmanaged;
-      }
-    }
-    return BepInExStatus.notInstalled;
+    final exists =
+        statusFiles.any((relativePath) => File('$gameDir/$relativePath').existsSync()) ||
+        statusDirs.any((relativePath) => Directory('$gameDir/$relativePath').existsSync());
+    if (!exists) return BepInExStatus.notInstalled;
+
+    if (framework.managedMarkerFile.isEmpty) return BepInExStatus.unmanaged;
+    return File('$gameDir/${framework.managedMarkerFile}').existsSync()
+        ? BepInExStatus.managed
+        : BepInExStatus.unmanaged;
   }
 
   /// Check Mod status in the game directory.
-  static ModStatus checkModStatus(String gameDir, String folderName) {
+  static ModStatus checkModStatus(
+    String gameDir,
+    String folderName, {
+    String pluginTargetDir = 'BepInEx/plugins',
+  }) {
     if (gameDir.isEmpty) return ModStatus.notInstalled;
 
-    final modDir = Directory('$gameDir/BepInEx/plugins/$folderName');
+    final modDir = Directory('$gameDir/$pluginTargetDir/$folderName');
     if (modDir.existsSync()) {
       return ModStatus.installed;
     }
@@ -100,230 +120,7 @@ class ModDeploymentService {
     return ModStatus.installed;
   }
 
-  /// Deploy BepInEx loader.
-  static Future<bool> deployBepInEx(
-    String gameDir,
-    FrameworkDeclaration framework,
-    void Function(String) log,
-  ) async {
-    try {
-      log('Starting BepInEx deployment...');
-      final managerDirObj = Directory(managerDir);
-      if (!managerDirObj.existsSync()) {
-        managerDirObj.createSync(recursive: true);
-      }
 
-      // 1. Copy BepInEx Zip asset to local cache and extract
-      final localZipPath = '$managerDir/${framework.archiveName}';
-      log('Loading ${framework.archiveName} from assets...');
-
-      try {
-        final byteData = await rootBundle.load(
-          'assets/${framework.archiveName}',
-        );
-        final localZipFile = File(localZipPath);
-        await localZipFile.writeAsBytes(
-          byteData.buffer.asUint8List(
-            byteData.offsetInBytes,
-            byteData.lengthInBytes,
-          ),
-        );
-      } catch (e) {
-        log('ERROR loading asset ${framework.archiveName}: $e');
-        return false;
-      }
-
-      final extractPath = bepinexExtractDir;
-      log('Extracting loader to local AppData cache...');
-      final extractDir = Directory(extractPath);
-      if (extractDir.existsSync()) {
-        extractDir.deleteSync(recursive: true);
-      }
-      extractDir.createSync(recursive: true);
-
-      try {
-        final bytes = File(localZipPath).readAsBytesSync();
-        final archive = ZipDecoder().decodeBytes(bytes);
-        _extractArchiveReplacingFiles(archive, extractPath);
-      } catch (e) {
-        log('ERROR extracting loader: $e');
-        return false;
-      }
-
-      // Clean up temporary zip
-      try {
-        File(localZipPath).deleteSync();
-      } catch (_) {}
-
-      log('Extraction complete.');
-
-      // 2. Create physical BepInEx directories in game path
-      log('Creating directories in game folder...');
-      for (final relativeDir in framework.dirsToCreate) {
-        final dirPath = '$gameDir/$relativeDir';
-        final d = Directory(dirPath);
-        if (!d.existsSync()) {
-          d.createSync(recursive: true);
-          log('  Created: $relativeDir/');
-        }
-      }
-
-      // 3. Link core directories as symlinks
-      log('Linking BepInEx core folders...');
-      for (final relativeDir in framework.dirsToLink) {
-        final linkPath = '$gameDir/$relativeDir';
-        final targetPath = '$extractPath/$relativeDir';
-
-        log('  Directory symlink: $relativeDir -> manager/$relativeDir');
-        final success = await _createDirectorySymlink(linkPath, targetPath);
-        if (!success) {
-          log('ERROR creating directory symlink for $relativeDir');
-          return false;
-        }
-      }
-
-      // 4. Link/copy root files (winhttp.dll, doorstop_config.ini)
-      log('Linking core loader files...');
-      for (final relativeFile in framework.filesToLink) {
-        final linkPath = '$gameDir/$relativeFile';
-        final targetPath = '$extractPath/$relativeFile';
-
-        log('  File symlink: $relativeFile -> manager/$relativeFile');
-        final success = await _createFileSymlink(linkPath, targetPath);
-        if (!success) {
-          log('ERROR placing file: $relativeFile');
-          return false;
-        }
-      }
-
-      // 5. Write managed signature
-      File(
-        '$gameDir/BepInEx/.omnimix_managed',
-      ).writeAsStringSync(framework.version);
-      recordInstalledVersion(framework.id, framework.version);
-      log('BepInEx deployment completed successfully.');
-      return true;
-    } catch (e, st) {
-      log('FATAL ERROR during BepInEx deployment: $e');
-      return false;
-    }
-  }
-
-  /// Deploy Mod.
-  static Future<bool> deployMod(
-    String gameDir,
-    ModDeclaration mod,
-    void Function(String) log, {
-    int? backendPort,
-    Future<void> Function(String, bool)? onPortFileDirChanged,
-    Map<String, dynamic> customSettings = const {},
-  }) async {
-    if (mod.installsToGameRoot) {
-      return deployRootMod(
-        gameDir,
-        mod,
-        log,
-        backendPort: backendPort,
-        onPortFileDirChanged: onPortFileDirChanged,
-        customSettings: customSettings,
-      );
-    }
-
-    try {
-      log('Starting ${mod.name} deployment...');
-      final managerDirObj = Directory(managerDir);
-      if (!managerDirObj.existsSync()) {
-        managerDirObj.createSync(recursive: true);
-      }
-
-      // 1. Copy Mod Zip asset to local cache and extract
-      final localZipPath = '$managerDir/${mod.archiveName}';
-      log('Loading ${mod.archiveName} from assets...');
-
-      try {
-        final byteData = await rootBundle.load('assets/${mod.archiveName}');
-        final localZipFile = File(localZipPath);
-        await localZipFile.writeAsBytes(
-          byteData.buffer.asUint8List(
-            byteData.offsetInBytes,
-            byteData.lengthInBytes,
-          ),
-        );
-      } catch (e) {
-        log('ERROR loading asset ${mod.archiveName}: $e');
-        return false;
-      }
-
-      final extractPath = '$modsExtractDir/${mod.folderName}';
-      log('Extracting mod to local AppData cache...');
-      final extractDir = Directory(extractPath);
-      if (extractDir.existsSync()) {
-        extractDir.deleteSync(recursive: true);
-      }
-      extractDir.createSync(recursive: true);
-
-      try {
-        final bytes = File(localZipPath).readAsBytesSync();
-        final archive = ZipDecoder().decodeBytes(bytes);
-        _extractArchiveReplacingFiles(archive, extractPath);
-      } catch (e) {
-        log('ERROR extracting mod: $e');
-        return false;
-      }
-
-      // Clean up temporary zip
-      try {
-        File(localZipPath).deleteSync();
-      } catch (_) {}
-
-      log('Extraction complete.');
-
-      // 2. Link mod folder as symlink inside game BepInEx/plugins/
-      log('Creating directory symlink inside plugins...');
-      final linkPath = '$gameDir/BepInEx/plugins/${mod.folderName}';
-
-      log(
-        '  Directory symlink: BepInEx/plugins/${mod.folderName} -> manager/mods/${mod.folderName}',
-      );
-      final success = await _createDirectorySymlink(linkPath, extractPath);
-      if (!success) {
-        log('ERROR creating directory symlink');
-        return false;
-      }
-
-      recordInstalledVersion(mod.id, mod.version);
-      // Instance registration — reuse existing ID if reinstalling, generate new otherwise
-      var instanceId = _readInstanceId(gameDir);
-      if (instanceId == null || instanceId.isEmpty) {
-        _cleanupStaleInstances(gameDir);
-        instanceId = _generateInstanceId(mod.id);
-      }
-      _writeInstanceId(gameDir, instanceId);
-      final inst = InstalledInstance(
-        instanceId: instanceId,
-        modId: mod.id,
-        mode: mod.mode,
-        gameDir: gameDir,
-        gameName: mod.name,
-        installedAt: DateTime.now(),
-      );
-      _saveInstance(inst);
-      if (backendPort != null) {
-        PortFile.writePort(gameDir, backendPort);
-      }
-      await onPortFileDirChanged?.call(gameDir, true);
-
-      await mod.onDeploy(gameDir, log, customSettings);
-
-      log(
-        '${mod.name} deployment completed successfully. Instance: $instanceId',
-      );
-      return true;
-    } catch (e, st) {
-      log('FATAL ERROR during mod deployment: $e');
-      return false;
-    }
-  }
 
   /// Remove BepInEx files (only if managed) and clean up.
   static Future<bool> undeployBepInEx(
@@ -331,8 +128,36 @@ class ModDeploymentService {
     FrameworkDeclaration framework,
     void Function(String) log,
   ) async {
+    final managerFwDir = '$managerDir/frameworks/${framework.id}';
+    final uninstallScriptPath = '$managerFwDir/uninstall.bat';
+    final uninstallScript = File(uninstallScriptPath);
+
+    if (uninstallScript.existsSync()) {
+      try {
+        log('Starting ${framework.name} uninstallation using script...');
+        final success = await runUninstallScript(uninstallScriptPath, managerFwDir, log);
+        if (!success) {
+          log('WARNING: Uninstallation script returned non-zero exit code.');
+        }
+
+        try {
+          final d = Directory(managerFwDir);
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (e) {
+          log('Note: could not delete framework directory from manager cache ($e)');
+        }
+
+        removeVersionRecord(framework.id);
+        log('${framework.name} uninstallation complete.');
+        return true;
+      } catch (e) {
+        log('ERROR during script-based uninstallation of framework: $e');
+        return false;
+      }
+    }
+
     try {
-      log('Starting BepInEx undeployment...');
+      log('Starting ${framework.name} undeployment...');
 
       // 1. Remove files
       for (final relativeFile in framework.filesToLink) {
@@ -352,32 +177,28 @@ class ModDeploymentService {
       }
 
       // 3. Delete managed marker
-      final marker = File('$gameDir/BepInEx/.omnimix_managed');
-      if (marker.existsSync()) marker.deleteSync();
+      if (framework.managedMarkerFile.isNotEmpty) {
+        final marker = File('$gameDir/${framework.managedMarkerFile}');
+        if (marker.existsSync()) marker.deleteSync();
+      }
 
       // 4. Try cleaning up empty directories
       log('Cleaning up empty folders...');
-      final pluginsDir = Directory('$gameDir/BepInEx/plugins');
-      if (pluginsDir.existsSync() && pluginsDir.listSync().isEmpty) {
-        pluginsDir.deleteSync();
-        log('  Deleted empty: BepInEx/plugins/');
-      }
-      final patchersDir = Directory('$gameDir/BepInEx/patchers');
-      if (patchersDir.existsSync() && patchersDir.listSync().isEmpty) {
-        patchersDir.deleteSync();
-        log('  Deleted empty: BepInEx/patchers/');
-      }
-      final bepinexDir = Directory('$gameDir/BepInEx');
-      if (bepinexDir.existsSync() && bepinexDir.listSync().isEmpty) {
-        bepinexDir.deleteSync();
-        log('  Deleted empty: BepInEx/');
+      final dirsToClean = framework.dirsToCreate.toList()
+        ..sort((a, b) => b.length.compareTo(a.length));
+      for (final relativeDir in dirsToClean) {
+        final dir = Directory('$gameDir/$relativeDir');
+        if (dir.existsSync() && dir.listSync().isEmpty) {
+          dir.deleteSync();
+          log('  Deleted empty: $relativeDir/');
+        }
       }
 
       removeVersionRecord(framework.id);
-      log('BepInEx undeployment complete.');
+      log('${framework.name} undeployment complete.');
       return true;
     } catch (e) {
-      log('ERROR during BepInEx undeployment: $e');
+      log('ERROR during ${framework.name} undeployment: $e');
       return false;
     }
   }
@@ -389,6 +210,51 @@ class ModDeploymentService {
     void Function(String) log, {
     Future<void> Function(String, bool)? onPortFileDirChanged,
   }) async {
+    final managerModsDir = '$managerDir/mods/${mod.id}';
+    final uninstallScriptPath = '$managerModsDir/uninstall.bat';
+    final uninstallScript = File(uninstallScriptPath);
+
+    if (uninstallScript.existsSync()) {
+      try {
+        log('Starting ${mod.name} uninstallation using script...');
+        final success = await runUninstallScript(uninstallScriptPath, managerModsDir, log);
+        if (!success) {
+          log('WARNING: Uninstallation script returned non-zero exit code.');
+        }
+
+        // Clean up mod manager cache for this mod
+        try {
+          final d = Directory(managerModsDir);
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (e) {
+          log('Note: could not delete mod directory from manager cache ($e)');
+        }
+
+        // Clean up metadata records
+        final instanceId = _readInstanceId(gameDir);
+        if (instanceId != null && instanceId.isNotEmpty) {
+          final existing = findInstanceByDir(gameDir);
+          if (existing != null) {
+            _archiveInstance(instanceId, gameDir, existing);
+            _removeInstance(instanceId);
+            log('  Archived instance: $instanceId');
+          }
+        }
+        _deleteInstanceId(gameDir);
+        PortFile.deletePortFile(gameDir);
+        removeVersionRecord(mod.id);
+        await onPortFileDirChanged?.call(gameDir, false);
+
+        await mod.onUndeploy(gameDir, log);
+
+        log('${mod.name} uninstallation complete.');
+        return true;
+      } catch (e) {
+        log('ERROR during script-based uninstallation: $e');
+        return false;
+      }
+    }
+
     if (mod.installsToGameRoot) {
       return undeployRootMod(
         gameDir,
@@ -400,10 +266,12 @@ class ModDeploymentService {
 
     try {
       log('Starting ${mod.name} undeployment...');
-      final linkPath = '$gameDir/BepInEx/plugins/${mod.folderName}';
+      final linkPath = '$gameDir/${mod.pluginTargetDir}/${mod.folderName}';
 
       _deleteLinkSafely(linkPath);
-      log('  Removed mod directory symlink: BepInEx/plugins/${mod.folderName}');
+      log(
+        '  Removed mod directory symlink: ${mod.pluginTargetDir}/${mod.folderName}',
+      );
 
       // Archive instance + clean up (only if instance ID exists)
       final instanceId = _readInstanceId(gameDir);
@@ -613,301 +481,7 @@ class ModDeploymentService {
     }
   }
 
-  /// Deploy a root-level native mod using links and backups.
-  static Future<bool> deployRootMod(
-    String gameDir,
-    ModDeclaration mod,
-    void Function(String) log, {
-    int? backendPort,
-    Future<void> Function(String, bool)? onPortFileDirChanged,
-    Map<String, dynamic> customSettings = const {},
-  }) async {
-    try {
-      log('Starting ${mod.name} deployment...');
-      final managerDirObj = Directory(managerDir);
-      if (!managerDirObj.existsSync()) {
-        managerDirObj.createSync(recursive: true);
-      }
 
-      final localZipPath = '$managerDir/${mod.archiveName}';
-      log('Loading ${mod.archiveName} from assets...');
-
-      try {
-        final byteData = await rootBundle.load('assets/${mod.archiveName}');
-        final localZipFile = File(localZipPath);
-        await localZipFile.writeAsBytes(
-          byteData.buffer.asUint8List(
-            byteData.offsetInBytes,
-            byteData.lengthInBytes,
-          ),
-        );
-      } catch (e) {
-        log('ERROR loading asset ${mod.archiveName}: $e');
-        return false;
-      }
-
-      final extractPath = '$rootModsExtractDir/${mod.id}';
-      log('Extracting mod to local AppData link source...');
-      final extractDir = Directory(extractPath);
-      if (extractDir.existsSync()) {
-        extractDir.deleteSync(recursive: true);
-      }
-      extractDir.createSync(recursive: true);
-
-      try {
-        final bytes = File(localZipPath).readAsBytesSync();
-        final archive = ZipDecoder().decodeBytes(bytes);
-        _extractArchiveReplacingFiles(archive, extractPath);
-      } catch (e) {
-        log('ERROR extracting mod: $e');
-        return false;
-      }
-
-      try {
-        File(localZipPath).deleteSync();
-      } catch (_) {}
-
-      final marker = File('$gameDir/.omnimix_mods/${mod.id}.managed');
-      final wasManaged = marker.existsSync();
-      final backupDir = Directory('$gameDir/.omnimix_backup/${mod.id}');
-      if (!backupDir.existsSync()) {
-        backupDir.createSync(recursive: true);
-      }
-
-      log('Linking root files...');
-      for (final relativeFile in mod.rootFilesToLink) {
-        final targetPath = '$extractPath/$relativeFile';
-        final linkPath = '$gameDir/$relativeFile';
-        if (!File(targetPath).existsSync()) {
-          log('ERROR missing packaged file: $relativeFile');
-          return false;
-        }
-
-        final existing = File(linkPath);
-        final backupPath = '${backupDir.path}/$relativeFile';
-        final isNoBackup = mod.rootFilesNoBackup.contains(relativeFile);
-        if (!wasManaged &&
-            existing.existsSync() &&
-            !isNoBackup &&
-            !File(backupPath).existsSync()) {
-          File(backupPath).parent.createSync(recursive: true);
-          existing.copySync(backupPath);
-          log('  Backed up existing: $relativeFile');
-        }
-
-        log(
-          '  Symlink: $relativeFile -> manager/root_mods/${mod.id}/$relativeFile',
-        );
-        final success = await _createFileSymlink(linkPath, targetPath);
-        if (!success) {
-          final backup = File(backupPath);
-          if (backup.existsSync() && !existing.existsSync()) {
-            backup.copySync(linkPath);
-            log('  Restored backup after link failure: $relativeFile');
-          }
-          log('ERROR linking file: $relativeFile');
-          return false;
-        }
-      }
-
-      for (final relativeDir in mod.rootDirsToLink) {
-        final targetPath = '$extractPath/$relativeDir';
-        final linkPath = '$gameDir/$relativeDir';
-        if (!Directory(targetPath).existsSync()) {
-          log('ERROR missing packaged directory: $relativeDir');
-          return false;
-        }
-
-        final existing = Directory(linkPath);
-        final backupPath = '${backupDir.path}/$relativeDir';
-        if (!wasManaged &&
-            existing.existsSync() &&
-            !Directory(backupPath).existsSync()) {
-          Directory(backupPath).parent.createSync(recursive: true);
-          existing.renameSync(backupPath);
-          log('  Backed up existing directory: $relativeDir');
-        }
-
-        final success = await _createDirectorySymlink(linkPath, targetPath);
-        if (!success) {
-          final backup = Directory(backupPath);
-          if (backup.existsSync() && !existing.existsSync()) {
-            backup.renameSync(linkPath);
-            log('  Restored backup directory after link failure: $relativeDir');
-          }
-          log('ERROR creating directory symlink for $relativeDir');
-          return false;
-        }
-      }
-
-      marker.parent.createSync(recursive: true);
-      marker.writeAsStringSync(mod.version);
-      recordInstalledVersion(mod.id, mod.version);
-      // Instance registration — reuse existing ID if reinstalling, generate new otherwise
-      var instanceId = _readInstanceId(gameDir);
-      if (instanceId == null || instanceId.isEmpty) {
-        _cleanupStaleInstances(gameDir);
-        instanceId = _generateInstanceId(mod.id);
-      }
-      _writeInstanceId(gameDir, instanceId);
-      final inst = InstalledInstance(
-        instanceId: instanceId,
-        modId: mod.id,
-        mode: mod.mode,
-        gameDir: gameDir,
-        gameName: mod.name,
-        installedAt: DateTime.now(),
-      );
-      _saveInstance(inst);
-      if (backendPort != null) {
-        PortFile.writePort(gameDir, backendPort);
-      }
-      await onPortFileDirChanged?.call(gameDir, true);
-
-      await mod.onDeploy(gameDir, log, customSettings);
-
-      log(
-        '${mod.name} deployment completed successfully. Instance: $instanceId',
-      );
-      return true;
-    } catch (e, st) {
-      log('FATAL ERROR during root mod deployment: $e');
-      return false;
-    }
-  }
-
-  /// Extract archive files into [destinationPath], replacing existing source files.
-  static void _extractArchiveReplacingFiles(
-    Archive archive,
-    String destinationPath,
-  ) {
-    for (final file in archive) {
-      final outPath = '$destinationPath/${file.name}';
-      if (file.isDirectory) {
-        Directory(outPath).createSync(recursive: true);
-        continue;
-      }
-
-      final outFile = File(outPath);
-      outFile.parent.createSync(recursive: true);
-      if (outFile.existsSync()) {
-        outFile.deleteSync();
-      }
-
-      outFile.writeAsBytesSync(file.content);
-    }
-  }
-
-  /// Link a file using a Windows symbolic link (mklink).
-  /// If Developer Mode is off, retries through UAC elevation.
-  static Future<bool> _createFileSymlink(
-    String linkPath,
-    String targetPath,
-  ) async {
-    _deleteLinkSafely(linkPath);
-
-    final winLinkPath = linkPath.replaceAll('/', '\\');
-    final winTargetPath = targetPath.replaceAll('/', '\\');
-    final res = await Process.run('cmd.exe', [
-      '/c',
-      'mklink',
-      winLinkPath,
-      winTargetPath,
-    ]);
-    if (res.exitCode == 0) {
-      return true;
-    }
-
-    final script =
-        '''
-\$ErrorActionPreference = 'Stop'
-\$link = '${_escapePowerShellSingleQuoted(winLinkPath)}'
-\$target = '${_escapePowerShellSingleQuoted(winTargetPath)}'
-if (Test-Path -LiteralPath \$link) {
-  Remove-Item -LiteralPath \$link -Force
-}
-New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
-''';
-
-    final elevated = await _runPowerShellElevated(script);
-    if (!elevated) {
-      }
-    return elevated;
-  }
-
-  /// Link a directory using a Windows symbolic link (mklink /D).
-  /// If Developer Mode is off, retries through UAC elevation.
-  static Future<bool> _createDirectorySymlink(
-    String linkPath,
-    String targetPath,
-  ) async {
-    _deleteLinkSafely(linkPath);
-
-    final winLinkPath = linkPath.replaceAll('/', '\\');
-    final winTargetPath = targetPath.replaceAll('/', '\\');
-    final res = await Process.run('cmd.exe', [
-      '/c',
-      'mklink',
-      '/D',
-      winLinkPath,
-      winTargetPath,
-    ]);
-    if (res.exitCode == 0) {
-      return true;
-    }
-
-    final script =
-        '''
-\$ErrorActionPreference = 'Stop'
-\$link = '${_escapePowerShellSingleQuoted(winLinkPath)}'
-\$target = '${_escapePowerShellSingleQuoted(winTargetPath)}'
-if (Test-Path -LiteralPath \$link) {
-  Remove-Item -LiteralPath \$link -Force -Recurse
-}
-New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
-''';
-
-    final elevated = await _runPowerShellElevated(script);
-    if (!elevated) {
-      }
-    return elevated;
-  }
-
-  static Future<bool> _runPowerShellElevated(String script) async {
-    if (!Platform.isWindows) return false;
-
-    final scriptFile = File(
-      '${Directory.systemTemp.path}/omnimix_elevated_${DateTime.now().microsecondsSinceEpoch}.ps1',
-    );
-    scriptFile.writeAsStringSync(script);
-
-    try {
-      final scriptPath = scriptFile.path.replaceAll('/', '\\');
-      final psScriptPath = _escapePowerShellSingleQuoted(scriptPath);
-      final command =
-          "\$p = Start-Process -FilePath 'powershell.exe' "
-          "-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$psScriptPath' "
-          "-Verb RunAs -Wait -WindowStyle Hidden -PassThru; exit \$p.ExitCode";
-      final result = await Process.run('powershell.exe', [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        command,
-      ]);
-      return result.exitCode == 0;
-    } catch (e) {
-      return false;
-    } finally {
-      try {
-        if (scriptFile.existsSync()) scriptFile.deleteSync();
-      } catch (_) {}
-    }
-  }
-
-  static String _escapePowerShellSingleQuoted(String value) {
-    return value.replaceAll("'", "''");
-  }
 
   // ═══════════════════════════════════════════════════════════
   //  Instance Management (UUID-based, with archive)
@@ -1094,4 +668,535 @@ New-Item -ItemType SymbolicLink -Path \$link -Target \$target -Force | Out-Null
       _writeArchiveDb(db);
     }
   }
+
+  static Future<PrepResult> prepareInstallStaging(
+    String gameDir,
+    ModDeclaration mod,
+    Map<String, dynamic> settings,
+    void Function(String) log,
+  ) async {
+    log('Preparing temporary directory for staging...');
+    final tempDir = Directory.systemTemp.createTempSync('omnimix_mod_install_').path;
+    log('Staging path: $tempDir');
+
+    // 1. Call mod preparation
+    await mod.prepareStaging(gameDir, tempDir, log, settings);
+
+    // 2. Prepare backups: Copy files from game or from manager backups to tempDir with .vVERSION.bak suffix
+    final backupFiles = mod.getFilesToBackup(gameDir);
+    final version = mod.getGameVersion(gameDir);
+    
+    for (final relPath in backupFiles) {
+      final managerBackupPath = '$managerDir/backups/${mod.id}/v$version/$relPath';
+      final tempBackupPath = '$tempDir/$relPath.v$version.bak';
+      
+      final managerBackupFile = File(managerBackupPath);
+      final gameFile = File('$gameDir/$relPath');
+      
+      if (managerBackupFile.existsSync()) {
+        log('Staging backup from manager cache: $relPath.v$version.bak');
+        File(tempBackupPath).parent.createSync(recursive: true);
+        managerBackupFile.copySync(tempBackupPath);
+      } else if (gameFile.existsSync()) {
+        log('Staging backup from original game path: $relPath.v$version.bak');
+        File(tempBackupPath).parent.createSync(recursive: true);
+        gameFile.copySync(tempBackupPath);
+      } else {
+        log('Warning: Original file not found for backup: $relPath');
+      }
+    }
+
+    // 3. Write managed signature inside tempDir so it is processed as an added file
+    final markerFile = File('$tempDir/.omnimix_mods/${mod.id}.managed');
+    markerFile.parent.createSync(recursive: true);
+    markerFile.writeAsStringSync(mod.version);
+
+    // 4. Scan tempDir to list added, linked, and backup files
+    final added = <String>[];
+    final links = <String>[];
+    final backups = <String>[];
+    final isDirectoryMap = <String, bool>{};
+
+    final linksDecl = mod.getFilesToLink(gameDir);
+    final backupSuffix = '.v$version.bak';
+
+    bool isUnderLink(String relPath) {
+      for (final link in linksDecl) {
+        if (relPath == link || relPath.startsWith('$link/')) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    final tempDirObj = Directory(tempDir);
+    final allEntities = tempDirObj.listSync(recursive: true);
+    
+    for (final entity in allEntities) {
+      final relPath = entity.path
+          .substring(tempDir.length + 1)
+          .replaceAll('\\', '/');
+      
+      final isDir = entity is Directory;
+      isDirectoryMap[relPath] = isDir;
+
+      if (isUnderLink(relPath)) {
+        if (linksDecl.contains(relPath)) {
+          links.add(relPath);
+        }
+        continue;
+      }
+
+      if (relPath.endsWith(backupSuffix)) {
+        final originalRelPath = relPath.substring(0, relPath.length - backupSuffix.length);
+        backups.add(originalRelPath);
+        continue;
+      }
+
+      if (!isDir) {
+        added.add(relPath);
+      }
+    }
+
+    return PrepResult(
+      tempDir: tempDir,
+      added: added,
+      links: links,
+      backups: backups,
+      isDirectoryMap: isDirectoryMap,
+      gameVersion: version,
+    );
+  }
+
+  static Future<bool> executeInstallStaging(
+    String gameDir,
+    ModDeclaration mod,
+    PrepResult prepResult,
+    void Function(String) log, {
+    int? backendPort,
+    Future<void> Function(String, bool)? onPortFileDirChanged,
+  }) async {
+    try {
+      final tempDir = prepResult.tempDir;
+      final version = prepResult.gameVersion;
+      final managerModsDir = '$managerDir/mods/${mod.id}';
+      final managerBackupDir = '$managerDir/backups/${mod.id}/v$version';
+
+      // 1. Move link files from tempDir to managerModsDir
+      log('Writing link files to mod manager cache...');
+      for (final relPath in prepResult.links) {
+        final srcEntity = prepResult.isDirectoryMap[relPath] == true
+            ? Directory('$tempDir/$relPath')
+            : File('$tempDir/$relPath');
+        final destEntityPath = '$managerModsDir/$relPath';
+
+        if (srcEntity.existsSync()) {
+          if (prepResult.isDirectoryMap[relPath] == true) {
+            final d = Directory(destEntityPath);
+            if (d.existsSync()) d.deleteSync(recursive: true);
+            d.parent.createSync(recursive: true);
+            (srcEntity as Directory).renameSync(destEntityPath);
+          } else {
+            final f = File(destEntityPath);
+            if (f.existsSync()) f.deleteSync();
+            f.parent.createSync(recursive: true);
+            (srcEntity as File).renameSync(destEntityPath);
+          }
+        }
+      }
+
+      // 2. Move backup files to managerBackupDir
+      log('Writing backup files to mod manager backups...');
+      for (final relPath in prepResult.backups) {
+        final tempBackupFile = File('$tempDir/$relPath.v$version.bak');
+        final destBackupFile = File('$managerBackupDir/$relPath.v$version.bak');
+
+        if (tempBackupFile.existsSync()) {
+          if (!destBackupFile.existsSync()) {
+            destBackupFile.parent.createSync(recursive: true);
+            tempBackupFile.renameSync(destBackupFile.path);
+          } else {
+            tempBackupFile.deleteSync();
+          }
+        }
+      }
+
+      // 3. Write batch scripts inside tempDir
+      final batchGen = BatchScriptGenerator();
+      final installScriptContent = batchGen.generateInstallScript(
+        gameDir: gameDir,
+        tempDir: tempDir,
+        managerModsDir: managerModsDir,
+        addedFiles: prepResult.added,
+        linkFiles: prepResult.links,
+        isDirectoryMap: prepResult.isDirectoryMap,
+      );
+      final uninstallScriptContent = batchGen.generateUninstallScript(
+        gameDir: gameDir,
+        backupDir: managerBackupDir,
+        addedFiles: prepResult.added,
+        linkFiles: prepResult.links,
+        backupFiles: prepResult.backups,
+        isDirectoryMap: prepResult.isDirectoryMap,
+        gameVersion: version,
+      );
+
+      final installScriptFile = File('$tempDir/install${batchGen.extension}');
+      installScriptFile.writeAsStringSync(installScriptContent);
+      log('Generated installation script: ${installScriptFile.path}');
+
+      final uninstallScriptFile = File('$tempDir/uninstall${batchGen.extension}');
+      uninstallScriptFile.writeAsStringSync(uninstallScriptContent);
+      log('Generated uninstallation script: ${uninstallScriptFile.path}');
+
+      // 4. Save uninstall script to manager folder for future use
+      final persistentUninstallFile = File('$managerModsDir/uninstall${batchGen.extension}');
+      persistentUninstallFile.parent.createSync(recursive: true);
+      persistentUninstallFile.writeAsStringSync(uninstallScriptContent);
+
+      // 5. Save instance info
+      recordInstalledVersion(mod.id, mod.version);
+      var instanceId = _readInstanceId(gameDir);
+      if (instanceId == null || instanceId.isEmpty) {
+        _cleanupStaleInstances(gameDir);
+        instanceId = _generateInstanceId(mod.id);
+      }
+      _writeInstanceId(gameDir, instanceId);
+      final inst = InstalledInstance(
+        instanceId: instanceId,
+        modId: mod.id,
+        mode: mod.mode,
+        gameDir: gameDir,
+        gameName: mod.name,
+        installedAt: DateTime.now(),
+      );
+      _saveInstance(inst);
+
+      if (backendPort != null) {
+        PortFile.writePort(gameDir, backendPort);
+      }
+      await onPortFileDirChanged?.call(gameDir, true);
+
+      return true;
+    } catch (e, st) {
+      log('ERROR executing installation staging: $e\n$st');
+      return false;
+    }
+  }
+
+  static Future<bool> runInstallScript(
+    String tempDir,
+    void Function(String) log,
+  ) async {
+    log('Requesting administrator permissions to execute installation script...');
+    final scriptFile = File('$tempDir/install.bat');
+    if (!scriptFile.existsSync()) {
+      log('ERROR: Installation script not found at ${scriptFile.path}');
+      return false;
+    }
+
+    try {
+      final scriptPath = scriptFile.path.replaceAll('/', '\\');
+      final psScript =
+          "\$p = Start-Process -FilePath 'cmd.exe' "
+          "-ArgumentList '/c','\"$scriptPath\"' "
+          "-Verb RunAs -Wait -WindowStyle Hidden -PassThru; exit \$p.ExitCode";
+
+      final runFile = File('$tempDir/run_elevated.ps1');
+      runFile.writeAsStringSync(psScript);
+
+      final process = await Process.run('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        runFile.path.replaceAll('/', '\\'),
+      ]);
+
+      return process.exitCode == 0;
+    } catch (e) {
+      log('ERROR executing script with elevated permissions: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> runUninstallScript(
+    String uninstallScriptPath,
+    String logDir,
+    void Function(String) log,
+  ) async {
+    log('Executing uninstallation script with administrator permissions...');
+    final logFile = File('$logDir/uninstall.log');
+    if (logFile.existsSync()) {
+      try {
+        logFile.deleteSync();
+      } catch (_) {}
+    }
+
+    try {
+      final scriptPath = uninstallScriptPath.replaceAll('/', '\\');
+      final psScript =
+          "\$p = Start-Process -FilePath 'cmd.exe' "
+          "-ArgumentList '/c','\"$scriptPath\"' "
+          "-Verb RunAs -Wait -WindowStyle Hidden -PassThru; exit \$p.ExitCode";
+
+      final tempPsFile = File('${Directory.systemTemp.path}/run_uninstall_${DateTime.now().millisecondsSinceEpoch}.ps1');
+      tempPsFile.writeAsStringSync(psScript);
+
+      var running = true;
+      var lastReadPos = 0;
+      
+      void readLog() {
+        if (logFile.existsSync()) {
+          try {
+            final lines = logFile.readAsLinesSync();
+            if (lines.length > lastReadPos) {
+              for (var i = lastReadPos; i < lines.length; i++) {
+                log(lines[i]);
+              }
+              lastReadPos = lines.length;
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Start log reading in background
+      Future.doWhile(() async {
+        await Future.delayed(const Duration(milliseconds: 200));
+        readLog();
+        return running;
+      });
+
+      final process = await Process.run('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        tempPsFile.path.replaceAll('/', '\\'),
+      ]);
+
+      running = false;
+      await Future.delayed(const Duration(milliseconds: 200));
+      readLog(); // Final read
+
+      try {
+        if (tempPsFile.existsSync()) tempPsFile.deleteSync();
+      } catch (_) {}
+
+      return process.exitCode == 0;
+    } catch (e) {
+      log('ERROR running uninstallation script: $e');
+      return false;
+    }
+  }
+
+  static Future<PrepResult> prepareFrameworkStaging(
+    String gameDir,
+    FrameworkDeclaration framework,
+    void Function(String) log,
+  ) async {
+    log('Preparing temporary directory for framework staging...');
+    final tempDir = Directory.systemTemp.createTempSync('omnimix_fw_install_').path;
+    log('Staging path: $tempDir');
+
+    // 1. Call framework preparation
+    await framework.prepareStaging(gameDir, tempDir, log);
+
+    // 2. Prepare backups
+    final backupFiles = framework.getFilesToBackup(gameDir);
+    final version = framework.getGameVersion(gameDir);
+    
+    for (final relPath in backupFiles) {
+      final managerBackupPath = '$managerDir/backups/${framework.id}/v$version/$relPath';
+      final tempBackupPath = '$tempDir/$relPath.v$version.bak';
+      
+      final managerBackupFile = File(managerBackupPath);
+      final gameFile = File('$gameDir/$relPath');
+      
+      if (managerBackupFile.existsSync()) {
+        log('Staging backup from manager cache: $relPath.v$version.bak');
+        File(tempBackupPath).parent.createSync(recursive: true);
+        managerBackupFile.copySync(tempBackupPath);
+      } else if (gameFile.existsSync()) {
+        log('Staging backup from original game path: $relPath.v$version.bak');
+        File(tempBackupPath).parent.createSync(recursive: true);
+        gameFile.copySync(tempBackupPath);
+      }
+    }
+
+    // 3. Write managed signature inside tempDir
+    if (framework.managedMarkerFile.isNotEmpty) {
+      final markerFile = File('$tempDir/${framework.managedMarkerFile}');
+      markerFile.parent.createSync(recursive: true);
+      markerFile.writeAsStringSync(framework.version);
+    }
+
+    // 4. Scan tempDir to list added, linked, and backup files
+    final added = <String>[];
+    final links = <String>[];
+    final backups = <String>[];
+    final isDirectoryMap = <String, bool>{};
+
+    final linksDecl = framework.getFilesToLink(gameDir);
+    final backupSuffix = '.v$version.bak';
+
+    bool isUnderLink(String relPath) {
+      for (final link in linksDecl) {
+        if (relPath == link || relPath.startsWith('$link/')) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    final tempDirObj = Directory(tempDir);
+    final allEntities = tempDirObj.listSync(recursive: true);
+    
+    for (final entity in allEntities) {
+      final relPath = entity.path
+          .substring(tempDir.length + 1)
+          .replaceAll('\\', '/');
+      
+      final isDir = entity is Directory;
+      isDirectoryMap[relPath] = isDir;
+
+      if (isUnderLink(relPath)) {
+        if (linksDecl.contains(relPath)) {
+          links.add(relPath);
+        }
+        continue;
+      }
+
+      if (relPath.endsWith(backupSuffix)) {
+        final originalRelPath = relPath.substring(0, relPath.length - backupSuffix.length);
+        backups.add(originalRelPath);
+        continue;
+      }
+
+      if (!isDir) {
+        added.add(relPath);
+      }
+    }
+
+    return PrepResult(
+      tempDir: tempDir,
+      added: added,
+      links: links,
+      backups: backups,
+      isDirectoryMap: isDirectoryMap,
+      gameVersion: version,
+    );
+  }
+
+  static Future<bool> executeFrameworkStaging(
+    String gameDir,
+    FrameworkDeclaration framework,
+    PrepResult prepResult,
+    void Function(String) log,
+  ) async {
+    try {
+      final tempDir = prepResult.tempDir;
+      final version = prepResult.gameVersion;
+      final managerFwDir = frameworkExtractDir(framework);
+      final managerBackupDir = '$managerDir/backups/${framework.id}/v$version';
+
+      // 1. Move link files from tempDir to managerFwDir
+      log('Writing link files to framework manager cache...');
+      for (final relPath in prepResult.links) {
+        final srcEntity = prepResult.isDirectoryMap[relPath] == true
+            ? Directory('$tempDir/$relPath')
+            : File('$tempDir/$relPath');
+        final destEntityPath = '$managerFwDir/$relPath';
+
+        if (srcEntity.existsSync()) {
+          if (prepResult.isDirectoryMap[relPath] == true) {
+            final d = Directory(destEntityPath);
+            if (d.existsSync()) d.deleteSync(recursive: true);
+            d.parent.createSync(recursive: true);
+            (srcEntity as Directory).renameSync(destEntityPath);
+          } else {
+            final f = File(destEntityPath);
+            if (f.existsSync()) f.deleteSync();
+            f.parent.createSync(recursive: true);
+            (srcEntity as File).renameSync(destEntityPath);
+          }
+        }
+      }
+
+      // 2. Move backup files to managerBackupDir
+      log('Writing backup files to framework backups...');
+      for (final relPath in prepResult.backups) {
+        final tempBackupFile = File('$tempDir/$relPath.v$version.bak');
+        final destBackupFile = File('$managerBackupDir/$relPath.v$version.bak');
+
+        if (tempBackupFile.existsSync()) {
+          if (!destBackupFile.existsSync()) {
+            destBackupFile.parent.createSync(recursive: true);
+            tempBackupFile.renameSync(destBackupFile.path);
+          } else {
+            tempBackupFile.deleteSync();
+          }
+        }
+      }
+
+      // 3. Write batch scripts inside tempDir
+      final batchGen = BatchScriptGenerator();
+      final installScriptContent = batchGen.generateInstallScript(
+        gameDir: gameDir,
+        tempDir: tempDir,
+        managerModsDir: managerFwDir,
+        addedFiles: prepResult.added,
+        linkFiles: prepResult.links,
+        isDirectoryMap: prepResult.isDirectoryMap,
+      );
+      final uninstallScriptContent = batchGen.generateUninstallScript(
+        gameDir: gameDir,
+        backupDir: managerBackupDir,
+        addedFiles: prepResult.added,
+        linkFiles: prepResult.links,
+        backupFiles: prepResult.backups,
+        isDirectoryMap: prepResult.isDirectoryMap,
+        gameVersion: version,
+      );
+
+      final installScriptFile = File('$tempDir/install${batchGen.extension}');
+      installScriptFile.writeAsStringSync(installScriptContent);
+      log('Generated installation script: ${installScriptFile.path}');
+
+      final uninstallScriptFile = File('$tempDir/uninstall${batchGen.extension}');
+      uninstallScriptFile.writeAsStringSync(uninstallScriptContent);
+      log('Generated uninstallation script: ${uninstallScriptFile.path}');
+
+      // 4. Save uninstall script to manager folder for future use
+      final persistentUninstallFile = File('$managerFwDir/uninstall${batchGen.extension}');
+      persistentUninstallFile.parent.createSync(recursive: true);
+      persistentUninstallFile.writeAsStringSync(uninstallScriptContent);
+
+      // 5. Save instance info
+      recordInstalledVersion(framework.id, framework.version);
+
+      return true;
+    } catch (e, st) {
+      log('ERROR executing framework staging: $e\n$st');
+      return false;
+    }
+  }
+}
+
+class PrepResult {
+  final String tempDir;
+  final List<String> added;
+  final List<String> links;
+  final List<String> backups;
+  final Map<String, bool> isDirectoryMap;
+  final String gameVersion;
+
+  const PrepResult({
+    required this.tempDir,
+    required this.added,
+    required this.links,
+    required this.backups,
+    required this.isDirectoryMap,
+    required this.gameVersion,
+  });
 }

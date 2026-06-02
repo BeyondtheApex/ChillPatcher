@@ -64,43 +64,6 @@ namespace OmniMixPlayer.Module.QQMusic
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr QQMusicGetRecommendSongs();
 
-        // PCM Streaming
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private static extern long QQMusicCreatePcmStream(string songMid, string quality, double duration);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr QQMusicGetPcmStreamInfo(long streamId);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int QQMusicReadPcmFrames(long streamId, IntPtr buffer, int framesToRead);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int QQMusicSeekPcmStream(long streamId, long frameIndex);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void QQMusicClosePcmStream(long streamId);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int QQMusicIsPcmStreamReady(long streamId);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern double QQMusicGetCacheProgress(long streamId);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern ulong QQMusicGetPcmStreamCurrentFrame(long streamId);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int QQMusicHasPendingSeek(long streamId);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern long QQMusicGetPendingSeekFrame(long streamId);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void QQMusicCancelPendingSeek(long streamId);
-
-        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int QQMusicIsCacheComplete(long streamId);
-
         // QR Login
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         private static extern IntPtr QQMusicQRGetImage(string loginType);
@@ -201,15 +164,6 @@ namespace OmniMixPlayer.Module.QQMusic
             [JsonProperty("quality")] public string Quality { get; set; }
             [JsonProperty("format")] public string Format { get; set; }
             [JsonProperty("size")] public long Size { get; set; }
-        }
-
-        public class PcmStreamInfo
-        {
-            [JsonProperty("sampleRate")] public int SampleRate { get; set; }
-            [JsonProperty("channels")] public int Channels { get; set; }
-            [JsonProperty("totalFrames")] public ulong TotalFrames { get; set; }
-            [JsonProperty("format")] public string Format { get; set; }
-            [JsonProperty("canSeek")] public bool CanSeek { get; set; }
         }
 
         public class UserPlaylists
@@ -433,67 +387,6 @@ namespace OmniMixPlayer.Module.QQMusic
         public List<SongInfo> GetRecommendSongs()
         {
             return ParseJson<List<SongInfo>>(QQMusicGetRecommendSongs());
-        }
-
-        // PCM Streaming
-        public long CreatePcmStream(string songMid, AudioQuality quality, double duration)
-        {
-            return QQMusicCreatePcmStream(songMid, GetQualityString(quality), duration);
-        }
-
-        public PcmStreamInfo GetPcmStreamInfo(long streamId)
-        {
-            return ParseJson<PcmStreamInfo>(QQMusicGetPcmStreamInfo(streamId));
-        }
-
-        public int ReadPcmFrames(long streamId, IntPtr buffer, int framesToRead)
-        {
-            return QQMusicReadPcmFrames(streamId, buffer, framesToRead);
-        }
-
-        public bool SeekPcmStream(long streamId, long frameIndex)
-        {
-            return QQMusicSeekPcmStream(streamId, frameIndex) == 0;
-        }
-
-        public void ClosePcmStream(long streamId)
-        {
-            QQMusicClosePcmStream(streamId);
-        }
-
-        public bool IsPcmStreamReady(long streamId)
-        {
-            return QQMusicIsPcmStreamReady(streamId) != 0;
-        }
-
-        public double GetCacheProgress(long streamId)
-        {
-            return QQMusicGetCacheProgress(streamId);
-        }
-
-        public ulong GetPcmStreamCurrentFrame(long streamId)
-        {
-            return QQMusicGetPcmStreamCurrentFrame(streamId);
-        }
-
-        public bool HasPendingSeek(long streamId)
-        {
-            return QQMusicHasPendingSeek(streamId) != 0;
-        }
-
-        public long GetPendingSeekFrame(long streamId)
-        {
-            return QQMusicGetPendingSeekFrame(streamId);
-        }
-
-        public void CancelPendingSeek(long streamId)
-        {
-            QQMusicCancelPendingSeek(streamId);
-        }
-
-        public bool IsCacheComplete(long streamId)
-        {
-            return QQMusicIsCacheComplete(streamId) != 0;
         }
 
         // Utility

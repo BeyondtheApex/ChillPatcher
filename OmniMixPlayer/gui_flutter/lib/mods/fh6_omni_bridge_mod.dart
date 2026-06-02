@@ -5,6 +5,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../models/mod_manifest.dart';
 
+import '../services/mod_deployment_service.dart';
+
 class Fh6OmniBridgeMod extends ModDeclaration {
   const Fh6OmniBridgeMod()
     : super(
@@ -20,6 +22,94 @@ class Fh6OmniBridgeMod extends ModDeclaration {
 
   @override
   bool get hasSettings => true;
+
+  @override
+  List<String> getFilesToAdd(String gameDir) {
+    return _mediaRelativePaths;
+  }
+
+  @override
+  List<String> getFilesToBackup(String gameDir) {
+    return _mediaRelativePaths;
+  }
+
+  @override
+  String getGameVersion(String gameDir) {
+    return _getCurrentGameVersion(gameDir);
+  }
+
+  @override
+  Future<void> prepareStaging(
+    String gameDir,
+    String tempDir,
+    void Function(String) log,
+    Map<String, dynamic> settings,
+  ) async {
+    // 1. Extract the base mod ZIP to staging
+    await extractZipToStaging(tempDir, log);
+
+    final version = getGameVersion(gameDir);
+    log('Detected game version: $version');
+
+    // 2. Perform backup of specific media assets to manager backups folder if not exists
+    final managerBackupDir = '${ModDeploymentService.managerDir}/backups/$id/v$version';
+    final backupDirObj = Directory(managerBackupDir);
+    if (!backupDirObj.existsSync()) {
+      log('Creating original media backup for version $version in manager backups...');
+      backupDirObj.createSync(recursive: true);
+      _backupMediaFiles(gameDir, managerBackupDir);
+      log('Backup created successfully.');
+    } else {
+      log('Pristine backup for version $version already exists in manager backups.');
+    }
+
+    // 3. Run media generator CLI, outputting to tempDir
+    log('Preparing media generator configurations...');
+    final configMap = _loadConfigJson();
+    final omnimix = (configMap['omnimix'] as Map<String, dynamic>?) ?? {};
+    final anthemZip = configMap['anthemZip'] as Map<String, dynamic>?;
+    final anthemZipEnabled =
+        anthemZip?['enabled'] ?? settings['anthemZipEnabled'] ?? true;
+    final logoMode = omnimix['logoMode'] ?? settings['logoMode'] ?? 'copy';
+    final customPngPath =
+        omnimix['customPngPath'] ?? settings['customPngPath'] ?? '';
+
+    final normalizedBackupDir = managerBackupDir.replaceAll('\\', '/');
+    final normalizedOutputDir = tempDir.replaceAll('\\', '/');
+
+    final cliPath = _getCliPath();
+    final configPath = _getConfigPath();
+    log('Running media generator: $cliPath');
+    final args = <String>[
+      '-c',
+      configPath,
+      '-g',
+      normalizedBackupDir,
+      '-o',
+      normalizedOutputDir,
+    ];
+    if (logoMode == 'image' && customPngPath.isNotEmpty) {
+      args.addAll(['-r', customPngPath]);
+    }
+    if (!anthemZipEnabled) {
+      args.add('--skip-anthem');
+    }
+
+    try {
+      final result = await Process.run(cliPath, args);
+      if (result.exitCode == 0) {
+        log('Media generation completed successfully.');
+        log(result.stdout);
+      } else {
+        log('ERROR: Media generator failed with exit code ${result.exitCode}.');
+        log(result.stderr);
+        throw Exception('Media generator failed with exit code ${result.exitCode}');
+      }
+    } catch (e) {
+      log('ERROR: Failed to run media generator executable: $e');
+      rethrow;
+    }
+  }
 
   @override
   Future<void> onDeploy(

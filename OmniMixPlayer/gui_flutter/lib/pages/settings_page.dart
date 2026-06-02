@@ -895,7 +895,6 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
   void initState() {
     super.initState();
     widget.state.addListener(_onChange);
-    widget.state.refreshInstances();
     widget.state.refreshBackendArchives();
   }
 
@@ -955,15 +954,20 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
                 ),
               ],
             ),
-            if (instances.isEmpty)
+            if (!st.backendOnline)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              )
+            else if (instances.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   l10n.instanceAutoRegisterHint,
                   style: TextStyle(fontSize: 12, color: cs.outline),
                 ),
-              ),
-            if (instances.isNotEmpty) ...[
+              )
+            else ...[
               const SizedBox(height: 8),
               ...instances.map((inst) => _buildInstanceTile(inst, cs)),
             ],

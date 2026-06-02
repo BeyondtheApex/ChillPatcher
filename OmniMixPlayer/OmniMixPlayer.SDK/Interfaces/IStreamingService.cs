@@ -24,13 +24,24 @@ namespace OmniMixPlayer.SDK.Interfaces
         /// <param name="durationSeconds">预估时长 (秒), 用于计算 TotalFrames</param>
         /// <param name="cacheKey">缓存标识 (如 "netease_12345")</param>
         /// <param name="headers">可选 HTTP 请求头</param>
-        /// <returns>可用于 PlayableSource.FromPcmStream 的读取器, 不可用时返回 null</returns>
+        /// <returns>PCM reader produced by the host decoder; returns null when unavailable.</returns>
         IPcmStreamReader CreateStream(
             string url,
             string format,
             float durationSeconds,
             string cacheKey,
             Dictionary<string, string> headers = null);
+
+        /// <summary>
+        /// Create a PCM reader using an explicit cache file path.
+        /// </summary>
+        IPcmStreamReader CreateStream(
+            string url,
+            string format,
+            float durationSeconds,
+            string cachePath,
+            Dictionary<string, string> headers,
+            bool useCachePath);
 
         /// <summary>
         /// 创建流并等待就绪

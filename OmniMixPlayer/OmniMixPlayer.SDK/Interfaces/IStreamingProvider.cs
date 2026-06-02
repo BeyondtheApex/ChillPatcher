@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -9,21 +10,16 @@ namespace OmniMixPlayer.SDK.Interfaces
     /// <summary>
     /// 音频来源类型
     /// </summary>
-    public enum PlayableSourceType
-    {
-        /// <summary>本地文件</summary>
-        Local = 0,
-        /// <summary>缓存文件</summary>
-        Cached = 1,
-        /// <summary>远程 URL（Unity 原生支持的格式）</summary>
-        Remote = 2,
-        /// <summary>PCM 数据流（模块提供解码后的 PCM 数据）</summary>
-        PcmStream = 3
-    }
-
     /// <summary>
     /// 音频格式
     /// </summary>
+    public enum PlayableSourceType
+    {
+        Local = 0,
+        Cached = 1,
+        Remote = 2
+    }
+
     public enum AudioFormat
     {
         Unknown = 0,
@@ -175,62 +171,27 @@ namespace OmniMixPlayer.SDK.Interfaces
 
     #endregion
 
-    #region 核心数据结构
+    #region 核心接口
 
-    /// <summary>
-    /// 可播放的音频源
-    /// 参考 go-musicfox 的 PlayableSource 设计
-    /// </summary>
     public class PlayableSource
     {
-        /// <summary>歌曲 UUID</summary>
         public string UUID { get; set; }
-
-        /// <summary>来源类型</summary>
         public PlayableSourceType SourceType { get; set; }
-
-        /// <summary>本地文件路径（Local/Cached 类型使用）</summary>
         public string LocalPath { get; set; }
-
-        /// <summary>远程 URL（Remote 类型使用）</summary>
         public string Url { get; set; }
-
-        /// <summary>
-        /// PCM 数据读取器（PcmStream 类型使用）
-        /// 模块负责创建和管理，主插件只读取数据
-        /// </summary>
-        public IPcmStreamReader PcmReader { get; set; }
-
-        /// <summary>音频格式</summary>
         public AudioFormat Format { get; set; }
-
-        /// <summary>音质等级</summary>
         public AudioQuality Quality { get; set; }
-
-        /// <summary>URL 过期时间（Remote 类型使用，null 表示不过期）</summary>
         public DateTime? ExpiresAt { get; set; }
-
-        /// <summary>文件大小 (bytes)，可选</summary>
         public long? FileSize { get; set; }
+        public Dictionary<string, string> Headers { get; set; }
+        public string CacheKey { get; set; }
+        public string CachePath { get; set; }
+        public bool UseCachePath { get; set; }
 
-        /// <summary>检查 URL 是否已过期</summary>
         public bool IsExpired => ExpiresAt.HasValue && DateTime.UtcNow >= ExpiresAt.Value;
-
-        /// <summary>检查 URL 是否即将过期（提前 30 秒）</summary>
-        public bool IsAboutToExpire => ExpiresAt.HasValue && DateTime.UtcNow >= ExpiresAt.Value.AddSeconds(-30);
-
-        /// <summary>是否是远程资源</summary>
         public bool IsRemote => SourceType == PlayableSourceType.Remote;
-
-        /// <summary>是否是 PCM 流</summary>
-        public bool IsPcmStream => SourceType == PlayableSourceType.PcmStream;
-
-        /// <summary>获取实际路径（本地路径或 URL）</summary>
         public string GetPath() => IsRemote ? Url : LocalPath;
 
-        /// <summary>
-        /// 创建一个本地文件源
-        /// </summary>
         public static PlayableSource FromLocal(string uuid, string path, AudioFormat format = AudioFormat.Unknown)
         {
             return new PlayableSource
@@ -242,9 +203,6 @@ namespace OmniMixPlayer.SDK.Interfaces
             };
         }
 
-        /// <summary>
-        /// 创建一个远程 URL 源
-        /// </summary>
         public static PlayableSource FromUrl(string uuid, string url, AudioFormat format, DateTime? expiresAt = null)
         {
             return new PlayableSource
@@ -257,56 +215,15 @@ namespace OmniMixPlayer.SDK.Interfaces
             };
         }
 
-        /// <summary>
-        /// 创建一个 PCM 流源
-        /// </summary>
-        public static PlayableSource FromPcmStream(string uuid, IPcmStreamReader reader, AudioFormat originalFormat = AudioFormat.Flac)
-        {
-            return new PlayableSource
-            {
-                UUID = uuid,
-                SourceType = PlayableSourceType.PcmStream,
-                PcmReader = reader,
-                Format = originalFormat
-            };
-        }
     }
 
-    #endregion
-
-    #region 核心接口
-
-    /// <summary>
-    /// 可播放源解析器接口
-    /// 模块实现此接口来提供音频播放源
-    /// 
-    /// 设计原则：
-    /// - 主插件只负责 URL 播放
-    /// - 认证、缓存等逻辑由模块自己处理
-    /// - 保持简单：解析 → 获取 URL → 播放
-    /// </summary>
     public interface IPlayableSourceResolver
     {
-        /// <summary>
-        /// 解析可播放源
-        /// 模块内部处理优先级：本地文件 → 缓存 → 远程获取
-        /// </summary>
-        /// <param name="uuid">歌曲 UUID</param>
-        /// <param name="quality">期望的音质等级</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>可播放源，失败返回 null</returns>
         Task<PlayableSource> ResolveAsync(
             string uuid,
             AudioQuality quality = AudioQuality.ExHigh,
             CancellationToken cancellationToken = default);
 
-        /// <summary>
-        /// 刷新远程 URL（当 URL 过期时调用）
-        /// </summary>
-        /// <param name="uuid">歌曲 UUID</param>
-        /// <param name="quality">期望的音质等级</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>新的可播放源，失败返回 null</returns>
         Task<PlayableSource> RefreshUrlAsync(
             string uuid,
             AudioQuality quality = AudioQuality.ExHigh,
@@ -314,8 +231,8 @@ namespace OmniMixPlayer.SDK.Interfaces
     }
 
     /// <summary>
-    /// Module-owned audio decoder provider.
-    /// Implement this when a module needs to decode a track itself and expose
+     /// Module-owned audio decoder provider.
+     /// Implement this when a module needs to decode a track itself and expose
     /// decoded float PCM to the backend playback/shared-memory pipeline.
     /// </summary>
     public interface IModuleAudioDecoderProvider

@@ -165,6 +165,7 @@ namespace OmniMixPlayer.Backend.ModuleSystem.Services.Streaming
                                     lock (_lock)
                                     {
                                         _writeStream.Write(buffer, 0, bytesRead);
+                                        _writeStream.Flush(true); // Ensure metadata is updated immediately
                                         _downloaded += bytesRead;
                                     }
                                 }

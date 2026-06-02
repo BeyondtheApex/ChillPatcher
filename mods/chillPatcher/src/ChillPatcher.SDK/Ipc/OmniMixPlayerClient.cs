@@ -265,8 +265,8 @@ private void ProcessMessage(string json)
     try
     {
         var obj = JObject.Parse(json);
-        var eventName = obj["event"]?.ToString();
-        var data = obj["data"] as JObject;
+        var eventName = obj.GetStringIgnoreCase("event");
+        var data = obj.GetIgnoreCase("data") as JObject;
 
         if (eventName == null) return;
 
@@ -275,19 +275,19 @@ private void ProcessMessage(string json)
             case "track.changed":
                 OnTrackChanged?.Invoke(this, new TrackChangedEventArgs
                 {
-                    Uuid = data?["uuid"]?.ToString(),
-                    Title = data?["title"]?.ToString(),
-                    Artist = data?["artist"]?.ToString(),
-                    Duration = data?["duration"]?.ToObject<float>() ?? 0f
+                    Uuid = data?.GetStringIgnoreCase("uuid"),
+                    Title = data?.GetStringIgnoreCase("title"),
+                    Artist = data?.GetStringIgnoreCase("artist"),
+                    Duration = data?.GetValueIgnoreCase<float>("duration") ?? 0f
                 });
                 break;
 
             case "state.changed":
                 OnStateChanged?.Invoke(this, new StateChangedEventArgs
                 {
-                    IsPlaying = data?["isPlaying"]?.ToObject<bool>() ?? false,
-                    Position = data?["position"]?.ToObject<float>() ?? 0f,
-                    Volume = data?["volume"]?.ToObject<float>() ?? 0f
+                    IsPlaying = data?.GetValueIgnoreCase<bool>("isPlaying") ?? false,
+                    Position = data?.GetValueIgnoreCase<float>("position") ?? 0f,
+                    Volume = data?.GetValueIgnoreCase<float>("volume") ?? 0f
                 });
                 break;
 
@@ -298,42 +298,42 @@ private void ProcessMessage(string json)
             case "position":
                 OnPosition?.Invoke(this, new PositionEventArgs
                 {
-                    Position = data?["position"]?.ToObject<float>() ?? 0f
+                    Position = data?.GetValueIgnoreCase<float>("position") ?? 0f
                 });
                 break;
 
             case "module.changed":
                 OnModuleChanged?.Invoke(this, new ModuleChangedEventArgs
                 {
-                    ModuleId = data?["moduleId"]?.ToString(),
-                    Enabled = data?["enabled"]?.ToObject<bool>() ?? false
+                    ModuleId = data?.GetStringIgnoreCase("moduleId"),
+                    Enabled = data?.GetValueIgnoreCase<bool>("enabled") ?? false
                 });
                 break;
 
             case "error":
                 OnError?.Invoke(this, new ErrorEventArgs
                 {
-                    Code = data?["code"]?.ToString(),
-                    Message = data?["message"]?.ToString()
+                    Code = data?.GetStringIgnoreCase("code"),
+                    Message = data?.GetStringIgnoreCase("message")
                 });
                 break;
 
             case "lyric.fetched":
                 OnLyricFetched?.Invoke(this, new LyricFetchedEventArgs
                 {
-                    Uuid = data?["uuid"]?.ToString(),
-                    Lrc = data?["lrc"]?.ToString(),
-                    Tlyric = data?["tlyric"]?.ToString(),
-                    Rlyric = data?["rlyric"]?.ToString()
+                    Uuid = data?.GetStringIgnoreCase("uuid"),
+                    Lrc = data?.GetStringIgnoreCase("lrc"),
+                    Tlyric = data?.GetStringIgnoreCase("tlyric"),
+                    Rlyric = data?.GetStringIgnoreCase("rlyric")
                 });
                 break;
 
             case "lyric.position":
                 OnLyricPosition?.Invoke(this, new LyricPositionEventArgs
                 {
-                    Uuid = data?["uuid"]?.ToString(),
-                    LineIndex = data?["lineIndex"]?.ToObject<int>() ?? 0,
-                    TimeMs = data?["timeMs"]?.ToObject<float>() ?? 0f
+                    Uuid = data?.GetStringIgnoreCase("uuid"),
+                    LineIndex = data?.GetValueIgnoreCase<int>("lineIndex") ?? 0,
+                    TimeMs = data?.GetValueIgnoreCase<float>("timeMs") ?? 0f
                 });
                 break;
 
@@ -344,8 +344,8 @@ private void ProcessMessage(string json)
             case "exclude.changed":
                 OnExcludeChanged?.Invoke(this, new ExcludeChangedEventArgs
                 {
-                    Uuid = data?["uuid"]?.ToString(),
-                    IsExcluded = data?["isExcluded"]?.ToObject<bool>() ?? false
+                    Uuid = data?.GetStringIgnoreCase("uuid"),
+                    IsExcluded = data?.GetValueIgnoreCase<bool>("isExcluded") ?? false
                 });
                 break;
         }
@@ -507,7 +507,7 @@ public async Task<JObject> ConnectInstance(string clientId, string role, string 
     response.EnsureSuccessStatusCode();
     var json = await response.Content.ReadAsStringAsync();
     var obj = JObject.Parse(json);
-    _instanceId = obj["instanceId"]?.ToString();
+    _instanceId = obj.GetStringIgnoreCase("instanceId");
     return obj;
 }
 

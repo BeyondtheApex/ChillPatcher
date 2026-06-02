@@ -93,17 +93,10 @@ namespace OmniMixPlayer.Module.Bilibili
 
         public async Task<PlayableSource> ResolveAsync(string uuid, AudioQuality quality, CancellationToken token = default)
         {
-            if (!_context.StreamingService.IsAvailable)
-            {
-                _context.Logger.LogError($"[{DisplayName}] 流式服务不可用 (原生解码器未加载)");
-                return null;
-            }
-
             var music = _context.MusicRegistry.GetMusic(uuid);
             if (music == null) return null;
 
             const int maxRetries = 3;
-            const int readyTimeoutMs = 20000;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
@@ -121,28 +114,19 @@ namespace OmniMixPlayer.Module.Bilibili
 
                 _context.Logger.LogInformation($"[Stream] 启动流: {music.Title} (尝试 {attempt}/{maxRetries})");
 
-                var reader = await _context.StreamingService.CreateStreamAndWaitAsync(
-                    url,
-                    "aac",
-                    music.Duration,
-                    $"bili_{music.SourcePath}",
-                    readyTimeoutMs,
-                    new Dictionary<string, string>
+                return new PlayableSource
+                {
+                    UUID = uuid,
+                    SourceType = PlayableSourceType.Remote,
+                    Url = url,
+                    Format = AudioFormat.Aac,
+                    Headers = new Dictionary<string, string>
                     {
                         ["Referer"] = "https://www.bilibili.com",
                         ["User-Agent"] = BilibiliBridge.UserAgent
                     },
-                    token);
-
-                if (reader != null)
-                {
-                    _context.Logger.LogInformation($"[{DisplayName}] PCM 流已就绪: {music.Title} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch]");
-                    return PlayableSource.FromPcmStream(uuid, reader, AudioFormat.Aac);
-                }
-
-                _context.Logger.LogWarning($"[{DisplayName}] PCM 流创建/准备失败: {music.Title} (尝试 {attempt}/{maxRetries})");
-                if (attempt < maxRetries)
-                    await Task.Delay(1000, token);
+                    CacheKey = $"bili_{music.SourcePath}"
+                };
             }
 
             return null;

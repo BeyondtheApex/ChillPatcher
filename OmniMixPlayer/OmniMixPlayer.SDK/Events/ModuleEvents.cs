@@ -12,6 +12,12 @@ namespace OmniMixPlayer.SDK.Events
         /// 事件发生的时间戳
         /// </summary>
         long Timestamp { get; }
+
+        /// <summary>
+        /// 事件来源模块 ID
+        /// 发起此事件的模块标识符，为 null 时表示由主机(host)触发
+        /// </summary>
+        string SourceModuleId { get; set; }
     }
 
     /// <summary>
@@ -20,6 +26,7 @@ namespace OmniMixPlayer.SDK.Events
     public abstract class ModuleEventBase : IModuleEvent
     {
         public long Timestamp { get; } = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        public string SourceModuleId { get; set; }
     }
 
     #region 播放事件
@@ -569,6 +576,96 @@ namespace OmniMixPlayer.SDK.Events
         public string Code { get; set; }
         public string Message { get; set; }
         public string ModuleId { get; set; }
+    }
+
+    #endregion
+
+    #region 控制请求事件 (模块 → 主机)
+
+    /// <summary>
+    /// 播放请求事件
+    /// 模块请求开始播放指定歌曲 (或不指定则播放当前)
+    /// </summary>
+    public class PlayRequestedEvent : ModuleEventBase
+    {
+        /// <summary>
+        /// 要播放的歌曲 UUID，为 null 时播放当前歌曲或队列下一首
+        /// </summary>
+        public string MusicUuid { get; set; }
+    }
+
+    /// <summary>
+    /// 暂停请求事件
+    /// </summary>
+    public class PauseRequestedEvent : ModuleEventBase { }
+
+    /// <summary>
+    /// 恢复播放请求事件
+    /// </summary>
+    public class ResumeRequestedEvent : ModuleEventBase { }
+
+    /// <summary>
+    /// 停止播放请求事件
+    /// </summary>
+    public class StopRequestedEvent : ModuleEventBase { }
+
+    /// <summary>
+    /// 播放/暂停切换请求事件
+    /// </summary>
+    public class TogglePlayRequestedEvent : ModuleEventBase { }
+
+    /// <summary>
+    /// 下一首请求事件
+    /// </summary>
+    public class NextTrackRequestedEvent : ModuleEventBase { }
+
+    /// <summary>
+    /// 上一首请求事件
+    /// </summary>
+    public class PreviousTrackRequestedEvent : ModuleEventBase { }
+
+    /// <summary>
+    /// Seek 跳转请求事件
+    /// </summary>
+    public class SeekRequestedEvent : ModuleEventBase
+    {
+        /// <summary>
+        /// 目标位置 (秒)
+        /// </summary>
+        public float PositionSeconds { get; set; }
+    }
+
+    /// <summary>
+    /// 音量变化请求事件
+    /// </summary>
+    public class VolumeChangeRequestedEvent : ModuleEventBase
+    {
+        /// <summary>
+        /// 目标音量 (0.0 ~ 1.0)
+        /// </summary>
+        public float Volume { get; set; }
+    }
+
+    /// <summary>
+    /// 随机播放切换请求事件
+    /// </summary>
+    public class ToggleShuffleRequestedEvent : ModuleEventBase
+    {
+        /// <summary>
+        /// 是否启用随机播放
+        /// </summary>
+        public bool Enabled { get; set; }
+    }
+
+    /// <summary>
+    /// 循环模式切换请求事件
+    /// </summary>
+    public class SetRepeatModeRequestedEvent : ModuleEventBase
+    {
+        /// <summary>
+        /// 目标循环模式
+        /// </summary>
+        public Interfaces.RepeatMode Mode { get; set; }
     }
 
     #endregion

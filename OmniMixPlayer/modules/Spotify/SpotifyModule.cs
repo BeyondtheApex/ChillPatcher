@@ -57,18 +57,22 @@ namespace OmniMixPlayer.Module.Spotify
 
         // OAuth 登录进行中标志
         private bool _isLoggingIn;
+        private string _authorizationUrl;
 
         // Client ID 未配置标志
         private bool _needsClientId;
 
-        // 当前选定的设备
+        // 本模块创建的 Spotify Connect PCM 设备
         private string _activeDeviceId;
         private string _activeDeviceName;
+        private string _deviceStatusText;
         private List<SpotifyDevice> _cachedDevices = new List<SpotifyDevice>();
         private bool _nativeBridgeLoaded;
+        private NativeLibrespotPcmReader _nativeConnectReader;
+        private readonly SemaphoreSlim _nativeConnectLock = new SemaphoreSlim(1, 1);
 
         // 事件订阅
-        private IDisposable _pauseSubscription;
+        private readonly List<IDisposable> _playbackSubscriptions = new List<IDisposable>();
 
         // =====================================================================
         // 生命周期
@@ -122,7 +126,7 @@ namespace OmniMixPlayer.Module.Spotify
                 "SpotifyLibrespotBridge.dll",
                 ModuleId);
             if (!_nativeBridgeLoaded)
-                _logger.LogWarning("[Spotify] SpotifyLibrespotBridge.dll not loaded; native Spotify decode is disabled");
+                _logger.LogWarning("[Spotify] SpotifyLibrespotBridge.dll not loaded; local Spotify Connect PCM is disabled");
 
             // 加载已保存的 session
             _bridge.LoadSession();
@@ -146,6 +150,7 @@ namespace OmniMixPlayer.Module.Spotify
                             _logger.LogWarning("Spotify Free account - playback control requires Premium");
 
                         await LoadPlaylistsAsync();
+                        await EnsureNativeConnectReadyAsync(CancellationToken.None);
                         OnReadyStateChanged?.Invoke(true);
                         return;
                     }
@@ -165,7 +170,8 @@ namespace OmniMixPlayer.Module.Spotify
 
         public void OnUnload()
         {
-            _pauseSubscription?.Dispose();
+            DisposePlaybackSubscriptions();
+            StopNativeConnectReader();
             _oauthManager?.Dispose();
             _bridge?.Dispose();
             _savedCache.Clear();
@@ -193,11 +199,18 @@ namespace OmniMixPlayer.Module.Spotify
                 PushUI?.Invoke(BuildUI());
             };
 
+            _oauthManager.OnAuthorizationUrlReady += (url) =>
+            {
+                _authorizationUrl = url;
+                PushUI?.Invoke(BuildUI());
+            };
+
             _oauthManager.OnTokenReceived += async (tokenResponse) =>
             {
                 PushUI?.Invoke(BuildUI());
 
                 _bridge.SetTokens(tokenResponse);
+                _authorizationUrl = null;
 
                 // 获取用户信息
                 var user = await _bridge.GetCurrentUserAsync();
@@ -212,6 +225,7 @@ namespace OmniMixPlayer.Module.Spotify
 
                 // 加载歌单
                 await LoadPlaylistsAsync();
+                await EnsureNativeConnectReadyAsync(CancellationToken.None);
 
                 _isLoggingIn = false;
                 OnReadyStateChanged?.Invoke(true);
@@ -224,14 +238,29 @@ namespace OmniMixPlayer.Module.Spotify
             {
                 _logger.LogError($"Login failed: {error}");
                 _isLoggingIn = false;
+                _authorizationUrl = null;
                 PushUI?.Invoke(BuildUI());
             };
         }
 
         private void SubscribePlaybackEvents()
         {
-            _pauseSubscription?.Dispose();
-            _pauseSubscription = _context.EventBus.Subscribe<PlayPausedEvent>(async e =>
+            DisposePlaybackSubscriptions();
+
+            _playbackSubscriptions.Add(_context.EventBus.Subscribe<PlayStartedEvent>(async e =>
+            {
+                if (e.Music == null)
+                    return;
+
+                if (e.Music.ModuleId != ModuleId)
+                {
+                    await PauseAndStopConnectAsync(
+                        $"another module started: {e.Music.ModuleId ?? "host"}",
+                        pauseRemote: true).ConfigureAwait(false);
+                }
+            }));
+
+            _playbackSubscriptions.Add(_context.EventBus.Subscribe<PlayPausedEvent>(async e =>
             {
                 // 只处理属于本模块的歌曲
                 if (e.Music == null || e.Music.ModuleId != ModuleId) return;
@@ -254,8 +283,91 @@ namespace OmniMixPlayer.Module.Spotify
                 {
                     _logger.LogWarning($"[Spotify] Failed to sync pause state: {ex.Message}");
                 }
-            });
-            _logger.LogInformation("[Spotify] Subscribed to PlayPausedEvent");
+            }));
+
+            _playbackSubscriptions.Add(_context.EventBus.Subscribe<PlaySeekEvent>(async e =>
+            {
+                if (e.Music == null || e.Music.ModuleId != ModuleId) return;
+                if (e.SourceModuleId == ModuleId) return;
+                if (e.IsCompleted && !e.IsPending) return;
+                if (_bridge == null || !_bridge.IsLoggedIn || !_bridge.Session.IsPremium) return;
+
+                var meta = GetTrackMeta(e.Music);
+                if (meta == null || meta.IsConnectLive) return;
+
+                try
+                {
+                    var positionMs = Math.Max(0, (int)(e.TargetTime * 1000));
+                    if (string.IsNullOrEmpty(_activeDeviceId))
+                    {
+                        await EnsureNativeConnectReadyAsync(CancellationToken.None).ConfigureAwait(false);
+                        if (!string.IsNullOrEmpty(_activeDeviceName))
+                            _activeDeviceId = await WaitForLibrespotDeviceAsync(_activeDeviceName, CancellationToken.None, maxRetries: 5).ConfigureAwait(false);
+                    }
+
+                    _logger.LogInformation("[Spotify] Seeking Spotify playback to {PositionMs}ms", positionMs);
+                    var ok = await _bridge.SeekAsync(positionMs, _activeDeviceId).ConfigureAwait(false);
+                    if (!ok && !string.IsNullOrEmpty(_activeDeviceId))
+                    {
+                        _logger.LogInformation("[Spotify] Seek failed; transferring playback to {DeviceId} and retrying", _activeDeviceId);
+                        await _bridge.TransferPlaybackAsync(_activeDeviceId, play: true).ConfigureAwait(false);
+                        ok = await _bridge.SeekAsync(positionMs, _activeDeviceId).ConfigureAwait(false);
+                    }
+
+                    if (ok)
+                    {
+                        _context.EventBus.Publish(new PlaySeekEvent
+                        {
+                            SourceModuleId = ModuleId,
+                            Music = e.Music,
+                            Progress = e.Music.Duration > 0 ? e.TargetTime / e.Music.Duration : 0,
+                            TargetTime = e.TargetTime,
+                            IsPending = false,
+                            IsCompleted = true
+                        });
+                    }
+                    else
+                    {
+                        _logger.LogWarning("[Spotify] Spotify seek was rejected; keeping local progress unchanged");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"[Spotify] Failed to seek Spotify playback: {ex.Message}");
+                }
+            }));
+
+            _logger.LogInformation("[Spotify] Subscribed to playback events");
+        }
+
+        private void DisposePlaybackSubscriptions()
+        {
+            foreach (var subscription in _playbackSubscriptions)
+                subscription?.Dispose();
+            _playbackSubscriptions.Clear();
+        }
+
+        private async Task PauseAndStopConnectAsync(string reason, bool pauseRemote)
+        {
+            var hadReader = _nativeConnectReader != null;
+            if (!hadReader)
+                return;
+
+            _logger.LogInformation("[Spotify] Leaving local Connect playback ({Reason})", reason);
+
+            if (pauseRemote && _bridge != null && _bridge.IsLoggedIn && _bridge.Session.IsPremium)
+            {
+                try
+                {
+                    await _bridge.PauseAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("[Spotify] Failed to pause Spotify while leaving Connect playback: {Message}", ex.Message);
+                }
+            }
+
+            StopNativeConnectReader();
         }
 
         // =====================================================================
@@ -266,6 +378,8 @@ namespace OmniMixPlayer.Module.Spotify
         {
             try
             {
+                _registry.RegisterConnectLive();
+
                 // 加载 Liked Songs
                 _logger.LogInformation("Loading Liked Songs...");
                 var likedTracks = await _bridge.GetSavedTracksAsync(500);
@@ -279,13 +393,17 @@ namespace OmniMixPlayer.Module.Spotify
                 // 加载用户歌单
                 _logger.LogInformation("Loading playlists...");
                 var playlists = await _bridge.GetUserPlaylistsAsync();
+                var loadedPlaylistCount = 0;
                 foreach (var playlist in playlists)
                 {
                     try
                     {
                         var tracks = await _bridge.GetPlaylistTracksAsync(playlist.Id);
                         if (tracks.Count > 0)
+                        {
                             _registry.RegisterPlaylist(playlist, tracks);
+                            loadedPlaylistCount++;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -293,7 +411,7 @@ namespace OmniMixPlayer.Module.Spotify
                     }
                 }
 
-                _logger.LogInformation($"Loaded {playlists.Count} playlists");
+                _logger.LogInformation($"Loaded {loadedPlaylistCount}/{playlists.Count} playlists");
 
                 // 加载可用设备
                 await RefreshDevicesAsync();
@@ -357,54 +475,38 @@ namespace OmniMixPlayer.Module.Spotify
         }
 
         // =====================================================================
-        // IModuleAudioDecoderProvider (librespot pipe -> PCM shared memory)
+        // Local Spotify Connect PCM device (librespot -> shared-memory pipeline)
         // =====================================================================
 
-        public bool CanDecode(string uuid)
+        private async Task<NativeLibrespotPcmReader> EnsureNativeConnectReadyAsync(CancellationToken cancellationToken)
         {
-            if (!UseNativeLibrespotDecoder() || !_nativeBridgeLoaded || _bridge == null || !_bridge.IsLoggedIn || !_bridge.Session.IsPremium)
-                return false;
-
-            var music = _context?.MusicRegistry?.GetMusic(uuid);
-            return GetTrackMeta(music) != null;
-        }
-
-        public async Task<IPcmStreamReader> CreateDecoderAsync(
-            string uuid,
-            AudioQuality quality = AudioQuality.ExHigh,
-            CancellationToken cancellationToken = default)
-        {
-            var music = _context.MusicRegistry.GetMusic(uuid);
-            var meta = GetTrackMeta(music);
-            if (music == null || meta == null || string.IsNullOrEmpty(meta.SpotifyUri))
+            if (_bridge == null || !_bridge.IsLoggedIn || !_bridge.Session.IsPremium)
                 return null;
-
-            if (!UseNativeLibrespotDecoder())
-            {
-                _logger.LogInformation("[Spotify] Native librespot decoder disabled by config; using Spotify Connect fallback");
-                return null;
-            }
-
             if (!_nativeBridgeLoaded)
-            {
-                _logger.LogWarning("[Spotify] SpotifyLibrespotBridge.dll is not loaded; falling back to Spotify Connect silent reader");
                 return null;
-            }
 
-            var deviceName = _context.ConfigManager.GetString(
-                "LibrespotDeviceName",
-                $"OmniMixPlayer-{Environment.ProcessId}");
-            var cacheDir = Path.Combine(_dataPath, "librespot-cache");
-
-            var reader = new NativeLibrespotPcmReader(
-                _bridge.Session.AccessToken,
-                deviceName,
-                cacheDir,
-                music.Duration,
-                _logger);
-
+            await _nativeConnectLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (_nativeConnectReader != null && _nativeConnectReader.IsReady && !_nativeConnectReader.IsEndOfStream)
+                    return _nativeConnectReader;
+
+                StopNativeConnectReader();
+
+                if (!await _bridge.EnsureTokenValidAsync().ConfigureAwait(false))
+                    return null;
+
+                var deviceName = _context.ConfigManager.GetString(
+                    "LibrespotDeviceName",
+                    $"OmniMixPlayer-{Environment.ProcessId}");
+                var cacheDir = Path.Combine(_dataPath, "librespot-cache");
+                var reader = new NativeLibrespotPcmReader(
+                    _bridge.Session.AccessToken,
+                    deviceName,
+                    cacheDir,
+                    0,
+                    _logger);
+
                 if (!reader.Start())
                 {
                     reader.Dispose();
@@ -413,47 +515,40 @@ namespace OmniMixPlayer.Module.Spotify
 
                 if (!reader.WaitForReady(15000, cancellationToken))
                 {
-                    _logger.LogWarning("[Spotify] native librespot bridge did not become ready: {DeviceName}", deviceName);
+                    _logger.LogWarning("[Spotify] local Spotify Connect PCM device did not become ready: {DeviceName}", deviceName);
                     reader.Dispose();
                     return null;
                 }
 
-                var deviceId = await WaitForLibrespotDeviceAsync(deviceName, cancellationToken).ConfigureAwait(false);
-                if (string.IsNullOrEmpty(deviceId))
-                {
-                    _logger.LogWarning("[Spotify] native librespot device did not appear: {DeviceName}", deviceName);
-                    reader.Dispose();
-                    return null;
-                }
-
-                await _bridge.TransferPlaybackAsync(deviceId, play: false).ConfigureAwait(false);
-                var ok = await _bridge.PlayTrackAsync(meta.SpotifyUri, deviceId).ConfigureAwait(false);
-                if (!ok)
-                {
-                    _logger.LogWarning("[Spotify] Failed to start librespot playback: {Title}", music.Title);
-                    reader.Dispose();
-                    return null;
-                }
-
-                _activeDeviceId = deviceId;
+                _nativeConnectReader = reader;
                 _activeDeviceName = deviceName;
-                _logger.LogInformation("[Spotify] native librespot decoder started: {Title}", music.Title);
+                _activeDeviceId = await WaitForLibrespotDeviceAsync(deviceName, cancellationToken, maxRetries: 5).ConfigureAwait(false);
+                _logger.LogInformation(
+                    "[Spotify] local Spotify Connect PCM device ready: {DeviceName}, format={SampleRate}Hz/{Channels}ch/f32",
+                    deviceName,
+                    reader.SampleRate,
+                    reader.Channels);
                 return reader;
             }
-            catch
+            finally
             {
-                reader.Dispose();
-                throw;
+                _nativeConnectLock.Release();
             }
         }
 
-        private async Task<string> WaitForLibrespotDeviceAsync(string deviceName, CancellationToken cancellationToken)
+        private void StopNativeConnectReader()
+        {
+            var reader = _nativeConnectReader;
+            _nativeConnectReader = null;
+            reader?.Dispose();
+        }
+
+        private async Task<string> WaitForLibrespotDeviceAsync(string deviceName, CancellationToken cancellationToken, int maxRetries = 30)
         {
             // 指数退避：500ms → 1s → 2s → 4s → 4s...，30 次总时长约 2 分钟
             var delay = TimeSpan.FromMilliseconds(500);
             const double backoffMultiplier = 2.0;
             const int maxDelayMs = 4000;
-            const int maxRetries = 30;
 
             for (int i = 0; i < maxRetries; i++)
             {
@@ -478,26 +573,27 @@ namespace OmniMixPlayer.Module.Spotify
             return null;
         }
 
-        private bool UseNativeLibrespotDecoder()
+        // =====================================================================
+        // IModuleAudioDecoderProvider (local Spotify Connect PCM sink)
+        // =====================================================================
+
+        public bool CanDecode(string uuid)
         {
-            var backend = _context?.ConfigManager?.GetString("PlaybackBackend", "native") ?? "native";
-            if (backend.Equals("connect", StringComparison.OrdinalIgnoreCase) ||
-                backend.Equals("spotify_connect", StringComparison.OrdinalIgnoreCase) ||
-                backend.Equals("client", StringComparison.OrdinalIgnoreCase))
+            if (_bridge == null || !_bridge.IsLoggedIn || !_bridge.Session.IsPremium || !_nativeBridgeLoaded)
                 return false;
 
-            return _context?.ConfigManager?.GetBool("UseNativeLibrespotDecoder", true) ?? true;
+            var music = _context?.MusicRegistry?.GetMusic(uuid);
+            var meta = GetTrackMeta(music);
+            return meta != null && (meta.IsConnectLive || !string.IsNullOrEmpty(meta.SpotifyUri));
         }
 
-        // =====================================================================
-        // IPlayableSourceResolver (Spotify Connect 播放)
-        // =====================================================================
-
-        public async Task<PlayableSource> ResolveAsync(string uuid, AudioQuality quality = AudioQuality.ExHigh, CancellationToken cancellationToken = default)
+        public async Task<IPcmStreamReader> CreateDecoderAsync(
+            string uuid,
+            AudioQuality quality = AudioQuality.ExHigh,
+            CancellationToken cancellationToken = default)
         {
-            _logger.LogInformation($"[Spotify] ResolveAsync called: uuid={uuid}");
+            _logger.LogInformation("[Spotify] Create PCM reader called: uuid={Uuid}", uuid);
 
-            // 常规歌曲：通过 Spotify Connect 播放
             var music = _context.MusicRegistry.GetMusic(uuid);
             if (music == null)
             {
@@ -511,45 +607,59 @@ namespace OmniMixPlayer.Module.Spotify
                 _logger.LogWarning($"[Spotify] No Spotify URI for: {music.Title}");
                 return null;
             }
+            var isConnectLive = meta.IsConnectLive;
+
+            if (_bridge == null || !_bridge.IsLoggedIn)
+            {
+                _logger.LogWarning("[Spotify] Not logged in");
+                return null;
+            }
 
             if (!_bridge.Session.IsPremium)
             {
                 _logger.LogWarning("[Spotify] Playback control requires Spotify Premium");
-                return PlayableSource.FromPcmStream(uuid, new SilentPcmReader(music.Duration), AudioFormat.Mp3);
+                return null;
             }
 
-            // 如果没有选定设备，尝试自动检测
-            if (string.IsNullOrEmpty(_activeDeviceId))
+            var reader = await EnsureNativeConnectReadyAsync(cancellationToken).ConfigureAwait(false);
+            if (reader == null)
             {
-                var devices = await _bridge.GetAvailableDevicesAsync();
-                var active = devices.Find(d => d.IsActive);
-                if (active != null)
-                {
-                    _activeDeviceId = active.Id;
-                    _logger.LogInformation($"[Spotify] Auto-detected active device: {active.Name}");
-                }
-                else if (devices.Count > 0)
-                {
-                    _activeDeviceId = devices[0].Id;
-                    _logger.LogInformation($"[Spotify] Using first available device: {devices[0].Name}");
-                    await _bridge.TransferPlaybackAsync(_activeDeviceId, play: false);
-                }
-                else
-                {
-                    _logger.LogWarning("[Spotify] No Spotify devices found. Please open Spotify and select a device.");
-                    return null;
-                }
+                _logger.LogWarning("[Spotify] Local Spotify Connect PCM device is unavailable");
+                return null;
             }
 
-            _logger.LogInformation($"[Spotify] Playing: {music.Title} on device {_activeDeviceId}");
-            var playSuccess = await _bridge.PlayTrackAsync(meta.SpotifyUri, _activeDeviceId);
-            if (playSuccess)
-                _logger.LogInformation($"[Spotify] Playback started: {music.Title}");
-            else
-                _logger.LogWarning($"[Spotify] Failed to start playback: {music.Title}");
+            if (!isConnectLive && string.IsNullOrEmpty(_activeDeviceId))
+                _activeDeviceId = await WaitForLibrespotDeviceAsync(_activeDeviceName, cancellationToken).ConfigureAwait(false);
 
-            // 返回静默 PCM（音频由 Spotify 客户端播放）
-            return PlayableSource.FromPcmStream(uuid, new SilentPcmReader(music.Duration), AudioFormat.Mp3);
+            if (isConnectLive)
+            {
+                _logger.LogInformation(
+                    "[Spotify] Connect Live receiver is active. Select device '{DeviceName}' in Spotify to stream audio.",
+                    _activeDeviceName);
+            }
+            else if (!string.IsNullOrEmpty(_activeDeviceId))
+            {
+                await _bridge.TransferPlaybackAsync(_activeDeviceId, play: false).ConfigureAwait(false);
+                var playSuccess = await _bridge.PlayTrackAsync(meta.SpotifyUri, _activeDeviceId).ConfigureAwait(false);
+                if (playSuccess)
+                    _logger.LogInformation("[Spotify] Playback started on local Connect PCM device: {Title}", music.Title);
+                else
+                    _logger.LogWarning("[Spotify] Failed to start playback on local Connect PCM device: {Title}", music.Title);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "[Spotify] Local Connect PCM reader is ready. Select device '{DeviceName}' in Spotify to stream audio.",
+                    _activeDeviceName);
+            }
+
+            return new NativeLibrespotPcmReaderLease(reader, isConnectLive ? 0 : music.Duration);
+        }
+
+        public async Task<PlayableSource> ResolveAsync(string uuid, AudioQuality quality = AudioQuality.ExHigh, CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            return null;
         }
 
         public Task<PlayableSource> RefreshUrlAsync(string uuid, AudioQuality quality = AudioQuality.ExHigh, CancellationToken cancellationToken = default)
@@ -724,14 +834,33 @@ namespace OmniMixPlayer.Module.Spotify
             // 状态 2: 未登录
             if (!_bridge?.IsLoggedIn ?? true)
             {
-                var statusText = _isLoggingIn ? "正在打开浏览器进行 Spotify 授权..." : "点击下方按钮登录 Spotify";
-                return SlintUi.Column(spacing: 16, padding: 20)
+                var statusText = _isLoggingIn ? "正在准备 Spotify 授权..." : "点击下方按钮登录 Spotify";
+                var column = SlintUi.Column(spacing: 16, padding: 20)
                     .AddChild(SlintUi.Text("Spotify", fontSize: 18))
                     .AddChild(SlintUi.Text("未登录", fontSize: 14))
-                    .AddChild(SlintUi.Text(statusText, fontSize: 12, color: "#94a3b8"))
-                    .AddChild(
-                        SlintUi.Button("login_btn", "登录 Spotify", variant: "primary")
-                    );
+                    .AddChild(SlintUi.Text(statusText, fontSize: 12, color: "#94a3b8"));
+
+                if (!_isLoggingIn)
+                {
+                    column.AddChild(SlintUi.Button("login_btn", "登录 Spotify", variant: "primary"));
+                }
+                else if (!string.IsNullOrEmpty(_authorizationUrl))
+                {
+                    column
+                        .AddChild(new SlintNode
+                        {
+                            Id = "spotify_auth_url",
+                            NodeType = "ExternalLink",
+                            Text = "打开 Spotify 授权页面",
+                            Value = _authorizationUrl,
+                            ButtonVariant = "primary"
+                        })
+                        .AddChild(SlintUi.Text("如果按钮无效，请复制下面的授权 URL 到浏览器。", fontSize: 11, color: "#94a3b8"))
+                        .AddChild(SlintUi.Input("spotify_auth_url_copy", "授权 URL", _authorizationUrl, inputType: "text"))
+                        .AddChild(SlintUi.Button("cancel_login_btn", "取消登录", variant: null));
+                }
+
+                return column;
             }
 
             // 状态 3: 已登录
@@ -750,6 +879,7 @@ namespace OmniMixPlayer.Module.Spotify
                     if (!_isLoggingIn)
                     {
                         _isLoggingIn = true;
+                        _authorizationUrl = null;
                         PushUI?.Invoke(BuildUI());
                         _ = Task.Run(() => _oauthManager.StartLoginAsync());
                     }
@@ -757,6 +887,13 @@ namespace OmniMixPlayer.Module.Spotify
 
                 case "logout_btn":
                     _ = LogoutSpotifyAsync();
+                    break;
+
+                case "cancel_login_btn":
+                    _oauthManager?.Cancel();
+                    _isLoggingIn = false;
+                    _authorizationUrl = null;
+                    PushUI?.Invoke(BuildUI());
                     break;
 
                 case "open_devices":
@@ -801,52 +938,72 @@ namespace OmniMixPlayer.Module.Spotify
         {
             if (linkId == "devices")
             {
-                if (nodeId == "select_device" && !string.IsNullOrEmpty(value))
+                if (nodeId == "refresh_devices_link")
                 {
-                    if (value == "omnimix_local")
-                    {
-                        // 开启本地解码模式
-                        _context?.ConfigManager?.SetValue("PlaybackBackend", "native");
-                        _context?.ConfigManager?.SetValue("UseNativeLibrespotDecoder", true);
-                        _context?.ConfigManager?.Save();
-                        _activeDeviceId = value;
-                        _activeDeviceName = "OmniMix（本地解码）";
-                        _logger?.LogInformation("[Spotify] Switched to native local decode mode");
-                    }
-                    else
-                    {
-                        // 选远程设备 → 关闭本地解码, 走官方 Spotify Connect
-                        _context?.ConfigManager?.SetValue("PlaybackBackend", "connect");
-                        _context?.ConfigManager?.SetValue("UseNativeLibrespotDecoder", false);
-                        _context?.ConfigManager?.Save();
-                        _logger?.LogInformation("[Spotify] Disabled local decode, using Spotify Connect");
-
-                        if (_bridge != null)
-                        {
-                            try
-                            {
-                                await _bridge.TransferPlaybackAsync(value, play: false);
-                                _activeDeviceId = value;
-                                // 从设备列表中查找设备名
-                                var devices = await _bridge.GetAvailableDevicesAsync();
-                                var device = devices.FirstOrDefault(d => d.Id == value);
-                                _activeDeviceName = device?.Name ?? value;
-                                _logger?.LogInformation($"[Spotify] Device selected: {_activeDeviceName}");
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger?.LogWarning($"[Spotify] Failed to select device: {ex.Message}");
-                            }
-                        }
-                    }
-                    // 选完设备后推送设备列表 UI 以显示选中状态
-                    PushUI?.Invoke(BuildDeviceListUI());
-                }
-                else if (nodeId == "refresh_devices_link")
-                {
+                    _deviceStatusText = null;
+                    await EnsureNativeConnectReadyAsync(CancellationToken.None);
                     await RefreshDevicesAndPushUI();
                 }
+                else if (nodeId.StartsWith("select_device_", StringComparison.Ordinal))
+                {
+                    var indexText = nodeId.Substring("select_device_".Length);
+                    if (int.TryParse(indexText, out var index))
+                    {
+                        await SelectDeviceAndPushUIAsync(index);
+                    }
+                }
             }
+        }
+
+        private async Task SelectDeviceAndPushUIAsync(int index)
+        {
+            var devices = _cachedDevices ?? new List<SpotifyDevice>();
+            if (index < 0 || index >= devices.Count)
+            {
+                _deviceStatusText = "设备列表已过期，请刷新后重试。";
+                PushUI?.Invoke(BuildDeviceListUI());
+                return;
+            }
+
+            var device = devices[index];
+            if (device.IsRestricted || string.IsNullOrEmpty(device.Id))
+            {
+                _deviceStatusText = $"无法切换到 {device.Name ?? "Unknown"}：Spotify 标记该设备为受限。";
+                PushUI?.Invoke(BuildDeviceListUI());
+                return;
+            }
+
+            if (device.Id == _activeDeviceId || device.IsActive)
+            {
+                _activeDeviceId = device.Id;
+                _activeDeviceName = device.Name;
+                _deviceStatusText = $"{device.Name ?? "Unknown"} 已经是当前设备。";
+                await RefreshDevicesAndPushUI();
+                return;
+            }
+
+            try
+            {
+                var ok = await _bridge.TransferPlaybackAsync(device.Id, play: true);
+                if (ok)
+                {
+                    _activeDeviceId = device.Id;
+                    _activeDeviceName = device.Name;
+                    _deviceStatusText = $"已切换到 {device.Name ?? "Unknown"}。";
+                    _logger.LogInformation("[Spotify] Transferred playback to device: {DeviceName}", device.Name);
+                }
+                else
+                {
+                    _deviceStatusText = $"切换到 {device.Name ?? "Unknown"} 失败，请确认账号为 Premium 且设备可用。";
+                }
+            }
+            catch (Exception ex)
+            {
+                _deviceStatusText = $"切换设备失败：{ex.Message}";
+                _logger.LogWarning("[Spotify] Failed to transfer playback to device {DeviceName}: {Message}", device.Name, ex.Message);
+            }
+
+            await RefreshDevicesAndPushUI();
         }
 
         private SlintNode BuildConfigUI()
@@ -860,7 +1017,8 @@ namespace OmniMixPlayer.Module.Spotify
                 )
                 .AddChild(SlintUi.Text("1. 访问 developer.spotify.com/dashboard 创建应用", fontSize: 10, color: "#94a3b8"))
                 .AddChild(SlintUi.Text("2. 复制 Client ID 并粘贴到上方", fontSize: 10, color: "#94a3b8"))
-                .AddChild(SlintUi.Text("3. 添加 Redirect URI: fullstop://callback", fontSize: 10, color: "#94a3b8"));
+                .AddChild(SlintUi.Text("3. 添加 Redirect URI 端口池:", fontSize: 10, color: "#94a3b8"))
+                .AddChild(SlintUi.Text(OAuthManager.DashboardRedirectUris, fontSize: 10, color: "#94a3b8"));
         }
 
         private SlintNode BuildUIWithStatus(string statusText = null)
@@ -868,7 +1026,7 @@ namespace OmniMixPlayer.Module.Spotify
             var displayName = _bridge?.Session?.DisplayName ?? "Spotify 用户";
             var accountType = _bridge?.Session?.Product ?? "";
             var isPremium = _bridge?.Session?.IsPremium ?? false;
-            var deviceName = _activeDeviceName ?? "未选择设备";
+            var deviceName = _activeDeviceName ?? "正在启动本地 Spotify Connect 设备...";
 
             var column = SlintUi.Column(spacing: 16, padding: 20)
                 .AddChild(
@@ -888,11 +1046,11 @@ namespace OmniMixPlayer.Module.Spotify
                             fontSize: 11,
                             color: isPremium ? "#1db954" : "#f59e0b"))
                 )
-                .AddChild(SlintUi.Text("播放设备", fontSize: 16))
+                .AddChild(SlintUi.Text("本地 Spotify Connect 设备", fontSize: 16))
                 .AddChild(
                     SlintUi.Row(spacing: 8)
                         .AddChild(SlintUi.Text(deviceName, fontSize: 14))
-                        .AddChild(SlintUi.Button("open_devices", "选择设备 →", variant: null))
+                        .AddChild(SlintUi.Button("open_devices", "查看状态 →", variant: null))
                 )
                 .AddChild(
                     SlintUi.Button("logout_btn", "退出登录", variant: "danger")
@@ -929,19 +1087,15 @@ namespace OmniMixPlayer.Module.Spotify
                 ImageHeight = 64,
                 ImageFit = "contain"
             });
-            topSection.Children.Add(SlintUi.Text("选择播放设备", fontSize: 12, color: "#b3b3b3"));
+            topSection.Children.Add(SlintUi.Text("本地 Spotify Connect PCM 设备", fontSize: 12, color: "#b3b3b3"));
             topSection.Children.Add(SlintUi.Text("", fontSize: 4, color: "#000000")); // 间距
-            // OmniMix — 配置按钮
-            var omniBtn = new SlintNode
-            {
-                NodeType = "Button",
-                Id = "select_device",
-                Text = "🎵  OmniMix（本地解码）",
-                Value = "omnimix_local",
-                ButtonVariant = "ghost",
-                Color = "#ffffff"
-            };
-            topSection.Children.Add(omniBtn);
+            topSection.Children.Add(SlintUi.Text(_activeDeviceName ?? "OmniMixPlayer", fontSize: 18, color: "#ffffff"));
+            topSection.Children.Add(SlintUi.Text(
+                _nativeConnectReader?.IsReady == true
+                    ? "已连接 Spotify。也可以在手机 Spotify 中选择此设备。"
+                    : "正在连接 Spotify...",
+                fontSize: 11,
+                color: "#b3b3b3"));
             column.Children.Add(topSection);
 
             // ── 分割线 ──
@@ -952,23 +1106,46 @@ namespace OmniMixPlayer.Module.Spotify
             middleSection.CrossAxisAlignment = "center";
             if (isLoggedIn)
             {
-                foreach (var device in devices)
+                if (devices.Count == 0)
                 {
+                    middleSection.Children.Add(
+                        SlintUi.Text("没有发现可用设备，请先打开 Spotify 客户端或刷新。", fontSize: 12, color: "#b3b3b3")
+                    );
+                }
+
+                for (var i = 0; i < devices.Count; i++)
+                {
+                    var device = devices[i];
                     var isActive = device.Id == _activeDeviceId || device.IsActive;
                     var deviceLabel = device.Name ?? "Unknown";
                     if (device.VolumePercent.HasValue)
                         deviceLabel += $"  ·  Vol {device.VolumePercent}%";
 
-                    var btn = new SlintNode
-                    {
-                        NodeType = "Button",
-                        Id = "select_device",
-                        Text = deviceLabel,
-                        Value = device.Id,
-                        ButtonVariant = isActive ? "primary" : "ghost",
-                        Color = isActive ? "#1db954" : "#ffffff"
-                    };
-                    middleSection.Children.Add(btn);
+                    var details = device.Type ?? "Device";
+                    if (device.IsRestricted)
+                        details += " · 受限";
+                    if (isActive)
+                        details += " · 当前";
+
+                    var deviceRow = SlintUi.Row(spacing: 8, padding: 4);
+                    deviceRow.CrossAxisAlignment = "center";
+
+                    deviceRow.Children.Add(SlintUi.Button(
+                        $"select_device_{i}",
+                        $"{(isActive ? "✓ " : "")}{deviceLabel}",
+                        isActive ? "primary" : "ghost"));
+
+                    deviceRow.Children.Add(SlintUi.Text(
+                        details,
+                        fontSize: 10,
+                        color: device.IsRestricted ? "#f59e0b" : "#b3b3b3"));
+
+                    middleSection.Children.Add(deviceRow);
+                }
+
+                if (!string.IsNullOrEmpty(_deviceStatusText))
+                {
+                    middleSection.Children.Add(SlintUi.Text(_deviceStatusText, fontSize: 11, color: "#b3b3b3"));
                 }
             }
             else
@@ -1020,6 +1197,7 @@ namespace OmniMixPlayer.Module.Spotify
             try
             {
                 _bridge?.ClearSession();
+                StopNativeConnectReader();
                 _savedCache.Clear();
                 _activeDeviceId = null;
                 _activeDeviceName = null;

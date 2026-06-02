@@ -10,8 +10,8 @@ namespace ChillPatcher.Native
     /// </summary>
     public static class FlacDecoder
     {
-        // DLL 名称 - .NET 会自动搜索路径
-        private const string DLL_NAME = "ChillFlacDecoder";
+        // DLL 名称 - Rust Symphonia 统一解码器
+        private const string DLL_NAME = "OmniAudioDecoder";
 
         // DLL 完整路径（在类初始化时设置）
         private static string DllPath;
@@ -27,11 +27,11 @@ namespace ChillPatcher.Native
 
                 // 检测架构并选择正确的 DLL
                 var arch = IntPtr.Size == 8 ? "x64" : "x86";
-                DllPath = Path.Combine(pluginDir, "native", arch, "ChillFlacDecoder.dll");
+                DllPath = Path.Combine(pluginDir, "native", arch, "OmniAudioDecoder.dll");
 
                 if (!File.Exists(DllPath))
                 {
-                    Plugin.Log.LogWarning($"[FlacDecoder] DLL not found at: {DllPath}");
+                    Plugin.Log.LogWarning($"[FlacDecoder] OmniAudioDecoder.dll not found at: {DllPath}");
                     return;
                 }
 
@@ -39,11 +39,11 @@ namespace ChillPatcher.Native
                 DllHandle = LoadLibrary(DllPath);
                 if (DllHandle == IntPtr.Zero)
                 {
-                    Plugin.Log.LogError($"[FlacDecoder] Failed to load DLL from: {DllPath}");
+                    Plugin.Log.LogError($"[FlacDecoder] Failed to load OmniAudioDecoder.dll from: {DllPath}");
                 }
                 else
                 {
-                    Plugin.Log.LogInfo($"[FlacDecoder] ✅ Loaded Native DLL from: {DllPath}");
+                    Plugin.Log.LogInfo($"[FlacDecoder] ✅ Loaded OmniAudioDecoder (Symphonia) from: {DllPath}");
                 }
             }
             catch (Exception ex)
@@ -198,7 +198,7 @@ namespace ChillPatcher.Native
             catch (DllNotFoundException ex)
             {
                 Plugin.Log.LogError($"[FlacDecoder] Native DLL not found: {ex.Message}");
-                Plugin.Log.LogError($"[FlacDecoder] Please ensure ChillFlacDecoder.dll is in BepInEx/plugins/ChillPatcher/native/");
+                Plugin.Log.LogError($"[FlacDecoder] Please ensure OmniAudioDecoder.dll is in BepInEx/plugins/ChillPatcher/native/");
                 return null;
             }
             catch (Exception ex)

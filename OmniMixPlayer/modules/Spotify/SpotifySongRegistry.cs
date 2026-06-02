@@ -10,6 +10,10 @@ namespace OmniMixPlayer.Module.Spotify
     /// </summary>
     public class SpotifySongRegistry
     {
+        public const string CONNECT_LIVE_SOURCE = "spotify_connect_live";
+        public static readonly string CONNECT_LIVE_UUID = MusicInfo.GenerateUUID(CONNECT_LIVE_SOURCE);
+        public const string TAG_CONNECT = "spotify_connect";
+        public const string ALBUM_CONNECT = "spotify_connect_album";
         public const string TAG_LIKED = "spotify_liked_songs";
         public const string ALBUM_LIKED = "spotify_liked_album";
 
@@ -22,6 +26,41 @@ namespace OmniMixPlayer.Module.Spotify
             _context = context;
             _moduleId = moduleId;
             _logger = context.Logger;
+        }
+
+        public void RegisterConnectLive()
+        {
+            _context.TagRegistry.RegisterTag(TAG_CONNECT, "Spotify Connect", _moduleId);
+
+            _context.AlbumRegistry.RegisterAlbum(new AlbumInfo
+            {
+                AlbumId = ALBUM_CONNECT,
+                DisplayName = "Spotify Connect",
+                Artist = "Spotify",
+                TagId = TAG_CONNECT,
+                ModuleId = _moduleId,
+                SortOrder = -100,
+                SongCount = 1
+            }, _moduleId);
+
+            _context.MusicRegistry.RegisterMusic(new MusicInfo
+            {
+                UUID = CONNECT_LIVE_UUID,
+                Title = "Spotify Connect Live",
+                Artist = "Spotify",
+                AlbumId = ALBUM_CONNECT,
+                TagId = TAG_CONNECT,
+                SourceType = MusicSourceType.Stream,
+                SourcePath = CONNECT_LIVE_SOURCE,
+                Duration = 0,
+                ModuleId = _moduleId,
+                IsUnlocked = true,
+                ExtendedData = new SpotifyTrackMeta
+                {
+                    SpotifyUri = CONNECT_LIVE_SOURCE,
+                    IsConnectLive = true
+                }
+            }, _moduleId);
         }
 
         // =====================================================================
@@ -131,6 +170,7 @@ namespace OmniMixPlayer.Module.Spotify
         public string SpotifyId { get; set; }
         public string SpotifyUri { get; set; }
         public string CoverUrl { get; set; }
+        public bool IsConnectLive { get; set; }
     }
 
 }

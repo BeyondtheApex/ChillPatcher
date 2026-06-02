@@ -8,118 +8,91 @@ using OmniMixPlayer.SDK.Interfaces;
 
 namespace OmniMixPlayer.Backend.ModuleSystem.Services.Streaming
 {
+    /// <summary>
+    /// PCM 流式读取器 — "瓶子 + 水龙头" 模型。
+    /// 
+    /// HttpAudioCache 往缓存文件写 → OmniFileDecoder 从缓存文件读。
+    /// 不切换解码器，不切换数据源。Seek 始终可用。
+    /// 
+    /// 状态机:
+    ///   WaitingForData → Playing → Ended
+    /// </summary>
     public class CorePcmStreamReader : IPcmStreamReader
     {
         private ILogger _logger;
-
         private string _url;
         private string _format;
         private float _durationHint;
+        private readonly object _lock = new();
+        private readonly object _decoderLock = new();
 
         private HttpAudioCache _cache;
-        private DecoderEngine.StreamingDecoder _streamingDecoder;
-        private DecoderEngine.FileStreamReader _fileDecoder;
-        private DecoderEngine.FlacStreamReader _flacDecoder;
-        private RingBuffer _ringBuffer;
+        private DecoderEngine.OmniFileDecoder _decoder;
 
-        private readonly object _lock = new object();
-        private ulong _currentFrame;
-        private long _pendingSeek = -1;
+        private volatile bool _disposed;
         private volatile bool _isReady;
         private volatile bool _isEndOfStream;
-        private volatile bool _disposed;
-        private volatile bool _switchedToFile;
         private PcmStreamInfo _info;
 
-        private Thread _feedThread;
-        private volatile bool _stopFeed;
+        private ulong _currentFrame;
+        private long _pendingSeek = -1;
+        private volatile bool _seekBuffering; // true after seek, cleared when enough data buffered
 
-        private const int RING_BUFFER_SAMPLES = 44100 * 2 * 10;
+        // ===== Properties =====
 
         public PcmStreamInfo Info => _info;
-        public ulong CurrentFrame => _currentFrame;
+        public ulong CurrentFrame { get { lock (_lock) return _currentFrame; } }
         public bool IsEndOfStream => _isEndOfStream;
         public bool IsReady => _isReady;
-        public bool CanSeek => _switchedToFile;
-        public bool HasPendingSeek => _pendingSeek >= 0;
+        public bool CanSeek => true;
+        public bool HasPendingSeek => _pendingSeek >= 0 || _seekBuffering;
         public long PendingSeekFrame => _pendingSeek;
         public double CacheProgress => _cache?.Progress ?? -1;
         public bool IsCacheComplete => _cache?.IsComplete ?? false;
 
-        public CorePcmStreamReader(string url, string format, float durationSeconds, string cacheKey,
-            Dictionary<string, string> headers = null, ILogger logger = null)
+        // ===== Constructors =====
+
+        public CorePcmStreamReader(string url, string format, float durationSeconds,
+            string cacheKey, Dictionary<string, string> headers = null, ILogger logger = null)
         {
-            var cachePath = Path.Combine(HttpAudioCache.GetCacheDirectory(), $"{cacheKey}.{format.ToLowerInvariant()}");
+            var cachePath = Path.Combine(HttpAudioCache.GetCacheDirectory(),
+                $"{cacheKey}.{format.ToLowerInvariant()}");
             Init(url, format, durationSeconds, cachePath, headers, logger);
         }
 
-        public CorePcmStreamReader(string url, string format, float durationSeconds, string cachePath,
-            Dictionary<string, string> headers, bool useCachePath, ILogger logger = null)
+        public CorePcmStreamReader(string url, string format, float durationSeconds,
+            string cachePath, Dictionary<string, string> headers, bool useCachePath,
+            ILogger logger = null)
         {
             var dir = Path.GetDirectoryName(cachePath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             Init(url, format, durationSeconds, cachePath, headers, logger);
         }
 
-        private void Init(string url, string format, float durationSeconds, string cachePath,
-            Dictionary<string, string> headers, ILogger logger)
+        private void Init(string url, string format, float durationSeconds,
+            string cachePath, Dictionary<string, string> headers, ILogger logger)
         {
             _logger = logger;
             _url = url;
             _format = format.ToLowerInvariant();
             _durationHint = durationSeconds;
+
+            // Placeholder info — real values filled when decoder opens
             _info = new PcmStreamInfo
             {
-                SampleRate = 44100,
-                Channels = 2,
-                TotalFrames = (ulong)(44100 * durationSeconds),
+                SampleRate = 0,
+                Channels = 0,
+                TotalFrames = 0,
                 Format = _format,
-                CanSeek = false
+                CanSeek = true
             };
 
-            // Check if the source URL is actually a local file
-            bool isLocalFile = false;
-            string localPath = url;
-            try
-            {
-                if (!string.IsNullOrEmpty(url))
-                {
-                    if (url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var uri = new Uri(url);
-                        localPath = uri.LocalPath;
-                        isLocalFile = File.Exists(localPath);
-                    }
-                    else
-                    {
-                        isLocalFile = !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-                                      !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
-                                      File.Exists(url);
-                    }
-                }
-            }
-            catch { }
-
-            if (isLocalFile)
-            {
-                try
-                {
-                    InitFileDecoder(localPath, _format);
-                    _isReady = true;
-                    _logger?.LogInformation("Using local file directly: {Path}", localPath);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "Failed to initialize decoder for local file: {Path}", localPath);
-                }
-            }
-
+            // Already cached?
             if (File.Exists(cachePath))
             {
                 try
                 {
-                    InitFileDecoder(cachePath, _format);
+                    OpenDecoder(cachePath, false);
                     _isReady = true;
                     _logger?.LogInformation("Using cached file: {Path}", cachePath);
                     return;
@@ -130,257 +103,209 @@ namespace OmniMixPlayer.Backend.ModuleSystem.Services.Streaming
                 }
             }
 
-            _cache = new HttpAudioCache(url, cachePath, headers);
-            _cache.OnComplete += OnCacheComplete;
-
-            _ringBuffer = new RingBuffer(RING_BUFFER_SAMPLES);
-
-            if (_format == "mp3" || _format == "flac" || _format == "aac")
+            // Is it a local file?
+            if (IsLocalFile(url))
             {
                 try
                 {
-                    _streamingDecoder = new DecoderEngine.StreamingDecoder(_format);
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning("Streaming decoder unavailable for {Format}: {Msg}", _format, ex.Message);
-                }
-                _cache.StartDownload();
-                StartFeedThread();
-            }
-            else
-            {
-                _cache.StartDownload();
-                _logger?.LogInformation("Format {Format}: waiting for download to complete before playback", _format);
-            }
-        }
-
-        private void InitFileDecoder(string path, string format)
-        {
-            if (format == "flac" && DecoderEngine.IsAvailable)
-            {
-                try
-                {
-                    _flacDecoder = new DecoderEngine.FlacStreamReader(path);
-                    _info.SampleRate = _flacDecoder.SampleRate;
-                    _info.Channels = _flacDecoder.Channels;
-                    _info.TotalFrames = _flacDecoder.TotalPcmFrames;
-                    _info.CanSeek = true;
-                    _switchedToFile = true;
+                    string localPath = ResolveLocalPath(url);
+                    OpenDecoder(localPath, false);
+                    _isReady = true;
+                    _logger?.LogInformation("Using local file: {Path}", localPath);
                     return;
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning("FLAC-specific decoder failed, falling back to generic: {Msg}", ex.Message);
+                    _logger?.LogError(ex, "Failed to open local file: {Url}", url);
+                    return;
                 }
             }
 
-            _fileDecoder = new DecoderEngine.FileStreamReader(path);
-            _info.SampleRate = _fileDecoder.SampleRate;
-            _info.Channels = _fileDecoder.Channels;
-            _info.TotalFrames = _fileDecoder.TotalFrames;
-            _info.CanSeek = true;
-            _switchedToFile = true;
+            // Start HTTP download
+            _cache = new HttpAudioCache(url, cachePath, headers);
+            _cache.OnComplete += OnCacheComplete;
+            _cache.StartDownload();
+
+            StartInitialDecoderOpen();
         }
 
-        private void OnCacheComplete()
-        {
-            lock (_lock)
-            {
-                if (_disposed) return;
-                try
-                {
-                    _stopFeed = true;
-                    _streamingDecoder?.FeedComplete();
-                    InitFileDecoder(_cache.CachePath, _format);
-                    _isReady = true;
+        // ===== Bottle + Tap: open once there is enough data, without blocking creation =====
 
-                    if (_pendingSeek >= 0)
-                    {
-                        ExecuteSeek((ulong)_pendingSeek);
-                        _pendingSeek = -1;
-                    }
-                    _logger?.LogInformation("Switched to file-based decoder (seekable)");
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError("Failed to switch decoder: {Msg}", ex.Message);
-                }
-            }
-        }
-
-        private void StartFeedThread()
+        private void StartInitialDecoderOpen()
         {
-            _feedThread = new Thread(FeedLoop)
+            var thread = new Thread(InitialDecoderOpenLoop)
             {
                 IsBackground = true,
-                Name = "CoreStreamReader_Feed"
+                Name = "CorePcmStreamReader_Init"
             };
-            _feedThread.Start();
+            thread.Start();
         }
 
-        private void FeedLoop()
+        private void InitialDecoderOpenLoop()
         {
-            var readBuffer = new byte[8192];
-            var decodeBuffer = new float[4096];
+            // Wait up to 30s for first 64KB or download complete
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (!_disposed && DateTime.UtcNow < deadline)
+            {
+                if (_cache.Downloaded >= 65536 || _cache.IsComplete)
+                    break;
+                Thread.Sleep(100);
+            }
+
+            if (_disposed) return;
 
             try
             {
-                while (!_stopFeed && !_disposed)
-                {
-                    if (_cache.Downloaded > 0) break;
-                    Thread.Sleep(50);
-                }
-
-                long readPosition = 0;
-                using (var readStream = new FileStream(_cache.CachePath, FileMode.Open,
-                    FileAccess.Read, FileShare.ReadWrite))
-                {
-                    while (!_stopFeed && !_disposed)
-                    {
-                        long downloaded = _cache.Downloaded;
-                        long available = downloaded - readPosition;
-
-                        if (available <= 0)
-                        {
-                            if (_cache.IsComplete) break;
-                            Thread.Sleep(10);
-                            continue;
-                        }
-
-                        int toRead = (int)Math.Min(available, readBuffer.Length);
-                        readStream.Seek(readPosition, SeekOrigin.Begin);
-                        int bytesRead = readStream.Read(readBuffer, 0, toRead);
-                        if (bytesRead <= 0) { Thread.Sleep(10); continue; }
-                        readPosition += bytesRead;
-
-                        _streamingDecoder?.FeedData(readBuffer, 0, bytesRead);
-
-                        if (!_isReady && _streamingDecoder is { IsReady: true })
-                        {
-                            if (_streamingDecoder.TryGetInfo(out int sr, out int ch, out ulong _))
-                            {
-                                _info.SampleRate = sr;
-                                _info.Channels = ch;
-                                if (_durationHint > 0)
-                                    _info.TotalFrames = (ulong)(sr * _durationHint);
-                            }
-                            _isReady = true;
-                        }
-
-                        while (!_stopFeed && _ringBuffer != null)
-                        {
-                            if (_ringBuffer.FreeSpace < decodeBuffer.Length) { Thread.Sleep(5); break; }
-                            long frames = _streamingDecoder?.ReadFrames(decodeBuffer, 2048) ?? 0;
-                            if (frames <= 0) break;
-                            int ch = _info.Channels > 0 ? _info.Channels : 2;
-                            _ringBuffer.Write(decodeBuffer, 0, (int)frames * ch);
-                        }
-                    }
-                }
-
-                _streamingDecoder?.FeedComplete();
+                OpenDecoder(_cache.CachePath, true);
+                _isReady = true;
             }
             catch (Exception ex)
             {
-                if (!_disposed) _logger?.LogError("Feed thread error: {Msg}", ex.Message);
+                _logger?.LogWarning("Failed to open decoder during download: {Msg} — will retry on ReadFrames", ex.Message);
+                // Don't set _isReady — ReadFrames will try again
             }
         }
+
+        private void OpenDecoder(string path, bool isGrowing)
+        {
+            lock (_decoderLock)
+            {
+                _decoder?.Dispose();
+                _decoder = new DecoderEngine.OmniFileDecoder(path, isGrowing);
+
+                lock (_lock)
+                {
+                    _info.SampleRate = _decoder.SampleRate;
+                    _info.Channels = _decoder.Channels;
+                    _info.TotalFrames = _decoder.TotalFrames > 0
+                        ? _decoder.TotalFrames
+                        : (_durationHint > 0
+                            ? (ulong)(_decoder.SampleRate * _durationHint)
+                            : 0);
+                    _info.Format = _decoder.Format;
+                    _isEndOfStream = false;
+
+                    // Execute any pending seek
+                    if (_pendingSeek >= 0)
+                    {
+                        _decoder.Seek((ulong)_pendingSeek);
+                        _currentFrame = (ulong)_pendingSeek;
+                        _pendingSeek = -1;
+                        _seekBuffering = _cache != null && !_cache.IsComplete;
+                    }
+                }
+            }
+        }
+
+        // ===== OnCacheComplete: just a flag, no switch =====
+
+        private void OnCacheComplete()
+        {
+            // Nothing to do. The decoder is already reading from the file.
+            // When ReadFrames returns 0 and cache is complete → real EOF.
+            _logger?.LogInformation("Cache complete — decoder will naturally reach EOF");
+        }
+
+        // ===== ReadFrames: single data path =====
 
         public long ReadFrames(float[] buffer, int framesToRead)
         {
             if (_disposed) return 0;
-            if (!_isReady) return 0;
+
+            // Lazy init: if the background open did not finish yet, try now.
+            if (_decoder == null && _cache != null &&
+                (_cache.Downloaded >= 65536 || _cache.IsComplete))
+            {
+                try { OpenDecoder(_cache.CachePath, true); _isReady = true; }
+                catch { /* will retry next call */ }
+            }
+
+            if (_decoder == null)
+                return 0; // not enough data yet
+
+            if (!_isReady)
+                _isReady = true;
 
             int channels = _info.Channels > 0 ? _info.Channels : 2;
 
-            lock (_lock)
+            // Anti-stutter: if we just seeked and cache is still downloading,
+            // wait until enough data is buffered past the current position.
+            if (_seekBuffering && _cache != null && !_cache.IsComplete)
             {
-                if (_pendingSeek >= 0 && _switchedToFile)
-                {
-                    ExecuteSeek((ulong)_pendingSeek);
-                    _pendingSeek = -1;
-                }
+                if (HasEnoughBuffer())
+                    _seekBuffering = false;
+                else
+                    return 0; // tell PlaybackLoopAsync to wait
             }
 
-            if (_switchedToFile)
+            long read;
+            lock (_decoderLock)
             {
-                long read;
-                if (_flacDecoder != null)
-                    read = _flacDecoder.ReadFrames(buffer, framesToRead);
-                else if (_fileDecoder != null)
-                    read = _fileDecoder.ReadFrames(buffer, framesToRead);
-                else
-                    read = 0;
+                if (_decoder == null)
+                    return 0;
+                read = _decoder.ReadFrames(buffer, framesToRead);
+            }
 
-                if (read > 0) lock (_lock) { _currentFrame += (ulong)read; }
-                if (read < framesToRead)
-                {
-                    Array.Clear(buffer, (int)(read * channels), (int)((framesToRead - read) * channels));
-                    lock (_lock) { _isEndOfStream = true; }
-                }
+            if (read > 0)
+            {
+                lock (_lock) { _currentFrame += (ulong)read; }
                 return read;
             }
 
-            if (_ringBuffer != null)
+            // read == 0: 可能是增长文件没数据，也可能是真 EOF
+            if (_cache != null && _cache.IsComplete)
             {
-                int samplesToRead = framesToRead * channels;
-                int samplesRead = _ringBuffer.Read(buffer, 0, samplesToRead);
-
-                if (samplesRead == 0)
-                {
-                    if (_cache is { IsComplete: true } && _streamingDecoder != null)
-                    {
-                        lock (_lock) { _isEndOfStream = true; }
-                        return 0;
-                    }
-                    Array.Clear(buffer, 0, samplesToRead);
-                    return 0;
-                }
-
-                int framesRead = samplesRead / channels;
-                lock (_lock) { _currentFrame += (ulong)framesRead; }
-
-                if (samplesRead < samplesToRead)
-                    Array.Clear(buffer, samplesRead, samplesToRead - samplesRead);
-
-                return framesRead;
+                // Cache done + decoder returns 0 → real EOF
+                lock (_lock) { _isEndOfStream = true; }
             }
+            else if (_cache == null && _decoder != null)
+            {
+                // Local file + decoder returns 0 → real EOF
+                lock (_lock) { _isEndOfStream = true; }
+            }
+            // else: cache still downloading, decoder returns 0 → data not arrived yet, caller retries
 
-            return 0;
+            // Zero-fill remainder
+            int remaining = (framesToRead - (int)read) * channels;
+            if (remaining > 0)
+                Array.Clear(buffer, (int)read * channels, remaining);
+
+            return read;
         }
+
+        // ===== Seek: always works =====
 
         public bool Seek(ulong frameIndex)
         {
             if (_disposed) return false;
 
+            lock (_decoderLock)
+            {
+                if (_decoder != null)
+                {
+                    bool ok = _decoder.Seek(frameIndex);
+                    if (ok)
+                    {
+                        lock (_lock)
+                        {
+                            _currentFrame = frameIndex;
+                            _isEndOfStream = false;
+                            _seekBuffering = _cache != null && !_cache.IsComplete;
+                        }
+                    }
+                    return ok;
+                }
+            }
+
             lock (_lock)
             {
-                if (_switchedToFile)
-                    return ExecuteSeek(frameIndex);
-
+                // Decoder not yet open — store as pending
                 _pendingSeek = (long)frameIndex;
                 _currentFrame = frameIndex;
                 _isEndOfStream = false;
+                _seekBuffering = true;
                 return true;
             }
-        }
-
-        private bool ExecuteSeek(ulong frameIndex)
-        {
-            if (_flacDecoder != null)
-            {
-                bool ok = _flacDecoder.Seek(frameIndex);
-                if (ok) { _currentFrame = frameIndex; _isEndOfStream = false; }
-                return ok;
-            }
-            if (_fileDecoder != null)
-            {
-                bool ok = _fileDecoder.Seek(frameIndex);
-                if (ok) { _currentFrame = frameIndex; _isEndOfStream = false; }
-                return ok;
-            }
-            return false;
         }
 
         public void CancelPendingSeek()
@@ -388,17 +313,69 @@ namespace OmniMixPlayer.Backend.ModuleSystem.Services.Streaming
             _pendingSeek = -1;
         }
 
+        // ===== Helpers =====
+
+        private static bool IsLocalFile(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return false;
+            if (url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                && File.Exists(url);
+        }
+
+        private static string ResolveLocalPath(string url)
+        {
+            if (url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                var uri = new Uri(url);
+                return uri.LocalPath;
+            }
+            return url;
+        }
+
+        // ===== Anti-stutter buffering check =====
+
+        /// <summary>
+        /// 检查下载进度是否已超过当前播放位置足够远，避免 seek 后边下边播的抖动。
+        /// </summary>
+        private bool HasEnoughBuffer()
+        {
+            if (_cache == null || _cache.IsComplete) return true;
+
+            double cacheProgress = _cache.Progress; // 0~100, -1=unknown
+            if (cacheProgress < 0) return true; // unknown size, try anyway
+
+            // Estimate total frames
+            double totalFrames = _info.TotalFrames > 0
+                ? _info.TotalFrames
+                : (_durationHint > 0 ? _info.SampleRate * _durationHint : 0);
+            if (totalFrames <= 0) return true;
+
+            double positionPercent = _currentFrame / totalFrames * 100.0;
+
+            // Require at least 3% buffer ahead (≈ 6s for 200s track), min 2s equivalent
+            double bufferFrames = Math.Max(2.0 * _info.SampleRate, totalFrames * 0.03);
+            double targetPercent = positionPercent + (bufferFrames / totalFrames * 100.0);
+
+            return cacheProgress >= targetPercent;
+        }
+
+        // ===== Dispose =====
+
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
-            _stopFeed = true;
 
-            _feedThread?.Join(500);
-            _streamingDecoder?.Dispose();
-            _fileDecoder?.Dispose();
-            _flacDecoder?.Dispose();
+            lock (_decoderLock)
+            {
+                _decoder?.Dispose();
+                _decoder = null;
+            }
             _cache?.Dispose();
+            _cache = null;
         }
     }
 }

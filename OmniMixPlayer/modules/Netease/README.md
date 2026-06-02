@@ -73,7 +73,6 @@ ChillPatcher.Module.Netease/
 ├── ModuleInfo.cs                        # 模块元数据
 ├── NeteaseModule.cs                     # 主模块类
 ├── NeteaseBridge.cs                     # P/Invoke 桥接
-├── NeteasePcmStreamReader.cs            # PCM 流读取器
 ├── NeteaseSongRegistry.cs               # 歌曲注册管理
 ├── NeteaseCoverLoader.cs                # 封面加载器
 ├── NeteaseFavoriteManager.cs            # 收藏管理器
@@ -84,7 +83,6 @@ ChillPatcher.Module.Netease/
 ├── NeteaseMediaTagger.cs                # 媒体标签写入
 ├── QRLoginManager.cs                    # 二维码登录
 ├── PersonalFMManager.cs                 # 私人 FM 管理
-├── SilentPcmReader.cs                   # 静音播放器
 ├── deploy.bat                           # 部署脚本
 └── README.md                            # 本文件
 

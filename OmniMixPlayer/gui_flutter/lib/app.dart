@@ -1,46 +1,27 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
-import '../providers/app_state.dart';
-import '../pages/home_page.dart';
-import '../pages/playlist_page.dart';
-import '../pages/settings_page.dart';
-import '../pages/modules_page.dart';
-import '../pages/about_page.dart';
-import '../pages/game_integration_page.dart';
-import '../pages/equalizer_page.dart';
-import '../widgets/launchpad_grid.dart';
-import '../widgets/proxy_node.dart';
+import 'providers/app_state.dart';
+import 'providers/core/app_state_bridge.dart';
+import 'pages/home_page.dart';
+import 'pages/playlist_page.dart';
+import 'pages/settings_page.dart';
+import 'pages/modules_page.dart';
+import 'pages/about_page.dart';
+import 'pages/game_integration_page.dart';
+import 'pages/equalizer_page.dart';
+import 'widgets/launchpad_grid.dart';
+import 'widgets/proxy_node.dart';
 
-class OmniMixApp extends StatefulWidget {
-  final AppState state;
-
-  const OmniMixApp({super.key, required this.state});
-
-  @override
-  State<OmniMixApp> createState() => _OmniMixAppState();
-}
-
-class _OmniMixAppState extends State<OmniMixApp> {
-  @override
-  void initState() {
-    super.initState();
-    widget.state.addListener(_onStateChanged);
-  }
+class OmniMixApp extends ConsumerWidget {
+  const OmniMixApp({super.key});
 
   @override
-  void dispose() {
-    widget.state.removeListener(_onStateChanged);
-    super.dispose();
-  }
-
-  void _onStateChanged() => setState(() {});
-
-  @override
-  Widget build(BuildContext context) {
-    final st = widget.state;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(appStateProvider);
 
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
@@ -64,7 +45,6 @@ class _OmniMixAppState extends State<OmniMixApp> {
                 useMaterial3: true,
                 brightness: Brightness.light,
               ).copyWith(
-                // 修复：必须在 textTheme 里应用字体
                 textTheme: ThemeData(brightness: Brightness.light).textTheme
                     .apply(
                       fontFamily: 'PingFang SC',
@@ -83,7 +63,6 @@ class _OmniMixAppState extends State<OmniMixApp> {
                 useMaterial3: true,
                 brightness: Brightness.dark,
               ).copyWith(
-                // 修复：必须在 textTheme 里应用字体
                 textTheme: ThemeData(brightness: Brightness.light).textTheme
                     .apply(
                       fontFamily: 'PingFang SC',
@@ -116,81 +95,71 @@ class _OmniMixAppState extends State<OmniMixApp> {
             }
             return const Locale('en');
           },
-          home: _MainShell(state: st),
+          home: const _MainShell(),
         );
       },
     );
   }
 
   Locale? _resolveLocale(String lang) {
-    if (lang == 'system') return null; // follow system
+    if (lang == 'system') return null;
     if (lang == 'zh') return const Locale('zh');
     return const Locale('en');
   }
 }
 
-/// Responsive shell: sidebar on wide, bottom nav on narrow (breakpoint 800px).
-class _MainShell extends StatelessWidget {
-  final AppState state;
+// ═══════════════════════════════════════════════════════════
+//  Internal widgets — all use ref.watch(appStateProvider)
+// ═══════════════════════════════════════════════════════════
 
-  const _MainShell({required this.state});
+class _MainShell extends ConsumerWidget {
+  const _MainShell();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 800;
-        return _MainContent(state: state, isWide: isWide);
+        return _MainContent(isWide: isWide);
       },
     );
   }
 }
 
-class _MainContent extends StatefulWidget {
-  final AppState state;
+class _MainContent extends ConsumerStatefulWidget {
   final bool isWide;
-
-  const _MainContent({required this.state, required this.isWide});
+  const _MainContent({required this.isWide});
 
   @override
-  State<_MainContent> createState() => _MainContentState();
+  ConsumerState<_MainContent> createState() => _MainContentState();
 }
 
-class _MainContentState extends State<_MainContent> {
-  @override
-  void initState() {
-    super.initState();
-    widget.state.addListener(_onChange);
-  }
-
-  @override
-  void dispose() {
-    widget.state.removeListener(_onChange);
-    super.dispose();
-  }
-
-  void _onChange() {
-    final error = widget.state.consumeError();
-    if (error != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    }
-    setState(() {});
-  }
-
+class _MainContentState extends ConsumerState<_MainContent> {
   @override
   Widget build(BuildContext context) {
+    // Listen for errors via Riverpod (must be in build, not initState)
+    ref.listen(appStateProvider, (prev, next) {
+      final error = next.consumeError();
+      if (error != null && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(error),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        });
+      }
+    });
+
     final l10n = AppLocalizations.of(context);
-    final st = widget.state;
+    final st = ref.watch(appStateProvider);
     final isWide = widget.isWide;
     final cs = Theme.of(context).colorScheme;
 
-    // ── Wide layout: AppBar + Sidebar (unified color) ──
     if (isWide) {
       return Scaffold(
         backgroundColor: cs.surfaceContainer,
@@ -256,7 +225,6 @@ class _MainContentState extends State<_MainContent> {
       );
     }
 
-    // ── Narrow layout: AppBar + BottomNav ──
     return Scaffold(
       backgroundColor: cs.surface,
       appBar: _buildTopBar(context, l10n, st, isWide),
@@ -282,10 +250,7 @@ class _MainContentState extends State<_MainContent> {
               icon: Icon(Icons.sports_esports),
               label: ' ',
             ),
-          const NavigationDestination(
-            icon: Icon(Icons.graphic_eq),
-            label: ' ',
-          ),
+          const NavigationDestination(icon: Icon(Icons.graphic_eq), label: ' '),
           const NavigationDestination(icon: Icon(Icons.settings), label: ' '),
         ],
       ),
@@ -311,7 +276,7 @@ class _MainContentState extends State<_MainContent> {
           children: [
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 252),
-              child: _GlobalInstanceDropdown(state: st),
+              child: const _GlobalInstanceDropdown(),
             ),
             Positioned(
               right: 16,
@@ -350,8 +315,6 @@ class _MainContentState extends State<_MainContent> {
 
   Widget _buildTabContent(AppState st) {
     final tab = st.currentTab;
-    // On web, tabs 0-3 are the same, tab 4 is Equalizer, tab 5 is Settings (game integration skipped)
-    // On desktop, tabs 0-3 same, 4=game integration, 5=Equalizer, 6=settings
     if (kIsWeb) {
       switch (tab) {
         case 0:
@@ -420,54 +383,57 @@ class _MainContentState extends State<_MainContent> {
     AppState st,
     bool isWide,
   ) {
-    if (st.overlayMode == 'about') {
-      return AboutPage(onBack: st.closeOverlay);
-    }
-
-    // Module link/settings overlay (ProxyNode rendering)
+    if (st.overlayMode == 'about') return AboutPage(onBack: st.closeOverlay);
     final overlayBg = st.overlayUiTree != null
         ? parseHexColor(st.overlayUiTree!.color)
         : null;
-
-    return Scaffold(
-      backgroundColor: overlayBg,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: st.closeOverlay,
-        ),
-        title: Text(st.overlayTitle),
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: overlayBg,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: st.closeOverlay,
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: Text(l10n.back),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: st.overlayUiTree != null
+                ? SingleChildScrollView(
+                    child: ProxyNodeWidget(
+                      node: st.overlayUiTree!,
+                      onDispatch: st.dispatchUiEvent,
+                      imageBaseUrl: st.apiBaseUrl,
+                    ),
+                  )
+                : const Center(child: CircularProgressIndicator()),
+          ),
+        ],
       ),
-      body: st.overlayUiTree != null
-          ? SingleChildScrollView(
-              child: ProxyNodeWidget(
-                node: st.overlayUiTree!,
-                onDispatch: st.dispatchUiEvent,
-                imageBaseUrl: st.apiBaseUrl,
-              ),
-            )
-          : const Center(child: CircularProgressIndicator()),
     );
   }
 }
 
-class _GlobalInstanceDropdown extends StatelessWidget {
-  final AppState state;
-
-  const _GlobalInstanceDropdown({required this.state});
+class _GlobalInstanceDropdown extends ConsumerWidget {
+  const _GlobalInstanceDropdown();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    // Use backend instances (includes online + offline) — single source of truth.
-    final allInstances = state.playbackInstances
+    final st = ref.watch(appStateProvider);
+    final allInstances = st.playbackInstances
         .where((i) => i.gameName.isNotEmpty || i.attached)
         .toList();
-    final onlineIds = state.backendOnline
-        ? state.playbackInstances
-              .where((i) => i.attached)
-              .map((i) => i.id)
-              .toSet()
+    final onlineIds = st.backendOnline
+        ? st.playbackInstances.where((i) => i.attached).map((i) => i.id).toSet()
         : <String>{};
     final cs = Theme.of(context).colorScheme;
 
@@ -478,7 +444,7 @@ class _GlobalInstanceDropdown extends StatelessWidget {
       );
     }
 
-    final activeId = state.activeInstanceId;
+    final activeId = st.activeInstanceId;
     final displayId =
         (activeId != null && allInstances.any((i) => i.id == activeId))
         ? activeId
@@ -525,7 +491,7 @@ class _GlobalInstanceDropdown extends StatelessWidget {
             );
           }).toList(),
           onChanged: (v) {
-            if (v != null) state.selectInstance(v);
+            if (v != null) st.selectInstance(v);
           },
         ),
       ),

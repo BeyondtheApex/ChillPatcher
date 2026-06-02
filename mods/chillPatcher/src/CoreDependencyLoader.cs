@@ -23,13 +23,13 @@ namespace ChillPatcher
                 // 注意: SQLite.Interop.dll 由 System.Data.SQLite 自行加载
                 string[] libs = {
                     "vcruntime140.dll",
-                    "vcruntime140_1.dll", // <-- 重点文件
+                    "vcruntime140_1.dll",
                     "msvcp140.dll",
                     "concrt140.dll",
-                    "ChillFlacDecoder.dll",
+                    "OmniAudioDecoder.dll",  // Rust Symphonia, 替代 ChillFlacDecoder + ChillAudioDecoder
                     "ChillSmtcBridge.dll",
-                    "ChillEsbuildBridge.dll",  // Go esbuild bridge
-                    "puerts.dll"          // <-- PuerTS V8 引擎 (OneJS)
+                    "ChillEsbuildBridge.dll",
+                    "puerts.dll"
                 };
 
                 foreach (var lib in libs)

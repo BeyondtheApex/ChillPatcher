@@ -746,7 +746,7 @@ namespace OmniMixPlayer.Backend.Http
             return Results.Json(new { tags, albums, songs });
         }
 
-        private IResult GetSongs(string albumId, string tagId)
+        private IResult GetSongs(string? albumId = null, string? tagId = null)
         {
             var songs = !string.IsNullOrEmpty(albumId) ? _musicRegistry.GetMusicByAlbum(albumId)
                 : !string.IsNullOrEmpty(tagId) ? _musicRegistry.GetMusicByTag(tagId)
@@ -765,7 +765,8 @@ namespace OmniMixPlayer.Backend.Http
                 duration = m.Duration,
                 moduleId = m.ModuleId ?? "",
                 isFavorite = m.IsFavorite,
-                isExcluded = m.IsExcluded
+                isExcluded = m.IsExcluded,
+                tagIds = m.TagIds ?? new List<string>()
             };
         }
 

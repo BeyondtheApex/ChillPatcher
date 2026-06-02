@@ -1,4 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:archive/archive.dart';
 import '../mods/registry.dart';
 import '../games/registry.dart';
 
@@ -32,6 +35,9 @@ class FrameworkDeclaration {
   final List<String> filesToLink;
   final List<String> dirsToLink;
   final List<String> dirsToCreate;
+  final List<String> statusFiles;
+  final List<String> statusDirs;
+  final String managedMarkerFile;
 
   const FrameworkDeclaration({
     required this.id,
@@ -41,7 +47,109 @@ class FrameworkDeclaration {
     required this.filesToLink,
     required this.dirsToLink,
     required this.dirsToCreate,
+    this.statusFiles = const [],
+    this.statusDirs = const [],
+    this.managedMarkerFile = '',
   });
+
+  List<String> getFilesToLink(String gameDir) {
+    return [...filesToLink, ...dirsToLink];
+  }
+
+  List<String> getFilesToAdd(String gameDir) {
+    return [];
+  }
+
+  List<String> getFilesToBackup(String gameDir) {
+    return [];
+  }
+
+  String getGameVersion(String gameDir) {
+    return '1.0.0';
+  }
+
+  bool verifyInstallation(String gameDir) {
+    final sFiles = statusFiles.isNotEmpty ? statusFiles : filesToLink;
+    final sDirs = statusDirs.isNotEmpty ? statusDirs : dirsToLink;
+    
+    for (final relFile in sFiles) {
+      if (File('$gameDir/$relFile').existsSync()) return true;
+    }
+    for (final relDir in sDirs) {
+      if (Directory('$gameDir/$relDir').existsSync()) return true;
+    }
+    return false;
+  }
+
+  Future<void> prepareStaging(
+    String gameDir,
+    String tempDir,
+    void Function(String) log,
+  ) async {
+    log('Loading $archiveName from assets...');
+    final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
+    final managerDir = localAppData.isEmpty
+        ? '${Directory.systemTemp.path}/omnimix_mod_manager'
+        : '$localAppData/OmniMixPlayer/mod_manager';
+    final localZipPath = '$managerDir/$archiveName';
+
+    try {
+      final byteData = await rootBundle.load('assets/$archiveName');
+      final localZipFile = File(localZipPath);
+      localZipFile.parent.createSync(recursive: true);
+      await localZipFile.writeAsBytes(
+        byteData.buffer.asUint8List(
+          byteData.offsetInBytes,
+          byteData.lengthInBytes,
+        ),
+      );
+    } catch (e) {
+      log('ERROR loading asset $archiveName: $e');
+      rethrow;
+    }
+
+    log('Extracting $name zip files to staging...');
+    try {
+      final bytes = File(localZipPath).readAsBytesSync();
+      final archive = ZipDecoder().decodeBytes(bytes);
+      
+      final targetExtractDir = Directory(tempDir);
+      if (!targetExtractDir.existsSync()) {
+        targetExtractDir.createSync(recursive: true);
+      }
+
+      for (final file in archive) {
+        final outPath = '$tempDir/${file.name}';
+        if (file.isDirectory) {
+          Directory(outPath).createSync(recursive: true);
+          continue;
+        }
+
+        final outFile = File(outPath);
+        outFile.parent.createSync(recursive: true);
+        if (outFile.existsSync()) {
+          outFile.deleteSync();
+        }
+
+        outFile.writeAsBytesSync(file.content);
+      }
+      
+      for (final relativeDir in dirsToCreate) {
+        final d = Directory('$tempDir/$relativeDir');
+        if (!d.existsSync()) {
+          d.createSync(recursive: true);
+        }
+      }
+    } catch (e) {
+      log('ERROR extracting $name: $e');
+      rethrow;
+    } finally {
+      try {
+        final f = File(localZipPath);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
+  }
 }
 
 class ModDeclaration {
@@ -54,6 +162,7 @@ class ModDeclaration {
   final List<String> rootFilesToLink;
   final List<String> rootDirsToLink;
   final List<String> rootFilesNoBackup;
+  final String pluginTargetDir;
 
   /// "server" = backend-managed playback (supports playlist/queue offline mgmt)
   /// "client" = game-managed playback (minimal profile)
@@ -69,6 +178,7 @@ class ModDeclaration {
     this.rootFilesToLink = const [],
     this.rootDirsToLink = const [],
     this.rootFilesNoBackup = const [],
+    this.pluginTargetDir = 'BepInEx/plugins',
     required this.mode,
   });
 
@@ -98,6 +208,117 @@ class ModDeclaration {
   ) {
     return const SizedBox.shrink();
   }
+
+  bool verifyInstallation(String gameDir) {
+    if (installsToGameRoot) {
+      final marker = File('$gameDir/.omnimix_mods/$id.managed');
+      if (marker.existsSync()) return true;
+      
+      for (final relFile in rootFilesToLink) {
+        if (File('$gameDir/$relFile').existsSync()) return true;
+      }
+      for (final relDir in rootDirsToLink) {
+        if (Directory('$gameDir/$relDir').existsSync()) return true;
+      }
+      return false;
+    } else {
+      final modDir = Directory('$gameDir/$pluginTargetDir/$folderName');
+      return modDir.existsSync() || File(modDir.path).existsSync();
+    }
+  }
+
+  List<String> getFilesToLink(String gameDir) {
+    if (installsToGameRoot) {
+      return rootFilesToLink;
+    }
+    return ['$pluginTargetDir/$folderName'];
+  }
+
+  List<String> getFilesToAdd(String gameDir) {
+    return [];
+  }
+
+  List<String> getFilesToBackup(String gameDir) {
+    return [];
+  }
+
+  String getGameVersion(String gameDir) {
+    return '1.0.0';
+  }
+
+  Future<void> prepareStaging(
+    String gameDir,
+    String tempDir,
+    void Function(String) log,
+    Map<String, dynamic> settings,
+  ) async {
+    await extractZipToStaging(tempDir, log);
+  }
+
+  Future<void> extractZipToStaging(String tempDir, void Function(String) log) async {
+    final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
+    final managerDir = localAppData.isEmpty
+        ? '${Directory.systemTemp.path}/omnimix_mod_manager'
+        : '$localAppData/OmniMixPlayer/mod_manager';
+        
+    final localZipPath = '$managerDir/$archiveName';
+    log('Loading $archiveName from assets...');
+
+    try {
+      final byteData = await rootBundle.load('assets/$archiveName');
+      final localZipFile = File(localZipPath);
+      localZipFile.parent.createSync(recursive: true);
+      await localZipFile.writeAsBytes(
+        byteData.buffer.asUint8List(
+          byteData.offsetInBytes,
+          byteData.lengthInBytes,
+        ),
+      );
+    } catch (e) {
+      log('ERROR loading asset $archiveName: $e');
+      rethrow;
+    }
+
+    log('Extracting zip files to staging...');
+    try {
+      final bytes = File(localZipPath).readAsBytesSync();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      final targetExtractPath = installsToGameRoot 
+          ? tempDir 
+          : '$tempDir/$pluginTargetDir/$folderName';
+
+      final targetExtractDir = Directory(targetExtractPath);
+      if (targetExtractDir.existsSync()) {
+        targetExtractDir.deleteSync(recursive: true);
+      }
+      targetExtractDir.createSync(recursive: true);
+
+      for (final file in archive) {
+        final outPath = '$targetExtractPath/${file.name}';
+        if (file.isDirectory) {
+          Directory(outPath).createSync(recursive: true);
+          continue;
+        }
+
+        final outFile = File(outPath);
+        outFile.parent.createSync(recursive: true);
+        if (outFile.existsSync()) {
+          outFile.deleteSync();
+        }
+
+        outFile.writeAsBytesSync(file.content);
+      }
+    } catch (e) {
+      log('ERROR extracting mod: $e');
+      rethrow;
+    } finally {
+      try {
+        final f = File(localZipPath);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,10 +336,51 @@ final List<FrameworkDeclaration> frameworkCatalog = [
     filesToLink: ['winhttp.dll', 'doorstop_config.ini'],
     dirsToLink: ['BepInEx/core'],
     dirsToCreate: ['BepInEx', 'BepInEx/plugins', 'BepInEx/patchers'],
+    statusFiles: ['winhttp.dll'],
+    statusDirs: ['BepInEx/core'],
+    managedMarkerFile: 'BepInEx/.omnimix_managed',
   ),
 ];
 
 final List<ModDeclaration> modCatalog = registeredMods;
+
+FrameworkDeclaration? frameworkById(String id) {
+  for (final framework in frameworkCatalog) {
+    if (framework.id == id) return framework;
+  }
+  return null;
+}
+
+ModDeclaration? modById(String id) {
+  for (final mod in modCatalog) {
+    if (mod.id == id) return mod;
+  }
+  return null;
+}
+
+List<FrameworkDeclaration> frameworksForGame(GameDeclaration game) {
+  return game.supportedFrameworks
+      .map(frameworkById)
+      .whereType<FrameworkDeclaration>()
+      .toList(growable: false);
+}
+
+List<ModDeclaration> modsForGame(GameDeclaration game) {
+  return game.supportedMods
+      .map(modById)
+      .whereType<ModDeclaration>()
+      .toList(growable: false);
+}
+
+FrameworkDeclaration? primaryFrameworkForGame(GameDeclaration game) {
+  final frameworks = frameworksForGame(game);
+  return frameworks.isEmpty ? null : frameworks.first;
+}
+
+ModDeclaration? primaryModForGame(GameDeclaration game) {
+  final mods = modsForGame(game);
+  return mods.isEmpty ? null : mods.first;
+}
 
 
 // ═══════════════════════════════════════════════════════════

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/node_data.dart';
@@ -11,927 +10,72 @@ import '../services/backend_manager.dart'
     if (dart.library.js_interop) '../stubs/backend_manager_web.dart';
 import '../services/platform_service.dart'
     if (dart.library.js_interop) '../stubs/platform_service_web.dart';
-import '../services/port_file.dart'
-    if (dart.library.js_interop) '../stubs/port_file_web.dart';
-import '../services/mod_deployment_service.dart'
-    if (dart.library.js_interop) '../stubs/mod_deployment_service_web.dart';
+import 'backend/backend_state_manager.dart';
+import 'service/service_state_manager.dart';
+import 'playback/playback_state_manager.dart';
+import 'modules/modules_state_manager.dart';
+import 'game_integration/game_integration_manager.dart';
 
 enum AppThemeMode { light, dark, system }
 
+/// Application state root — composes domain managers and delegates.
+/// During Riverpod migration, this is a pure composition root that owns
+/// five sub-managers. All domain logic lives in the managers; AppState
+/// only handles wiring and cross-domain coordination.
 class AppState extends ChangeNotifier {
-  late ApiClient api;
-  late WsClient ws;
-  late final BackendManager _backendMgr;
+  // ── Sub-managers ──
+  late final BackendStateManager _backend;
+  late final ServiceStateManager _service;
+  late final PlaybackStateManager _playback;
+  late final ModulesStateManager _modules;
+  late final GameIntegrationManager _game;
 
-  // Game Integration (Mod Manager)
-  final Map<String, String> _gamePaths = {};
-  final Map<String, Map<String, dynamic>> _modSettings = {};
-  final Map<String, BepInExStatus> _bepinexStatuses = {};
-  final Map<String, ModStatus> _modStatuses = {};
-  final List<String> _deploymentLogs = [];
-  bool _deploymentBusy = false;
-
-  String get gamePath => gamePathFor('chill_with_you');
-  BepInExStatus get bepinexStatus => bepinexStatusFor('chill_with_you');
-  ModStatus get modStatus => modStatusFor('chill_with_you');
-  List<String> get deploymentLogs => _deploymentLogs;
-  bool get deploymentBusy => _deploymentBusy;
-
-  String gamePathFor(String gameId) => _gamePaths[gameId] ?? '';
-  Map<String, dynamic> settingsForMod(String modId) =>
-      _modSettings[modId] ?? {};
-
-  Future<void> saveModSettings(
-    String modId,
-    Map<String, dynamic> settings,
-  ) async {
-    _modSettings[modId] = settings;
-    notifyListeners();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        'mod_integration_config_$modId',
-        jsonEncode(settings),
-      );
-    } catch (e) {}
-  }
-
-  BepInExStatus bepinexStatusFor(String gameId) =>
-      _bepinexStatuses[gameId] ?? BepInExStatus.notInstalled;
-  ModStatus modStatusFor(String gameId) =>
-      _modStatuses[gameId] ?? ModStatus.notInstalled;
-
-  // Backend
-  bool _backendOnline = false;
-  bool _backendRunning = false;
-  bool _isWeb = false; // True when running in browser (WASM/JS)
-  int _backendPort = 17890;
-  String _backendBind = '127.0.0.1';
-  bool _backendBusy = false; // True when restarting
-  bool _autostart = false;
-  bool _minimizeToTray = true;
-  String _closeBehavior = 'exit'; // 'minimize' or 'exit'
-  String _serviceState =
-      'unknown'; // 'running', 'installed', 'not_installed', 'unknown'
-
-  // Instance management
-  List<InstalledInstance> _instances = [];
-  List<ArchiveEntry> _archives = [];
-  Set<String> _backendInstanceIds =
-      {}; // Live backend instance IDs for online check
-
-  List<InstalledInstance> get instances => _instances;
-  List<ArchiveEntry> get archives => _archives;
-
-  /// Check if an instance is currently online (connected to backend).
-  bool isInstanceOnline(String instanceId) =>
-      _backendInstanceIds.contains(instanceId);
-
-  /// Check if an instance exists (online or offline), using backend data as source of truth.
-  bool instanceExists(String instanceId) =>
-      _playbackInstances.any((i) => i.id == instanceId);
-
-  /// Select an instance. Backend routes all subsequent API calls to it.
-  Future<void> selectInstance(String? instanceId) async {
-    _activeInstanceId = instanceId;
-    if (_backendOnline) {
-      api.putConfigRaw({'active_instance': instanceId ?? ''});
-      api.saveConfig();
-      if (instanceId != null) await loadActiveProfile();
-    }
-    notifyListeners();
-  }
-
-  /// Load active instance profile from backend (online + offline).
-  Future<void> loadActiveProfile() async {
-    if (_activeInstanceId == null) return;
-    try {
-      final profile = await api.getActiveProfile();
-      if (profile.isEmpty) return;
-      final queues = profile['Queues'] as List?;
-      if (queues == null || queues.isEmpty) return;
-      final activeId = profile['ActiveQueueId'] as String? ?? '';
-      final active = activeId.isNotEmpty
-          ? (queues.cast<Map<String, dynamic>>().firstWhere(
-              (q) => q['Id'] == activeId,
-              orElse: () => queues.first as Map<String, dynamic>,
-            ))
-          : queues.first as Map<String, dynamic>;
-      _activeQueue = ((active['SongUuids'] as List?)?.cast<String>() ?? [])
-          .map((u) => QueueItemInfo(uuid: u, title: u))
-          .toList();
-      _activeHistory = ((active['HistoryUuids'] as List?)?.cast<String>() ?? [])
-          .map((u) => QueueItemInfo(uuid: u, title: u))
-          .toList();
-      _playlistSources = (active['PlaylistSources'] as List? ?? []).map((s) {
-        final m = s as Map<String, dynamic>;
-        final uuids = (m['SongUuids'] as List?)?.cast<String>() ?? <String>[];
-        return PlaylistSourceInfo(
-          id: m['Id'] ?? '',
-          name: m['Name'] ?? '',
-          songCount: uuids.length,
-          uuids: uuids,
-        );
-      }).toList();
-
-      // Rebuild _activePlaylist from all playlist sources (dedup by UUID)
-      _rebuildActivePlaylistFromSources();
-
-      // Force library reload so _filteredSongs() re-evaluates with the new
-      // _activePlaylist. This fixes the race where _loadLibrary() completes
-      // before loadActiveProfile() populates the playlist.
-      _libraryGeneration++;
-
-      notifyListeners();
-    } catch (e) {}
-  }
-
-  /// Rebuild _activePlaylist from _playlistSources, deduplicating by UUID.
-  void _rebuildActivePlaylistFromSources() {
-    final seen = <String>{};
-    final merged = <QueueItemInfo>[];
-    for (final source in _playlistSources) {
-      for (final uuid in source.uuids) {
-        if (seen.add(uuid)) {
-          merged.add(QueueItemInfo(uuid: uuid, title: uuid));
-        }
-      }
-    }
-    _activePlaylist = merged;
-  }
-
-  /// Save current state to backend via active profile endpoint.
-  Future<void> saveActive() async {
-    if (_activeInstanceId == null) return;
-    final data = _buildProfileJson();
-    try {
-      await api.updateActiveProfile(data);
-    } catch (e) {}
-  }
-
-  Map<String, dynamic> _buildProfileJson() {
-    return {
-      'ActiveQueueId': 'default',
-      'Volume': activeInstance?.volume ?? 1.0,
-      'Queues': [
-        {
-          'Id': 'default',
-          'Name': 'Default',
-          'PlaylistSources': _playlistSources
-              .map((s) => {'Id': s.id, 'Name': s.name, 'SongUuids': s.uuids})
-              .toList(),
-          'SongUuids': _activeQueue.map((q) => q.uuid).toList(),
-          'HistoryUuids': _activeHistory.map((q) => q.uuid).toList(),
-          'Index': -1,
-          'HistoryPosition': -1,
-          'PlaylistPosition': 0,
-          'Shuffle': activeInstance?.shuffle ?? false,
-          'RepeatMode': activeInstance?.repeatMode ?? 'none',
-        },
-      ],
-    };
-  }
-
-  bool _serviceBusy = false;
-  bool _serviceAutoStart = false;
-  String? _serviceResult; // Result message after install/uninstall
-  Timer? _serviceResultTimer;
-
-  // Appearance
+  // ── Local state (not yet extracted) ──
   AppThemeMode _themeMode = AppThemeMode.system;
-  int _seedColor = 0xFF673AB7; // deepPurple
+  int _seedColor = 0xFF673AB7;
   bool _useSystemColor = true;
   String _language = 'system';
-
-  // Modules
-  List<ModuleInfoResponse> _modules = [];
-  bool _modulesLoading = false;
-  String? _activeModuleId;
-  String _activeUiKind = 'default'; // 'default', 'link', 'settings'
-  String _activeLinkId = '';
-  RawNodeData? _moduleUiTree;
-  RawNodeData? _overlayUiTree;
-  String _overlayMode = ''; // 'about', 'ui'
-  String _overlayTitle = '';
-
-  // Navigation
+  String _closeBehavior = 'exit';
   int _currentTab = 0;
-
-  // Playback
-  List<PlaybackInstanceInfo> _playbackInstances = [];
-  String? _activeInstanceId;
-  List<QueueItemInfo> _activeQueue = [];
-  List<QueueItemInfo> _activeHistory = [];
-  List<QueueItemInfo> _activePlaylist = [];
-  List<PlaylistSourceInfo> _playlistSources = [];
-  bool _playbackLoading = false;
-  Timer? _playbackPollTimer;
-  double _lastVolume = 1.0;
-  double _lastTargetLatency = 0.05;
-
-  // Notifications
   String? _lastError;
-
-  // Library version — incremented when tags/albums/songs change, pages watch this to reload
   int _libraryGeneration = 0;
-  int get libraryGeneration => _libraryGeneration;
-
-  // Equalizer version — incremented on equalizer.changed WS events, EQ page watches this
   int _equalizerGeneration = 0;
-  int get equalizerGeneration => _equalizerGeneration;
 
-  // Getters
-  String get apiBaseUrl => api.baseUrl;
-  bool get backendOnline => _backendOnline;
-  bool get backendRunning => _backendRunning;
-  bool get backendBusy => _backendBusy;
-  String get backendPort => '$_backendPort';
-  String get backendBind => _backendBind;
-  bool get autostart => _autostart;
-  bool get minimizeToTray => _minimizeToTray;
-  String get closeBehavior => _closeBehavior;
-  String get serviceState => _serviceState;
-  bool get serviceBusy => _serviceBusy;
-  bool get serviceAutoStart => _serviceAutoStart;
-  String? get serviceResult => _serviceResult;
-  AppThemeMode get themeMode => _themeMode;
-  int get seedColor => _seedColor;
-  bool get useSystemColor => _useSystemColor;
-  String get language => _language;
-  List<ModuleInfoResponse> get modules => _modules;
-  bool get modulesLoading => _modulesLoading;
-  String? get activeModuleId => _activeModuleId;
-  RawNodeData? get moduleUiTree => _moduleUiTree;
-  RawNodeData? get overlayUiTree => _overlayUiTree;
-  String get overlayMode => _overlayMode;
-  String get overlayTitle => _overlayTitle;
-  int get currentTab => _currentTab;
-  List<PlaybackInstanceInfo> get playbackInstances => _playbackInstances;
-  String? get activeInstanceId => _activeInstanceId;
-  List<QueueItemInfo> get activeQueue => _activeQueue;
-  List<QueueItemInfo> get activeHistory => _activeHistory;
-  List<QueueItemInfo> get activePlaylist => _activePlaylist;
-  List<PlaylistSourceInfo> get playlistSources => _playlistSources;
-  bool get playbackLoading => _playbackLoading;
-  double get lastVolume => _lastVolume;
-  double get lastTargetLatency => _lastTargetLatency;
-  int get playbackInstanceCount => _playbackInstances.length;
-  int get attachedAudioClientCount =>
-      _playbackInstances.where((i) => i.attached).length;
+  // ── Public accessors ──
+  BackendManager get backendMgr => _backend.backendMgr;
+  ApiClient get api => _backend.api;
+  WsClient get ws => _backend.ws;
+  String get apiBaseUrl => _backend.apiBaseUrl;
 
-  PlaybackInstanceInfo? get activeInstance {
-    final id = _activeInstanceId;
-    if (id == null)
-      return _playbackInstances.isNotEmpty ? _playbackInstances.first : null;
-    for (final instance in _playbackInstances) {
-      if (instance.id == id) return instance;
-    }
-    return _playbackInstances.isNotEmpty ? _playbackInstances.first : null;
-  }
-
-  bool get canControlActiveInstance {
-    // Online server instance (active)
-    if (activeInstance?.isServerManaged == true) return true;
-    // Selected offline server instance: allow editing profile when backend is running
-    if (_activeInstanceId != null && _backendOnline) {
-      final inst = _playbackInstances
-          .where((i) => i.id == _activeInstanceId)
-          .firstOrNull;
-      if (inst != null && inst.isServerManaged) return true;
-    }
-    // No instance explicitly selected: fall back to any available server instance
-    if (_activeInstanceId == null && _backendOnline) {
-      if (_playbackInstances.any((i) => i.isServerManaged)) return true;
-    }
-    return false;
-  }
-
-  bool get hasOverlay => _overlayUiTree != null || _overlayMode == 'about';
-  bool get hasModuleDetail => _activeModuleId != null && _moduleUiTree != null;
-
-  /// 取出并清除最后一条错误消息（消费后变为 null）
-  String? consumeError() {
-    final error = _lastError;
-    _lastError = null;
-    return error;
-  }
-
-  // ──────────────────────────────────────────────
-  //  Init & detection
-  // ──────────────────────────────────────────────
-
-  /// Desktop entry: discover backend, manage service, auto-start.
-  void init({int? port}) {
-    final p = port ?? 17890;
-    _backendMgr = BackendManager();
-
-    // Try discovering backend first — it may be on socket
-    _createClients(p);
-
-    _setupWs();
-
-    // Load UI preferences from SharedPreferences
-    _loadUiPrefs();
-
-    // Start watching backend via 3-step detection
-    _backendMgr.onAliveChanged = _onBackendAliveChanged;
-    _backendMgr.startWatching();
-
-    // Run initial detection → auto-start if not running
-    _backendBusy = true;
-    _runInitialDetection();
-    loadGameIntegrationSettings();
-  }
-
-  /// Web entry: backend is already running on the same host, connect directly.
-  /// Uses same-origin relative URLs so the browser resolves them correctly
-  /// whether accessing via localhost or remote IP.
-  void initWeb({int? port}) {
-    _isWeb = true;
-    _backendMgr = BackendManager();
-    api = ApiClient.forWeb();
-    ws = WsClient.forWeb();
-    _backendPort = port ?? 17890;
-    _setupWs();
-    _loadUiPrefs();
-    // Start health watcher so we can recover after tab suspend / network loss
-    _backendMgr.onAliveChanged = _onBackendAliveChanged;
-    _backendMgr.startWatching();
-    _backendOnline = true;
-    _backendRunning = true;
+  // ── Backend ──
+  bool get backendOnline => _backend.online;
+  bool get backendRunning => _backend.running;
+  bool get backendBusy => _backend.busy;
+  String get backendPort => '${_backend.port}';
+  String get backendBind => _backend.bind;
+  bool get autostart => _backend.autostart;
+  bool get minimizeToTray => _backend.minimizeToTray;
+  Future<void> startBackend() => _backend.start();
+  Future<void> stopBackend() => _backend.stop();
+  Future<void> toggleBackend() => _backend.toggle();
+  Future<void> restartBackend() => _backend.restart();
+  Future<void> fullQuit() => _backend.fullQuit();
+  Future<void> setBackendPort(String p) async {
+    _backend.portVal = int.tryParse(p) ?? 17890;
     notifyListeners();
-    _connectDirectly();
-    _startPlaybackPolling();
+    await api.putConfig(AppConfig(backendPort: p));
   }
 
-  void _createClients(int port) {
-    if (_backendMgr.usingSocket) {
-      api = ApiClient.withSocket(socketPath: _backendMgr.socketPath);
-      ws = WsClient.withSocket(socketPath: _backendMgr.socketPath);
-      _backendPort = -1;
-    } else {
-      final p = _backendMgr.port ?? port;
-      api = ApiClient(port: p);
-      ws = WsClient(port: p);
-      _backendPort = p;
-    }
-  }
-
-  Future<void> _runInitialDetection() async {
-    _serviceBusy = true;
-    _backendBusy = true;
+  Future<void> setBackendBind(String b) async {
+    _backend.bindVal = b;
     notifyListeners();
-    try {
-      _serviceState = await PlatformService.getServiceState();
-      _serviceAutoStart = await PlatformService.isServiceAutoStart();
-      // ═══ Pure service mode: no process fallback ═══
-
-      // 1. Service already running → connect directly
-      if (_serviceState == 'running') {
-        final healthy = await _backendMgr.checkHealth();
-        if (healthy) {
-          _applyAliveState(true);
-          return;
-        }
-        // Service stuck → restart it
-        await PlatformService.stopService();
-        await Future.delayed(const Duration(seconds: 2));
-      }
-
-      // 2. Kill any stray process (safety)
-      await _backendMgr.forceKillProcess();
-      await Future.delayed(const Duration(seconds: 1));
-
-      // 3. Service not installed → auto-install
-      if (_serviceState == 'not_installed' || _serviceState == 'unknown') {
-        final ok = await PlatformService.installService();
-        if (!ok) {
-          _lastError = 'Failed to install backend service';
-          notifyListeners();
-          return;
-        }
-        _serviceState = 'installed';
-        notifyListeners();
-        await Future.delayed(const Duration(seconds: 1));
-      }
-
-      // 4. Start service and wait for it
-      await PlatformService.startService();
-      for (var i = 0; i < 20; i++) {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (await _backendMgr.checkHealth()) {
-          _serviceState = 'running';
-          _applyAliveState(true);
-          return;
-        }
-      }
-      _lastError = 'Backend service failed to start';
-      notifyListeners();
-    } finally {
-      _backendBusy = false;
-      _serviceBusy = false;
-      notifyListeners();
-    }
-  }
-
-  void _onBackendAliveChanged(bool alive) {
-    _applyAliveState(alive);
-  }
-
-  /// Apply alive/dead state – called both from initial detection & watcher.
-  void _applyAliveState(bool alive) {
-    if (_backendOnline == alive && _backendRunning == alive) {
-      return; // no change
-    }
-
-    _backendOnline = alive;
-    _backendRunning = alive;
-
-    if (alive) {
-      // Backend appeared — connect & load (web uses direct, desktop uses discovery)
-      if (_isWeb) {
-        _connectDirectly();
-      } else {
-        _connectAndLoad();
-      }
-      _startPlaybackPolling();
-    } else {
-      // Backend disappeared — clean up
-      ws.disconnect();
-      _modules.clear();
-      _moduleUiTree = null;
-      _activeModuleId = null;
-      _stopPlaybackPolling();
-      _playbackLoading = false; // reset guard so future reconnect isn't blocked
-      _playbackInstances = [];
-      _activeInstanceId = null;
-      _activeQueue = [];
-      _activeHistory = [];
-      _backendInstanceIds.clear();
-      _activePlaylist = [];
-      _playlistSources = [];
-    }
-    notifyListeners();
-  }
-
-  Future<void> _connectAndLoad() async {
-    try {
-      // Re-discover: port file → default port → socket
-      final discovered = await _backendMgr.discover();
-      if (discovered == null) {
-        return;
-      }
-      // Dispose old clients before recreating
-      ws.disconnect();
-      api.dispose();
-      _createClients(17890);
-      _setupWs();
-
-      // Give the backend HTTP server a moment to be ready
-      for (var i = 0; i < 10; i++) {
-        final ok = await _backendMgr.checkHealth();
-        if (ok) break;
-        await Future.delayed(const Duration(milliseconds: 300));
-      }
-
-      final connected = await ws.connectOnce();
-      if (connected) {
-        await api.connectController();
-        // refreshPlayback must run before _loadModules so loadActiveProfile()
-        // populates _activePlaylist before HomePage._loadLibrary() is triggered
-        // by _loadModules' notifyListeners call.
-        await refreshPlayback();
-        await _loadModules();
-        await refreshBackendArchives();
-        // Auto-select server instance from backend list if none is active yet.
-        if (_activeInstanceId == null) {
-          final serverInst = _playbackInstances
-              .where((i) => i.isServerManaged)
-              .firstOrNull;
-          if (serverInst != null) {
-            _activeInstanceId = serverInst.id;
-            api.putConfigRaw({'active_instance': serverInst.id});
-            api.saveConfig();
-            await loadActiveProfile();
-          }
-        }
-        // Always bump generation + notify at the end so HomePage reloads the
-        // library even if loadActiveProfile() returned early (empty profile).
-        _libraryGeneration++;
-        notifyListeners();
-      }
-    } catch (e, st) {}
-  }
-
-  /// Direct connection without discovery (web mode).
-  Future<void> _connectDirectly() async {
-    try {
-      for (var i = 0; i < 10; i++) {
-        final ok = await api.checkHealth();
-        if (ok) break;
-        await Future.delayed(const Duration(milliseconds: 300));
-      }
-      final connected = await ws.connectOnce();
-      if (connected) {
-        await api.connectController();
-        // Same ordering as _connectAndLoad: refreshPlayback before _loadModules
-        await refreshPlayback();
-        await _loadModules();
-        await refreshBackendArchives();
-        if (_activeInstanceId == null) {
-          final serverInst = _playbackInstances
-              .where((i) => i.isServerManaged)
-              .firstOrNull;
-          if (serverInst != null) {
-            _activeInstanceId = serverInst.id;
-            api.putConfigRaw({'active_instance': serverInst.id});
-            api.saveConfig();
-            await loadActiveProfile();
-          }
-        }
-        // Always bump generation + notify at the end so HomePage reloads the
-        // library even if loadActiveProfile() returned early (empty profile).
-        _libraryGeneration++;
-        notifyListeners();
-      }
-    } catch (e, st) {
-      debugPrint('OmniMix Web: _connectDirectly failed: $e\n$st');
-    }
-  }
-
-  void _setupWs() {
-    ws.onEvent = (event) {
-      if (event.senderId != null && event.senderId == api.clientId) {
-        // Skip events triggered by ourselves to prevent layout rebuilding
-        // and preserve ongoing user interaction (like dragging the equalizer).
-        return;
-      }
-      if (event.type == 'backend.state.changed') {
-        final data = event.data is Map<String, dynamic>
-            ? event.data as Map<String, dynamic>
-            : const <String, dynamic>{};
-        final running = data['running'] == true;
-        if (_backendRunning != running) {
-          _backendRunning = running;
-          _backendOnline = running;
-          notifyListeners();
-        }
-      } else if (event.type == 'error') {
-        final data = event.data is Map<String, dynamic>
-            ? event.data as Map<String, dynamic>
-            : const <String, dynamic>{};
-        final msg = data['message'] as String? ?? 'Unknown error';
-        _lastError = msg;
-        notifyListeners();
-      } else if (event.type == 'instances.changed' ||
-          event.type == 'track.changed' ||
-          event.type == 'state.changed' ||
-          event.type == 'queue.changed' ||
-          event.type == 'exclude.changed') {
-        refreshPlayback();
-        refreshBackendArchives(); // archives may change when instances are deleted
-      } else if (event.type == 'equalizer.changed') {
-        _equalizerGeneration++;
-        notifyListeners();
-      } else if (event.type == 'playlist.updated') {
-        refreshPlayback();
-        _libraryGeneration++;
-        notifyListeners();
-      } else if (event.type == 'module.loaded' ||
-          event.type == 'module.unloaded') {
-        _loadModules();
-        _libraryGeneration++;
-        notifyListeners();
-      } else if (event.type == 'profile.changed') {
-        // Profile was updated (e.g. sources/queue changed) — just reload profile data
-        loadActiveProfile();
-      } else if (event.type == 'position') {
-        _applyPositionEvent(event.data);
-      }
-    };
-    ws.onUiPush = (push) {
-      if (push.replace && push.tree != null) {
-        // 只处理当前活跃模块的 UI 推送, 避免后台模块的推送覆盖当前显示
-        if (push.moduleId.isNotEmpty && push.moduleId != _activeModuleId) {
-          return;
-        }
-        if (_overlayUiTree != null) {
-          _overlayUiTree = push.tree;
-        } else {
-          _moduleUiTree = push.tree;
-        }
-        notifyListeners();
-      }
-    };
-    ws.onDisconnected = () {
-      // WS dropped – mark offline and clear playback state so stale data
-      // doesn't linger in the UI. The backend manager will detect when the
-      // backend comes back and trigger a full reconnect.
-      if (_backendOnline) {
-        _backendOnline = false;
-        _backendRunning = false;
-        _playbackLoading =
-            false; // reset guard so reconnect's refreshPlayback is not blocked
-        _playbackInstances = [];
-        _activeInstanceId = null;
-        _activeQueue = [];
-        _activeHistory = [];
-        _activePlaylist = [];
-        _playlistSources = [];
-        _libraryGeneration++; // force library reload on reconnect
-        notifyListeners();
-      }
-    };
-  }
-
-  Future<void> _loadModules() async {
-    _modulesLoading = true;
-    notifyListeners();
-    try {
-      _modules = await api.getModules();
-    } catch (_) {}
-    _modulesLoading = false;
-    notifyListeners();
-  }
-
-  // ──────────────────────────────────────────────
-  //  Backend actions — pure service mode
-  // ──────────────────────────────────────────────
-
-  Future<void> startBackend() async {
-    if (_backendBusy) return;
-    _backendBusy = true;
-    notifyListeners();
-    try {
-      // Kill stray process (safety)
-      await _backendMgr.forceKillProcess();
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Refresh service state
-      _serviceState = await PlatformService.getServiceState();
-
-      // Check for binary path mismatch and reinstall if necessary
-      if (_serviceState == 'installed' || _serviceState == 'running') {
-        final currentExe = PlatformService.backendExePath;
-        final registeredExe = await PlatformService.getServiceBinaryPath();
-        if (currentExe != null &&
-            registeredExe != null &&
-            !PlatformService.arePathsEqual(currentExe, registeredExe)) {
-          final ok = await PlatformService.installService();
-          if (ok) {
-            _serviceState = 'installed';
-            await Future.delayed(const Duration(seconds: 1));
-          }
-        }
-      }
-
-      // If service says running but unreachable, restart it
-      if (_serviceState == 'running') {
-        final healthy = await _backendMgr.checkHealth();
-        if (healthy) {
-          _applyAliveState(true);
-          return;
-        }
-        await PlatformService.stopService();
-        await Future.delayed(const Duration(seconds: 2));
-      }
-
-      // Auto-install if missing
-      if (_serviceState != 'installed' && _serviceState != 'running') {
-        final ok = await PlatformService.installService();
-        if (!ok) {
-          _lastError = 'Failed to install backend service';
-          notifyListeners();
-          return;
-        }
-        _serviceState = 'installed';
-        await Future.delayed(const Duration(seconds: 1));
-      }
-
-      // Start service
-      await PlatformService.startService();
-      for (var i = 0; i < 20; i++) {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (await _backendMgr.checkHealth()) {
-          _serviceState = 'running';
-          _applyAliveState(true);
-          return;
-        }
-      }
-      _lastError = 'Backend service failed to start';
-      notifyListeners();
-    } finally {
-      _backendBusy = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> stopBackend() async {
-    if (_backendBusy) return;
-    _backendBusy = true;
-    notifyListeners();
-    try {
-      // Graceful API stop
-      try {
-        await api.stopBackend();
-      } catch (_) {}
-
-      // Stop service
-      _serviceState = await PlatformService.getServiceState();
-      if (_serviceState == 'running') {
-        await PlatformService.stopService();
-      }
-
-      // Safety: force kill any lingering process
-      try {
-        await _backendMgr.forceKillProcess();
-      } catch (_) {}
-
-      _serviceState = 'installed';
-      _backendRunning = false;
-      _backendOnline = false;
-      _modules.clear();
-      _moduleUiTree = null;
-      _activeModuleId = null;
-      notifyListeners();
-    } finally {
-      _backendBusy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Toggle: start if stopped, stop if running
-  Future<void> toggleBackend() async {
-    if (_backendBusy) return;
-    if (_backendRunning) {
-      await stopBackend();
-    } else {
-      await startBackend();
-    }
-  }
-
-  /// Restart backend: stop → start (prefer service)
-  Future<void> restartBackend() async {
-    if (_backendBusy) return;
-    _backendBusy = true;
-    notifyListeners();
-    try {
-      await stopBackend();
-      await Future.delayed(const Duration(seconds: 1));
-      await startBackend();
-    } finally {
-      _backendBusy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Save current config to backend config file, then restart
-  Future<void> saveAndRestart() async {
-    if (_backendBusy) return;
-    _backendBusy = true;
-    notifyListeners();
-    try {
-      await api.putConfig(
-        AppConfig(
-          backendPort: '$_backendPort',
-          backendBind: _backendBind,
-          autostart: _autostart,
-          minimizeToTray: _minimizeToTray,
-          theme: _themeMode.name,
-          language: _language,
-          seedColor: _seedColor,
-          useSystemColor: _useSystemColor,
-          closeBehavior: _closeBehavior,
-        ),
-      );
-      await api.saveConfig();
-      await stopBackend();
-      await Future.delayed(const Duration(seconds: 1));
-      await startBackend();
-    } finally {
-      _backendBusy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Reset config to defaults: delete backend config file and restart
-  Future<void> resetToDefaults() async {
-    _backendPort = 17890;
-    _backendBind = '127.0.0.1';
-    _autostart = false;
-    _minimizeToTray = true;
-    _themeMode = AppThemeMode.system;
-    _language = 'system';
-    _seedColor = 0xFF673AB7;
-    _useSystemColor = true;
-    _closeBehavior = 'exit';
-    _saveUiPrefs();
-    notifyListeners();
-    await saveAndRestart();
-  }
-
-  /// Install backend as system service.
-  Future<String> installService() async {
-    _serviceBusy = true;
-    _backendBusy = true;
-    _serviceResult = null;
-    notifyListeners();
-    try {
-      final ok = await PlatformService.installService();
-      if (ok) {
-        _serviceState = 'installed';
-        _serviceAutoStart = await PlatformService.isServiceAutoStart();
-        _serviceResult = 'installed';
-      } else {
-        _serviceState = await PlatformService.getServiceState();
-        _serviceResult = 'failed';
-      }
-    } catch (e) {
-      _serviceResult = 'failed';
-    }
-    _serviceBusy = false;
-    _backendBusy = false;
-    notifyListeners();
-    _clearServiceResultAfterDelay();
-    return _serviceResult!;
-  }
-
-  /// Uninstall backend system service.
-  Future<String> uninstallService() async {
-    _serviceBusy = true;
-    _backendBusy = true;
-    _serviceResult = null;
-    notifyListeners();
-    try {
-      final ok = await PlatformService.uninstallService();
-      if (ok) {
-        _serviceState = 'not_installed';
-        _serviceAutoStart = false; // Reset when uninstalled
-        _serviceResult = 'not_installed';
-      } else {
-        _serviceState = await PlatformService.getServiceState();
-        _serviceResult = 'failed';
-      }
-    } catch (e) {
-      _serviceResult = 'failed';
-    }
-    _serviceBusy = false;
-    _backendBusy = false;
-    notifyListeners();
-    _clearServiceResultAfterDelay();
-    return _serviceResult!;
-  }
-
-  void _clearServiceResultAfterDelay() {
-    _serviceResultTimer?.cancel();
-    _serviceResultTimer = Timer(const Duration(seconds: 5), () {
-      _serviceResult = null;
-      notifyListeners();
-    });
-  }
-
-  /// Refresh service state from OS.
-  Future<void> refreshServiceState() async {
-    _serviceState = await PlatformService.getServiceState();
-    _serviceAutoStart = await PlatformService.isServiceAutoStart();
-    notifyListeners();
-  }
-
-  /// Toggle service startup type between automatic and manual.
-  Future<bool> setServiceAutoStart(bool autoStart) async {
-    _serviceBusy = true;
-    notifyListeners();
-    try {
-      final ok = await PlatformService.setServiceAutoStart(autoStart);
-      if (ok) {
-        _serviceAutoStart = autoStart;
-      }
-      return ok;
-    } catch (e) {
-      return false;
-    } finally {
-      _serviceBusy = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> setBackendPort(String port) async {
-    _backendPort = int.tryParse(port) ?? 17890;
-    notifyListeners();
-    await api.putConfig(AppConfig(backendPort: port));
-  }
-
-  Future<void> setBackendBind(String bind) async {
-    _backendBind = bind;
-    notifyListeners();
-    await api.putConfig(AppConfig(backendBind: bind));
+    await api.putConfig(AppConfig(backendBind: b));
   }
 
   Future<void> setAutostart(bool v) async {
-    _autostart = v;
+    _backend.autostartVal = v;
     notifyListeners();
     await PlatformService.setGuiAutostart(v);
-    // Auto-save to backend config
     try {
       await api.putConfig(AppConfig(autostart: v));
       await api.saveConfig();
@@ -939,26 +83,184 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setMinimizeToTray(bool v) async {
-    _minimizeToTray = v;
+    _backend.minimizeToTrayVal = v;
     notifyListeners();
-    // Auto-save to backend config
     try {
       await api.putConfig(AppConfig(minimizeToTray: v));
       await api.saveConfig();
     } catch (_) {}
   }
 
-  /// Full quit: stop backend, dispose tray, exit app.
-  Future<void> fullQuit() async {
-    _backendMgr.stopWatching();
-    await stopBackend();
+  // ── Service ──
+  String get serviceState => _service.state;
+  bool get serviceBusy => _service.busy;
+  bool get serviceAutoStart => _service.autoStart;
+  String? get serviceResult => _service.result;
+  Future<String> installService() => _service.install();
+  Future<String> uninstallService() => _service.uninstall();
+  Future<void> refreshServiceState() => _service.refresh();
+  Future<bool> setServiceAutoStart(bool v) => _service.setAutoStart(v);
+
+  // ── Playback ──
+  List<PlaybackInstanceInfo> get playbackInstances => _playback.instances;
+  String? get activeInstanceId => _playback.activeInstanceId;
+  List<QueueItemInfo> get activeQueue => _playback.activeQueue;
+  List<QueueItemInfo> get activeHistory => _playback.activeHistory;
+  List<QueueItemInfo> get activePlaylist => _playback.activePlaylist;
+  List<PlaylistSourceInfo> get playlistSources => _playback.playlistSources;
+  bool get playbackLoading => _playback.loading;
+  double get lastVolume => _playback.lastVolume;
+  double get lastTargetLatency => _playback.lastTargetLatency;
+  int get playbackInstanceCount => _playback.instanceCount;
+  int get attachedAudioClientCount => _playback.attachedAudioClientCount;
+  PlaybackInstanceInfo? get activeInstance => _playback.activeInstance;
+  bool get canControlActiveInstance => _playback.canControlActiveInstance;
+  bool isInstanceOnline(String id) => _playback.isInstanceOnline(id);
+  bool instanceExists(String id) => _playback.instanceExists(id);
+  Set<String> get backendInstanceIds => _playback.backendInstanceIds;
+  Future<void> selectInstance(String? id) => _playback.selectInstance(id);
+  void selectPlaybackInstance(String id) => _playback.selectInstance(id);
+  Future<void> loadActiveProfile() => _playback.loadActiveProfile();
+  Future<void> saveActive() => _playback.saveActive();
+  Future<void> refreshPlayback() => _playback.refreshPlayback();
+  Future<void> togglePlayback() => _playback.togglePlayback();
+  Future<void> nextTrack() => _playback.nextTrack();
+  Future<void> previousTrack() => _playback.previousTrack();
+  Future<void> seekActive(double p) => _playback.seekActive(p);
+  Future<void> setVolumeActive(double v) => _playback.setVolumeActive(v);
+  Future<void> setTargetLatencyActive(double l) =>
+      _playback.setTargetLatencyActive(l);
+  Future<void> playSongOnActive(String uuid) =>
+      _playback.playSongOnActive(uuid);
+  Future<void> addSongToActiveQueue(String uuid) =>
+      _playback.addSongToActiveQueue(uuid);
+  Future<void> removeQueueItem(int i) => _playback.removeQueueItem(i);
+  Future<void> clearActiveQueue() => _playback.clearActiveQueue();
+  Future<void> clearActiveHistory() => _playback.clearActiveHistory();
+  Future<void> moveQueueItem(int f, int t) => _playback.moveQueueItem(f, t);
+  Future<void> removeHistoryItem(int i) => _playback.removeHistoryItem(i);
+  Future<void> moveHistoryItem(int f, int t) => _playback.moveHistoryItem(f, t);
+  Future<void> addSongNextOnActive(String uuid) =>
+      _playback.addSongNextOnActive(uuid);
+  Future<void> setSongExcluded(String uuid, bool e) =>
+      _playback.setSongExcluded(uuid, e);
+  Future<void> setShuffle(bool e) => _playback.setShuffle(e);
+  Future<void> setRepeatMode(String m) => _playback.setRepeatMode(m);
+  Future<void> addTagToActivePlaylist(TagInfo tag) =>
+      _playback.addTagToActivePlaylist(tag);
+  Future<void> addAlbumToActivePlaylist(AlbumInfo a) =>
+      _playback.addAlbumToActivePlaylist(a);
+  Future<void> removePlaylistSource(String id) =>
+      _playback.removePlaylistSource(id);
+
+  // ── Modules ──
+  List<ModuleInfoResponse> get modules => _modules.modules;
+  bool get modulesLoading => _modules.loading;
+  String? get activeModuleId => _modules.activeModuleId;
+  RawNodeData? get moduleUiTree => _modules.moduleUiTree;
+  RawNodeData? get overlayUiTree => _modules.overlayUiTree;
+  String get overlayMode => _modules.overlayMode;
+  String get overlayTitle => _modules.overlayTitle;
+  bool get hasOverlay => _modules.hasOverlay;
+  bool get hasModuleDetail => _modules.hasModuleDetail;
+  Future<void> refreshModules() => _modules.refreshModules();
+  Future<void> setModuleEnabled(String id, bool e) =>
+      _modules.setModuleEnabled(id, e);
+  Future<void> openModule(String id) => _modules.openModule(id);
+  void closeModule() => _modules.closeModule();
+  Future<void> openModuleLink(String mid, String lid) =>
+      _modules.openModuleLink(mid, lid);
+  Future<void> openModuleSettings(String mid) =>
+      _modules.openModuleSettings(mid);
+  void openAbout() => _modules.openAbout();
+  void closeOverlay() => _modules.closeOverlay();
+  void dispatchUiEvent(String nodeId, String action, String value) {
+    _modules.dispatchUiEvent(
+      nodeId,
+      action,
+      value,
+      isWsConnected: ws.isConnected,
+      sendFn: (modId, nId, act, val, {required uiKind, required linkId}) {
+        ws.sendUiEvent(modId, nId, act, val, uiKind: uiKind, linkId: linkId);
+      },
+    );
   }
 
-  // ── Theme / Language ──
+  // ── Game Integration ──
+  String get gamePath => _game.gamePath;
+  BepInExStatus get bepinexStatus => _game.bepinexStatus;
+  ModStatus get modStatus => _game.modStatus;
+  List<String> get deploymentLogs => _game.deploymentLogs;
+  bool get deploymentBusy => _game.deploymentBusy;
+  List<InstalledInstance> get instances => _game.instances;
+  List<ArchiveEntry> get archives => _game.archives;
+  String gamePathFor(String gameId) => _game.gamePathFor(gameId);
+  Map<String, dynamic> settingsForMod(String modId) =>
+      _game.settingsForMod(modId);
+  BepInExStatus bepinexStatusFor(String gameId) =>
+      _game.bepinexStatusFor(gameId);
+  BepInExStatus frameworkStatusFor(String gameId, String frameworkId) =>
+      _game.frameworkStatusFor(gameId, frameworkId);
+  ModStatus modStatusFor(String gameId, [String? modId]) =>
+      _game.modStatusFor(gameId, modId);
+  Future<void> saveModSettings(String mid, Map<String, dynamic> s) =>
+      _game.saveModSettings(mid, s);
+  Future<void> loadGameIntegrationSettings() => _game.loadSettings();
+  Future<void> setGamePath(String p, {String gameId = 'chill_with_you'}) =>
+      _game.setGamePath(p, gameId: gameId);
+  void refreshModStatuses([String? gid]) => _game.refreshModStatuses(gid);
+  void refreshInstances() => _game.refreshInstances();
+  Future<void> refreshBackendArchives() => _game.refreshBackendArchives();
+  Future<bool> deleteInstance(String id) => _game.deleteInstance(id);
+  Future<bool> archiveInstanceWithLabel(String id, String label) =>
+      _game.archiveInstanceWithLabel(id, label);
+  Future<bool> deleteBackendArchive(String id) =>
+      _game.deleteBackendArchive(id);
+  Future<bool> renameBackendArchive(String id, String label) =>
+      _game.renameBackendArchive(id, label);
+  void addDeploymentLog(String log) => _game.addDeploymentLog(log);
+  void clearDeploymentLogs() => _game.clearDeploymentLogs();
+  Future<bool> uninstallFramework({
+    String gameId = 'chill_with_you',
+    required String frameworkId,
+  }) => _game.uninstallFramework(gameId: gameId, frameworkId: frameworkId);
+  Future<bool> uninstallMod({
+    String gameId = 'chill_with_you',
+    String? modId,
+  }) => _game.uninstallMod(gameId: gameId, modId: modId);
+  Future<bool> redeployModSettingsOnly({
+    required String gameId,
+    String? modId,
+  }) => _game.redeployModSettingsOnly(gameId: gameId, modId: modId);
+
+  Future<bool> finalizeModInstall({
+    required String gameId,
+    required String modId,
+    String? inheritArchiveId,
+  }) => _game.finalizeInstall(
+        gameId: gameId,
+        modId: modId,
+        inheritArchiveId: inheritArchiveId,
+      );
+
+  Future<bool> finalizeFrameworkInstall({
+    required String gameId,
+    required String frameworkId,
+  }) => _game.finalizeFrameworkInstall(
+        gameId: gameId,
+        frameworkId: frameworkId,
+      );
+
+
+  // ── Theme ──
+  AppThemeMode get themeMode => _themeMode;
+  int get seedColor => _seedColor;
+  bool get useSystemColor => _useSystemColor;
+  String get language => _language;
+  String get closeBehavior => _closeBehavior;
   void setThemeMode(AppThemeMode mode) {
     _themeMode = mode;
     notifyListeners();
-    // Auto-save
     try {
       api.putConfig(AppConfig(theme: mode.name));
       api.saveConfig();
@@ -985,6 +287,178 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLanguage(String lang) {
+    _language = lang;
+    notifyListeners();
+    try {
+      api.putConfig(AppConfig(language: lang));
+      api.saveConfig();
+    } catch (_) {}
+  }
+
+  Future<void> saveAllConfig() => api.saveConfig();
+
+  // ── Navigation ──
+  int get currentTab => _currentTab;
+  void selectTab(int tab) {
+    _currentTab = tab;
+    _modules.onTabChanged();
+    notifyListeners();
+    if (tab == 3 && backendOnline) _modules.loadModules();
+  }
+
+  // ── Error ──
+  String? consumeError() {
+    final e = _lastError;
+    _lastError = null;
+    return e;
+  }
+
+  // ── Generations ──
+  int get libraryGeneration => _libraryGeneration;
+  int get equalizerGeneration => _equalizerGeneration;
+
+  // ── Config ──
+  Future<void> saveAndRestart() async {
+    if (_backend.busy) return;
+    notifyListeners();
+    try {
+      await api.putConfig(
+        AppConfig(
+          backendPort: backendPort,
+          backendBind: _backend.bind,
+          autostart: _backend.autostart,
+          minimizeToTray: _backend.minimizeToTray,
+          theme: _themeMode.name,
+          language: _language,
+          seedColor: _seedColor,
+          useSystemColor: _useSystemColor,
+          closeBehavior: _closeBehavior,
+        ),
+      );
+      await api.saveConfig();
+      await _backend.stop();
+      await Future.delayed(const Duration(seconds: 1));
+      await _backend.start();
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<void> resetToDefaults() async {
+    _backend.portVal = 17890;
+    _backend.bindVal = '127.0.0.1';
+    _backend.autostartVal = false;
+    _backend.minimizeToTrayVal = true;
+    _themeMode = AppThemeMode.system;
+    _language = 'system';
+    _seedColor = 0xFF673AB7;
+    _useSystemColor = true;
+    _closeBehavior = 'exit';
+    _saveUiPrefs();
+    notifyListeners();
+    await saveAndRestart();
+  }
+
+  // ── Init ──
+
+  void init({int? port}) {
+    _createManagers();
+    _wireManagers();
+    _loadUiPrefs();
+    _backend.init(port: port);
+    _game.loadSettings();
+  }
+
+  void initWeb({int? port}) {
+    _createManagers();
+    _wireManagers();
+    _loadUiPrefs();
+    _backend.initWeb(port: port);
+    _playback.startPolling();
+  }
+
+  void _createManagers() {
+    _backend = BackendStateManager();
+    _service = ServiceStateManager();
+    _playback = PlaybackStateManager(() => _backend.api);
+    _modules = ModulesStateManager(() => _backend.api);
+    _game = GameIntegrationManager(
+      getApi: () => _backend.api,
+      isOnline: () => _backend.online,
+      getBackendPort: () => _backend.port,
+      refreshPlayback: () => _playback.refreshPlayback(),
+      clearActiveInstance: (id) {
+        if (_playback.activeInstanceId == id) {
+          _playback.selectInstance(null);
+          _backend.api.putConfigRaw({'active_instance': ''});
+          _backend.api.saveConfig();
+        }
+      },
+    );
+  }
+
+  void _wireManagers() {
+    for (final m in <ChangeNotifier>[
+      _backend,
+      _service,
+      _playback,
+      _modules,
+      _game,
+    ]) {
+      m.addListener(() => notifyListeners());
+    }
+
+    _backend.onNeedRefreshPlayback = () => _playback.refreshPlayback();
+    _backend.onNeedRefreshArchives = () => _game.refreshBackendArchives();
+    _backend.onNeedLoadModules = () => _modules.loadModules();
+    _backend.onNeedLoadActiveProfile = () => _playback.loadActiveProfile();
+    _backend.onPositionEvent = (d) => _playback.applyPositionEvent(d);
+    _backend.onEqualizerChanged = () {
+      _equalizerGeneration++;
+      notifyListeners();
+    };
+    _backend.onPlaylistUpdated = () {
+      _playback.refreshPlayback();
+      _libraryGeneration++;
+      notifyListeners();
+    };
+    _backend.onModulesChanged = () {
+      _modules.loadModules();
+      _libraryGeneration++;
+      notifyListeners();
+    };
+    _backend.onProfileChanged = () => _playback.loadActiveProfile();
+    _backend.onError = (msg) {
+      _lastError = msg;
+      notifyListeners();
+    };
+    _backend.onLibraryBump = () {
+      _libraryGeneration++;
+      notifyListeners();
+    };
+    _backend.onStopCleanup = () {
+      _modules.clearOnDisconnect();
+      _playback.stopPolling();
+      _playback.clearOnDisconnect();
+    };
+    _backend.onInitComplete = () {
+      _playback.startPolling();
+      if (_playback.activeInstanceId == null) {
+        final si = _playback.instances
+            .where((i) => i.isServerManaged)
+            .firstOrNull;
+        if (si != null) _playback.selectInstance(si.id);
+      }
+      _libraryGeneration++;
+      notifyListeners();
+    };
+    _backend.getServiceState = () => _service.state;
+    _backend.setServiceState = (v) => _service.stateVal = v;
+    _backend.setServiceAutoStart = (v) => _service.autoStartVal = v;
+    _backend.onUiPushCallback = (push) => _modules.handleUiPush(push);
+  }
+
   void _saveUiPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1000,932 +474,17 @@ class AppState extends ChangeNotifier {
         _seedColor = prefs.getInt('ui_seed_color') ?? 0xFF673AB7;
         _useSystemColor = prefs.getBool('ui_use_system_color') ?? true;
         _closeBehavior = prefs.getString('ui_close_behavior') ?? 'exit';
-        _lastVolume = prefs.getDouble('last_volume') ?? 1.0;
-        _lastTargetLatency = prefs.getDouble('last_target_latency') ?? 0.05;
         notifyListeners();
       });
     } catch (_) {}
   }
 
-  void setLanguage(String lang) {
-    _language = lang;
-    notifyListeners();
-    // Auto-save
-    try {
-      api.putConfig(AppConfig(language: lang));
-      api.saveConfig();
-    } catch (_) {}
-  }
-
-  Future<void> saveAllConfig() => api.saveConfig();
-
-  // ── Tab ──
-  void selectTab(int tab) {
-    _currentTab = tab;
-    _overlayUiTree = null;
-    _overlayMode = '';
-    _overlayTitle = '';
-    notifyListeners();
-    // Refresh modules when switching to modules tab (tab 3)
-    if (tab == 3 && _backendOnline) {
-      _loadModules();
-    }
-  }
-
-  // ── Module navigation ──
-  Future<void> refreshModules() async {
-    if (_backendOnline) {
-      await _loadModules();
-    }
-  }
-
-  Future<void> setModuleEnabled(String moduleId, bool enabled) async {
-    try {
-      await api.setModuleEnabled(moduleId, enabled);
-      // Update local state immediately
-      for (final m in _modules) {
-        if (m.id == moduleId) {
-          final idx = _modules.indexOf(m);
-          _modules[idx] = ModuleInfoResponse(
-            id: m.id,
-            name: m.name,
-            version: m.version,
-            priority: m.priority,
-            loadedAt: m.loadedAt,
-            enabled: enabled,
-            hasSettingsUi: m.hasSettingsUi,
-            hasQuickLinks: m.hasQuickLinks,
-            linkEntries: m.linkEntries,
-          );
-          break;
-        }
-      }
-      notifyListeners();
-    } catch (e) {}
-  }
-
-  Future<void> refreshPlayback() async {
-    if (!_backendOnline) return;
-    if (_playbackLoading) return;
-    _playbackLoading = true;
-    try {
-      final instances = await api.getInstances();
-
-      // Keep user-selected instance; only auto-select for display if null
-      var nextActiveId = _activeInstanceId;
-      if (nextActiveId == null || !instances.any((i) => i.id == nextActiveId)) {
-        final attached = instances.where((i) => i.attached).toList();
-        final serverManaged = attached.where((i) => i.isServerManaged).toList();
-        nextActiveId =
-            (serverManaged.isNotEmpty
-                    ? serverManaged.first
-                    : attached.isNotEmpty
-                    ? attached.first
-                    : instances.isNotEmpty
-                    ? instances.first
-                    : null)
-                ?.id;
-        if (_activeInstanceId == null) _activeInstanceId = nextActiveId;
-        // Persist auto-selected instance to backend config so profile reads work
-        if (nextActiveId != null) {
-          api.putConfigRaw({'active_instance': nextActiveId});
-          await api.saveConfig();
-        }
-      }
-
-      // Sync backend online instance IDs for dropdown status
-      _backendInstanceIds = instances.map((i) => i.id).toSet();
-
-      _playbackInstances = instances;
-
-      // Load profile data via the unified endpoint (works for both online & offline instances)
-      // Only overwrite if the loaded data matches the user's selection (race-condition guard)
-      if (_activeInstanceId == nextActiveId && _activeInstanceId != null) {
-        await loadActiveProfile();
-      }
-
-      final active = activeInstance;
-      if (active != null) {
-        _lastVolume = active.volume;
-        _lastTargetLatency = active.targetLatency;
-        SharedPreferences.getInstance().then((prefs) {
-          prefs.setDouble('last_volume', _lastVolume);
-          prefs.setDouble('last_target_latency', _lastTargetLatency);
-        }).catchError((_) {});
-      }
-
-      notifyListeners();
-    } catch (e) {
-    } finally {
-      _playbackLoading = false;
-    }
-  }
-
-  void selectPlaybackInstance(String id) {
-    selectInstance(id);
-  }
-
-  Future<void> togglePlayback() async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.toggle(instance.id);
-    await refreshPlayback();
-  }
-
-  Future<void> nextTrack() async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.next(instance.id);
-    await refreshPlayback();
-  }
-
-  Future<void> previousTrack() async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.previous(instance.id);
-    await refreshPlayback();
-  }
-
-  Future<void> seekActive(double position) async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.seek(instance.id, position);
-    await refreshPlayback();
-  }
-
-  Future<void> setVolumeActive(double volume) async {
-    final instance = activeInstance;
-    _lastVolume = volume;
-    notifyListeners();
-    if (instance == null || !instance.isServerManaged) return;
-    await api.setVolume(instance.id, volume);
-    await refreshPlayback();
-  }
-
-  Future<void> setTargetLatencyActive(double latency) async {
-    final instance = activeInstance;
-    _lastTargetLatency = latency;
-    notifyListeners();
-    if (instance == null || !instance.isServerManaged) return;
-    await api.setLatency(instance.id, latency);
-    await refreshPlayback();
-  }
-
-  Future<void> playSongOnActive(String uuid) async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.play(instance.id, uuid: uuid);
-    await refreshPlayback();
-  }
-
-  Future<void> addSongToActiveQueue(String uuid) async {
-    if (_activeInstanceId == null) return;
-    _activeQueue.add(QueueItemInfo(uuid: uuid, title: uuid));
-    notifyListeners();
-    saveActive();
-  }
-
-  Future<void> removeQueueItem(int index) async {
-    if (_activeInstanceId == null || index < 0 || index >= _activeQueue.length)
-      return;
-    _activeQueue.removeAt(index);
-    notifyListeners();
-    saveActive();
-  }
-
-  Future<void> clearActiveQueue() async {
-    if (_activeInstanceId == null) return;
-    _activeQueue.clear();
-    notifyListeners();
-    saveActive();
-  }
-
-  Future<void> clearActiveHistory() async {
-    if (_activeInstanceId == null) return;
-    _activeHistory.clear();
-    notifyListeners();
-    saveActive();
-  }
-
-  Future<void> moveQueueItem(int from, int to) async {
-    if (_activeInstanceId == null) return;
-    if (from >= 0 &&
-        from < _activeQueue.length &&
-        to >= 0 &&
-        to < _activeQueue.length) {
-      final item = _activeQueue.removeAt(from);
-      _activeQueue.insert(to, item);
-      notifyListeners();
-      saveActive();
-    }
-  }
-
-  Future<void> removeHistoryItem(int index) async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.removeHistoryAt(instance.id, index);
-    await refreshPlayback();
-  }
-
-  Future<void> moveHistoryItem(int from, int to) async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.moveHistory(instance.id, from, to);
-    await refreshPlayback();
-  }
-
-  Future<void> addSongNextOnActive(String uuid) async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.insertQueueAt(instance.id, uuids: [uuid], index: 0);
-    await refreshPlayback();
-  }
-
-  Future<void> setSongExcluded(String uuid, bool excluded) async {
-    if (!canControlActiveInstance) return;
-    await api.setExcluded(uuid, excluded);
-    await refreshPlayback();
-  }
-
-  Future<void> setShuffle(bool enabled) async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.setShuffle(instance.id, enabled);
-    await refreshPlayback();
-  }
-
-  Future<void> setRepeatMode(String mode) async {
-    final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
-    await api.setRepeatMode(instance.id, mode);
-    await refreshPlayback();
-  }
-
-  /// Replace all playlist sources with a single tag source.
-  Future<void> addTagToActivePlaylist(TagInfo tag) async {
-    if (_activeInstanceId == null) return;
-    final songs = await api.getSongs(tagId: tag.id);
-    final uuids = songs.map((s) => s.uuid).toList();
-    _playlistSources.removeWhere((s) => s.id == 'tag_${tag.id}');
-    _playlistSources.add(
-      PlaylistSourceInfo(
-        id: 'tag_${tag.id}',
-        name: tag.name,
-        songCount: uuids.length,
-        uuids: uuids,
-      ),
-    );
-    _mergeSongsToPlaylist(songs);
-    notifyListeners();
-    saveActive();
-  }
-
-  /// Replace all playlist sources with a single album source.
-  Future<void> addAlbumToActivePlaylist(AlbumInfo album) async {
-    if (_activeInstanceId == null) return;
-    final songs = await api.getSongs(albumId: album.id);
-    final uuids = songs.map((s) => s.uuid).toList();
-    _playlistSources.removeWhere((s) => s.id == 'album_${album.id}');
-    _playlistSources.add(
-      PlaylistSourceInfo(
-        id: 'album_${album.id}',
-        name: album.name,
-        songCount: uuids.length,
-        uuids: uuids,
-      ),
-    );
-    _mergeSongsToPlaylist(songs);
-    notifyListeners();
-    saveActive();
-  }
-
-  Future<void> removePlaylistSource(String sourceId) async {
-    if (_activeInstanceId == null) return;
-    _playlistSources.removeWhere((s) => s.id == sourceId);
-    _rebuildActivePlaylistFromSources();
-    notifyListeners();
-    saveActive();
-  }
-
-  /// Merge fetched songs into _activePlaylist, dedup by UUID.
-  void _mergeSongsToPlaylist(List<SongInfo> songs) {
-    final existingUuids = _activePlaylist.map((q) => q.uuid).toSet();
-    for (final song in songs) {
-      if (existingUuids.add(song.uuid)) {
-        _activePlaylist.add(
-          QueueItemInfo(
-            uuid: song.uuid,
-            title: song.title,
-            artist: song.artist,
-            albumId: song.albumId,
-            duration: song.duration,
-            moduleId: song.moduleId,
-          ),
-        );
-      }
-    }
-    notifyListeners();
-  }
-
-  void _startPlaybackPolling() {
-    _playbackPollTimer?.cancel();
-    // Slow poll as fallback (WebSocket events drive real-time updates)
-    _playbackPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      refreshPlayback();
-    });
-  }
-
-  void _stopPlaybackPolling() {
-    _playbackPollTimer?.cancel();
-    _playbackPollTimer = null;
-  }
-
-  void _applyPositionEvent(dynamic data) {
-    if (data is! Map<String, dynamic>) return;
-    final instanceId = data['instanceId'] as String?;
-    final position = (data['position'] ?? 0.0).toDouble();
-    var changed = false;
-    _playbackInstances = _playbackInstances.map((instance) {
-      if (instance.id != instanceId) return instance;
-      changed = true;
-      return PlaybackInstanceInfo(
-        id: instance.id,
-        clientId: instance.clientId,
-        role: instance.role,
-        mode: instance.mode,
-        attached: instance.attached,
-        isPlaying: instance.isPlaying,
-        position: position,
-        volume: instance.volume,
-        queueCount: instance.queueCount,
-        queueIndex: instance.queueIndex,
-        historyCount: instance.historyCount,
-        sampleRate: instance.sampleRate,
-        channels: instance.channels,
-        shuffle: instance.shuffle,
-        repeatMode: instance.repeatMode,
-        currentTrack: instance.currentTrack,
-        modId: instance.modId,
-        gameName: instance.gameName,
-      );
-    }).toList();
-    if (changed) notifyListeners();
-  }
-
-  Future<void> openModule(String moduleId) async {
-    _activeModuleId = moduleId;
-    _activeUiKind = 'default';
-    _activeLinkId = '';
-    _moduleUiTree = null;
-    notifyListeners();
-    try {
-      _moduleUiTree = await api.getModuleUi(moduleId);
-      notifyListeners();
-    } catch (e) {}
-  }
-
-  void _logImageNodes(RawNodeData? node, String context) {
-    if (node == null) return;
-    if (node.nodeType == 'Image') {}
-    for (final child in node.children) {
-      _logImageNodes(child, context);
-    }
-    for (final item in node.items) {
-      _logImageNodes(item, context);
-    }
-  }
-
-  void closeModule() {
-    _activeModuleId = null;
-    _activeUiKind = 'default';
-    _activeLinkId = '';
-    _moduleUiTree = null;
-    notifyListeners();
-  }
-
-  Future<void> openModuleLink(String moduleId, String linkId) async {
-    try {
-      final tree = await api.getModuleLinkUi(moduleId, linkId);
-      _moduleUiTree = tree;
-      _overlayMode = 'ui';
-      _overlayTitle = '$moduleId / $linkId';
-      _activeModuleId = moduleId;
-      _activeUiKind = 'link';
-      _activeLinkId = linkId;
-      _currentTab = 3; // Switch to modules tab
-      notifyListeners();
-    } catch (_) {}
-  }
-
-  Future<void> openModuleSettings(String moduleId) async {
-    try {
-      final tree = await api.getModuleSettingsUi(moduleId);
-      _moduleUiTree = tree;
-      _overlayMode = 'ui';
-      _overlayTitle = '$moduleId / Settings';
-      _activeModuleId = moduleId;
-      _activeUiKind = 'settings';
-      _activeLinkId = '';
-      _currentTab = 3; // Switch to modules tab
-      notifyListeners();
-    } catch (_) {}
-  }
-
-  void openAbout() {
-    _overlayUiTree = null;
-    _overlayMode = 'about';
-    _overlayTitle = 'About';
-    notifyListeners();
-  }
-
-  void closeOverlay() {
-    _overlayUiTree = null;
-    _overlayMode = '';
-    _overlayTitle = '';
-    _activeUiKind = 'default';
-    _activeLinkId = '';
-    if (_activeModuleId != null && _moduleUiTree == null) {
-      _activeModuleId = null;
-    }
-    notifyListeners();
-  }
-
-  // ── UI dispatch ──
-  void dispatchUiEvent(String nodeId, String action, String value) {
-    if (!ws.isConnected) {
-      return;
-    }
-    ws.sendUiEvent(
-      _activeModuleId ?? '',
-      nodeId,
-      action,
-      value,
-      uiKind: _activeUiKind,
-      linkId: _activeLinkId,
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  //  Game Integration (Mod Manager) Methods
-  // ═══════════════════════════════════════════════════════════
-
-  void addDeploymentLog(String log) {
-    final timeStr = DateTime.now().toLocal().toString().substring(11, 19);
-    _deploymentLogs.add('[$timeStr] $log');
-    notifyListeners();
-  }
-
-  void clearDeploymentLogs() {
-    _deploymentLogs.clear();
-    notifyListeners();
-  }
-
-  Future<void> loadGameIntegrationSettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      for (final game in gameCatalog) {
-        _gamePaths[game.id] =
-            prefs.getString('game_integration_path_${game.id}') ??
-            (game.id == 'chill_with_you'
-                ? prefs.getString('game_integration_path')
-                : null) ??
-            '';
-      }
-      for (final mod in modCatalog) {
-        try {
-          final settingsStr = prefs.getString(
-            'mod_integration_config_${mod.id}',
-          );
-          if (settingsStr != null && settingsStr.isNotEmpty) {
-            _modSettings[mod.id] = Map<String, dynamic>.from(
-              jsonDecode(settingsStr),
-            );
-          }
-        } catch (_) {}
-      }
-      refreshModStatuses();
-      refreshInstances();
-    } catch (e) {}
-  }
-
-  Future<void> setGamePath(
-    String path, {
-    String gameId = 'chill_with_you',
-  }) async {
-    _gamePaths[gameId] = path;
-    notifyListeners();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('game_integration_path_$gameId', path);
-      if (gameId == 'chill_with_you') {
-        await prefs.setString('game_integration_path', path);
-      }
-      refreshModStatuses(gameId);
-    } catch (e) {}
-  }
-
-  void refreshModStatuses([String? gameId]) {
-    final games = gameId == null
-        ? gameCatalog
-        : gameCatalog.where((g) => g.id == gameId);
-
-    for (final game in games) {
-      final path = gamePathFor(game.id);
-      if (path.isEmpty ||
-          !ModDeploymentService.verifyGameDirectory(path, game)) {
-        _bepinexStatuses[game.id] = BepInExStatus.notInstalled;
-        _modStatuses[game.id] = ModStatus.notInstalled;
-        continue;
-      }
-
-      _bepinexStatuses[game.id] = game.supportedFrameworks.contains('bepinex_5')
-          ? ModDeploymentService.checkBepInExStatus(path)
-          : BepInExStatus.notInstalled;
-
-      if (game.supportedMods.isEmpty) {
-        _modStatuses[game.id] = ModStatus.notInstalled;
-        continue;
-      }
-
-      final mod = modCatalog.firstWhere(
-        (m) => m.id == game.supportedMods.first,
-      );
-      _modStatuses[game.id] = mod.installsToGameRoot
-          ? ModDeploymentService.checkRootModStatus(path, mod)
-          : ModDeploymentService.checkModStatus(path, mod.folderName);
-    }
-    notifyListeners();
-  }
-
-  /// Refresh installed instances and archives from local storage + backend.
-  void refreshInstances() {
-    _instances = ModDeploymentService.loadInstances();
-    _archives = ModDeploymentService.listArchives();
-    notifyListeners();
-  }
-
-  /// Refresh archives from backend API (server is the source of truth).
-  Future<void> refreshBackendArchives() async {
-    if (!_backendOnline) return;
-    try {
-      final rawList = await api.getArchives();
-      _archives = rawList.map((e) {
-        final m = e as Map<String, dynamic>;
-        return ArchiveEntry(
-          instanceId: m['instanceId'] as String? ?? '',
-          modId: m['modId'] as String? ?? '',
-          mode: m['mode'] as String? ?? '',
-          gameDir: '',
-          gameName: '',
-          label: m['label'] as String? ?? '',
-          archivedAt:
-              DateTime.tryParse(m['archivedAt'] as String? ?? '') ??
-              DateTime.now(),
-        );
-      }).toList();
-      notifyListeners();
-    } catch (e) {}
-  }
-
-  /// Delete an instance (online or offline). Also cleans up local registration and port_file_dir.
-  Future<bool> deleteInstance(String id) async {
-    if (!_backendOnline) return false;
-    try {
-      await api.deleteInstance(id);
-      // Remove local ModDeploymentService registration
-      ModDeploymentService.removeInstance(id);
-      // If this was the active instance, clear it
-      if (_activeInstanceId == id) {
-        _activeInstanceId = null;
-        _activeQueue = [];
-        _activeHistory = [];
-        _activePlaylist = [];
-        _playlistSources = [];
-        api.putConfigRaw({'active_instance': ''});
-        api.saveConfig();
-      }
-      refreshInstances();
-      await refreshPlayback();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Archive an instance with a label.
-  Future<bool> archiveInstanceWithLabel(String id, String label) async {
-    if (!_backendOnline) return false;
-    try {
-      await api.archiveInstance(id, label: label);
-      await refreshBackendArchives();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Delete an archive via backend.
-  Future<bool> deleteBackendArchive(String id) async {
-    if (!_backendOnline) return false;
-    try {
-      await api.deleteArchive(id);
-      await refreshBackendArchives();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Rename an archive via backend.
-  Future<bool> renameBackendArchive(String id, String label) async {
-    if (!_backendOnline) return false;
-    try {
-      await api.renameArchive(id, label);
-      await refreshBackendArchives();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  Future<bool> installBepInEx({String gameId = 'chill_with_you'}) async {
-    final path = gamePathFor(gameId);
-    if (path.isEmpty || _deploymentBusy) return false;
-    _deploymentBusy = true;
-    clearDeploymentLogs();
-    notifyListeners();
-
-    try {
-      final framework = frameworkCatalog.firstWhere((f) => f.id == 'bepinex_5');
-      final success = await ModDeploymentService.deployBepInEx(
-        path,
-        framework,
-        addDeploymentLog,
-      );
-      refreshModStatuses(gameId);
-      refreshInstances();
-      return success;
-    } finally {
-      _deploymentBusy = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> uninstallBepInEx({String gameId = 'chill_with_you'}) async {
-    final path = gamePathFor(gameId);
-    if (path.isEmpty || _deploymentBusy) return false;
-    _deploymentBusy = true;
-    clearDeploymentLogs();
-    notifyListeners();
-
-    try {
-      final framework = frameworkCatalog.firstWhere((f) => f.id == 'bepinex_5');
-      final success = await ModDeploymentService.undeployBepInEx(
-        path,
-        framework,
-        addDeploymentLog,
-      );
-      refreshModStatuses(gameId);
-      refreshInstances();
-      return success;
-    } finally {
-      _deploymentBusy = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> installMod({
-    String gameId = 'chill_with_you',
-    String? inheritArchiveId,
-  }) async {
-    final path = gamePathFor(gameId);
-    if (path.isEmpty || _deploymentBusy) return false;
-    _deploymentBusy = true;
-    clearDeploymentLogs();
-    notifyListeners();
-
-    try {
-      final game = gameCatalog.firstWhere((g) => g.id == gameId);
-      final mod = modCatalog.firstWhere(
-        (m) => m.id == game.supportedMods.first,
-      );
-
-      // If a previous installation exists at a different path, clean up its
-      // backend port_file_dirs entry before adding the new one.
-      final oldDir = ModDeploymentService.getRecordedGameDir(mod.id);
-      if (oldDir != null && oldDir != path) {
-        addDeploymentLog('Cleaning up previous installation at $oldDir...');
-        await _removeGameDirFromBackendPortFileDirs(oldDir);
-        PortFile.deletePortFile(oldDir);
-      }
-
-      final success = await ModDeploymentService.deployMod(
-        path,
-        mod,
-        addDeploymentLog,
-        backendPort: _backendPort,
-        onPortFileDirChanged: _onPortFileDirChanged,
-        customSettings: settingsForMod(mod.id),
-      );
-      if (!success) return false;
-
-      // After deployment: inherit from archive if specified
-      if (inheritArchiveId != null &&
-          inheritArchiveId.isNotEmpty &&
-          _backendOnline) {
-        final inst = ModDeploymentService.findInstanceByDir(path);
-        if (inst != null) {
-          try {
-            final result = await api.inheritFromArchive(
-              inst.instanceId,
-              inheritArchiveId,
-            );
-            final consumed = result['consumed'] == true;
-            addDeploymentLog(
-              consumed
-                  ? 'Consumed archive "$inheritArchiveId" → instance ${inst.instanceId}'
-                  : 'Copied archive "$inheritArchiveId" settings → instance ${inst.instanceId}',
-            );
-            if (consumed) await refreshBackendArchives();
-          } catch (e) {
-            addDeploymentLog(
-              'Warning: failed to inherit archive settings ($e)',
-            );
-          }
-        }
-      }
-
-      // Save instance metadata and create default profile (single source of truth)
-      if (_backendOnline) {
-        final inst = ModDeploymentService.findInstanceByDir(path);
-        if (inst != null) {
-          try {
-            await api.setInstanceMeta(
-              inst.instanceId,
-              mod.id,
-              mod.name,
-              mod.mode,
-            );
-            // Create default empty profile so the instance appears in backend list
-            final defaultProfile = {
-              'ActiveQueueId': 'default',
-              'Volume': 1.0,
-              'Queues': [
-                {
-                  'Id': 'default',
-                  'Name': 'Default',
-                  'PlaylistSources': [],
-                  'SongUuids': [],
-                  'HistoryUuids': [],
-                  'Index': -1,
-                  'HistoryPosition': -1,
-                  'PlaylistPosition': 0,
-                  'Shuffle': false,
-                  'RepeatMode': 'none',
-                },
-              ],
-            };
-            await api.updateInstanceProfile(inst.instanceId, defaultProfile);
-          } catch (e) {
-            addDeploymentLog('Warning: failed to save instance metadata ($e)');
-          }
-        }
-      }
-
-      refreshModStatuses(gameId);
-      refreshInstances();
-      await refreshPlayback();
-      return true;
-    } finally {
-      _deploymentBusy = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> uninstallMod({String gameId = 'chill_with_you'}) async {
-    final path = gamePathFor(gameId);
-    if (path.isEmpty || _deploymentBusy) return false;
-    _deploymentBusy = true;
-    clearDeploymentLogs();
-    notifyListeners();
-
-    try {
-      final game = gameCatalog.firstWhere((g) => g.id == gameId);
-      final mod = modCatalog.firstWhere(
-        (m) => m.id == game.supportedMods.first,
-      );
-      final success = await ModDeploymentService.undeployMod(
-        path,
-        mod,
-        addDeploymentLog,
-        onPortFileDirChanged: _onPortFileDirChanged,
-      );
-      refreshModStatuses(gameId);
-      refreshInstances();
-      return success;
-    } finally {
-      _deploymentBusy = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> redeployModSettingsOnly({required String gameId}) async {
-    final path = gamePathFor(gameId);
-    if (path.isEmpty || _deploymentBusy) return false;
-    _deploymentBusy = true;
-    clearDeploymentLogs();
-    notifyListeners();
-
-    try {
-      final game = gameCatalog.firstWhere((g) => g.id == gameId);
-      final modId = game.supportedMods.isNotEmpty
-          ? game.supportedMods.first
-          : '';
-      final mod = modCatalog.firstWhere((m) => m.id == modId);
-
-      addDeploymentLog('Re-applying settings for ${mod.name}...');
-      await mod.onDeploy(path, addDeploymentLog, settingsForMod(modId));
-      addDeploymentLog('Settings re-applied successfully.');
-      return true;
-    } catch (e) {
-      addDeploymentLog('ERROR re-applying settings: $e');
-      return false;
-    } finally {
-      _deploymentBusy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Callback passed to ModDeploymentService for backend port_file_dirs sync.
-  /// Called with (gameDir, true=add / false=remove).
-  Future<void> _onPortFileDirChanged(String gameDir, bool add) async {
-    if (add) {
-      await _addGameDirToBackendPortFileDirs(gameDir);
-    } else {
-      await _removeGameDirFromBackendPortFileDirs(gameDir);
-    }
-  }
-
-  /// Add a game directory to the backend's port_file_dirs config.
-  Future<void> _addGameDirToBackendPortFileDirs(String gameDir) async {
-    if (!_backendOnline) return;
-    try {
-      final config = await api.getConfig();
-      final raw = config['port_file_dirs'];
-      List<dynamic>? rawList;
-      if (raw is String) {
-        try {
-          rawList = jsonDecode(raw) as List<dynamic>?;
-        } catch (_) {}
-      } else if (raw is List) {
-        rawList = raw;
-      }
-      final dirs = List<String>.from(rawList?.cast<String>() ?? []);
-      if (!dirs.contains(gameDir)) {
-        dirs.add(gameDir);
-        await api.putConfigRaw({'port_file_dirs': dirs});
-        await api.saveConfig();
-        addDeploymentLog('Backend port_file_dirs updated with: $gameDir');
-      }
-    } catch (e) {
-      addDeploymentLog('Note: could not update backend port_file_dirs ($e)');
-    }
-  }
-
-  /// Remove a game directory from the backend's port_file_dirs config.
-  Future<void> _removeGameDirFromBackendPortFileDirs(String gameDir) async {
-    if (!_backendOnline) return;
-    try {
-      final config = await api.getConfig();
-      final raw = config['port_file_dirs'];
-      List<dynamic>? rawList;
-      if (raw is String) {
-        try {
-          rawList = jsonDecode(raw) as List<dynamic>?;
-        } catch (_) {}
-      } else if (raw is List) {
-        rawList = raw;
-      }
-      final dirs = List<String>.from(rawList?.cast<String>() ?? []);
-      if (dirs.contains(gameDir)) {
-        dirs.remove(gameDir);
-        await api.putConfigRaw({'port_file_dirs': dirs});
-        await api.saveConfig();
-        addDeploymentLog('Backend port_file_dirs removed: $gameDir');
-      }
-    } catch (e) {
-      addDeploymentLog('Note: could not update backend port_file_dirs ($e)');
-    }
-  }
-
   @override
   void dispose() {
-    if (_activeInstanceId != null) saveActive();
-    _serviceResultTimer?.cancel();
-    _stopPlaybackPolling();
-    _backendMgr.dispose();
-    ws.disconnect();
-    api.dispose();
+    if (_playback.activeInstanceId != null) _playback.saveActive();
+    _service.disposeManager();
+    _playback.disposeManager();
+    _backend.disposeManager();
     super.dispose();
   }
 }

@@ -17,6 +17,7 @@ dependencies:
   # HTTP + WebSocket
   http: ^1.2.0
   web_socket_channel: ^3.0.0
+  url_launcher: ^6.3.1
 
   # Material You / Dynamic Color
   dynamic_color: ^1.7.0
@@ -31,6 +32,9 @@ dependencies:
   ffi: ^2.2.0
   archive: ^4.0.9
   file_picker: ^11.0.2
+
+  # State management
+  flutter_riverpod: ^2.6.1
 
 dev_dependencies:
   flutter_test:

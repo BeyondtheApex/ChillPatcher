@@ -49,6 +49,8 @@ namespace OmniMixPlayer.Backend
             builder.Logging.ClearProviders();
             builder.Logging.AddConsole();
             builder.Logging.AddProvider(new SimpleFileLoggerProvider(logFilePath));
+            // Suppress per-request logs (health checks poll every few seconds)
+            builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 
             // Enable running as Windows Service / Linux systemd service
             builder.Host.UseWindowsService();

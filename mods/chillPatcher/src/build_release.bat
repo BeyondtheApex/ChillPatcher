@@ -24,6 +24,8 @@ if %FULL_BUILD% equ 1 (
 
 REM 切换到项目根目录
 cd /d %~dp0
+set "ScriptDir=%~dp0"
+for %%I in ("%ScriptDir%..\..\..") do set "RepoRoot=%%~fI"
 
 REM 配置
 set Configuration=Release
@@ -130,74 +132,64 @@ if %FULL_BUILD% equ 1 (
 echo.
 echo [8/10] Building Native Plugins...
 
-if exist "NativePlugins\AudioDecoder\build.bat" (
-    echo   - Building Audio Decoder...
-    cd NativePlugins\AudioDecoder
+if exist "%RepoRoot%\NativePlugins\OmniAudioDecoder\build.bat" (
+    echo   - Building OmniAudioDecoder (Rust Symphonia)...
+    cd /d "%RepoRoot%\NativePlugins\OmniAudioDecoder"
     call build.bat >nul 2>&1
     if !errorlevel! neq 0 (
-        echo WARNING: Native audio decoder build failed, using existing if available
+        echo WARNING: OmniAudioDecoder build failed, using existing if available
     )
-    cd ..\..
+    cd /d "%ScriptDir%"
 )
 
-if exist "NativePlugins\FlacDecoder\build.bat" (
-    echo   - Building FLAC Decoder...
-    cd NativePlugins\FlacDecoder
-    call build.bat >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo WARNING: Native FLAC decoder build failed, using existing if available
-    )
-    cd ..\..
-)
-
-if exist "NativePlugins\SmtcBridge\build.bat" (
+if exist "%RepoRoot%\NativePlugins\SmtcBridge\build.bat" (
     echo   - Building SMTC Bridge...
-    cd NativePlugins\SmtcBridge
+    cd /d "%RepoRoot%\NativePlugins\SmtcBridge"
     call build.bat >nul 2>&1
     if !errorlevel! neq 0 (
         echo WARNING: Native SMTC bridge build failed, using existing if available
     )
-    cd ..\..
+    cd /d "%ScriptDir%"
 )
 
-if exist "NativePlugins\OmniPcmShared\build.bat" (
+if exist "%RepoRoot%\NativePlugins\OmniPcmShared\build.bat" (
     echo   - Building Omni PCM Shared SDK...
-    cd NativePlugins\OmniPcmShared
+    cd /d "%RepoRoot%\NativePlugins\OmniPcmShared"
     call build.bat >nul 2>&1
     if !errorlevel! neq 0 (
         echo WARNING: Omni PCM Shared SDK build failed, using existing if available
     )
-    cd ..\..
+    cd /d "%ScriptDir%"
 )
 
-if exist "netease_bridge\build.bat" (
+if exist "%RepoRoot%\NativePlugins\netease_bridge\build.bat" (
     echo   - Building Netease Bridge...
-    cd netease_bridge
+    cd /d "%RepoRoot%\NativePlugins\netease_bridge"
     call build.bat --no-pause >nul 2>&1
     if !errorlevel! neq 0 (
         echo WARNING: Netease bridge build failed, using existing if available
     )
-    cd ..
+    cd /d "%ScriptDir%"
 )
 
-if exist "qqmusic_bridge\build.bat" (
+if exist "%RepoRoot%\NativePlugins\qqmusic_bridge\build.bat" (
     echo   - Building QQ Music Bridge...
-    cd qqmusic_bridge
+    cd /d "%RepoRoot%\NativePlugins\qqmusic_bridge"
     call build.bat --no-pause >nul 2>&1
     if !errorlevel! neq 0 (
         echo WARNING: QQ Music bridge build failed, using existing if available
     )
-    cd ..
+    cd /d "%ScriptDir%"
 )
 
-if exist "NativePlugins\EsbuildBridge\build.bat" (
+if exist "%RepoRoot%\NativePlugins\EsbuildBridge\build.bat" (
     echo   - Building Esbuild Bridge ^(Go DLL^)...
-    cd NativePlugins\EsbuildBridge
+    cd /d "%RepoRoot%\NativePlugins\EsbuildBridge"
     call build.bat >nul 2>&1
     if !errorlevel! neq 0 (
         echo WARNING: Esbuild bridge build failed, using existing if available
     )
-    cd ..\..
+    cd /d "%ScriptDir%"
 )
 ) else (
 echo.
@@ -241,8 +233,7 @@ robocopy "ui" "%UIDir%" /E /XD node_modules /NFL /NDL /NJH /NJS /NP >nul 2>&1
 
 REM Native Plugins (只需 x64，放在 native/x64/)
 echo   - Native plugins...
-if exist "bin\native\x64\ChillAudioDecoder.dll" copy /y "bin\native\x64\ChillAudioDecoder.dll" "%NativeDir%\x64\" >nul
-if exist "bin\native\x64\ChillFlacDecoder.dll" copy /y "bin\native\x64\ChillFlacDecoder.dll" "%NativeDir%\x64\" >nul
+if exist "bin\native\x64\OmniAudioDecoder.dll" copy /y "bin\native\x64\OmniAudioDecoder.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillSmtcBridge.dll" copy /y "bin\native\x64\ChillSmtcBridge.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\OmniPcmShared.dll" copy /y "bin\native\x64\OmniPcmShared.dll" "%NativeDir%\x64\" >nul
 if exist "bin\native\x64\ChillEsbuildBridge.dll" copy /y "bin\native\x64\ChillEsbuildBridge.dll" "%NativeDir%\x64\" >nul
@@ -320,15 +311,15 @@ echo   - License files...
 if not exist "%LicenseDir%" mkdir "%LicenseDir%"
 if exist "LICENSE" copy /y "LICENSE" "%LicenseDir%\ChillPatcher-LICENSE.txt" >nul
 if exist "rime\librime\LICENSE" copy /y "rime\librime\LICENSE" "%LicenseDir%\librime-LICENSE.txt" >nul
-if exist "NativePlugins\dr_libs\LICENSE" copy /y "NativePlugins\dr_libs\LICENSE" "%LicenseDir%\dr_libs-LICENSE.txt" >nul
-if exist "NativePlugins\fdk-aac\NOTICE" copy /y "NativePlugins\fdk-aac\NOTICE" "%LicenseDir%\fdk-aac-NOTICE.txt" >nul
-if exist "NativePlugins\minimp4\LICENSE" copy /y "NativePlugins\minimp4\LICENSE" "%LicenseDir%\minimp4-LICENSE.txt" >nul
+if exist "%RepoRoot%\NativePlugins\dr_libs\LICENSE" copy /y "%RepoRoot%\NativePlugins\dr_libs\LICENSE" "%LicenseDir%\dr_libs-LICENSE.txt" >nul
+if exist "%RepoRoot%\NativePlugins\fdk-aac\NOTICE" copy /y "%RepoRoot%\NativePlugins\fdk-aac\NOTICE" "%LicenseDir%\fdk-aac-NOTICE.txt" >nul
+if exist "%RepoRoot%\NativePlugins\minimp4\LICENSE" copy /y "%RepoRoot%\NativePlugins\minimp4\LICENSE" "%LicenseDir%\minimp4-LICENSE.txt" >nul
 if exist "ChillPatcher.OneJS\LICENSE-OneJS.txt" copy /y "ChillPatcher.OneJS\LICENSE-OneJS.txt" "%LicenseDir%\OneJS-LICENSE.txt" >nul
 if exist "ChillPatcher.OneJS\LICENSE-Puerts.txt" copy /y "ChillPatcher.OneJS\LICENSE-Puerts.txt" "%LicenseDir%\Puerts-LICENSE.txt" >nul
 if exist "ChillPatcher.Module.Netease\LICENSE-go-musicfox.txt" copy /y "ChillPatcher.Module.Netease\LICENSE-go-musicfox.txt" "%LicenseDir%\go-musicfox-LICENSE.txt" >nul
-if exist "NativePlugins\EsbuildBridge\LICENSE-esbuild.txt" copy /y "NativePlugins\EsbuildBridge\LICENSE-esbuild.txt" "%LicenseDir%\esbuild-LICENSE.txt" >nul
-if exist "NativePlugins\EsbuildBridge\LICENSE-golang.txt" copy /y "NativePlugins\EsbuildBridge\LICENSE-golang.txt" "%LicenseDir%\golang-LICENSE.txt" >nul
-if exist "NativePlugins\EsbuildBridge\LICENSE-golang-x-sys.txt" copy /y "NativePlugins\EsbuildBridge\LICENSE-golang-x-sys.txt" "%LicenseDir%\golang-x-sys-LICENSE.txt" >nul
+if exist "%RepoRoot%\NativePlugins\EsbuildBridge\LICENSE-esbuild.txt" copy /y "%RepoRoot%\NativePlugins\EsbuildBridge\LICENSE-esbuild.txt" "%LicenseDir%\esbuild-LICENSE.txt" >nul
+if exist "%RepoRoot%\NativePlugins\EsbuildBridge\LICENSE-golang.txt" copy /y "%RepoRoot%\NativePlugins\EsbuildBridge\LICENSE-golang.txt" "%LicenseDir%\golang-LICENSE.txt" >nul
+if exist "%RepoRoot%\NativePlugins\EsbuildBridge\LICENSE-golang-x-sys.txt" copy /y "%RepoRoot%\NativePlugins\EsbuildBridge\LICENSE-golang-x-sys.txt" "%LicenseDir%\golang-x-sys-LICENSE.txt" >nul
 
 REM NuGet package licenses (via dotnet-project-licenses)
 echo   - NuGet package licenses...
@@ -404,8 +395,7 @@ echo   ^|   +-- x64\
 echo   ^|       +-- vcruntime140*.dll   (VC++ Runtime)
 echo   ^|       +-- msvcp140.dll
 echo   ^|       +-- concrt140.dll
-echo   ^|       +-- ChillAudioDecoder.dll
-echo   ^|       +-- ChillFlacDecoder.dll
+echo   ^|       +-- OmniAudioDecoder.dll   (Rust Symphonia)
 echo   ^|       +-- ChillSmtcBridge.dll
 echo   ^|       +-- ChillNetease.dll
 echo   +-- rime-data\

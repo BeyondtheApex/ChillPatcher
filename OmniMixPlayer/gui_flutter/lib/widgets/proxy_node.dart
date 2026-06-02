@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
-import '../models/node_data.dart';/// Parse a hex color string ("#RRGGBB" or "AARRGGBB") to Color.
+import 'package:url_launcher/url_launcher.dart';
+import '../models/node_data.dart';
+
+/// Parse a hex color string ("#RRGGBB" or "AARRGGBB") to Color.
 Color? parseHexColor(String hex) {
   if (hex.isEmpty) return null;
   try {
@@ -39,6 +42,8 @@ class ProxyNodeWidget extends StatelessWidget {
         return _buildInput(context);
       case 'Button':
         return _buildButton(context);
+      case 'ExternalLink':
+        return _buildExternalLink(context);
       case 'Switch':
         return _buildSwitch(context);
       case 'Image':
@@ -145,6 +150,33 @@ class ProxyNodeWidget extends StatelessWidget {
         ),
         onPressed: () => onDispatch(node.id, 'click', node.value),
         child: Text(node.text, style: const TextStyle(fontSize: 14)),
+      ),
+    );
+  }
+
+  Widget _buildExternalLink(BuildContext context) {
+    final url = node.value.isNotEmpty ? node.value : node.source;
+    final uri = Uri.tryParse(url);
+    final explicitColor = parseHexColor(node.color);
+    final textColor = explicitColor ?? Theme.of(context).colorScheme.primary;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          foregroundColor: textColor,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: uri == null
+            ? null
+            : () async {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                onDispatch(node.id, 'open', url);
+              },
+        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+        label: Text(node.text, style: const TextStyle(fontSize: 14)),
       ),
     );
   }

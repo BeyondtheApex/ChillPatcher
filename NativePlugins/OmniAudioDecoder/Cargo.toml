@@ -1,0 +1,16 @@
+[package]
+name = "omni_audio_decoder"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+symphonia = { version = "0.6", features = ["all", "opt-simd"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

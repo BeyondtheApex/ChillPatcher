@@ -64,11 +64,13 @@ template <typename T>
 T read_value(const uint8_t* base, int offset) {
     T value{};
     std::memcpy(&value, base + offset, sizeof(T));
+    std::atomic_thread_fence(std::memory_order_acquire);
     return value;
 }
 
 template <typename T>
 void write_value(uint8_t* base, int offset, T value) {
+    std::atomic_thread_fence(std::memory_order_release);
     std::memcpy(base + offset, &value, sizeof(T));
 }
 

@@ -8,7 +8,9 @@
 /// Build: flutter build web --wasm -t lib/main_web.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers/app_state.dart';
+import 'providers/core/app_state_bridge.dart';
 import 'app.dart';
 
 void main() {
@@ -20,5 +22,10 @@ void main() {
   final state = AppState();
   state.initWeb(port: 17890);
 
-  runApp(OmniMixApp(state: state));
+  runApp(
+    ProviderScope(
+      overrides: [appStateProvider.overrideWith((ref) => state)],
+      child: const OmniMixApp(),
+    ),
+  );
 }

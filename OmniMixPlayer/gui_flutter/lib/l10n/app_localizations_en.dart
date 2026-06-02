@@ -754,4 +754,55 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get audioBufferLatencyTip =>
       'Audio buffer latency (smaller is faster, default 0.05s)';
+
+  @override
+  String get manualInstall => 'Manual Install';
+
+  @override
+  String get checkInstallation => 'Check Installation';
+
+  @override
+  String get manualInstallTitle => 'Manual Installation Mode';
+
+  @override
+  String get manualInstallHint =>
+      'Please copy all files and folders from the staging folder (Source) and paste them directly into your game folder (Target) manually.';
+
+  @override
+  String get manualInstallSource =>
+      'Source (Staging folder containing prepared files):';
+
+  @override
+  String get manualInstallTarget => 'Target (Game folder):';
+
+  @override
+  String get manualInstallCheckHint =>
+      'After copying the files manually, click \"Check Installation\" to verify and register.';
+
+  @override
+  String get manualInstallErrDb =>
+      'Failed to register the manual install in the local database.';
+
+  @override
+  String get manualInstallErrFwDb =>
+      'Failed to register BepInEx in the database.';
+
+  @override
+  String get manualInstallErrVerify =>
+      'Verification failed. Necessary files/directories are still missing in your game folder. Please check if you dragged/copied all files correctly.';
+
+  @override
+  String get confirmInstall => 'Confirm & Install';
+
+  @override
+  String manualInstallErrRegFailed(String error) {
+    return 'Verification succeeded, but registration failed: $error';
+  }
+
+  @override
+  String get manualInstallGuideTitle => 'Manual Installation Steps';
+
+  @override
+  String get manualInstallGuideSteps =>
+      '1. Click \'Open\' next to \'Source\' to access the staging folder.\n2. Click \'Open\' next to \'Target\' to access the game folder.\n3. Select and copy ALL items inside the \'Source\' folder.\n4. Paste them directly into the \'Target\' folder. Choose \'Replace\' if prompted.\n5. Click \'Check Installation\' below to verify and finish.';
 }

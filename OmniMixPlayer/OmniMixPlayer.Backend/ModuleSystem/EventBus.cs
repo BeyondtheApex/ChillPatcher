@@ -67,7 +67,8 @@ namespace OmniMixPlayer.Backend.ModuleSystem
                 handlers = new List<Delegate>(handlers);
             }
 
-            _logger.LogDebug("Publish event: {EventType} (subscribers: {Count})", eventType.Name, handlers.Count);
+            _logger.LogDebug("Publish event: {EventType} (source: {Source}, subscribers: {Count})",
+                eventType.Name, eventData.SourceModuleId ?? "host", handlers.Count);
 
             foreach (var handler in handlers)
             {
@@ -80,6 +81,15 @@ namespace OmniMixPlayer.Backend.ModuleSystem
                     _logger.LogError(ex, "Event handler error ({EventType})", eventType.Name);
                 }
             }
+        }
+
+        public void Publish<TEvent>(TEvent eventData, string sourceModuleId) where TEvent : IModuleEvent
+        {
+            if (eventData == null)
+                throw new ArgumentNullException(nameof(eventData));
+
+            eventData.SourceModuleId = sourceModuleId;
+            Publish(eventData);
         }
 
         public void UnsubscribeAll()

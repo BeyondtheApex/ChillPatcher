@@ -1483,6 +1483,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Audio buffer latency (smaller is faster, default 0.05s)'**
   String get audioBufferLatencyTip;
+
+  /// No description provided for @manualInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual Install'**
+  String get manualInstall;
+
+  /// No description provided for @checkInstallation.
+  ///
+  /// In en, this message translates to:
+  /// **'Check Installation'**
+  String get checkInstallation;
+
+  /// No description provided for @manualInstallTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual Installation Mode'**
+  String get manualInstallTitle;
+
+  /// No description provided for @manualInstallHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Please copy all files and folders from the staging folder (Source) and paste them directly into your game folder (Target) manually.'**
+  String get manualInstallHint;
+
+  /// No description provided for @manualInstallSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Source (Staging folder containing prepared files):'**
+  String get manualInstallSource;
+
+  /// No description provided for @manualInstallTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Target (Game folder):'**
+  String get manualInstallTarget;
+
+  /// No description provided for @manualInstallCheckHint.
+  ///
+  /// In en, this message translates to:
+  /// **'After copying the files manually, click \"Check Installation\" to verify and register.'**
+  String get manualInstallCheckHint;
+
+  /// No description provided for @manualInstallErrDb.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to register the manual install in the local database.'**
+  String get manualInstallErrDb;
+
+  /// No description provided for @manualInstallErrFwDb.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to register BepInEx in the database.'**
+  String get manualInstallErrFwDb;
+
+  /// No description provided for @manualInstallErrVerify.
+  ///
+  /// In en, this message translates to:
+  /// **'Verification failed. Necessary files/directories are still missing in your game folder. Please check if you dragged/copied all files correctly.'**
+  String get manualInstallErrVerify;
+
+  /// No description provided for @confirmInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm & Install'**
+  String get confirmInstall;
+
+  /// No description provided for @manualInstallErrRegFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Verification succeeded, but registration failed: {error}'**
+  String manualInstallErrRegFailed(String error);
+
+  /// No description provided for @manualInstallGuideTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual Installation Steps'**
+  String get manualInstallGuideTitle;
+
+  /// No description provided for @manualInstallGuideSteps.
+  ///
+  /// In en, this message translates to:
+  /// **'1. Click \'Open\' next to \'Source\' to access the staging folder.\n2. Click \'Open\' next to \'Target\' to access the game folder.\n3. Select and copy ALL items inside the \'Source\' folder.\n4. Paste them directly into the \'Target\' folder. Choose \'Replace\' if prompted.\n5. Click \'Check Installation\' below to verify and finish.'**
+  String get manualInstallGuideSteps;
 }
 
 class _AppLocalizationsDelegate

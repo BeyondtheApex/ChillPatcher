@@ -744,4 +744,51 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get audioBufferLatencyTip => '物理缓冲区限流延迟（越小响应越快，默认0.05秒）';
+
+  @override
+  String get manualInstall => '手动安装';
+
+  @override
+  String get checkInstallation => '检查安装';
+
+  @override
+  String get manualInstallTitle => '手动安装模式';
+
+  @override
+  String get manualInstallHint =>
+      '请手动复制临时文件夹（源目录）下的所有文件和文件夹，并直接粘贴到游戏安装文件夹（目标目录）中。';
+
+  @override
+  String get manualInstallSource => '源目录（包含已准备好待拷贝文件的临时文件夹）：';
+
+  @override
+  String get manualInstallTarget => '目标目录（游戏安装文件夹）：';
+
+  @override
+  String get manualInstallCheckHint => '手动拷贝完成后，请点击“检查安装”按钮以验证并进行系统注册。';
+
+  @override
+  String get manualInstallErrDb => '在本地数据库中注册手动安装记录失败。';
+
+  @override
+  String get manualInstallErrFwDb => '在数据库中注册 BepInEx 失败。';
+
+  @override
+  String get manualInstallErrVerify =>
+      '校验失败。游戏目录下仍缺失必要的文件或文件夹，请检查是否已将所有文件正确拖拽拷贝过去。';
+
+  @override
+  String get confirmInstall => '确认并安装';
+
+  @override
+  String manualInstallErrRegFailed(String error) {
+    return '验证成功，但本地注册失败：$error';
+  }
+
+  @override
+  String get manualInstallGuideTitle => '手动安装步骤提示';
+
+  @override
+  String get manualInstallGuideSteps =>
+      '1. 点击“源目录”旁的“打开”按钮，打开待拷贝文件的文件夹。\n2. 点击“目标目录”旁的“打开”按钮，打开游戏安装文件夹。\n3. 选择并复制“源目录”下的所有文件和文件夹。\n4. 将它们粘贴到“目标目录”中，如果系统提示有同名文件，请选择“覆盖/替换”。\n5. 粘贴完成后，点击本界面下方的“检查安装”按钮进行验证并完成。';
 }

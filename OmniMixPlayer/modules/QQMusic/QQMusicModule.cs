@@ -209,16 +209,8 @@ namespace OmniMixPlayer.Module.QQMusic
                 return null;
             }
 
-            // Check streaming service availability
-            if (!_context.StreamingService.IsAvailable)
-            {
-                _logger?.LogError("流式服务不可用 (原生解码器未加载)");
-                return null;
-            }
-
             // Map quality and get song URL
             var bridgeQuality = MapQuality(quality);
-            var timeoutMs = _context.ConfigManager.GetValue("StreamReadyTimeoutMs", 20000);
             const int maxRetries = 3;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)
@@ -243,25 +235,15 @@ namespace OmniMixPlayer.Module.QQMusic
 
                 _logger?.LogInformation($"Got URL for {songInfo.Name} [format={format}, size={songUrl.Size}] (attempt {attempt}/{maxRetries})");
 
-                // Use main plugin's streaming service
-                var reader = await _context.StreamingService.CreateStreamAndWaitAsync(
-                    songUrl.URL,
-                    format,
-                    (float)songInfo.Duration,
-                    $"qqmusic_{songInfo.Mid}",
-                    timeoutMs,
-                    new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" },
-                    cancellationToken);
-
-                if (reader != null)
+                return new PlayableSource
                 {
-                    _logger?.LogInformation($"PCM stream ready: {songInfo.Name} [{reader.Info.SampleRate}Hz, {reader.Info.Channels}ch, {reader.Info.Format ?? format}]");
-                    return PlayableSource.FromPcmStream(uuid, reader, audioFormat);
-                }
-
-                _logger?.LogWarning($"PCM stream create/ready failed for {songInfo.Name} (attempt {attempt}/{maxRetries})");
-                if (attempt < maxRetries)
-                    await Task.Delay(1000, cancellationToken);
+                    UUID = uuid,
+                    SourceType = PlayableSourceType.Remote,
+                    Url = songUrl.URL,
+                    Format = audioFormat,
+                    Headers = new Dictionary<string, string> { ["User-Agent"] = "Mozilla/5.0" },
+                    CacheKey = $"qqmusic_{songInfo.Mid}"
+                };
             }
 
             return null;

@@ -357,7 +357,7 @@ namespace ChillPatcher
                 await _client.ConnectAsync();
 
                 var connectResult = await _client.ConnectInstance(_clientId, "audio", "client");
-                var sharedMemoryName = connectResult["sharedMemoryName"]?.ToString();
+                var sharedMemoryName = connectResult.GetStringIgnoreCase("sharedMemoryName");
 
                 _connected = true;
 
@@ -644,8 +644,8 @@ namespace ChillPatcher
                 {
                     foreach (var tag in tagsArr)
                     {
-                        var tagId = tag["id"]?.ToString();
-                        var bitValue = tag["bitValue"]?.ToObject<ulong>() ?? 0;
+                        var tagId = tag.GetStringIgnoreCase("id");
+                        var bitValue = tag.GetValueIgnoreCase<ulong>("bitValue");
                         if (!string.IsNullOrEmpty(tagId) && bitValue > 0)
                         {
                             tagBitValues[tagId] = bitValue;
@@ -659,17 +659,17 @@ namespace ChillPatcher
                 {
                     foreach (var a in albumsArr)
                     {
-                        var id = a["id"]?.ToString();
+                        var id = a.GetStringIgnoreCase("id");
                         if (string.IsNullOrEmpty(id)) continue;
 
                         var album = new AlbumInfo
                         {
                             AlbumId = id,
-                            DisplayName = a["name"]?.ToString() ?? "",
-                            ModuleId = a["moduleId"]?.ToString() ?? "",
-                            CoverPath = a["coverPath"]?.ToString() ?? "",
-                            SongCount = a["songCount"]?.ToObject<int>() ?? 0,
-                            IsGrowableAlbum = a["isGrowable"]?.ToObject<bool>() ?? false
+                            DisplayName = a.GetStringIgnoreCase("name"),
+                            ModuleId = a.GetStringIgnoreCase("moduleId"),
+                            CoverPath = a.GetStringIgnoreCase("coverPath"),
+                            SongCount = a.GetValueIgnoreCase<int>("songCount"),
+                            IsGrowableAlbum = a.GetValueIgnoreCase<bool>("isGrowable")
                         };
                         albumDict[id] = album;
                     }
@@ -681,10 +681,10 @@ namespace ChillPatcher
                 {
                     foreach (var s in songsArr)
                     {
-                        var uuid = s["uuid"]?.ToString();
+                        var uuid = s.GetStringIgnoreCase("uuid");
                         if (string.IsNullOrEmpty(uuid)) continue;
 
-                        bool isExcluded = s["isExcluded"]?.ToObject<bool>() ?? false;
+                        bool isExcluded = s.GetValueIgnoreCase<bool>("isExcluded");
                         lock (_excludedUuids)
                         {
                             if (isExcluded)
@@ -693,19 +693,19 @@ namespace ChillPatcher
                                 _excludedUuids.Remove(uuid);
                         }
 
-                        var songTagIds = s["tagIds"]?.ToObject<List<string>>() ?? new List<string>();
+                        var songTagIds = s.GetValueIgnoreCase<List<string>>("tagIds") ?? new List<string>();
 
                         var song = new MusicInfo
                         {
                             UUID = uuid,
-                            Title = s["title"]?.ToString() ?? "",
-                            Artist = s["artist"]?.ToString() ?? "",
-                            AlbumId = s["albumId"]?.ToString() ?? "",
-                            Duration = s["duration"]?.ToObject<float>() ?? 0,
-                            ModuleId = s["moduleId"]?.ToString() ?? "",
+                            Title = s.GetStringIgnoreCase("title"),
+                            Artist = s.GetStringIgnoreCase("artist"),
+                            AlbumId = s.GetStringIgnoreCase("albumId"),
+                            Duration = s.GetValueIgnoreCase<float>("duration"),
+                            ModuleId = s.GetStringIgnoreCase("moduleId"),
                             SourceType = MusicSourceType.Stream,
                             IsUnlocked = true,
-                            IsFavorite = s["isFavorite"]?.ToObject<bool>() ?? false,
+                            IsFavorite = s.GetValueIgnoreCase<bool>("isFavorite"),
                             IsExcluded = isExcluded,
                             TagIds = songTagIds
                         };
@@ -718,7 +718,7 @@ namespace ChillPatcher
                 {
                     foreach (var item in queueArr)
                     {
-                        var uuid = item["uuid"]?.ToString();
+                        var uuid = item.GetStringIgnoreCase("uuid");
                         if (string.IsNullOrEmpty(uuid)) continue;
 
                         MusicInfo song;
@@ -728,9 +728,9 @@ namespace ChillPatcher
                         }
                         else
                         {
-                            var title = item["title"]?.ToString() ?? "";
-                            var artist = item["artist"]?.ToString() ?? "";
-                            var moduleId = item["moduleId"]?.ToString() ?? "";
+                            var title = item.GetStringIgnoreCase("title");
+                            var artist = item.GetStringIgnoreCase("artist");
+                            var moduleId = item.GetStringIgnoreCase("moduleId");
                             song = new MusicInfo
                             {
                                 UUID = uuid,
@@ -977,7 +977,7 @@ namespace ChillPatcher
             {
                 var json = await _client.PostAsync($"/tags/{Uri.EscapeDataString(tagId)}/load-more", new { });
                 var obj = JObject.Parse(json);
-                return obj["loadedCount"]?.ToObject<int>() ?? 0;
+                return obj.GetValueIgnoreCase<int>("loadedCount");
             }
             catch (Exception ex)
             {
@@ -997,11 +997,11 @@ namespace ChillPatcher
                 var arr = JArray.Parse(json);
                 _allTags = arr.Select(j => new TagInfo
                 {
-                    TagId = j["id"]?.ToString() ?? "",
-                    DisplayName = j["name"]?.ToString() ?? "",
-                    ModuleId = j["moduleId"]?.ToString() ?? "",
-                    BitValue = (ulong)(j["bitValue"]?.ToObject<long>() ?? 0),
-                    IsGrowableList = j["isGrowable"]?.ToObject<bool>() ?? false
+                    TagId = j.GetStringIgnoreCase("id"),
+                    DisplayName = j.GetStringIgnoreCase("name"),
+                    ModuleId = j.GetStringIgnoreCase("moduleId"),
+                    BitValue = (ulong)j.GetValueIgnoreCase<long>("bitValue"),
+                    IsGrowableList = j.GetValueIgnoreCase<bool>("isGrowable")
                 }).ToList();
 
                 _growableTags = _allTags.Where(t => t.IsGrowableList).ToList();

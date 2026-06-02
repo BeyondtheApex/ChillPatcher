@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
@@ -249,13 +250,16 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
   ) {
     final st = widget.state;
     final gamePath = st.gamePathFor(game.id);
-    final bepinexStatus = st.bepinexStatusFor(game.id);
-    final modStatus = st.modStatusFor(game.id);
-    final hasBepInEx = game.supportedFrameworks.contains('bepinex_5');
+    final frameworks = frameworksForGame(game);
     final isPathEmpty = gamePath.isEmpty;
     final isValidPath =
         !isPathEmpty &&
         ModDeploymentService.verifyGameDirectory(gamePath, game);
+    final hasUnmanagedFramework = frameworks.any(
+      (framework) =>
+          st.frameworkStatusFor(game.id, framework.id) ==
+          BepInExStatus.unmanaged,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -291,8 +295,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                       ),
                       const SizedBox(height: 20),
                       if (isValidPath) ...[
-                        if (hasBepInEx &&
-                            bepinexStatus == BepInExStatus.unmanaged) ...[
+                        if (hasUnmanagedFramework) ...[
                           _unmanagedWarning(cs, l10n),
                           const SizedBox(height: 20),
                         ],
@@ -303,9 +306,6 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                           st,
                           l10n,
                           cs,
-                          hasBepInEx,
-                          bepinexStatus,
-                          modStatus,
                         ),
                       ],
                     ],
@@ -492,9 +492,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     AppLocalizations l10n,
     ColorScheme cs,
   ) {
-    final mod = modCatalog.firstWhere((m) => m.id == game.supportedMods.first);
+    final modIds = modsForGame(game).map((m) => m.id).toSet();
     final instances = st.playbackInstances
-        .where((i) => i.modId == mod.id)
+        .where((i) => modIds.contains(i.modId))
         .toList();
     if (instances.isEmpty) return const SizedBox.shrink();
 
@@ -592,66 +592,66 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     AppState st,
     AppLocalizations l10n,
     ColorScheme cs,
-    bool hasBepInEx,
-    BepInExStatus bepinexStatus,
-    ModStatus modStatus,
   ) {
-    final modId = game.supportedMods.isNotEmpty ? game.supportedMods.first : '';
-    final mod = modCatalog.firstWhere(
-      (m) => m.id == modId,
-      orElse: () => const ModDeclaration(
-        id: '',
-        name: '',
-        version: '',
-        archiveName: '',
-        folderName: '',
-        mode: '',
-      ),
-    );
-    final hasSettings = mod.hasSettings;
-
-    final framework = frameworkCatalog.firstWhere(
-      (f) => f.id == 'bepinex_5',
-      orElse: () => const FrameworkDeclaration(
-        id: '',
-        name: '',
-        version: '',
-        archiveName: '',
-        filesToLink: [],
-        dirsToLink: [],
-        dirsToCreate: [],
-      ),
-    );
-    final bepinexVersion = framework.version;
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (hasBepInEx)
-          Expanded(
-            child: _buildComponentCard(
-              icon: Icons.build_rounded,
-              title: 'BepInEx',
-              statusBadge: _buildDetailedStatusBadge(bepinexStatus, l10n, cs),
-              versionInfo: _buildVersionInfo('bepinex_5', bepinexVersion, cs),
-              actions: _buildBepInExActions(st, l10n, cs, game.id),
-            ),
-          ),
-        if (hasBepInEx) const SizedBox(width: 16),
-        Expanded(
+    final cards = <Widget>[
+      for (final framework in frameworksForGame(game))
+        _buildResponsiveComponentCard(
           child: _buildComponentCard(
-            icon: Icons.extension_rounded,
-            title: 'Mod',
-            statusBadge: _buildModDetailedStatusBadge(modStatus, l10n, cs),
-            versionInfo: _buildVersionInfo(modId, mod.version, cs),
-            actions: _buildModActions(st, l10n, cs, game),
-            onSettingsPressed: hasSettings
-                ? () => _showModSettings(context, mod, game.id)
-                : null,
+            icon: Icons.build_rounded,
+            title: framework.name,
+            statusBadge: _buildDetailedStatusBadge(
+              st.frameworkStatusFor(game.id, framework.id),
+              framework,
+              l10n,
+              cs,
+            ),
+            versionInfo: _buildVersionInfo(
+              framework.id,
+              framework.version,
+              cs,
+            ),
+            actions: _buildFrameworkActions(st, l10n, cs, game, framework),
           ),
         ),
-      ],
+      for (final mod in modsForGame(game))
+        _buildResponsiveComponentCard(
+          child: _buildComponentCard(
+              icon: Icons.extension_rounded,
+              title: mod.name,
+              statusBadge: _buildModDetailedStatusBadge(
+                st.modStatusFor(game.id, mod.id),
+                l10n,
+                cs,
+              ),
+              versionInfo: _buildVersionInfo(mod.id, mod.version, cs),
+              actions: _buildModActions(st, l10n, cs, game, mod),
+              onSettingsPressed: mod.hasSettings
+                  ? () => _showModSettings(context, mod, game.id)
+                  : null,
+          ),
+        ),
+    ];
+
+    if (cards.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth >= 760
+            ? (constraints.maxWidth - 16) / 2
+            : constraints.maxWidth;
+        return Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            for (final card in cards) SizedBox(width: width, child: card),
+          ],
+        );
+      },
     );
+  }
+
+  Widget _buildResponsiveComponentCard({required Widget child}) {
+    return child;
   }
 
   Widget _buildComponentCard({
@@ -693,7 +693,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                     onPressed: onSettingsPressed,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
-                    tooltip: AppLocalizations.of(context)!.settings,
+                    tooltip: AppLocalizations.of(context).settings,
                   ),
               ],
             ),
@@ -724,8 +724,12 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
           newSettings,
         ) async {
           await widget.state.saveModSettings(mod.id, newSettings);
-          if (widget.state.modStatusFor(gameId) == ModStatus.installed) {
-            await widget.state.redeployModSettingsOnly(gameId: gameId);
+          if (widget.state.modStatusFor(gameId, mod.id) ==
+              ModStatus.installed) {
+            await widget.state.redeployModSettingsOnly(
+              gameId: gameId,
+              modId: mod.id,
+            );
           }
         });
       },
@@ -738,7 +742,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     ColorScheme cs,
   ) {
     final installed = ModDeploymentService.getInstalledVersion(id);
-    final l = AppLocalizations.of(context)!;
+    final l = AppLocalizations.of(context);
 
     if (installed == null) {
       return Text(
@@ -762,11 +766,12 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
 
   // ── Icon-only action buttons ──
 
-  Widget _buildBepInExActions(
+  Widget _buildFrameworkActions(
     AppState st,
     AppLocalizations l10n,
     ColorScheme cs,
-    String gameId,
+    GameDeclaration game,
+    FrameworkDeclaration framework,
   ) {
     if (st.deploymentBusy) {
       return const SizedBox(
@@ -776,14 +781,22 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       );
     }
 
-    switch (st.bepinexStatusFor(gameId)) {
+    switch (st.frameworkStatusFor(game.id, framework.id)) {
       case BepInExStatus.notInstalled:
         return _iconAction(
           icon: Icons.download_rounded,
-          label: l10n.installBepInEx,
+          label: 'Install ${framework.name}',
           color: cs.primaryContainer,
           fg: cs.onPrimaryContainer,
-          onPressed: () => st.installBepInEx(gameId: gameId),
+          onPressed: () => showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => ModInstallWizard(
+              state: st,
+              gameId: game.id,
+              frameworkId: framework.id,
+            ),
+          ),
         );
       case BepInExStatus.managed:
         return Row(
@@ -791,25 +804,36 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
           children: [
             _iconAction(
               icon: Icons.refresh_rounded,
-              label: l10n.reinstallBepInEx,
+              label: 'Reinstall ${framework.name}',
               color: cs.primaryContainer,
               fg: cs.onPrimaryContainer,
-              onPressed: () => st.installBepInEx(gameId: gameId),
+              onPressed: () => showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => ModInstallWizard(
+                  state: st,
+                  gameId: game.id,
+                  frameworkId: framework.id,
+                ),
+              ),
             ),
             const SizedBox(width: 8),
             _iconAction(
               icon: Icons.delete_rounded,
-              label: l10n.uninstallBepInEx,
+              label: 'Uninstall ${framework.name}',
               color: cs.errorContainer,
               fg: cs.onErrorContainer,
-              onPressed: () => st.uninstallBepInEx(gameId: gameId),
+              onPressed: () => st.uninstallFramework(
+                gameId: game.id,
+                frameworkId: framework.id,
+              ),
             ),
           ],
         );
       case BepInExStatus.unmanaged:
         return _iconAction(
           icon: Icons.lock_outline_rounded,
-          label: l10n.installBepInEx,
+          label: 'Install ${framework.name}',
           color: cs.surfaceContainerHighest,
           fg: cs.onSurfaceVariant,
           onPressed: null,
@@ -822,6 +846,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     AppLocalizations l10n,
     ColorScheme cs,
     GameDeclaration game,
+    ModDeclaration mod,
   ) {
     if (st.deploymentBusy) {
       return const SizedBox(
@@ -831,12 +856,15 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       );
     }
 
-    final requiresBepInEx = game.supportedFrameworks.contains('bepinex_5');
-    final bepinexPresent =
-        !requiresBepInEx ||
-        st.bepinexStatusFor(game.id) != BepInExStatus.notInstalled;
+    final requiredFramework = mod.targetFramework == null
+        ? null
+        : frameworkById(mod.targetFramework!);
+    final frameworkPresent =
+        requiredFramework == null ||
+        st.frameworkStatusFor(game.id, requiredFramework.id) !=
+            BepInExStatus.notInstalled;
 
-    if (!bepinexPresent) {
+    if (!frameworkPresent) {
       return _iconAction(
         icon: Icons.add_rounded,
         label: l10n.installMod,
@@ -846,14 +874,14 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       );
     }
 
-    switch (st.modStatusFor(game.id)) {
+    switch (st.modStatusFor(game.id, mod.id)) {
       case ModStatus.notInstalled:
         return _iconAction(
           icon: Icons.download_rounded,
           label: l10n.installMod,
           color: cs.primaryContainer,
           fg: cs.onPrimaryContainer,
-          onPressed: () => _installWithArchiveChoice(game.id),
+          onPressed: () => _installWithArchiveChoice(game.id, mod.id),
         );
       case ModStatus.installed:
         return Row(
@@ -864,7 +892,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
               label: l10n.reinstallMod,
               color: cs.primaryContainer,
               fg: cs.onPrimaryContainer,
-              onPressed: () => _installWithArchiveChoice(game.id),
+              onPressed: () => _installWithArchiveChoice(game.id, mod.id),
             ),
             const SizedBox(width: 8),
             _iconAction(
@@ -872,7 +900,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
               label: l10n.uninstallMod,
               color: cs.errorContainer,
               fg: cs.onErrorContainer,
-              onPressed: () => st.uninstallMod(gameId: game.id),
+              onPressed: () => st.uninstallMod(gameId: game.id, modId: mod.id),
             ),
           ],
         );
@@ -993,39 +1021,56 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
 
     final list = <Widget>[];
 
-    if (game.supportedFrameworks.contains('bepinex_5')) {
-      switch (st.bepinexStatusFor(game.id)) {
+    for (final framework in frameworksForGame(game)) {
+      switch (st.frameworkStatusFor(game.id, framework.id)) {
         case BepInExStatus.notInstalled:
           list.add(
-            _badge('BepInEx: ${l10n.statusNotInstalled}', Colors.grey, cs),
+            _badge(
+              '${framework.name}: ${l10n.statusNotInstalled}',
+              Colors.grey,
+              cs,
+            ),
           );
           break;
         case BepInExStatus.managed:
-          list.add(_badge('BepInEx: ${l10n.statusManaged}', Colors.green, cs));
+          list.add(
+            _badge('${framework.name}: ${l10n.statusManaged}', Colors.green, cs),
+          );
           break;
         case BepInExStatus.unmanaged:
           list.add(
-            _badge('BepInEx: ${l10n.statusUnmanaged}', Colors.orange, cs),
+            _badge(
+              '${framework.name}: ${l10n.statusUnmanaged}',
+              Colors.orange,
+              cs,
+            ),
           );
           break;
       }
       list.add(const SizedBox(width: 8));
     }
 
-    switch (st.modStatusFor(game.id)) {
-      case ModStatus.notInstalled:
-        list.add(_badge('Mod: ${l10n.statusNotInstalled}', Colors.grey, cs));
-        break;
-      case ModStatus.installed:
-        list.add(_badge('Mod: ${l10n.modInstalled}', Colors.green, cs));
-        break;
+    for (final mod in modsForGame(game)) {
+      switch (st.modStatusFor(game.id, mod.id)) {
+        case ModStatus.notInstalled:
+          list.add(
+            _badge('${mod.name}: ${l10n.statusNotInstalled}', Colors.grey, cs),
+          );
+          break;
+        case ModStatus.installed:
+          list.add(_badge('${mod.name}: ${l10n.modInstalled}', Colors.green, cs));
+          break;
+      }
+      list.add(const SizedBox(width: 8));
     }
 
-    return Row(children: list);
+    if (list.isNotEmpty) list.removeLast();
+    return Wrap(spacing: 0, runSpacing: 6, children: list);
   }
 
   Widget _buildDetailedStatusBadge(
     BepInExStatus status,
+    FrameworkDeclaration framework,
     AppLocalizations l10n,
     ColorScheme cs,
   ) {
@@ -1033,7 +1078,11 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       case BepInExStatus.notInstalled:
         return _badge(l10n.statusNotInstalled, Colors.grey, cs);
       case BepInExStatus.managed:
-        return _badge('${l10n.statusManaged} (5.4.23.5)', Colors.green, cs);
+        return _badge(
+          '${l10n.statusManaged} (${framework.version})',
+          Colors.green,
+          cs,
+        );
       case BepInExStatus.unmanaged:
         return _badge(l10n.statusUnmanaged, Colors.orange, cs);
     }
@@ -1093,7 +1142,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
   }
 
   /// Show archive selection dialog before installing, so user can inherit settings.
-  Future<void> _installWithArchiveChoice(String gameId) async {
+  Future<void> _installWithArchiveChoice(String gameId, String modId) async {
     final l10n = AppLocalizations.of(context);
     final st = widget.state;
 
@@ -1103,9 +1152,17 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
 
     if (!mounted) return;
 
-    // If no archives, install directly
+    // If no archives, show dialog directly
     if (archives.isEmpty) {
-      await st.installMod(gameId: gameId);
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => ModInstallWizard(
+          state: st,
+          gameId: gameId,
+          modId: modId,
+        ),
+      );
       return;
     }
 
@@ -1170,9 +1227,15 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
 
     if (!mounted) return;
     if (chosenId == null) return; // cancelled
-    await st.installMod(
-      gameId: gameId,
-      inheritArchiveId: chosenId.isEmpty ? null : chosenId,
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => ModInstallWizard(
+        state: st,
+        gameId: gameId,
+        modId: modId,
+        inheritArchiveId: chosenId.isEmpty ? null : chosenId,
+      ),
     );
   }
 
@@ -1236,3 +1299,841 @@ class _LoadingPage extends StatelessWidget {
     );
   }
 }
+
+class ModInstallWizard extends StatefulWidget {
+  final AppState state;
+  final String gameId;
+  final String? modId;
+  final String? frameworkId;
+  final String? inheritArchiveId;
+
+  const ModInstallWizard({
+    super.key,
+    required this.state,
+    required this.gameId,
+    this.modId,
+    this.frameworkId,
+    this.inheritArchiveId,
+  }) : assert(modId != null || frameworkId != null);
+
+  @override
+  State<ModInstallWizard> createState() => _ModInstallWizardState();
+}
+
+enum WizardStep { preparing, ready, installing, manualReady, success, failed }
+
+class _ModInstallWizardState extends State<ModInstallWizard> {
+  WizardStep _step = WizardStep.preparing;
+  String? _tempDir;
+  PrepResult? _prepResult;
+  final List<String> _prepLogs = [];
+  final List<String> _execLogs = [];
+  String? _manualErrorMessage;
+  Timer? _logTimer;
+  int _lastLogLineCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startStaging();
+  }
+
+  @override
+  void dispose() {
+    _logTimer?.cancel();
+    if (_tempDir != null) {
+      try {
+        final d = Directory(_tempDir!);
+        if (d.existsSync()) d.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+    super.dispose();
+  }
+
+  void _addPrepLog(String msg) {
+    if (mounted) {
+      setState(() {
+        _prepLogs.add(msg);
+      });
+    }
+  }
+
+  Future<void> _startStaging() async {
+    try {
+      final gameDir = widget.state.gamePathFor(widget.gameId);
+      if (widget.modId != null) {
+        final mod = modById(widget.modId!);
+        if (mod == null) {
+          _addPrepLog('ERROR: Mod not found in catalog');
+          setState(() => _step = WizardStep.failed);
+          return;
+        }
+
+        final result = await ModDeploymentService.prepareInstallStaging(
+          gameDir,
+          mod,
+          widget.state.settingsForMod(widget.modId!),
+          _addPrepLog,
+        );
+
+        setState(() {
+          _prepResult = result;
+          _tempDir = result.tempDir;
+          _step = WizardStep.ready;
+        });
+      } else if (widget.frameworkId != null) {
+        final framework = frameworkById(widget.frameworkId!);
+        if (framework == null) {
+          _addPrepLog('ERROR: Framework not found');
+          setState(() => _step = WizardStep.failed);
+          return;
+        }
+
+        final result = await ModDeploymentService.prepareFrameworkStaging(
+          gameDir,
+          framework,
+          _addPrepLog,
+        );
+
+        setState(() {
+          _prepResult = result;
+          _tempDir = result.tempDir;
+          _step = WizardStep.ready;
+        });
+      }
+    } catch (e) {
+      _addPrepLog('ERROR during preparation: $e');
+      setState(() => _step = WizardStep.failed);
+    }
+  }
+
+  Future<void> _startExecution() async {
+    setState(() {
+      _step = WizardStep.installing;
+      _execLogs.clear();
+      _execLogs.add('[INFO] Beginning elevated execution...');
+    });
+
+    final gameDir = widget.state.gamePathFor(widget.gameId);
+    if (_prepResult == null) {
+      setState(() => _step = WizardStep.failed);
+      return;
+    }
+
+    _lastLogLineCount = 0;
+    _logTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
+      _pollInstallLog();
+    });
+
+    bool success = false;
+    if (widget.modId != null) {
+      final mod = modById(widget.modId!);
+      if (mod == null) {
+        setState(() => _step = WizardStep.failed);
+        return;
+      }
+      success = await ModDeploymentService.executeInstallStaging(
+        gameDir,
+        mod,
+        _prepResult!,
+        (msg) {
+          if (mounted) {
+            setState(() {
+              _execLogs.add(msg);
+            });
+          }
+        },
+        backendPort: int.tryParse(widget.state.backendPort),
+      );
+    } else if (widget.frameworkId != null) {
+      final framework = frameworkById(widget.frameworkId!);
+      if (framework == null) {
+        setState(() => _step = WizardStep.failed);
+        return;
+      }
+      success = await ModDeploymentService.executeFrameworkStaging(
+        gameDir,
+        framework,
+        _prepResult!,
+        (msg) {
+          if (mounted) {
+            setState(() {
+              _execLogs.add(msg);
+            });
+          }
+        },
+      );
+    }
+
+    if (!success) {
+      _logTimer?.cancel();
+      setState(() => _step = WizardStep.failed);
+      return;
+    }
+
+    final runSuccess = await ModDeploymentService.runInstallScript(
+      _prepResult!.tempDir,
+      (msg) {
+        if (mounted) {
+          setState(() {
+            _execLogs.add(msg);
+          });
+        }
+      },
+    );
+
+    _logTimer?.cancel();
+    _pollInstallLog();
+
+    if (runSuccess) {
+      if (widget.modId != null) {
+        await widget.state.finalizeModInstall(
+          gameId: widget.gameId,
+          modId: widget.modId!,
+          inheritArchiveId: widget.inheritArchiveId,
+        );
+      } else if (widget.frameworkId != null) {
+        await widget.state.finalizeFrameworkInstall(
+          gameId: widget.gameId,
+          frameworkId: widget.frameworkId!,
+        );
+      }
+      setState(() => _step = WizardStep.success);
+    } else {
+      setState(() => _step = WizardStep.failed);
+    }
+  }
+
+  void _pollInstallLog() {
+    if (_tempDir == null) return;
+    final logFile = File('$_tempDir/install.log');
+    if (!logFile.existsSync()) return;
+
+    try {
+      final lines = logFile.readAsLinesSync();
+      if (lines.length > _lastLogLineCount) {
+        if (mounted) {
+          setState(() {
+            for (var i = _lastLogLineCount; i < lines.length; i++) {
+              _execLogs.add(lines[i]);
+            }
+            _lastLogLineCount = lines.length;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
+    
+    final String titleText;
+    if (widget.modId != null) {
+      final modName = modById(widget.modId!)?.name ?? widget.modId;
+      titleText = '${l10n.installMod}: $modName';
+    } else {
+      final frameworkName = frameworkById(widget.frameworkId!)?.name ?? widget.frameworkId;
+      titleText = 'Install $frameworkName';
+    }
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(
+            _step == WizardStep.success
+                ? Icons.check_circle_outline
+                : _step == WizardStep.failed
+                    ? Icons.error_outline
+                    : Icons.download_rounded,
+            color: _step == WizardStep.success
+                ? Colors.green
+                : _step == WizardStep.failed
+                    ? Colors.red
+                    : cs.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(titleText)),
+        ],
+      ),
+      content: SizedBox(
+        width: 600,
+        height: 450,
+        child: Column(
+          children: [
+            Expanded(child: _buildBody(cs, l10n)),
+            const SizedBox(height: 12),
+            _buildActions(cs, l10n),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(ColorScheme cs, AppLocalizations l10n) {
+    switch (_step) {
+      case WizardStep.preparing:
+        return _buildLoading('Preparing files...', _prepLogs, cs);
+      case WizardStep.ready:
+        return _buildReviewList(cs);
+      case WizardStep.installing:
+        return _buildLoading('Installing (Requires Administrator Privilege)...', _execLogs, cs);
+      case WizardStep.manualReady:
+        return _buildManualReady(cs, l10n);
+      case WizardStep.success:
+        return _buildSuccess(cs);
+      case WizardStep.failed:
+        return _buildFailure(cs);
+    }
+  }
+
+  Widget _buildLoading(String title, List<String> logs, ColorScheme cs) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.85),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ListView.builder(
+              itemCount: logs.length,
+              itemBuilder: (context, idx) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4.0),
+                  child: Text(
+                    logs[idx],
+                    style: const TextStyle(
+                      color: Colors.lightGreenAccent,
+                      fontFamily: 'Consolas',
+                      fontSize: 12,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReviewList(ColorScheme cs) {
+    final pr = _prepResult;
+    if (pr == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Review the files to be processed:',
+          style: TextStyle(fontWeight: FontWeight.w600, color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: ListView(
+            children: [
+              if (pr.links.isNotEmpty) ...[
+                _buildGroupHeader('Links to be Created (Symlinks)', Colors.blue, cs),
+                ...pr.links.map((f) => _buildFileRow(f, Icons.link, Colors.blue)),
+              ],
+              if (pr.added.isNotEmpty) ...[
+                _buildGroupHeader('Files to be Added/Overwritten', Colors.green, cs),
+                ...pr.added.map((f) => _buildFileRow(f, Icons.add_box_outlined, Colors.green)),
+              ],
+              if (pr.backups.isNotEmpty) ...[
+                _buildGroupHeader('Original Files to be Backed Up', Colors.orange, cs),
+                ...pr.backups.map((f) => _buildFileRow(f, Icons.backup_outlined, Colors.orange)),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGroupHeader(String title, Color color, ColorScheme cs) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFileRow(String file, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              file,
+              style: const TextStyle(fontFamily: 'Consolas', fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuccess(ColorScheme cs) {
+    final isMod = widget.modId != null;
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.check_circle_rounded, size: 72, color: Colors.green),
+          const SizedBox(height: 16),
+          const Text(
+            'Installation Completed!',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isMod
+                ? 'The mod files and symbolic links have been successfully deployed.'
+                : 'The framework files and symbolic links have been successfully deployed.',
+            style: TextStyle(color: cs.onSurfaceVariant),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFailure(ColorScheme cs) {
+    return Column(
+      children: [
+        const Icon(Icons.error_rounded, size: 56, color: Colors.red),
+        const SizedBox(height: 12),
+        const Text(
+          'Installation Failed!',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.85),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ListView.builder(
+              itemCount: _execLogs.isNotEmpty ? _execLogs.length : _prepLogs.length,
+              itemBuilder: (context, idx) {
+                final logs = _execLogs.isNotEmpty ? _execLogs : _prepLogs;
+                return Text(
+                  logs[idx],
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontFamily: 'Consolas',
+                    fontSize: 11,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActions(ColorScheme cs, AppLocalizations l10n) {
+    switch (_step) {
+      case WizardStep.preparing:
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(l10n.cancel),
+            ),
+          ],
+        );
+      case WizardStep.ready:
+        return Row(
+          children: [
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.orange,
+              ),
+              onPressed: () {
+                _prepareManualInstallFolder();
+                setState(() {
+                  _step = WizardStep.manualReady;
+                  _manualErrorMessage = null;
+                });
+              },
+              child: Text(l10n.manualInstall),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(l10n.cancel),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: cs.primary,
+                foregroundColor: cs.onPrimary,
+              ),
+              onPressed: _startExecution,
+              child: Text(l10n.confirmInstall),
+            ),
+          ],
+        );
+      case WizardStep.manualReady:
+        return Row(
+          children: [
+            TextButton(
+              onPressed: () {
+                _restoreManualInstallFolder();
+                setState(() => _step = WizardStep.ready);
+              },
+              child: Text(l10n.back),
+            ),
+            const Spacer(),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: cs.primary,
+                foregroundColor: cs.onPrimary,
+              ),
+              onPressed: _checkManualInstallation,
+              child: Text(l10n.checkInstallation),
+            ),
+          ],
+        );
+      case WizardStep.installing:
+        return const SizedBox.shrink();
+      case WizardStep.success:
+      case WizardStep.failed:
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: cs.primary,
+                foregroundColor: cs.onPrimary,
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: Text(l10n.close),
+            ),
+          ],
+        );
+    }
+  }
+
+  Widget _buildManualReady(ColorScheme cs, AppLocalizations l10n) {
+    final gameDir = widget.state.gamePathFor(widget.gameId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.manualInstallTitle,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          l10n.manualInstallHint,
+          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+        ),
+        const SizedBox(height: 16),
+        _buildPathRow(l10n.manualInstallSource, _tempDir ?? '', cs, l10n),
+        const SizedBox(height: 16),
+        _buildPathRow(l10n.manualInstallTarget, gameDir, cs, l10n),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: cs.outlineVariant.withOpacity(0.5)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.help_outline, size: 16, color: cs.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    l10n.manualInstallGuideTitle,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: cs.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.manualInstallGuideSteps,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (_manualErrorMessage != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.red.withOpacity(0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _manualErrorMessage!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        Center(
+          child: Column(
+            children: [
+              Icon(Icons.info_outline, size: 28, color: cs.primary),
+              const SizedBox(height: 6),
+              Text(
+                l10n.manualInstallCheckHint,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPathRow(String label, String path, ColorScheme cs, AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: cs.outlineVariant),
+                ),
+                child: Text(
+                  path,
+                  style: const TextStyle(fontFamily: 'Consolas', fontSize: 11),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              onPressed: () => _openFolder(path),
+              icon: const Icon(Icons.folder_open_outlined, size: 14),
+              label: Text(l10n.open),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openFolder(String path) async {
+    if (path.isEmpty) return;
+    try {
+      final winPath = path.replaceAll('/', '\\');
+      await Process.run('explorer.exe', [winPath]);
+    } catch (_) {}
+  }
+
+  Future<void> _checkManualInstallation() async {
+    final l10n = AppLocalizations.of(context)!;
+    final gameDir = widget.state.gamePathFor(widget.gameId);
+    bool verified = false;
+    
+    if (widget.modId != null) {
+      final mod = modById(widget.modId!);
+      if (mod != null) {
+        verified = mod.verifyInstallation(gameDir);
+      }
+    } else if (widget.frameworkId != null) {
+      final framework = frameworkById(widget.frameworkId!);
+      if (framework != null) {
+        verified = framework.verifyInstallation(gameDir);
+      }
+    }
+
+    if (verified) {
+      try {
+        if (widget.modId != null) {
+          final mod = modById(widget.modId!);
+          if (mod != null) {
+            final markerFile = File('$gameDir/.omnimix_mods/${mod.id}.managed');
+            markerFile.parent.createSync(recursive: true);
+            markerFile.writeAsStringSync(mod.version);
+
+            final success = await ModDeploymentService.executeInstallStaging(
+              gameDir,
+              mod,
+              _prepResult!,
+              (_) {}, // no-op logger for manual install background setup
+              backendPort: int.tryParse(widget.state.backendPort),
+            );
+
+            if (success) {
+              await widget.state.finalizeModInstall(
+                gameId: widget.gameId,
+                modId: widget.modId!,
+                inheritArchiveId: widget.inheritArchiveId,
+              );
+              setState(() => _step = WizardStep.success);
+            } else {
+              setState(() {
+                _manualErrorMessage = l10n.manualInstallErrDb;
+              });
+            }
+          }
+        } else if (widget.frameworkId != null) {
+          final framework = frameworkById(widget.frameworkId!);
+          if (framework != null) {
+            final markerFile = File('$gameDir/${framework.managedMarkerFile}');
+            if (framework.managedMarkerFile.isNotEmpty) {
+              markerFile.parent.createSync(recursive: true);
+              markerFile.writeAsStringSync(framework.version);
+            }
+
+            final success = await ModDeploymentService.executeFrameworkStaging(
+              gameDir,
+              framework,
+              _prepResult!,
+              (_) {}, // no-op logger
+            );
+
+            if (success) {
+              await widget.state.finalizeFrameworkInstall(
+                gameId: widget.gameId,
+                frameworkId: widget.frameworkId!,
+              );
+              setState(() => _step = WizardStep.success);
+            } else {
+              setState(() {
+                _manualErrorMessage = l10n.manualInstallErrFwDb;
+              });
+            }
+          }
+        }
+      } catch (e) {
+        setState(() {
+          _manualErrorMessage = l10n.manualInstallErrRegFailed(e.toString());
+        });
+      }
+    } else {
+      setState(() {
+        _manualErrorMessage = l10n.manualInstallErrVerify;
+      });
+    }
+  }
+
+  void _prepareManualInstallFolder() {
+    final pr = _prepResult;
+    if (pr == null) return;
+
+    final tempDir = pr.tempDir;
+    final version = pr.gameVersion;
+    final id = widget.modId ?? widget.frameworkId;
+    if (id == null) return;
+
+    final managerBackupDir = '${ModDeploymentService.managerDir}/backups/$id/v$version';
+
+    for (final relPath in pr.backups) {
+      final tempBackupFile = File('$tempDir/$relPath.v$version.bak');
+      final destBackupFile = File('$managerBackupDir/$relPath.v$version.bak');
+
+      if (tempBackupFile.existsSync()) {
+        if (!destBackupFile.existsSync()) {
+          destBackupFile.parent.createSync(recursive: true);
+          try {
+            tempBackupFile.copySync(destBackupFile.path);
+          } catch (_) {}
+        }
+        try {
+          tempBackupFile.deleteSync();
+        } catch (_) {}
+      }
+    }
+  }
+
+  void _restoreManualInstallFolder() {
+    final pr = _prepResult;
+    if (pr == null) return;
+
+    final tempDir = pr.tempDir;
+    final version = pr.gameVersion;
+    final id = widget.modId ?? widget.frameworkId;
+    if (id == null) return;
+
+    final managerBackupDir = '${ModDeploymentService.managerDir}/backups/$id/v$version';
+
+    for (final relPath in pr.backups) {
+      final tempBackupFile = File('$tempDir/$relPath.v$version.bak');
+      final destBackupFile = File('$managerBackupDir/$relPath.v$version.bak');
+
+      if (destBackupFile.existsSync() && !tempBackupFile.existsSync()) {
+        tempBackupFile.parent.createSync(recursive: true);
+        try {
+          destBackupFile.copySync(tempBackupFile.path);
+        } catch (_) {}
+      }
+    }
+  }
+}
+
