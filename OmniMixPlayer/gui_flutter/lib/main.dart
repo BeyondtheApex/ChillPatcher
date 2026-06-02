@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
@@ -14,10 +15,7 @@ import 'app.dart';
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Must initialize window_manager BEFORE desktop_multi_window takes over
-  // the window, otherwise setPreventClose cannot intercept WM_CLOSE.
   await windowManager.ensureInitialized();
-  await windowManager.setPreventClose(true);
 
   final currentWindow = await WindowController.fromCurrentEngine();
   if (_isFloatingPlayerWindow(currentWindow.arguments)) {
@@ -47,8 +45,9 @@ void main(List<String> args) async {
   final state = AppState();
   state.init(port: port);
 
-  // Handle window close event — minimize to tray or exit based on setting
-  windowManager.addListener(_CloseHandler(state));
+  // Handle window close via WidgetsBindingObserver — works even when
+  // desktop_multi_window hooks the native WndProc.
+  final closeHandler = _CloseHandler(state);
 
   // System tray (desktop only)
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
@@ -98,20 +97,26 @@ bool _isFloatingPlayerWindow(String arguments) {
       arguments.contains('"type": "player_rectangle"');
 }
 
-/// WindowListener that minimizes to tray or exits based on AppState setting.
-class _CloseHandler with WindowListener {
+/// Intercepts the window close request at the Flutter framework level,
+/// bypassing native WndProc conflicts between window_manager and
+/// desktop_multi_window.
+class _CloseHandler with WidgetsBindingObserver {
   final AppState state;
-  _CloseHandler(this.state);
+
+  _CloseHandler(this.state) {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
-  void onWindowClose() {
+  Future<AppExitResponse> didRequestAppExit() async {
     if (state.closeBehavior == 'minimize') {
-      windowManager.hide();
-    } else {
-      // Exit GUI only — keep backend running
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        exit(0);
-      }
+      await windowManager.hide();
+      return AppExitResponse.cancel;
     }
+    return AppExitResponse.exit;
+  }
+
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
   }
 }
