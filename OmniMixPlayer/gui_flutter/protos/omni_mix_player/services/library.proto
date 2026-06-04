@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/track.proto";
+import "omni_mix_player/models/album.proto";
+import "omni_mix_player/models/tag.proto";
+import "omni_mix_player/models/playlist.proto";
+import "omni_mix_player/models/query.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Services";
+
+// 音乐库服务 — 平台级别 upsert + 查询
+service LibraryService {
+  // ── Track ──
+  rpc UpsertTrack(UpsertTrackRequest) returns (UpsertTrackResponse);
+  rpc UpsertTracks(UpsertTracksRequest) returns (UpsertTracksResponse);
+  rpc GetTrack(GetTrackRequest) returns (Track);
+  rpc QueryTracks(TrackQuery) returns (QueryTracksResponse);
+  rpc DeleteTrack(DeleteTrackRequest) returns (DeleteTrackResponse);
+
+  // ── Track Tags (多对多) ──
+  rpc SetTrackTags(SetTrackTagsRequest) returns (SetTrackTagsResponse);
+  rpc AddTrackTag(ModifyTrackTagRequest) returns (ModifyTrackTagResponse);
+  rpc RemoveTrackTag(ModifyTrackTagRequest) returns (ModifyTrackTagResponse);
+  rpc GetTrackTags(GetTrackTagsRequest) returns (GetTrackTagsResponse);
+
+  // ── Album ──
+  rpc UpsertAlbum(UpsertAlbumRequest) returns (UpsertAlbumResponse);
+  rpc UpsertAlbums(UpsertAlbumsRequest) returns (UpsertAlbumsResponse);
+  rpc GetAlbum(GetAlbumRequest) returns (Album);
+  rpc QueryAlbums(AlbumQuery) returns (QueryAlbumsResponse);
+  rpc DeleteAlbum(DeleteAlbumRequest) returns (DeleteAlbumResponse);
+
+  // ── Tag ──
+  rpc UpsertTag(UpsertTagRequest) returns (UpsertTagResponse);
+  rpc UpsertTags(UpsertTagsRequest) returns (UpsertTagsResponse);
+  rpc GetTag(GetTagRequest) returns (Tag);
+  rpc QueryTags(TagQuery) returns (QueryTagsResponse);
+  rpc DeleteTag(DeleteTagRequest) returns (DeleteTagResponse);
+
+  // ── Playlist ──
+  rpc UpsertPlaylist(UpsertPlaylistRequest) returns (UpsertPlaylistResponse);
+  rpc GetPlaylist(GetPlaylistRequest) returns (Playlist);
+  rpc QueryPlaylists(PlaylistQuery) returns (QueryPlaylistsResponse);
+  rpc DeletePlaylist(DeletePlaylistRequest) returns (DeletePlaylistResponse);
+
+  // ── Playlist Entries ──
+  rpc ReplacePlaylistEntries(ReplacePlaylistEntriesRequest) returns (ReplacePlaylistEntriesResponse);
+  rpc InsertPlaylistEntry(InsertPlaylistEntryRequest) returns (InsertPlaylistEntryResponse);
+  rpc RemovePlaylistEntry(RemovePlaylistEntryRequest) returns (RemovePlaylistEntryResponse);
+  rpc MovePlaylistEntry(MovePlaylistEntryRequest) returns (MovePlaylistEntryResponse);
+  rpc GetPlaylistWithEntries(GetPlaylistWithEntriesRequest) returns (PlaylistWithEntries);
+
+  // ── Module cleanup ──
+  rpc UnregisterModule(UnregisterModuleRequest) returns (UnregisterModuleResponse);
+}
+
+// ── 请求/响应消息 ──
+
+message GetTrackRequest {
+  string uuid = 1;
+}
+
+message DeleteTrackRequest {
+  string uuid = 1;
+}
+
+message DeleteTrackResponse {
+  bool success = 1;
+}
+
+message GetTrackTagsRequest {
+  string track_uuid = 1;
+}
+
+message GetTrackTagsResponse {
+  string track_uuid = 1;
+  repeated string tag_ids = 2;
+}
+
+message GetAlbumRequest {
+  string id = 1;
+}
+
+message DeleteAlbumRequest {
+  string id = 1;
+}
+
+message DeleteAlbumResponse {
+  bool success = 1;
+}
+
+message GetTagRequest {
+  string id = 1;
+}
+
+message DeleteTagRequest {
+  string id = 1;
+}
+
+message DeleteTagResponse {
+  bool success = 1;
+}
+
+message GetPlaylistRequest {
+  string id = 1;
+}
+
+message DeletePlaylistRequest {
+  string id = 1;
+}
+
+message DeletePlaylistResponse {
+  bool success = 1;
+}
+
+message GetPlaylistWithEntriesRequest {
+  string playlist_id = 1;
+}
+
+message UnregisterModuleRequest {
+  string module_id = 1;
+}
+
+message UnregisterModuleResponse {
+  bool success = 1;
+  int32 tracks_removed = 2;
+  int32 albums_removed = 3;
+  int32 tags_removed = 4;
+  int32 playlists_removed = 5;
+}

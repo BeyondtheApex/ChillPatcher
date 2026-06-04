@@ -1,15 +1,15 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.SDK.Protos.Models;
 
 namespace OmniMixPlayer.SDK.Interfaces
 {
     public interface IMusicSourceProvider
     {
-        Task<List<MusicInfo>> GetMusicListAsync();
+        Task<List<Track>> GetMusicListAsync();
         Task RefreshAsync();
-        MusicSourceType SourceType { get; }
+        SourceType SourceType { get; }
     }
 
     public interface ICoverProvider

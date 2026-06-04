@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
-using OmniMixPlayer.SDK.Models;
 
 namespace OmniMixPlayer.Module.Netease
 {
@@ -139,14 +138,14 @@ namespace OmniMixPlayer.Module.Netease
             if (evt.Music == null) return;
 
             // 从 UUID 获取歌曲 ID
-            if (!_songInfoMap.TryGetValue(evt.Music.UUID, out var songInfo)) return;
+            if (!_songInfoMap.TryGetValue(evt.Music.Uuid, out var songInfo)) return;
 
             if (evt.IsFavorite)
             {
                 if (_bridge.LikeSong(songInfo.Id))
                 {
                     _likedSongIds.Add(songInfo.Id);
-                    updateCallback?.Invoke(evt.Music.UUID, true);
+                    updateCallback?.Invoke(evt.Music.Uuid, true);
                     _logger.LogInformation($"[NeteaseFavoriteManager] ✅ 已收藏: {songInfo.Name}");
                 }
             }
@@ -155,7 +154,7 @@ namespace OmniMixPlayer.Module.Netease
                 if (_bridge.UnlikeSong(songInfo.Id))
                 {
                     _likedSongIds.Remove(songInfo.Id);
-                    updateCallback?.Invoke(evt.Music.UUID, false);
+                    updateCallback?.Invoke(evt.Music.Uuid, false);
                     _logger.LogInformation($"[NeteaseFavoriteManager] ✅ 已取消收藏: {songInfo.Name}");
                 }
             }

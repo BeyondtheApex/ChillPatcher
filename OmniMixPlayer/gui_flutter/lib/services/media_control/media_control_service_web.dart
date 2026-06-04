@@ -1,6 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 
-import '../../models/node_data.dart';
+import '../../generated/omni_mix_player/models/instance.pb.dart';
 import '../media_control_service.dart';
 
 MediaControlService createMediaControlService() =>
@@ -50,52 +50,43 @@ class _AudioServiceMediaControlService implements MediaControlService {
 class _OmniMixAudioHandler extends BaseAudioHandler {
   final MediaControlCallbacks _callbacks;
   String? _instanceId;
+  bool _canSeek = false;
 
   _OmniMixAudioHandler(this._callbacks);
 
   void update(MediaControlSnapshot? snapshot) {
     if (snapshot == null) {
       _instanceId = null;
+      _canSeek = false;
       mediaItem.add(null);
       playbackState.add(_state(playing: false, position: Duration.zero));
       return;
     }
 
     final instance = snapshot.instance;
-    final track = instance.currentTrack;
     _instanceId = instance.id;
+    _canSeek = snapshot.canSeek;
     mediaItem.add(_mediaItem(instance, snapshot.baseUrl));
     playbackState.add(
       _state(
-        playing: instance.isPlaying,
-        position: _seconds(instance.position),
-        duration: _seconds(track?.duration ?? 0.0),
+        playing: instance.isOnline,
+        position: Duration.zero,
+        duration: Duration.zero,
       ),
     );
   }
 
-  MediaItem _mediaItem(PlaybackInstanceInfo instance, String baseUrl) {
-    final track = instance.currentTrack;
-    final title = track == null || track.title.isEmpty
-        ? 'OmniMixPlayer'
-        : track.title;
-    final artist = track?.artist.isNotEmpty == true ? track!.artist : null;
-    final album = instance.gameName.isNotEmpty
-        ? instance.gameName
-        : (track?.albumId.isNotEmpty == true ? track!.albumId : null);
-    final uuid = track?.uuid ?? '';
+  MediaItem _mediaItem(InstanceSummary instance, String baseUrl) {
+    final uuid = instance.currentTrackUuid;
     final artUri = uuid.isEmpty
         ? null
-        : Uri.parse(
-            '${baseUrl.isEmpty ? '' : baseUrl}/api/track/cover?uuid=$uuid',
-          );
-
+        : Uri.parse('$baseUrl/api/track/cover?uuid=$uuid');
     return MediaItem(
       id: uuid.isEmpty ? instance.id : uuid,
-      title: title,
-      artist: artist,
-      album: album,
-      duration: _seconds(track?.duration ?? 0.0),
+      title: instance.displayName.isNotEmpty
+          ? instance.displayName
+          : 'OmniMixPlayer',
+      artist: null,
       artUri: artUri,
       extras: {'instanceId': instance.id},
     );
@@ -112,7 +103,7 @@ class _OmniMixAudioHandler extends BaseAudioHandler {
         playing ? MediaControl.pause : MediaControl.play,
         MediaControl.skipToNext,
       ],
-      systemActions: const {MediaAction.seek},
+      systemActions: _canSeek ? const {MediaAction.seek} : const {},
       processingState: AudioProcessingState.ready,
       playing: playing,
       updatePosition: position,
@@ -151,6 +142,6 @@ class _OmniMixAudioHandler extends BaseAudioHandler {
   @override
   Future<void> seek(Duration position) async {
     final id = _instanceId;
-    if (id != null) await _callbacks.seek(id, position);
+    if (id != null && _canSeek) await _callbacks.seek(id, position);
   }
 }

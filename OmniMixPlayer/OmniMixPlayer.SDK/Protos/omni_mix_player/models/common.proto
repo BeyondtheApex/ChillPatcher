@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Models";
+
+// 音乐源类型
+enum SourceType {
+  SOURCE_TYPE_UNSPECIFIED = 0;
+  SOURCE_TYPE_FILE = 1;
+  SOURCE_TYPE_URL = 2;
+  SOURCE_TYPE_STREAM = 3;
+}
+
+// 排序方向
+enum SortDirection {
+  SORT_DIRECTION_UNSPECIFIED = 0;
+  SORT_DIRECTION_ASC = 1;
+  SORT_DIRECTION_DESC = 2;
+}
+
+// Track 排序字段
+enum TrackSortField {
+  TRACK_SORT_FIELD_UNSPECIFIED = 0;
+  TRACK_SORT_FIELD_TITLE = 1;
+  TRACK_SORT_FIELD_ARTIST = 2;
+  TRACK_SORT_FIELD_DURATION = 3;
+  TRACK_SORT_FIELD_PLAY_COUNT = 4;
+  TRACK_SORT_FIELD_LAST_PLAYED = 5;
+  TRACK_SORT_FIELD_CREATED_AT = 6;
+}
+
+// 播放模式（客户端声明）
+enum PlaybackModeType {
+  PLAYBACK_MODE_UNSPECIFIED = 0;
+  PLAYBACK_MODE_CLIENT_MANAGED = 1;
+  PLAYBACK_MODE_SERVER_MANAGED = 2;
+}
+
+// 重复模式
+enum RepeatMode {
+  REPEAT_MODE_UNSPECIFIED = 0;
+  REPEAT_MODE_NONE = 1;
+  REPEAT_MODE_ONE = 2;
+  REPEAT_MODE_ALL = 3;
+}
+
+// 均衡器滤波器类型
+enum EqualizerFilterType {
+  EQ_FILTER_TYPE_UNSPECIFIED = 0;
+  EQ_FILTER_TYPE_PEAKING = 1;
+  EQ_FILTER_TYPE_LOW_SHELF = 2;
+  EQ_FILTER_TYPE_HIGH_SHELF = 3;
+  EQ_FILTER_TYPE_LOW_PASS = 4;
+  EQ_FILTER_TYPE_HIGH_PASS = 5;
+}
+
+// 实例类型
+enum InstanceKind {
+  INSTANCE_KIND_UNSPECIFIED = 0;
+  INSTANCE_KIND_GAME_MOD = 1;
+  INSTANCE_KIND_GUI = 2;
+  INSTANCE_KIND_EXTERNAL_CLIENT = 3;
+  INSTANCE_KIND_OBSERVER = 4;
+}
+
+// 客户端角色
+enum ClientRole {
+  CLIENT_ROLE_UNSPECIFIED = 0;
+  CLIENT_ROLE_AUDIO = 1;
+  CLIENT_ROLE_CONTROLLER = 2;
+  CLIENT_ROLE_OBSERVER = 3;
+}
+
+// Tag 种类
+enum TagKind {
+  TAG_KIND_UNSPECIFIED = 0;
+  TAG_KIND_NORMAL = 1;
+  TAG_KIND_GROWABLE = 2;
+  TAG_KIND_SYSTEM = 3;
+}
+
+// Playlist 种类
+enum PlaylistKind {
+  PLAYLIST_KIND_UNSPECIFIED = 0;
+  PLAYLIST_KIND_USER = 1;
+  PLAYLIST_KIND_SYSTEM = 2;
+  PLAYLIST_KIND_IMPORTED = 3;
+}
+
+// 时序时间戳
+message OmniTimestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}

@@ -15,6 +15,16 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.*" />
+    <PackageReference Include="Google.Protobuf" Version="3.29.*" />
+    <PackageReference Include="Grpc.AspNetCore" Version="2.67.*" />
+    <PackageReference Include="Grpc.Tools" Version="2.69.*">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Protos\**\*.proto" ProtoRoot="Protos" GrpcServices="Both" />
   </ItemGroup>
 
 </Project>

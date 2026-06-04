@@ -3,13 +3,21 @@
 ///
 /// Manages playback instances, active instance selection, queue/history/playlist
 /// state, and all playback control operations.
+/// Now uses proto-generated types from gRPC.
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_client.dart';
 import '../../services/media_control_service.dart';
-import '../../models/node_data.dart';
+import '../../generated/omni_mix_player/models/instance.pb.dart';
+import '../../generated/omni_mix_player/models/track.pb.dart';
+import '../../generated/omni_mix_player/models/album.pb.dart';
+import '../../generated/omni_mix_player/models/tag.pb.dart';
+import '../../generated/omni_mix_player/models/playlist.pb.dart';
+import '../../generated/omni_mix_player/services/playback.pb.dart';
+import '../../generated/omni_mix_player/events/ws_events.pb.dart';
+import '../../generated/omni_mix_player/models/common.pbenum.dart';
 
 class PlaybackStateManager extends ChangeNotifier {
   final ApiClient Function() _getApi;
@@ -28,12 +36,12 @@ class PlaybackStateManager extends ChangeNotifier {
   }
 
   // ── State ──
-  List<PlaybackInstanceInfo> _instances = [];
+  List<InstanceSummary> _instances = [];
   String? _activeInstanceId;
-  List<QueueItemInfo> _activeQueue = [];
-  List<QueueItemInfo> _activeHistory = [];
-  List<QueueItemInfo> _activePlaylist = [];
-  List<PlaylistSourceInfo> _playlistSources = [];
+  List<QueueTrack> _activeQueue = [];
+  List<QueueTrack> _activeHistory = [];
+  List<QueueTrack> _activePlaylist = [];
+  List<PlaylistSourceState> _playlistSources = [];
   bool _loading = false;
   Timer? _pollTimer;
   double _lastVolume = 1.0;
@@ -42,45 +50,97 @@ class PlaybackStateManager extends ChangeNotifier {
   String? _mediaControlInstanceId;
   bool _mediaControlsEnabled = true;
 
+  /// Cached instance capabilities, refreshed in refreshPlayback/loadActiveProfile.
+  final Map<String, InstanceCapabilities> _capabilities = {};
+
+  /// Cached playback status for the active instance.
+  PlaybackStatus? _status;
+
+  // ── Status getters (delegate to cached PlaybackStatus) ──
+
+  PlaybackStatus? get status => _status;
+  String get currentTitle => _status?.title ?? '';
+  String get currentArtist => _status?.artist ?? '';
+  String get currentAlbumId => _status?.albumId ?? '';
+  double get currentDuration => _status?.duration ?? 0.0;
+  double get currentPosition => _status?.position ?? 0.0;
+  bool get isPlaying => _status?.isPlaying ?? false;
+  bool get shuffle => _status?.shuffle ?? false;
+  RepeatMode get repeatMode =>
+      _status?.repeatMode ?? RepeatMode.REPEAT_MODE_NONE;
+  double get statusVolume => _status?.volume ?? 1.0;
+
+  // ── Capability helpers ──
+
+  /// Whether the active instance supports server-controlled playback.
+  bool get canControlActiveInstance {
+    final id = _activeInstanceId;
+    if (id == null) return false;
+    return _capabilities[id]?.serverControlledPlayback == true;
+  }
+
+  /// Check if a specific instance can be controlled (playback, queue, etc.).
+  bool canControlInstance(String instanceId) {
+    return _capabilities[instanceId]?.serverControlledPlayback == true;
+  }
+
+  bool get canManageActiveLibrary {
+    final id = _activeInstanceId;
+    if (id == null) return false;
+    return canManageInstanceLibrary(id);
+  }
+
+  bool canManageInstanceLibrary(String instanceId) {
+    final caps = _capabilities[instanceId];
+    return caps?.serverControlledPlayback == true ||
+        caps?.playlistManagement == true;
+  }
+
+  /// Whether the active instance supports a specific capability.
+  bool hasCapability(bool Function(InstanceCapabilities c) check) {
+    final id = _activeInstanceId;
+    if (id == null) return false;
+    final caps = _capabilities[id];
+    if (caps == null) return false;
+    return check(caps);
+  }
+
+  /// Whether the instance at [instanceId] can be used for media controls.
+  bool _canMediaControl(String instanceId) {
+    if (!_mediaControlsEnabled) return false;
+    if (_mediaControlInstanceId != instanceId) return false;
+    final instance = _instances.where((i) => i.id == instanceId).firstOrNull;
+    return instance != null &&
+        instance.isOnline &&
+        canControlInstance(instanceId);
+  }
+
   // Getters
-  List<PlaybackInstanceInfo> get instances => _instances;
+  List<InstanceSummary> get instances => _instances;
   String? get activeInstanceId => _activeInstanceId;
-  List<QueueItemInfo> get activeQueue => _activeQueue;
-  List<QueueItemInfo> get activeHistory => _activeHistory;
-  List<QueueItemInfo> get activePlaylist => _activePlaylist;
-  List<PlaylistSourceInfo> get playlistSources => _playlistSources;
+  List<QueueTrack> get activeQueue => _activeQueue;
+  List<QueueTrack> get activeHistory => _activeHistory;
+  List<QueueTrack> get activePlaylist => _activePlaylist;
+  List<PlaylistSourceState> get playlistSources => _playlistSources;
   bool get loading => _loading;
   double get lastVolume => _lastVolume;
   double get lastTargetLatency => _lastTargetLatency;
   int get instanceCount => _instances.length;
   int get attachedAudioClientCount =>
-      _instances.where((i) => i.attached).length;
+      _instances.where((i) => i.isOnline).length;
+
   Set<String> get backendInstanceIds => _backendInstanceIds;
   bool get mediaControlsEnabled => _mediaControlsEnabled;
 
   ApiClient get api => _getApi();
 
-  PlaybackInstanceInfo? get activeInstance {
+  InstanceSummary? get activeInstance {
     final id = _activeInstanceId;
     if (id == null) return _instances.isNotEmpty ? _instances.first : null;
     for (final instance in _instances) {
       if (instance.id == id) return instance;
     }
     return _instances.isNotEmpty ? _instances.first : null;
-  }
-
-  bool get canControlActiveInstance {
-    if (activeInstance?.isServerManaged == true) return true;
-    if (_activeInstanceId != null) {
-      final inst = _instances
-          .where((i) => i.id == _activeInstanceId)
-          .firstOrNull;
-      if (inst != null && inst.isServerManaged) return true;
-    }
-    if (_activeInstanceId == null) {
-      if (_instances.any((i) => i.isServerManaged)) return true;
-    }
-    return false;
   }
 
   bool isInstanceOnline(String instanceId) =>
@@ -115,83 +175,87 @@ class PlaybackStateManager extends ChangeNotifier {
   Future<void> loadActiveProfile() async {
     if (_activeInstanceId == null) return;
     try {
-      final profile = await api.getActiveProfile();
-      if (profile.isEmpty) return;
-      final queues = profile['Queues'] as List?;
-      if (queues == null || queues.isEmpty) return;
-      final activeId = profile['ActiveQueueId'] as String? ?? '';
-      final active = activeId.isNotEmpty
-          ? (queues.cast<Map<String, dynamic>>().firstWhere(
-              (q) => q['Id'] == activeId,
-              orElse: () => queues.first as Map<String, dynamic>,
-            ))
-          : queues.first as Map<String, dynamic>;
-      _activeQueue = ((active['SongUuids'] as List?)?.cast<String>() ?? [])
-          .map((u) => QueueItemInfo(uuid: u, title: u))
-          .toList();
-      _activeHistory = ((active['HistoryUuids'] as List?)?.cast<String>() ?? [])
-          .map((u) => QueueItemInfo(uuid: u, title: u))
-          .toList();
-      _playlistSources = (active['PlaylistSources'] as List? ?? []).map((s) {
-        final m = s as Map<String, dynamic>;
-        final uuids = (m['SongUuids'] as List?)?.cast<String>() ?? <String>[];
-        return PlaylistSourceInfo(
-          id: m['Id'] ?? '',
-          name: m['Name'] ?? '',
-          songCount: uuids.length,
-          uuids: uuids,
-        );
-      }).toList();
-      _rebuildActivePlaylistFromSources();
+      final profile = await api.getInstanceProfile(_activeInstanceId!);
+      if (profile == null) return;
+      // Cache capabilities
+      if (profile.hasCapabilities()) {
+        _capabilities[_activeInstanceId!] = profile.capabilities;
+      }
+      _lastVolume = profile.volume;
+      _lastTargetLatency = profile.targetLatency;
+      final pq = profile.playbackQueue;
+      try {
+        _activeQueue = await api.getInstanceQueue(_activeInstanceId!);
+      } catch (_) {
+        _activeQueue = pq.queueUuids
+            .map((u) => QueueTrack()..uuid = u)
+            .toList();
+      }
+      try {
+        _activeHistory = await api.getInstanceHistory(_activeInstanceId!);
+      } catch (_) {
+        _activeHistory = pq.historyUuids
+            .map((u) => QueueTrack()..uuid = u)
+            .toList();
+      }
+      _playlistSources = pq.playlistSources.toList();
+      await _rebuildActivePlaylistFromSources();
       notifyListeners();
     } catch (e) {
       // silently handle
     }
   }
 
-  void _rebuildActivePlaylistFromSources() {
+  Future<void> _rebuildActivePlaylistFromSources() async {
     final seen = <String>{};
-    final merged = <QueueItemInfo>[];
+    final merged = <QueueTrack>[];
     for (final source in _playlistSources) {
-      for (final uuid in source.uuids) {
-        if (seen.add(uuid)) {
-          merged.add(QueueItemInfo(uuid: uuid, title: uuid));
-        }
+      final songs = await _resolveSourceSongs(source);
+      for (final song in songs) {
+        if (song.isExcluded || !seen.add(song.uuid)) continue;
+        merged.add(
+          QueueTrack()
+            ..uuid = song.uuid
+            ..title = song.title
+            ..artist = song.artist
+            ..albumId = song.albumId
+            ..duration = song.duration
+            ..moduleId = song.moduleId
+            ..coverUri = song.coverUri,
+        );
       }
     }
     _activePlaylist = merged;
   }
 
-  Future<void> saveActive() async {
-    if (_activeInstanceId == null) return;
-    try {
-      await api.updateActiveProfile(_buildProfileJson());
-    } catch (e) {
-      // silently handle
+  Future<List<Track>> _resolveSourceSongs(PlaylistSourceState source) async {
+    switch (source.kind) {
+      case PlaylistSourceKind.PLAYLIST_SOURCE_KIND_TAG:
+        return api.getSongs(tagId: source.refId);
+      case PlaylistSourceKind.PLAYLIST_SOURCE_KIND_ALBUM:
+        return api.getSongs(albumId: source.refId);
+      case PlaylistSourceKind.PLAYLIST_SOURCE_KIND_PLAYLIST:
+        return api.getSongs(playlistId: source.refId);
+      case PlaylistSourceKind.PLAYLIST_SOURCE_KIND_TRACK:
+        final track = await api.getSong(source.refId);
+        return track == null || track.isExcluded ? const [] : [track];
+      default:
+        final songs = <Track>[];
+        for (final uuid in source.uuids) {
+          final track = await api.getSong(uuid);
+          if (track != null && !track.isExcluded) songs.add(track);
+        }
+        return songs;
     }
   }
 
-  Map<String, dynamic> _buildProfileJson() {
-    return {
-      'ActiveQueueId': 'default',
-      'Volume': activeInstance?.volume ?? 1.0,
-      'Queues': [
-        {
-          'Id': 'default',
-          'Name': 'Default',
-          'PlaylistSources': _playlistSources
-              .map((s) => {'Id': s.id, 'Name': s.name, 'SongUuids': s.uuids})
-              .toList(),
-          'SongUuids': _activeQueue.map((q) => q.uuid).toList(),
-          'HistoryUuids': _activeHistory.map((q) => q.uuid).toList(),
-          'Index': -1,
-          'HistoryPosition': -1,
-          'PlaylistPosition': 0,
-          'Shuffle': activeInstance?.shuffle ?? false,
-          'RepeatMode': activeInstance?.repeatMode ?? 'none',
-        },
-      ],
-    };
+  Future<void> saveActive() async {
+    if (_activeInstanceId == null) return;
+    try {
+      await api.setPlaylistSources(_activeInstanceId!, _playlistSources);
+    } catch (e) {
+      // silently handle
+    }
   }
 
   // ── Refresh ──
@@ -204,13 +268,10 @@ class PlaybackStateManager extends ChangeNotifier {
 
       var nextActiveId = _activeInstanceId;
       if (nextActiveId == null || !list.any((i) => i.id == nextActiveId)) {
-        final attached = list.where((i) => i.attached).toList();
-        final serverManaged = attached.where((i) => i.isServerManaged).toList();
+        final online = list.where((i) => i.isOnline).toList();
         nextActiveId =
-            (serverManaged.isNotEmpty
-                    ? serverManaged.first
-                    : attached.isNotEmpty
-                    ? attached.first
+            (online.isNotEmpty
+                    ? online.first
                     : list.isNotEmpty
                     ? list.first
                     : null)
@@ -222,7 +283,10 @@ class PlaybackStateManager extends ChangeNotifier {
         }
       }
 
-      _backendInstanceIds = list.map((i) => i.id).toSet();
+      _backendInstanceIds = list
+          .where((i) => i.isOnline)
+          .map((i) => i.id)
+          .toSet();
       _instances = list;
       _syncMediaControls();
 
@@ -232,8 +296,20 @@ class PlaybackStateManager extends ChangeNotifier {
 
       final active = activeInstance;
       if (active != null) {
-        _lastVolume = active.volume;
-        _lastTargetLatency = active.targetLatency;
+        try {
+          final prof = await api.getInstanceProfile(active.id);
+          if (prof != null) {
+            _lastVolume = prof.volume;
+            _lastTargetLatency = prof.targetLatency;
+            if (prof.hasCapabilities()) {
+              _capabilities[active.id] = prof.capabilities;
+            }
+          }
+          _status = await api.getPlaybackStatus(active.id);
+          if (_status != null) {
+            _lastVolume = _status!.volume;
+          }
+        } catch (_) {}
         SharedPreferences.getInstance()
             .then((prefs) {
               prefs.setDouble('last_volume', _lastVolume);
@@ -258,10 +334,10 @@ class PlaybackStateManager extends ChangeNotifier {
     }
 
     final eligible = _instances
-        .where((i) => i.attached && i.isServerManaged)
+        .where((i) => i.isOnline && canControlInstance(i.id))
         .toList(growable: false);
 
-    PlaybackInstanceInfo? controlled;
+    InstanceSummary? controlled;
     final currentId = _mediaControlInstanceId;
     if (currentId != null) {
       controlled = eligible.where((i) => i.id == currentId).firstOrNull;
@@ -272,7 +348,11 @@ class PlaybackStateManager extends ChangeNotifier {
 
     final snapshot = controlled == null
         ? null
-        : MediaControlSnapshot(instance: controlled, baseUrl: api.baseUrl);
+        : MediaControlSnapshot(
+            instance: controlled,
+            baseUrl: api.baseUrl,
+            canSeek: canControlInstance(controlled.id),
+          );
     _publishMediaControlSnapshot(snapshot);
   }
 
@@ -283,13 +363,6 @@ class PlaybackStateManager extends ChangeNotifier {
           .then((_) => _mediaControlService.update(snapshot))
           .catchError((_) {}),
     );
-  }
-
-  bool _canMediaControl(String instanceId) {
-    if (!_mediaControlsEnabled) return false;
-    if (_mediaControlInstanceId != instanceId) return false;
-    final instance = _instances.where((i) => i.id == instanceId).firstOrNull;
-    return instance != null && instance.attached && instance.isServerManaged;
   }
 
   Future<void> _mediaPlay(String instanceId) async {
@@ -322,6 +395,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> _mediaSeek(String instanceId, Duration position) async {
     if (!_canMediaControl(instanceId)) return;
+    if (!canControlInstance(instanceId)) return;
     await api.seek(instanceId, position.inMilliseconds / 1000.0);
     await refreshPlayback();
   }
@@ -330,53 +404,53 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> togglePlayback() async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.toggle(instance.id);
     await refreshPlayback();
   }
 
   Future<void> nextTrack() async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.next(instance.id);
     await refreshPlayback();
   }
 
   Future<void> previousTrack() async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.previous(instance.id);
     await refreshPlayback();
   }
 
   Future<void> seekActive(double position) async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.seek(instance.id, position);
     await refreshPlayback();
   }
 
   Future<void> setVolumeActive(double volume) async {
     final instance = activeInstance;
+    if (instance == null || !canControlInstance(instance.id)) return;
     _lastVolume = volume;
     notifyListeners();
-    if (instance == null) return;
     await api.setVolume(instance.id, volume);
     await refreshPlayback();
   }
 
   Future<void> setTargetLatencyActive(double latency) async {
     final instance = activeInstance;
+    if (instance == null || !canControlInstance(instance.id)) return;
     _lastTargetLatency = latency;
     notifyListeners();
-    if (instance == null) return;
     await api.setLatency(instance.id, latency);
     await refreshPlayback();
   }
 
   Future<void> playSongOnActive(String uuid) async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.play(instance.id, uuid: uuid);
     await refreshPlayback();
   }
@@ -384,147 +458,176 @@ class PlaybackStateManager extends ChangeNotifier {
   // ── Queue management ──
 
   Future<void> addSongToActiveQueue(String uuid) async {
-    if (_activeInstanceId == null) return;
-    _activeQueue.add(QueueItemInfo(uuid: uuid, title: uuid));
-    notifyListeners();
-    saveActive();
+    final instance = activeInstance;
+    if (instance == null || !canControlInstance(instance.id)) return;
+    await api.addToQueue(instance.id, uuid);
+    await refreshPlayback();
   }
 
   Future<void> removeQueueItem(int index) async {
-    if (_activeInstanceId == null || index < 0 || index >= _activeQueue.length)
-      return;
-    _activeQueue.removeAt(index);
-    notifyListeners();
-    saveActive();
+    final instance = activeInstance;
+    if (instance == null || !canControlInstance(instance.id)) return;
+    if (index < 0 || index >= _activeQueue.length) return;
+    await api.removeQueueAt(instance.id, index);
+    await refreshPlayback();
   }
 
   Future<void> clearActiveQueue() async {
-    if (_activeInstanceId == null) return;
-    _activeQueue.clear();
-    notifyListeners();
-    saveActive();
+    final instance = activeInstance;
+    if (instance == null || !canControlInstance(instance.id)) return;
+    await api.clearQueue(instance.id);
+    await refreshPlayback();
   }
 
   Future<void> clearActiveHistory() async {
-    if (_activeInstanceId == null) return;
-    _activeHistory.clear();
-    notifyListeners();
-    saveActive();
+    final instance = activeInstance;
+    if (instance == null || !canControlInstance(instance.id)) return;
+    await api.clearHistory(instance.id);
+    await refreshPlayback();
   }
 
   Future<void> moveQueueItem(int from, int to) async {
-    if (_activeInstanceId == null) return;
-    if (from >= 0 &&
-        from < _activeQueue.length &&
-        to >= 0 &&
-        to < _activeQueue.length) {
-      final item = _activeQueue.removeAt(from);
-      _activeQueue.insert(to, item);
-      notifyListeners();
-      saveActive();
-    }
+    final instance = activeInstance;
+    if (instance == null || !canControlInstance(instance.id)) return;
+    if (from < 0 || from >= _activeQueue.length) return;
+    if (to < 0 || to >= _activeQueue.length) return;
+    await api.moveQueue(instance.id, from, to);
+    await refreshPlayback();
   }
 
   Future<void> removeHistoryItem(int index) async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.removeHistoryAt(instance.id, index);
     await refreshPlayback();
   }
 
   Future<void> moveHistoryItem(int from, int to) async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.moveHistory(instance.id, from, to);
     await refreshPlayback();
   }
 
   Future<void> addSongNextOnActive(String uuid) async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.insertQueueAt(instance.id, uuids: [uuid], index: 0);
     await refreshPlayback();
   }
 
   Future<void> setSongExcluded(String uuid, bool excluded) async {
-    if (!canControlActiveInstance) return;
-    await api.setExcluded(uuid, excluded);
+    if (!canManageActiveLibrary) return;
+    await api.setSongExcluded(uuid, excluded);
     await refreshPlayback();
   }
 
   Future<void> setShuffle(bool enabled) async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.setShuffle(instance.id, enabled);
     await refreshPlayback();
   }
 
   Future<void> setRepeatMode(String mode) async {
     final instance = activeInstance;
-    if (instance == null || !instance.isServerManaged) return;
+    if (instance == null || !canControlInstance(instance.id)) return;
     await api.setRepeatMode(instance.id, mode);
     await refreshPlayback();
   }
 
   // ── Playlist sources ──
 
-  Future<void> addTagToActivePlaylist(TagInfo tag) async {
-    if (_activeInstanceId == null) return;
+  Future<void> addTagToActivePlaylist(Tag tag) async {
+    if (_activeInstanceId == null || !canManageActiveLibrary) return;
     final songs = await api.getSongs(tagId: tag.id);
     final uuids = songs.map((s) => s.uuid).toList();
     _playlistSources.removeWhere((s) => s.id == 'tag_${tag.id}');
     _playlistSources.add(
-      PlaylistSourceInfo(
-        id: 'tag_${tag.id}',
-        name: tag.name,
-        songCount: uuids.length,
-        uuids: uuids,
-      ),
+      PlaylistSourceState()
+        ..id = 'tag_${tag.id}'
+        ..name = tag.name
+        ..kind = PlaylistSourceKind.PLAYLIST_SOURCE_KIND_TAG
+        ..refId = tag.id
+        ..uuids.addAll(uuids),
     );
     _mergeSongsToPlaylist(songs);
     notifyListeners();
     saveActive();
   }
 
-  Future<void> addAlbumToActivePlaylist(AlbumInfo album) async {
-    if (_activeInstanceId == null) return;
+  Future<void> addAlbumToActivePlaylist(Album album) async {
+    if (_activeInstanceId == null || !canManageActiveLibrary) return;
     final songs = await api.getSongs(albumId: album.id);
     final uuids = songs.map((s) => s.uuid).toList();
     _playlistSources.removeWhere((s) => s.id == 'album_${album.id}');
     _playlistSources.add(
-      PlaylistSourceInfo(
-        id: 'album_${album.id}',
-        name: album.name,
-        songCount: uuids.length,
-        uuids: uuids,
-      ),
+      PlaylistSourceState()
+        ..id = 'album_${album.id}'
+        ..name = album.title
+        ..kind = PlaylistSourceKind.PLAYLIST_SOURCE_KIND_ALBUM
+        ..refId = album.id
+        ..uuids.addAll(uuids),
     );
     _mergeSongsToPlaylist(songs);
+    notifyListeners();
+    saveActive();
+  }
+
+  Future<void> addPlaylistToActivePlaylist(Playlist playlist) async {
+    if (_activeInstanceId == null || !canManageActiveLibrary) return;
+    final songs = await api.getSongs(playlistId: playlist.id);
+    final uuids = songs.map((s) => s.uuid).toList();
+    _playlistSources.removeWhere((s) => s.id == 'playlist_${playlist.id}');
+    _playlistSources.add(
+      PlaylistSourceState()
+        ..id = 'playlist_${playlist.id}'
+        ..name = playlist.name
+        ..kind = PlaylistSourceKind.PLAYLIST_SOURCE_KIND_PLAYLIST
+        ..refId = playlist.id
+        ..uuids.addAll(uuids),
+    );
+    _mergeSongsToPlaylist(songs);
+    notifyListeners();
+    saveActive();
+  }
+
+  Future<void> addTrackToActivePlaylist(Track track) async {
+    if (_activeInstanceId == null || !canManageActiveLibrary) return;
+    _playlistSources.removeWhere((s) => s.id == 'track_${track.uuid}');
+    _playlistSources.add(
+      PlaylistSourceState()
+        ..id = 'track_${track.uuid}'
+        ..name = track.title
+        ..kind = PlaylistSourceKind.PLAYLIST_SOURCE_KIND_TRACK
+        ..refId = track.uuid
+        ..uuids.add(track.uuid),
+    );
+    _mergeSongsToPlaylist([track]);
     notifyListeners();
     saveActive();
   }
 
   Future<void> removePlaylistSource(String sourceId) async {
-    if (_activeInstanceId == null) return;
+    if (_activeInstanceId == null || !canManageActiveLibrary) return;
     _playlistSources.removeWhere((s) => s.id == sourceId);
-    _rebuildActivePlaylistFromSources();
+    await _rebuildActivePlaylistFromSources();
     notifyListeners();
     saveActive();
   }
 
-  void _mergeSongsToPlaylist(List<SongInfo> songs) {
+  void _mergeSongsToPlaylist(List<Track> songs) {
     final existingUuids = _activePlaylist.map((q) => q.uuid).toSet();
     for (final song in songs) {
-      if (existingUuids.add(song.uuid)) {
+      if (!song.isExcluded && existingUuids.add(song.uuid)) {
         _activePlaylist.add(
-          QueueItemInfo(
-            uuid: song.uuid,
-            title: song.title,
-            artist: song.artist,
-            albumId: song.albumId,
-            duration: song.duration,
-            moduleId: song.moduleId,
-          ),
+          QueueTrack()
+            ..uuid = song.uuid
+            ..title = song.title
+            ..artist = song.artist
+            ..albumId = song.albumId
+            ..duration = song.duration
+            ..moduleId = song.moduleId,
         );
       }
     }
@@ -545,42 +648,37 @@ class PlaybackStateManager extends ChangeNotifier {
     _pollTimer = null;
   }
 
-  // ── Position event ──
+  // ── Proto event handlers ──
 
-  void applyPositionEvent(dynamic data) {
-    if (data is! Map<String, dynamic>) return;
-    final instanceId = data['instanceId'] as String?;
-    final position = (data['position'] ?? 0.0).toDouble();
-    var changed = false;
-    _instances = _instances.map((instance) {
-      if (instance.id != instanceId) return instance;
-      changed = true;
-      return PlaybackInstanceInfo(
-        id: instance.id,
-        clientId: instance.clientId,
-        role: instance.role,
-        mode: instance.mode,
-        attached: instance.attached,
-        isPlaying: instance.isPlaying,
-        position: position,
-        volume: instance.volume,
-        targetLatency: instance.targetLatency,
-        queueCount: instance.queueCount,
-        queueIndex: instance.queueIndex,
-        historyCount: instance.historyCount,
-        sampleRate: instance.sampleRate,
-        channels: instance.channels,
-        shuffle: instance.shuffle,
-        repeatMode: instance.repeatMode,
-        currentTrack: instance.currentTrack,
-        modId: instance.modId,
-        gameName: instance.gameName,
-      );
-    }).toList();
-    if (changed) {
-      _syncMediaControls();
-      notifyListeners();
-    }
+  void applyTrackChanged(String instanceId, TrackChangedEvent e) {
+    if (_activeInstanceId != instanceId) return;
+    final next = (_status ?? PlaybackStatus()).deepCopy()
+      ..trackUuid = e.uuid
+      ..title = e.title
+      ..artist = e.artist
+      ..albumId = e.albumId
+      ..duration = e.duration
+      ..position = 0;
+    _status = next;
+    _syncMediaControls();
+    notifyListeners();
+  }
+
+  void applyStateChanged(String instanceId, int state) {
+    if (_activeInstanceId != instanceId) return;
+    final next = (_status ?? PlaybackStatus()).deepCopy()
+      ..isPlaying = state == 1;
+    _status = next;
+    _syncMediaControls();
+    notifyListeners();
+  }
+
+  void applyPositionChanged(String instanceId, double position) {
+    if (_activeInstanceId != instanceId) return;
+    final next = (_status ?? PlaybackStatus()).deepCopy()..position = position;
+    _status = next;
+    _syncMediaControls();
+    notifyListeners();
   }
 
   // ── Clear state (on disconnect) ──
@@ -593,6 +691,7 @@ class PlaybackStateManager extends ChangeNotifier {
     _activeHistory = [];
     _activePlaylist = [];
     _playlistSources = [];
+    _status = null;
     _backendInstanceIds.clear();
     _mediaControlInstanceId = null;
     _publishMediaControlSnapshot(null);

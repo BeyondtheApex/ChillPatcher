@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using OmniMixPlayer.Backend.Storage;
 
 namespace OmniMixPlayer.Backend.Http
 {
@@ -29,6 +30,13 @@ namespace OmniMixPlayer.Backend.Http
             {
                 if (File.Exists(_configPath))
                 {
+                    if (!StorageVersion.JsonHasCurrentVersion(_configPath))
+                    {
+                        File.Delete(_configPath);
+                        _config.Clear();
+                        return;
+                    }
+
                     var json = File.ReadAllText(_configPath);
                     var doc = JsonDocument.Parse(json);
                     _config = new Dictionary<string, JsonElement>();
@@ -50,6 +58,7 @@ namespace OmniMixPlayer.Backend.Http
                 {
                     dict[kv.Key] = ConvertElement(kv.Value);
                 }
+                dict[StorageVersion.JsonKey] = StorageVersion.Current;
                 var json = JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true });
                 var dir = Path.GetDirectoryName(_configPath);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))

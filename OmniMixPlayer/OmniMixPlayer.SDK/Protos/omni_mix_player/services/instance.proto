@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/instance.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Services";
+
+// 实例管理服务 — 平台级别
+service InstanceService {
+  rpc Connect(InstanceConnectRequest) returns (InstanceConnectResponse);
+  rpc Heartbeat(InstanceHeartbeatRequest) returns (InstanceHeartbeatResponse);
+  rpc Disconnect(InstanceDisconnectRequest) returns (InstanceDisconnectResponse);
+  rpc DeleteInstance(DeleteInstanceRequest) returns (DeleteInstanceResponse);
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
+  rpc GetProfile(GetProfileRequest) returns (InstanceProfile);
+  rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+  rpc GetStatus(GetInstanceStatusRequest) returns (PlaybackStatus);
+  rpc ArchiveInstance(ArchiveInstanceRequest) returns (ArchiveInstanceResponse);
+  rpc ListArchives(ListArchivesRequest) returns (ListArchivesResponse);
+  rpc GetArchive(GetArchiveRequest) returns (InstanceProfile);
+  rpc DeleteArchive(DeleteArchiveRequest) returns (DeleteArchiveResponse);
+  rpc InheritFromArchive(InheritFromArchiveRequest) returns (InheritFromArchiveResponse);
+}
+
+message DeleteInstanceRequest {
+  string instance_id = 1;
+}
+
+message DeleteInstanceResponse {
+  bool deleted = 1;
+}
+
+message ListInstancesRequest {}
+
+message GetProfileRequest {
+  string instance_id = 1;
+}
+
+message UpdateProfileRequest {
+  string instance_id = 1;
+  InstanceProfile profile = 2;
+}
+
+message UpdateProfileResponse {
+  bool saved = 1;
+}
+
+message GetInstanceStatusRequest {
+  string instance_id = 1;
+}
+
+message ArchiveInstanceRequest {
+  string instance_id = 1;
+  string label = 2;
+}
+
+message ArchiveInstanceResponse {
+  bool archived = 1;
+  InstanceProfile archive = 2;
+}
+
+message ListArchivesRequest {}
+
+message ListArchivesResponse {
+  repeated InstanceProfile archives = 1;
+}
+
+message GetArchiveRequest {
+  string archive_id = 1;
+}
+
+message DeleteArchiveRequest {
+  string archive_id = 1;
+}
+
+message DeleteArchiveResponse {
+  bool deleted = 1;
+}
+
+message InheritFromArchiveRequest {
+  string new_instance_id = 1;
+  string archive_id = 2;
+}
+
+message InheritFromArchiveResponse {
+  bool inherited = 1;
+  InstanceProfile profile = 2;
+}

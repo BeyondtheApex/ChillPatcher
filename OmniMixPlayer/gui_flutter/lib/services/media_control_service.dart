@@ -1,4 +1,4 @@
-import '../models/node_data.dart';
+import '../generated/omni_mix_player/models/instance.pb.dart';
 import 'media_control/media_control_service_stub.dart'
     if (dart.library.io) 'media_control/media_control_service_win.dart'
     if (dart.library.js_interop) 'media_control/media_control_service_web.dart'
@@ -25,10 +25,15 @@ class MediaControlCallbacks {
 }
 
 class MediaControlSnapshot {
-  final PlaybackInstanceInfo instance;
+  final InstanceSummary instance;
   final String baseUrl;
+  final bool canSeek;
 
-  const MediaControlSnapshot({required this.instance, required this.baseUrl});
+  const MediaControlSnapshot({
+    required this.instance,
+    required this.baseUrl,
+    this.canSeek = false,
+  });
 }
 
 abstract class MediaControlService {

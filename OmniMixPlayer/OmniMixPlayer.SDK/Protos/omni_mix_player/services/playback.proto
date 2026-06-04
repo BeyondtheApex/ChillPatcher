@@ -1,0 +1,310 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/common.proto";
+import "omni_mix_player/models/instance.proto";
+import "omni_mix_player/models/track.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Services";
+
+// 播放控制服务 — 实例级别
+service PlaybackService {
+  // 播放控制
+  rpc Play(PlayRequest) returns (PlayResponse);
+  rpc Pause(PauseRequest) returns (PauseResponse);
+  rpc Resume(ResumeRequest) returns (ResumeResponse);
+  rpc Toggle(ToggleRequest) returns (ToggleResponse);
+  rpc Next(NextRequest) returns (NextResponse);
+  rpc Prev(PrevRequest) returns (PrevResponse);
+  rpc Seek(SeekRequest) returns (SeekResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+
+  // 音量 / 延迟
+  rpc SetVolume(SetVolumeRequest) returns (SetVolumeResponse);
+  rpc GetVolume(GetVolumeRequest) returns (GetVolumeResponse);
+  rpc SetTargetLatency(SetTargetLatencyRequest) returns (SetTargetLatencyResponse);
+  rpc GetTargetLatency(GetTargetLatencyRequest) returns (GetTargetLatencyResponse);
+
+  // 随机 / 重复
+  rpc SetShuffle(SetShuffleRequest) returns (SetShuffleResponse);
+  rpc SetRepeatMode(SetRepeatModeRequest) returns (SetRepeatModeResponse);
+
+  // 队列管理
+  rpc GetQueue(GetQueueRequest) returns (GetQueueResponse);
+  rpc AddToQueue(AddToQueueRequest) returns (AddToQueueResponse);
+  rpc InsertIntoQueue(InsertIntoQueueRequest) returns (InsertIntoQueueResponse);
+  rpc SetQueue(SetQueueRequest) returns (SetQueueResponse);
+  rpc RemoveFromQueue(RemoveFromQueueRequest) returns (RemoveFromQueueResponse);
+  rpc MoveInQueue(MoveInQueueRequest) returns (MoveInQueueResponse);
+  rpc ClearQueue(ClearQueueRequest) returns (ClearQueueResponse);
+
+  // 历史
+  rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
+  rpc RemoveFromHistory(RemoveFromHistoryRequest) returns (RemoveFromHistoryResponse);
+  rpc MoveInHistory(MoveInHistoryRequest) returns (MoveInHistoryResponse);
+  rpc ClearHistory(ClearHistoryRequest) returns (ClearHistoryResponse);
+
+  // 歌单源
+  rpc GetPlaylistSources(GetPlaylistSourcesRequest) returns (GetPlaylistSourcesResponse);
+  rpc SetPlaylistSources(SetPlaylistSourcesRequest) returns (SetPlaylistSourcesResponse);
+
+  // 状态
+  rpc GetStatus(GetStatusRequest) returns (PlaybackStatus);
+
+  // 均衡器
+  rpc GetEqualizer(GetEqualizerRequest) returns (EqualizerState);
+  rpc SetEqualizer(SetEqualizerRequest) returns (SetEqualizerResponse);
+}
+
+// ── 请求/响应 ──
+
+message PlayRequest {
+  string instance_id = 1;
+  string uuid = 2; // optional, specific track to play
+}
+
+message PlayResponse {}
+
+message PauseRequest {
+  string instance_id = 1;
+}
+
+message PauseResponse {}
+
+message ResumeRequest {
+  string instance_id = 1;
+}
+
+message ResumeResponse {}
+
+message ToggleRequest {
+  string instance_id = 1;
+}
+
+message ToggleResponse {}
+
+message NextRequest {
+  string instance_id = 1;
+}
+
+message NextResponse {}
+
+message PrevRequest {
+  string instance_id = 1;
+}
+
+message PrevResponse {}
+
+message SeekRequest {
+  string instance_id = 1;
+  float position = 2;
+}
+
+message SeekResponse {}
+
+message StopRequest {
+  string instance_id = 1;
+}
+
+message StopResponse {}
+
+message SetVolumeRequest {
+  string instance_id = 1;
+  float volume = 2;
+}
+
+message SetVolumeResponse {
+  bool saved = 1;
+}
+
+message GetVolumeRequest {
+  string instance_id = 1;
+}
+
+message GetVolumeResponse {
+  float volume = 1;
+}
+
+message SetTargetLatencyRequest {
+  string instance_id = 1;
+  float latency = 2;
+}
+
+message SetTargetLatencyResponse {
+  bool saved = 1;
+}
+
+message GetTargetLatencyRequest {
+  string instance_id = 1;
+}
+
+message GetTargetLatencyResponse {
+  float latency = 1;
+}
+
+message SetShuffleRequest {
+  string instance_id = 1;
+  bool enabled = 2;
+}
+
+message SetShuffleResponse {}
+
+message SetRepeatModeRequest {
+  string instance_id = 1;
+  RepeatMode mode = 2;
+}
+
+message SetRepeatModeResponse {}
+
+// ── 队列 ──
+
+message QueueTrack {
+  int32 index = 1;
+  string uuid = 2;
+  string title = 3;
+  string artist = 4;
+  string album_id = 5;
+  float duration = 6;
+  string module_id = 7;
+  string cover_uri = 8;
+}
+
+message GetQueueRequest {
+  string instance_id = 1;
+}
+
+message GetQueueResponse {
+  repeated QueueTrack queue = 1;
+}
+
+message AddToQueueRequest {
+  string instance_id = 1;
+  string uuid = 2;
+}
+
+message AddToQueueResponse {}
+
+message InsertIntoQueueRequest {
+  string instance_id = 1;
+  repeated string uuids = 2;
+  int32 index = 3;
+}
+
+message InsertIntoQueueResponse {}
+
+message SetQueueRequest {
+  string instance_id = 1;
+  repeated string uuids = 2;
+}
+
+message SetQueueResponse {}
+
+message RemoveFromQueueRequest {
+  string instance_id = 1;
+  oneof target {
+    int32 index = 2;
+    string uuid = 3;
+  }
+}
+
+message RemoveFromQueueResponse {}
+
+message MoveInQueueRequest {
+  string instance_id = 1;
+  int32 from_index = 2;
+  int32 to_index = 3;
+}
+
+message MoveInQueueResponse {}
+
+message ClearQueueRequest {
+  string instance_id = 1;
+}
+
+message ClearQueueResponse {}
+
+// ── 历史 ──
+
+message GetHistoryRequest {
+  string instance_id = 1;
+}
+
+message GetHistoryResponse {
+  repeated QueueTrack history = 1;
+}
+
+message RemoveFromHistoryRequest {
+  string instance_id = 1;
+  int32 index = 2;
+}
+
+message RemoveFromHistoryResponse {}
+
+message MoveInHistoryRequest {
+  string instance_id = 1;
+  int32 from_index = 2;
+  int32 to_index = 3;
+}
+
+message MoveInHistoryResponse {}
+
+message ClearHistoryRequest {
+  string instance_id = 1;
+}
+
+message ClearHistoryResponse {}
+
+// ── 歌单源 ──
+
+message PlaylistSourceInfo {
+  string id = 1;
+  string name = 2;
+  int32 song_count = 3;
+  PlaylistSourceKind kind = 4;
+  string ref_id = 5;
+}
+
+message PlaylistSourceSpec {
+  string id = 1;
+  string name = 2;
+  repeated string uuids = 3;
+  PlaylistSourceKind kind = 4;
+  string ref_id = 5;
+}
+
+message GetPlaylistSourcesRequest {
+  string instance_id = 1;
+}
+
+message GetPlaylistSourcesResponse {
+  repeated PlaylistSourceInfo sources = 1;
+}
+
+message SetPlaylistSourcesRequest {
+  string instance_id = 1;
+  repeated PlaylistSourceSpec sources = 2;
+}
+
+message SetPlaylistSourcesResponse {}
+
+// ── 状态 ──
+
+message GetStatusRequest {
+  string instance_id = 1;
+}
+
+// ── 均衡器 ──
+
+message GetEqualizerRequest {
+  string instance_id = 1;
+}
+
+message SetEqualizerRequest {
+  string instance_id = 1;
+  EqualizerState state = 2;
+}
+
+message SetEqualizerResponse {
+  bool saved = 1;
+}

@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/common.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Models";
+
+// 实例能力声明
+message InstanceCapabilities {
+  bool server_controlled_playback = 1;
+  bool client_managed_playback = 2;
+  bool queue_management = 3;
+  bool playlist_management = 4;
+  bool multiple_playlists = 5;
+  bool tag_filtering = 6;
+  bool unlimited_tags = 7;
+  bool album_filtering = 8;
+  bool shuffle = 9;
+  bool repeat = 10;
+  bool seek = 11;
+  bool volume_control = 12;
+  bool equalizer = 13;
+
+  // 限制（null 表示无限制，proto3 用 0 表示未设置 / wrapper types）
+  optional int32 max_imported_playlists = 20;
+  optional int32 max_tags = 21;
+  optional int32 max_playlist_entries = 22;
+}
+
+// 均衡器点位
+message EqualizerPoint {
+  string id = 1;
+  float frequency = 2;
+  float gain_db = 3;
+  float q = 4;
+  EqualizerFilterType type = 5;
+}
+
+// 均衡器状态
+message EqualizerState {
+  bool enabled = 1;
+  float global_gain_db = 2;
+  bool soft_clip_enabled = 3;
+  repeated EqualizerPoint points = 4;
+}
+
+// 队列信息
+message QueueInfo {
+  string id = 1;
+  string name = 2;
+  int32 song_count = 3;
+}
+
+enum PlaylistSourceKind {
+  PLAYLIST_SOURCE_KIND_UNSPECIFIED = 0;
+  PLAYLIST_SOURCE_KIND_TAG = 1;
+  PLAYLIST_SOURCE_KIND_ALBUM = 2;
+  PLAYLIST_SOURCE_KIND_PLAYLIST = 3;
+  PLAYLIST_SOURCE_KIND_TRACK = 4;
+}
+
+// Persisted playlist source used by an instance queue.
+message PlaylistSourceState {
+  string id = 1;
+  string name = 2;
+  repeated string uuids = 3;
+  PlaylistSourceKind kind = 4;
+  string ref_id = 5;
+}
+
+// Persisted runtime queue state. Track details remain in LibraryService; this
+// stores only stable IDs so the queue survives reconnects and backend restarts.
+message PlaybackQueueState {
+  string active_queue_id = 1;
+  repeated string queue_uuids = 2;
+  repeated string history_uuids = 3;
+  repeated PlaylistSourceState playlist_sources = 4;
+  bool shuffle = 5;
+  RepeatMode repeat_mode = 6;
+}
+
+// 实例配置 — 统一持久化
+message InstanceProfile {
+  string id = 1;
+  string display_name = 2;
+  InstanceKind kind = 3;
+  string mod_id = 4;
+  string game_name = 5;
+
+  PlaybackModeType mode = 6;
+  InstanceCapabilities capabilities = 7;
+
+  float volume = 8;
+  float target_latency = 9;
+  EqualizerState equalizer = 10;
+
+  string active_queue_id = 11;
+  repeated QueueInfo queues = 12;
+
+  repeated string imported_playlist_ids = 13;
+  repeated string pinned_tag_ids = 14;
+
+  OmniTimestamp created_at = 15;
+  OmniTimestamp updated_at = 16;
+
+  PlaybackQueueState playback_queue = 17;
+}
+
+// 连接请求
+message InstanceConnectRequest {
+  string client_id = 1;
+  InstanceKind kind = 2;
+  PlaybackModeType mode = 3;
+  InstanceCapabilities capabilities = 4;
+  string mod_id = 5;
+  string game_name = 6;
+  string display_name = 7;
+}
+
+// 连接响应
+message InstanceConnectResponse {
+  string instance_id = 1;
+  bool is_new = 2;
+  InstanceProfile profile = 3;
+}
+
+// 心跳请求
+message InstanceHeartbeatRequest {
+  string instance_id = 1;
+}
+
+message InstanceHeartbeatResponse {
+  bool alive = 1;
+}
+
+// 断开请求
+message InstanceDisconnectRequest {
+  string instance_id = 1;
+}
+
+message InstanceDisconnectResponse {
+  bool disconnected = 1;
+}
+
+// 实例摘要
+message InstanceSummary {
+  string id = 1;
+  string display_name = 2;
+  InstanceKind kind = 3;
+  PlaybackModeType mode = 4;
+  bool is_online = 5;
+  string current_track_uuid = 6;
+  int32 queue_count = 7;
+  OmniTimestamp connected_at = 8;
+  string mod_id = 9;
+  string game_name = 10;
+}
+
+message ListInstancesResponse {
+  repeated InstanceSummary instances = 1;
+}
+
+// 播放状态
+message PlaybackStatus {
+  string track_uuid = 1;
+  string title = 2;
+  string artist = 3;
+  string album_id = 4;
+  float duration = 5;
+  float position = 6;
+  bool is_playing = 7;
+  bool shuffle = 8;
+  RepeatMode repeat_mode = 9;
+  float volume = 10;
+}

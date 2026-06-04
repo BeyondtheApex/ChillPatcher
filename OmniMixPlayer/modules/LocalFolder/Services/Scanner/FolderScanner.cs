@@ -1,26 +1,14 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.Module.LocalFolder;
+using OmniMixPlayer.SDK.Protos.Models;
 
 namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
 {
-    /// <summary>
-    /// 文件夹扫描器
-    /// 
-    /// 目录结构:
-    /// 根目�?
-    /// ├── 歌单目录A/ �?作为歌单
-    /// �?  ├── 散装歌曲.mp3 �?默认专辑 (歌单名称)
-    /// �?  └── 专辑目录/ �?作为专辑
-    /// �?      ├── 歌曲1.mp3
-    /// �?      └── 子目�? �?扫描两层
-    /// �?          └── 歌曲2.mp3
-    /// ├── 歌单目录B/ �?作为歌单
-    /// └── 散装歌曲.mp3 �?移动�?default 歌单文件�?
-    /// </summary>
     public class FolderScanner
     {
         private const string DEFAULT_PLAYLIST_FOLDER = "default";
@@ -57,21 +45,21 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
 
             if (!Directory.Exists(_rootPath))
             {
-                _logger.LogWarning($"扫描目录不存�? {_rootPath}");
+                _logger.LogWarning($"鎵弿鐩綍涓嶅瓨锟? {_rootPath}");
                 return result;
             }
 
-            // 第一步：处理根目录散装文件，移动�?default 文件�?
+            // 绗竴姝ワ細澶勭悊鏍圭洰褰曟暎瑁呮枃浠讹紝绉诲姩锟?default 鏂囦欢锟?
             MoveRootLooseFilesToDefault();
 
-            // 第二步：扫描根目录下的子目录作为歌单
+            // 绗簩姝ワ細鎵弿鏍圭洰褰曚笅鐨勫瓙鐩綍浣滀负姝屽崟
             await ScanPlaylistDirectoriesAsync(result);
 
             return result;
         }
 
         /// <summary>
-        /// 将根目录散装音频文件移动�?default 文件�?
+        /// 灏嗘牴鐩綍鏁ｈ闊抽鏂囦欢绉诲姩锟?default 鏂囦欢锟?
         /// </summary>
         private void MoveRootLooseFilesToDefault()
         {
@@ -80,15 +68,15 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                 return;
 
             var defaultPath = Path.Combine(_rootPath, DEFAULT_PLAYLIST_FOLDER);
-            
-            // 创建 default 文件�?
+
+            // 鍒涘缓 default 鏂囦欢锟?
             if (!Directory.Exists(defaultPath))
             {
                 Directory.CreateDirectory(defaultPath);
-                _logger.LogInformation($"创建 default 歌单文件�? {defaultPath}");
+                _logger.LogInformation($"鍒涘缓 default 姝屽崟鏂囦欢锟? {defaultPath}");
             }
 
-            // 移动文件
+            // 绉诲姩鏂囦欢
             int movedCount = 0;
             foreach (var filePath in looseFiles)
             {
@@ -97,7 +85,7 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                     var fileName = Path.GetFileName(filePath);
                     var destPath = Path.Combine(defaultPath, fileName);
 
-                    // 如果目标文件已存在，添加编号
+                    // 濡傛灉鐩爣鏂囦欢宸插瓨鍦紝娣诲姞缂栧彿
                     if (File.Exists(destPath))
                     {
                         var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
@@ -112,24 +100,23 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
 
                     File.Move(filePath, destPath);
                     movedCount++;
-                    _logger.LogDebug($"移动文件: {fileName} -> default/");
+                    _logger.LogDebug($"Move file: {fileName} -> default/");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning($"移动文件失败 '{filePath}': {ex.Message}");
+                    _logger.LogWarning($"Failed to move '{filePath}': {ex.Message}");
                 }
             }
 
             if (movedCount > 0)
             {
-                _logger.LogInformation($"已将 {movedCount} 个散装音频文件移动到 default 文件夹");
-                // 删除 default 文件夹的 rescan 标志，确保重新扫�?
+                _logger.LogInformation($"Moved {movedCount} loose audio files to default folder");
                 _rescanFlagManager.DeleteRescanFlag(defaultPath);
             }
         }
 
         /// <summary>
-        /// 扫描歌单目录
+        /// 鎵弿姝屽崟鐩綍
         /// </summary>
         private async Task ScanPlaylistDirectoriesAsync(ScanResult result)
         {
@@ -140,10 +127,10 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                 var playlistName = Path.GetFileName(playlistDir);
                 var tagId = $"local_{playlistName}";
 
-                // 检查是否需要重新扫�?
+                // 妫€鏌ユ槸鍚﹂渶瑕侀噸鏂版壂锟?
                 bool needRescan = _forceRescan || _rescanFlagManager.NeedsRescan(playlistDir);
 
-                // 读取显示名称
+                // 璇诲彇鏄剧ず鍚嶇О
                 var displayName = MetadataReader.ReadPlaylistName(playlistDir) ?? playlistName;
 
                 var playlist = new PlaylistInfo
@@ -154,20 +141,20 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                 };
                 result.Playlists.Add(playlist);
 
-                // 尝试从缓存加�?
+                // 灏濊瘯浠庣紦瀛樺姞锟?
                 bool loadedFromCache = false;
                 if (!needRescan)
                 {
-                    _logger.LogDebug($"尝试从缓存加�? {displayName}");
+                    _logger.LogDebug($"灏濊瘯浠庣紦瀛樺姞锟? {displayName}");
                     loadedFromCache = _cacheManager.LoadFromCache(tagId, displayName, playlistDir, result);
                 }
 
                 if (!loadedFromCache)
                 {
-                    _logger.LogDebug($"扫描歌单: {displayName}");
+                    _logger.LogDebug($"鎵弿姝屽崟: {displayName}");
                     await ScanSinglePlaylistAsync(playlistDir, tagId, displayName, result);
 
-                    // 保存缓存并创建标志文�?
+                    // 淇濆瓨缂撳瓨骞跺垱寤烘爣蹇楁枃锟?
                     _cacheManager.SaveToCache(tagId, displayName, playlistDir, result);
                     _rescanFlagManager.CreateRescanFlag(playlistDir);
                 }
@@ -175,16 +162,16 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
         }
 
         /// <summary>
-        /// 扫描单个歌单
+        /// 鎵弿鍗曚釜姝屽崟
         /// </summary>
         private async Task ScanSinglePlaylistAsync(string playlistDir, string tagId, string playlistDisplayName, ScanResult result)
         {
             var albumDirs = Directory.GetDirectories(playlistDir);
 
-            // 自动创建 playlist.json（如果不存在�?
+            // 鑷姩鍒涘缓 playlist.json锛堝鏋滀笉瀛樺湪锟?
             MetadataReader.EnsurePlaylistMetadata(playlistDir, playlistDisplayName);
 
-            // 扫描子目录作为专�?
+            // 鎵弿瀛愮洰褰曚綔涓轰笓锟?
             foreach (var albumDir in albumDirs)
             {
                 var albumName = Path.GetFileName(albumDir);
@@ -192,39 +179,38 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                 var albumDisplayName = MetadataReader.ReadAlbumName(albumDir) ?? albumName;
                 var albumArtist = MetadataReader.ReadAlbumArtist(albumDir);
 
-                // 扫描专辑内的音频文件（递归两层�?
+                // 鎵弿涓撹緫鍐呯殑闊抽鏂囦欢锛堥€掑綊涓ゅ眰锟?
                 var audioFiles = AudioFileHelper.GetAudioFilesRecursive(albumDir, 1);
-                var musicList = new System.Collections.Generic.List<MusicInfo>();
-                
+                var musicList = new System.Collections.Generic.List<Track>();
+
                 foreach (var file in audioFiles)
                 {
-                    var music = CreateMusicInfo(file, tagId, albumId);
+                    var music = CreateTrack(file, tagId, albumId);
                     musicList.Add(music);
                     result.Music.Add(music);
+                    result.AddPlaylistMembership(music.Uuid, tagId);
                 }
 
-                // 如果 album.json 没有艺术家，从第一首歌获取
+                // 濡傛灉 album.json 娌℃湁鑹烘湳瀹讹紝浠庣涓€棣栨瓕鑾峰彇
                 if (string.IsNullOrEmpty(albumArtist) && musicList.Count > 0)
                 {
                     albumArtist = musicList[0].Artist;
                 }
 
-                // 自动创建 album.json（如果不存在�?
+                // 鑷姩鍒涘缓 album.json锛堝鏋滀笉瀛樺湪锟?
                 MetadataReader.EnsureAlbumMetadata(albumDir, albumDisplayName, albumArtist);
 
-                var album = new AlbumInfo
+                var album = new Album
                 {
-                    AlbumId = albumId,
-                    DisplayName = albumDisplayName,
-                    Artist = albumArtist,
-                    TagId = tagId,
-                    DirectoryPath = albumDir,
-                    CoverPath = albumDir
+                    Id = albumId,
+                    Title = albumDisplayName,
+                    Artist = albumArtist ?? "",
+                    ModuleId = ModuleInfo.MODULE_ID
                 };
                 result.Albums.Add(album);
             }
 
-            // 扫描歌单目录下的散装音频（归入默认专辑，使用歌单名称�?
+            // 鎵弿姝屽崟鐩綍涓嬬殑鏁ｈ闊抽锛堝綊鍏ラ粯璁や笓杈戯紝浣跨敤姝屽崟鍚嶇О锟?
             var looseAudioFiles = AudioFileHelper.GetAudioFiles(playlistDir).ToList();
             if (looseAudioFiles.Any())
             {
@@ -232,32 +218,29 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
 
                 foreach (var file in looseAudioFiles)
                 {
-                    var music = CreateMusicInfo(file, tagId, defaultAlbumId);
+                    var music = CreateTrack(file, tagId, defaultAlbumId);
                     result.Music.Add(music);
+                    result.AddPlaylistMembership(music.Uuid, tagId);
                 }
 
-                var defaultAlbum = new AlbumInfo
+                var defaultAlbum = new Album
                 {
-                    AlbumId = defaultAlbumId,
-                    DisplayName = playlistDisplayName,  // 使用歌单名称而非"其他"
-                    TagId = tagId,
-                    DirectoryPath = playlistDir,
-                    CoverPath = playlistDir,
-                    IsDefault = true
-                    // 默认专辑不需要艺术家
+                    Id = defaultAlbumId,
+                    Title = playlistDisplayName,
+                    ModuleId = ModuleInfo.MODULE_ID
                 };
                 result.Albums.Add(defaultAlbum);
             }
         }
 
-        private MusicInfo CreateMusicInfo(string filePath, string tagId, string albumId)
+        private Track CreateTrack(string filePath, string tagId, string albumId)
         {
             var fileName = Path.GetFileNameWithoutExtension(filePath);
-            // 基于相对路径生成 UUID，确保目录迁移不影响 UUID
+            // 鍩轰簬鐩稿璺緞鐢熸垚 UUID锛岀‘淇濈洰褰曡縼绉讳笉褰卞搷 UUID
             var relativePath = GetRelativePath(filePath);
             var uuid = GenerateUUIDFromRelativePath(relativePath);
 
-            // 使用 TagLib 读取元数�?
+            // 浣跨敤 TagLib 璇诲彇鍏冩暟锟?
             string title = fileName;
             string artist = null;
             float duration = 0f;
@@ -278,30 +261,28 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
                 _logger?.LogWarning($"Failed to read metadata from {filePath}: {ex.Message}");
             }
 
-            return new MusicInfo
+            return new Track
             {
-                UUID = uuid,
+                Uuid = uuid,
                 Title = title,
-                Artist = artist,
+                Artist = artist ?? "",
                 AlbumId = albumId,
-                TagId = tagId,
-                SourceType = MusicSourceType.File,
+                SourceType = SourceType.File,
                 SourcePath = filePath,
                 Duration = duration,
-                CoverUrl = filePath,
-                IsUnlocked = true
+                CoverUri = filePath
             };
         }
 
         /// <summary>
-        /// 获取相对于根目录的路�?
+        /// 鑾峰彇鐩稿浜庢牴鐩綍鐨勮矾锟?
         /// </summary>
         private string GetRelativePath(string filePath)
         {
             if (filePath.StartsWith(_rootPath, StringComparison.OrdinalIgnoreCase))
             {
                 var relative = filePath.Substring(_rootPath.Length);
-                // 移除开头的路径分隔符并统一为正斜杠
+                // 绉婚櫎寮€澶寸殑璺緞鍒嗛殧绗﹀苟缁熶竴涓烘鏂滄潬
                 return relative.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                     .Replace('\\', '/');
             }
@@ -309,12 +290,12 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
         }
 
         /// <summary>
-        /// 基于相对路径生成确定�?UUID
-        /// 这确保整个音乐库目录迁移�?UUID 保持不变
+        /// 鍩轰簬鐩稿璺緞鐢熸垚纭畾锟?UUID
+        /// 杩欑‘淇濇暣涓煶涔愬簱鐩綍杩佺Щ锟?UUID 淇濇寔涓嶅彉
         /// </summary>
         private static string GenerateUUIDFromRelativePath(string relativePath)
         {
-            // 使用 MD5 基于相对路径生成确定�?UUID
+            // 浣跨敤 MD5 鍩轰簬鐩稿璺緞鐢熸垚纭畾锟?UUID
             using (var md5 = System.Security.Cryptography.MD5.Create())
             {
                 var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(relativePath.ToLowerInvariant()));
@@ -323,3 +304,4 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Scanner
         }
     }
 }
+

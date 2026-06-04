@@ -12,8 +12,7 @@ using Microsoft.Extensions.Logging;
 using OmniMixPlayer.SDK.Attributes;
 using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
-using OmniMixPlayer.SDK.Models;
-using Newtonsoft.Json;
+using OmniMixPlayer.SDK.Protos.Models;
 
 
 
@@ -40,7 +39,7 @@ namespace OmniMixPlayer.Module.Spotify
             ProvidesAlbum = true
         };
 
-        public MusicSourceType SourceType => MusicSourceType.Stream;
+        public SourceType SourceType => SourceType.Stream;
         public bool IsReady => _bridge != null && _bridge.IsLoggedIn;
         public event Action<bool> OnReadyStateChanged;
 
@@ -292,8 +291,8 @@ namespace OmniMixPlayer.Module.Spotify
                 if (e.IsCompleted && !e.IsPending) return;
                 if (_bridge == null || !_bridge.IsLoggedIn || !_bridge.Session.IsPremium) return;
 
-                var meta = GetTrackMeta(e.Music);
-                if (meta == null || meta.IsConnectLive) return;
+                var track = e.Music;
+                if (track == null || string.IsNullOrEmpty(track.SourcePath) || track.SourcePath == SpotifySongRegistry.CONNECT_LIVE_SOURCE) return;
 
                 try
                 {
@@ -457,10 +456,9 @@ namespace OmniMixPlayer.Module.Spotify
         // IStreamingMusicSourceProvider
         // =====================================================================
 
-        public Task<List<MusicInfo>> GetMusicListAsync()
+        public Task<List<Track>> GetMusicListAsync()
         {
-            var all = _context.MusicRegistry.GetMusicByModule(ModuleId);
-            return Task.FromResult(all?.ToList() ?? new List<MusicInfo>());
+            return Task.FromResult(_context.Library.QueryTracks(new TrackQuery { ModuleId = ModuleId, Limit = 0 }).ToList());
         }
 
         public void UnloadAudio(string uuid) { }
@@ -582,9 +580,9 @@ namespace OmniMixPlayer.Module.Spotify
             if (_bridge == null || !_bridge.IsLoggedIn || !_bridge.Session.IsPremium || !_nativeBridgeLoaded)
                 return false;
 
-            var music = _context?.MusicRegistry?.GetMusic(uuid);
-            var meta = GetTrackMeta(music);
-            return meta != null && (meta.IsConnectLive || !string.IsNullOrEmpty(meta.SpotifyUri));
+            var track = _context?.Library?.GetTrack(uuid);
+            if (track == null) return false;
+            return track.SourcePath == SpotifySongRegistry.CONNECT_LIVE_SOURCE || track.SourcePath.StartsWith("spotify:track:");
         }
 
         public async Task<IPcmStreamReader> CreateDecoderAsync(
@@ -594,20 +592,20 @@ namespace OmniMixPlayer.Module.Spotify
         {
             _logger.LogInformation("[Spotify] Create PCM reader called: uuid={Uuid}", uuid);
 
-            var music = _context.MusicRegistry.GetMusic(uuid);
-            if (music == null)
+            var track = _context.Library.GetTrack(uuid);
+            if (track == null)
             {
-                _logger.LogWarning($"[Spotify] Music not found: {uuid}");
+                _logger.LogWarning($"[Spotify] Track not found: {uuid}");
                 return null;
             }
 
-            var meta = GetTrackMeta(music);
-            if (meta == null || string.IsNullOrEmpty(meta.SpotifyUri))
+            var spotifyUri = track.SourcePath;
+            var isConnectLive = spotifyUri == SpotifySongRegistry.CONNECT_LIVE_SOURCE;
+            if (!isConnectLive && !spotifyUri.StartsWith("spotify:track:"))
             {
-                _logger.LogWarning($"[Spotify] No Spotify URI for: {music.Title}");
+                _logger.LogWarning($"[Spotify] No Spotify URI for: {track.Title}");
                 return null;
             }
-            var isConnectLive = meta.IsConnectLive;
 
             if (_bridge == null || !_bridge.IsLoggedIn)
             {
@@ -640,11 +638,11 @@ namespace OmniMixPlayer.Module.Spotify
             else if (!string.IsNullOrEmpty(_activeDeviceId))
             {
                 await _bridge.TransferPlaybackAsync(_activeDeviceId, play: false).ConfigureAwait(false);
-                var playSuccess = await _bridge.PlayTrackAsync(meta.SpotifyUri, _activeDeviceId).ConfigureAwait(false);
+                var playSuccess = await _bridge.PlayTrackAsync(spotifyUri, _activeDeviceId).ConfigureAwait(false);
                 if (playSuccess)
-                    _logger.LogInformation("[Spotify] Playback started on local Connect PCM device: {Title}", music.Title);
+                    _logger.LogInformation("[Spotify] Playback started on local Connect PCM device: {Title}", track.Title);
                 else
-                    _logger.LogWarning("[Spotify] Failed to start playback on local Connect PCM device: {Title}", music.Title);
+                    _logger.LogWarning("[Spotify] Failed to start playback on local Connect PCM device: {Title}", track.Title);
             }
             else
             {
@@ -653,7 +651,7 @@ namespace OmniMixPlayer.Module.Spotify
                     _activeDeviceName);
             }
 
-            return new NativeLibrespotPcmReaderLease(reader, isConnectLive ? 0 : music.Duration);
+            return new NativeLibrespotPcmReaderLease(reader, isConnectLive ? 0 : track.Duration);
         }
 
         public async Task<PlayableSource> ResolveAsync(string uuid, AudioQuality quality = AudioQuality.ExHigh, CancellationToken cancellationToken = default)
@@ -673,24 +671,20 @@ namespace OmniMixPlayer.Module.Spotify
 
         public async Task<(byte[] data, string mimeType)> GetMusicCoverAsync(string uuid)
         {
-            var music = _context.MusicRegistry.GetMusic(uuid);
-            if (music == null)
+            var track = _context.Library.GetTrack(uuid);
+            if (track == null || string.IsNullOrWhiteSpace(track.CoverUri))
                 return (_context.DefaultCover.DefaultMusicCover, "image/png");
 
-            var meta = GetTrackMeta(music);
-            if (meta == null || string.IsNullOrEmpty(meta.CoverUrl))
-                return (_context.DefaultCover.DefaultMusicCover, "image/png");
-
-            var result = await DownloadCoverAsync(meta.CoverUrl);
+            var result = await DownloadCoverAsync(track.CoverUri);
             return result ?? (_context.DefaultCover.DefaultMusicCover, "image/png");
         }
 
         public async Task<(byte[] data, string mimeType)> GetAlbumCoverAsync(string albumId)
         {
-            var album = _context.AlbumRegistry.GetAlbum(albumId);
-            if (album?.ExtendedData is string coverUrl && !string.IsNullOrEmpty(coverUrl))
+            var album = _context.Library.GetAlbum(albumId);
+            if (album != null && !string.IsNullOrWhiteSpace(album.CoverUri))
             {
-                var result = await DownloadCoverAsync(coverUrl);
+                var result = await DownloadCoverAsync(album.CoverUri);
                 return result ?? (_context.DefaultCover.DefaultAlbumCover, "image/png");
             }
 
@@ -725,9 +719,11 @@ namespace OmniMixPlayer.Module.Spotify
 
         public bool IsFavorite(string uuid)
         {
-            var meta = GetTrackMetaByUuid(uuid);
-            if (meta == null) return false;
-            return _savedCache.TryGetValue(meta.SpotifyId, out var saved) && saved;
+            var track = _context.Library.GetTrack(uuid);
+            if (track == null) return false;
+            var spotifyId = ExtractSpotifyId(track);
+            if (spotifyId == null) return false;
+            return _savedCache.TryGetValue(spotifyId, out var saved) && saved;
         }
 
         public void SetFavorite(string uuid, bool isFavorite)
@@ -737,21 +733,21 @@ namespace OmniMixPlayer.Module.Spotify
 
         private async Task SetFavoriteAsync(string uuid, bool isFavorite)
         {
-            var meta = GetTrackMetaByUuid(uuid);
-            if (meta == null || _bridge == null || !_bridge.IsLoggedIn) return;
+            var track = _context.Library.GetTrack(uuid);
+            var spotifyId = ExtractSpotifyId(track);
+            if (spotifyId == null || _bridge == null || !_bridge.IsLoggedIn) return;
 
             bool success;
             if (isFavorite)
-                success = await _bridge.SaveTracksAsync(new List<string> { meta.SpotifyId });
+                success = await _bridge.SaveTracksAsync(new List<string> { spotifyId });
             else
-                success = await _bridge.RemoveTracksAsync(new List<string> { meta.SpotifyId });
+                success = await _bridge.RemoveTracksAsync(new List<string> { spotifyId });
 
             if (success)
             {
-                _savedCache[meta.SpotifyId] = isFavorite;
-                var music = _context.MusicRegistry.GetMusic(uuid);
-                if (music != null) music.IsFavorite = isFavorite;
-                _logger.LogInformation($"[Spotify] Favorite {(isFavorite ? "saved" : "removed")}: {music?.Title}");
+                _savedCache[spotifyId] = isFavorite;
+                if (track != null) track.IsFavorite = isFavorite;
+                _logger.LogInformation($"[Spotify] Favorite {(isFavorite ? "saved" : "removed")}: {track?.Title}");
             }
             else
             {
@@ -768,7 +764,7 @@ namespace OmniMixPlayer.Module.Spotify
             foreach (var kvp in _savedCache)
             {
                 if (!kvp.Value) continue;
-                var uuid = MusicInfo.GenerateUUID($"spotify_{kvp.Key}");
+                var uuid = SpotifySongRegistry.GenerateUuid($"spotify_{kvp.Key}");
                 result.Add(uuid);
             }
             return result;
@@ -780,29 +776,16 @@ namespace OmniMixPlayer.Module.Spotify
         // 辅助方法
         // =====================================================================
 
-        private SpotifyTrackMeta GetTrackMeta(MusicInfo music)
+        /// <summary>
+        /// 从 Track 的 SourcePath (spotify:track:xxx) 提取 Spotify track ID
+        /// </summary>
+        private static string ExtractSpotifyId(Track track)
         {
-            if (music?.ExtendedData == null) return null;
-
-            if (music.ExtendedData is SpotifyTrackMeta meta)
-                return meta;
-
-            // 可能从 JSON 反序列化为 JObject
-            try
-            {
-                return JsonConvert.DeserializeObject<SpotifyTrackMeta>(
-                    JsonConvert.SerializeObject(music.ExtendedData));
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private SpotifyTrackMeta GetTrackMetaByUuid(string uuid)
-        {
-            var music = _context.MusicRegistry.GetMusic(uuid);
-            return GetTrackMeta(music);
+            if (track == null || string.IsNullOrEmpty(track.SourcePath)) return null;
+            var uri = track.SourcePath;
+            const string prefix = "spotify:track:";
+            if (uri.StartsWith(prefix)) return uri.Substring(prefix.Length);
+            return null;
         }
 
         // =====================================================================
@@ -1207,9 +1190,7 @@ namespace OmniMixPlayer.Module.Spotify
                 // 取消正在进行的 OAuth 流程
                 _oauthManager?.Cancel();
 
-                _context?.MusicRegistry?.UnregisterAllByModule(ModuleId);
-                _context?.AlbumRegistry?.UnregisterAllByModule(ModuleId);
-                _context?.TagRegistry?.UnregisterAllByModule(ModuleId);
+                _context?.Library?.UnregisterModule(ModuleId);
 
                 OnReadyStateChanged?.Invoke(false);
                 PushUI?.Invoke(BuildUI());

@@ -1,6 +1,6 @@
 ﻿using System;
 using System.IO;
-using System.Net;
+using System.Net.Http;
 using System.Text;
 
 using Microsoft.Extensions.Logging;
@@ -56,9 +56,9 @@ namespace OmniMixPlayer.Module.Netease
                             try
                             {
                                 byte[] coverData;
-                                using (var wc = new WebClient())
+                                using (var client = new HttpClient())
                                 {
-                                    coverData = wc.DownloadData(songInfo.CoverUrl);
+                                    coverData = client.GetByteArrayAsync(songInfo.CoverUrl).GetAwaiter().GetResult();
                                 }
 
                                 var mime = songInfo.CoverUrl.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)

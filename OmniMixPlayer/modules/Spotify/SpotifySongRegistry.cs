@@ -1,21 +1,19 @@
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using OmniMixPlayer.SDK.Interfaces;
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.SDK.Protos.Models;
 
 namespace OmniMixPlayer.Module.Spotify
 {
     /// <summary>
-    /// 歌曲/专辑/标签注册辅助类，负责将 Spotify 数据注册到 ChillPatcher 注册表中。
+    /// 歌曲/专辑/播放列表注册辅助类，负责将 Spotify 数据注册到统一 Library 中。
     /// </summary>
     public class SpotifySongRegistry
     {
         public const string CONNECT_LIVE_SOURCE = "spotify_connect_live";
-        public static readonly string CONNECT_LIVE_UUID = MusicInfo.GenerateUUID(CONNECT_LIVE_SOURCE);
-        public const string TAG_CONNECT = "spotify_connect";
-        public const string ALBUM_CONNECT = "spotify_connect_album";
-        public const string TAG_LIKED = "spotify_liked_songs";
-        public const string ALBUM_LIKED = "spotify_liked_album";
+        public const string PLAYLIST_CONNECT = "spotify_connect";
+        public const string PLAYLIST_LIKED = "spotify_liked_songs";
 
         private readonly IModuleContext _context;
         private readonly string _moduleId;
@@ -30,38 +28,32 @@ namespace OmniMixPlayer.Module.Spotify
 
         public void RegisterConnectLive()
         {
-            _context.TagRegistry.RegisterTag(TAG_CONNECT, "Spotify Connect", _moduleId);
-
-            _context.AlbumRegistry.RegisterAlbum(new AlbumInfo
+            _context.Library.UpsertPlaylist(new Playlist
             {
-                AlbumId = ALBUM_CONNECT,
-                DisplayName = "Spotify Connect",
-                Artist = "Spotify",
-                TagId = TAG_CONNECT,
+                Id = PLAYLIST_CONNECT,
+                Name = "Spotify Connect",
                 ModuleId = _moduleId,
-                SortOrder = -100,
-                SongCount = 1
-            }, _moduleId);
+                Kind = PlaylistKind.System
+            });
 
-            _context.MusicRegistry.RegisterMusic(new MusicInfo
+            var uuid = GenerateUuid(CONNECT_LIVE_SOURCE);
+            _context.Library.UpsertTrack(new Track
             {
-                UUID = CONNECT_LIVE_UUID,
+                Uuid = uuid,
                 Title = "Spotify Connect Live",
                 Artist = "Spotify",
-                AlbumId = ALBUM_CONNECT,
-                TagId = TAG_CONNECT,
-                SourceType = MusicSourceType.Stream,
+                SourceType = SourceType.Stream,
                 SourcePath = CONNECT_LIVE_SOURCE,
                 Duration = 0,
                 ModuleId = _moduleId,
-                IsUnlocked = true,
-                ExtendedData = new SpotifyTrackMeta
-                {
-                    SpotifyUri = CONNECT_LIVE_SOURCE,
-                    IsConnectLive = true
-                }
-            }, _moduleId);
+                IsFavorite = false
+            });
+
+            _context.Library.ReplacePlaylistEntries(PLAYLIST_CONNECT,
+                new[] { new PlaylistEntrySpec { TrackUuid = uuid, Position = 0 } });
         }
+
+        public static string GetConnectLiveUuid() => GenerateUuid(CONNECT_LIVE_SOURCE);
 
         // =====================================================================
         // Liked Songs（用户收藏）
@@ -69,20 +61,15 @@ namespace OmniMixPlayer.Module.Spotify
 
         public void RegisterLikedSongs(List<SpotifyTrack> tracks)
         {
-            _context.TagRegistry.RegisterTag(TAG_LIKED, "Liked Songs", _moduleId);
-
-            _context.AlbumRegistry.RegisterAlbum(new AlbumInfo
+            _context.Library.UpsertPlaylist(new Playlist
             {
-                AlbumId = ALBUM_LIKED,
-                DisplayName = "Liked Songs",
-                Artist = "Spotify",
-                TagId = TAG_LIKED,
+                Id = PLAYLIST_LIKED,
+                Name = "Liked Songs",
                 ModuleId = _moduleId,
-                SortOrder = 0,
-                SongCount = tracks.Count
-            }, _moduleId);
+                Kind = PlaylistKind.System
+            });
 
-            RegisterTracks(tracks, TAG_LIKED, ALBUM_LIKED);
+            RegisterTracks(tracks, PLAYLIST_LIKED);
         }
 
         // =====================================================================
@@ -91,63 +78,69 @@ namespace OmniMixPlayer.Module.Spotify
 
         public void RegisterPlaylist(SpotifyPlaylist playlist, List<SpotifyTrack> tracks)
         {
-            var tagId = $"spotify_playlist_{playlist.Id}";
-            var albumId = $"spotify_album_{playlist.Id}";
-
-            _context.TagRegistry.RegisterTag(tagId, playlist.Name, _moduleId);
-
-            _context.AlbumRegistry.RegisterAlbum(new AlbumInfo
+            var playlistId = $"spotify_playlist_{playlist.Id}";
+            _context.Library.UpsertPlaylist(new Playlist
             {
-                AlbumId = albumId,
-                DisplayName = playlist.Name,
-                Artist = playlist.Owner?.DisplayName ?? "Spotify",
-                TagId = tagId,
+                Id = playlistId,
+                Name = playlist.Name,
                 ModuleId = _moduleId,
-                SongCount = tracks.Count,
-                CoverPath = playlist.BestCoverUrl,
-                // 歌单封面 URL 存入 ExtendedData
-                ExtendedData = playlist.BestCoverUrl
-            }, _moduleId);
+                Kind = PlaylistKind.Imported,
+                CoverUri = playlist.BestCoverUrl ?? ""
+            });
 
-            RegisterTracks(tracks, tagId, albumId);
+            RegisterTracks(tracks, playlistId);
         }
 
         // =====================================================================
         // 曲目注册
         // =====================================================================
 
-        private void RegisterTracks(List<SpotifyTrack> tracks, string tagId, string albumId)
+        private void RegisterTracks(List<SpotifyTrack> tracks, string playlistId)
         {
-            var musicList = new List<MusicInfo>();
+            var entries = new List<PlaylistEntrySpec>();
+            int position = 0;
 
             foreach (var track in tracks)
             {
-                var uuid = MusicInfo.GenerateUUID($"spotify_{track.Id}");
-                musicList.Add(new MusicInfo
+                var uuid = GenerateUuid($"spotify_{track.Id}");
+                var albumId = UpsertAlbum(track);
+
+                _context.Library.UpsertTrack(new Track
                 {
-                    UUID = uuid,
+                    Uuid = uuid,
                     Title = track.Name,
                     Artist = track.ArtistName,
                     AlbumId = albumId,
-                    TagId = tagId,
-                    SourceType = MusicSourceType.Stream,
-                    SourcePath = track.Uri,  // spotify:track:xxx，用于 Connect 播放
+                    SourceType = SourceType.Stream,
+                    SourcePath = track.Uri,
                     Duration = track.DurationSeconds,
                     ModuleId = _moduleId,
-                    IsUnlocked = true,
-                    CoverUrl = track.BestCoverUrl,
-                    // ExtendedData 存储 track 元数据供封面和收藏使用
-                    ExtendedData = new SpotifyTrackMeta
-                    {
-                        SpotifyId = track.Id,
-                        SpotifyUri = track.Uri,
-                        CoverUrl = track.BestCoverUrl
-                    }
+                    IsFavorite = false,
+                    CoverUri = track.BestCoverUrl ?? ""
                 });
+
+                entries.Add(new PlaylistEntrySpec { TrackUuid = uuid, Position = position++ });
             }
 
-            _context.MusicRegistry.RegisterMusicBatch(musicList, _moduleId);
-            _logger.LogInformation($"Registered {musicList.Count} tracks for [{tagId}]");
+            _context.Library.ReplacePlaylistEntries(playlistId, entries);
+            _logger.LogInformation($"Registered {tracks.Count} tracks for [{playlistId}]");
+        }
+
+        private string UpsertAlbum(SpotifyTrack track)
+        {
+            if (track?.Album == null || string.IsNullOrWhiteSpace(track.Album.Id))
+                return "";
+
+            var albumId = $"spotify_album_{track.Album.Id}";
+            _context.Library.UpsertAlbum(new Album
+            {
+                Id = albumId,
+                Title = track.Album.Name ?? "",
+                Artist = track.ArtistName,
+                ModuleId = _moduleId,
+                CoverUri = track.Album.BestCoverUrl ?? ""
+            });
+            return albumId;
         }
 
         // =====================================================================
@@ -156,14 +149,20 @@ namespace OmniMixPlayer.Module.Spotify
 
         public void UnregisterAll()
         {
-            _context.MusicRegistry.UnregisterAllByModule(_moduleId);
-            _context.AlbumRegistry.UnregisterAllByModule(_moduleId);
-            _context.TagRegistry.UnregisterAllByModule(_moduleId);
+            _context.Library.UnregisterModule(_moduleId);
+        }
+
+        public static string GenerateUuid(string source)
+        {
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(source));
+            return new System.Guid(hash).ToString("N");
         }
     }
 
     /// <summary>
-    /// 存储在 MusicInfo.ExtendedData 中的 Spotify 元数据。
+    /// 存储在 Track.ExtendedData 中的 Spotify 元数据（不再使用 ExtendedData，改为直接字段）。
+    /// 保留此类供 NativeLibrespotPcmReader 使用。
     /// </summary>
     public class SpotifyTrackMeta
     {
@@ -172,5 +171,4 @@ namespace OmniMixPlayer.Module.Spotify
         public string CoverUrl { get; set; }
         public bool IsConnectLive { get; set; }
     }
-
 }

@@ -11,6 +11,7 @@ class FloatingPlayerSnapshot {
   final bool useSystemColor;
   final String themeMode;
   final bool canControl;
+  final bool canSeek;
   final bool hasTrack;
   final bool isPlaying;
   final String uuid;
@@ -27,6 +28,7 @@ class FloatingPlayerSnapshot {
     this.useSystemColor = true,
     this.themeMode = 'system',
     this.canControl = false,
+    this.canSeek = false,
     this.hasTrack = false,
     this.isPlaying = false,
     this.uuid = '',
@@ -45,6 +47,7 @@ class FloatingPlayerSnapshot {
       useSystemColor: json['useSystemColor'] as bool? ?? true,
       themeMode: json['themeMode'] as String? ?? 'system',
       canControl: json['canControl'] as bool? ?? false,
+      canSeek: json['canSeek'] as bool? ?? false,
       hasTrack: json['hasTrack'] as bool? ?? false,
       isPlaying: json['isPlaying'] as bool? ?? false,
       uuid: json['uuid'] as String? ?? '',
@@ -63,6 +66,7 @@ class FloatingPlayerSnapshot {
     'useSystemColor': useSystemColor,
     'themeMode': themeMode,
     'canControl': canControl,
+    'canSeek': canSeek,
     'hasTrack': hasTrack,
     'isPlaying': isPlaying,
     'uuid': uuid,

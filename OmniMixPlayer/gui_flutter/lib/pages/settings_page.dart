@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
 import '../models/mod_manifest.dart';
-import '../models/node_data.dart';
+import '../generated/omni_mix_player/models/instance.pb.dart';
 import 'shortcut_settings_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -246,12 +246,18 @@ class _SettingsPageState extends State<SettingsPage> {
                           children: [
                             Text(
                               l10n.shortcutSettings,
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               l10n.shortcutSettingsDesc,
-                              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant.withOpacity(0.8)),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: cs.onSurfaceVariant.withOpacity(0.8),
+                              ),
                             ),
                           ],
                         ),
@@ -262,7 +268,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ShortcutSettingsPage(appState: st),
+                              builder: (context) =>
+                                  ShortcutSettingsPage(appState: st),
                             ),
                           );
                         },
@@ -963,7 +970,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
     // Use backend instances (includes online + offline). Filter to only show installed ones (have gameName).
     final allInstances = st.playbackInstances;
     final instances = allInstances
-        .where((i) => i.gameName.isNotEmpty || i.attached)
+        .where((i) => i.gameName.isNotEmpty || i.isOnline)
         .toList();
     final archives = st.archives;
     final l10n = widget.l10n;
@@ -1025,8 +1032,8 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
     );
   }
 
-  Widget _buildInstanceTile(PlaybackInstanceInfo inst, ColorScheme cs) {
-    final online = inst.attached;
+  Widget _buildInstanceTile(InstanceSummary inst, ColorScheme cs) {
+    final online = inst.isOnline;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -1042,7 +1049,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  inst.gameName.isNotEmpty ? inst.gameName : inst.id,
+                  inst.gameName.isNotEmpty ? inst.gameName : inst.displayName,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
@@ -1059,16 +1066,18 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: inst.isServerManaged
+              color: widget.state.canControlInstance(inst.id)
                   ? Colors.blue.withAlpha(30)
                   : Colors.orange.withAlpha(30),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              inst.mode,
+              inst.mode.name,
               style: TextStyle(
                 fontSize: 11,
-                color: inst.isServerManaged ? Colors.blue : Colors.orange,
+                color: widget.state.canControlInstance(inst.id)
+                    ? Colors.blue
+                    : Colors.orange,
               ),
             ),
           ),
@@ -1083,7 +1092,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
     );
   }
 
-  void _deleteInstance(PlaybackInstanceInfo inst) async {
+  void _deleteInstance(InstanceSummary inst) async {
     final l10n = widget.l10n;
     final confirmed = await showDialog<bool>(
       context: context,

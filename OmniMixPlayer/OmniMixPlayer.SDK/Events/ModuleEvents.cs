@@ -1,22 +1,13 @@
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.SDK.Protos.Models;
 
 namespace OmniMixPlayer.SDK.Events
 {
     /// <summary>
     /// 模块事件基础接口
-    /// 所有事件必须实现此接口
     /// </summary>
     public interface IModuleEvent
     {
-        /// <summary>
-        /// 事件发生的时间戳
-        /// </summary>
         long Timestamp { get; }
-
-        /// <summary>
-        /// 事件来源模块 ID
-        /// 发起此事件的模块标识符，为 null 时表示由主机(host)触发
-        /// </summary>
         string SourceModuleId { get; set; }
     }
 
@@ -31,133 +22,53 @@ namespace OmniMixPlayer.SDK.Events
 
     #region 播放事件
 
-    /// <summary>
-    /// 播放开始事件
-    /// </summary>
     public class PlayStartedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 正在播放的歌曲信息
-        /// </summary>
-        public MusicInfo Music { get; set; }
-
-        /// <summary>
-        /// 播放来源 (队列、随机、用户点击等)
-        /// </summary>
+        public Track Music { get; set; }
         public PlaySource Source { get; set; }
     }
 
-    /// <summary>
-    /// 播放结束事件
-    /// </summary>
     public class PlayEndedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 播放结束的歌曲信息
-        /// </summary>
-        public MusicInfo Music { get; set; }
-
-        /// <summary>
-        /// 结束原因
-        /// </summary>
+        public Track Music { get; set; }
         public PlayEndReason Reason { get; set; }
-
-        /// <summary>
-        /// 实际播放时长 (秒)
-        /// </summary>
         public float PlayedDuration { get; set; }
     }
 
-    /// <summary>
-    /// 歌曲资源释放事件（文件锁已释放，可安全写入）
-    /// </summary>
     public class MusicResourcesReleasedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 被释放的歌曲信息
-        /// </summary>
-        public MusicInfo Music { get; set; }
+        public Track Music { get; set; }
     }
 
-    /// <summary>
-    /// 播放暂停事件
-    /// </summary>
     public class PlayPausedEvent : ModuleEventBase
     {
-        public MusicInfo Music { get; set; }
+        public Track Music { get; set; }
         public bool IsPaused { get; set; }
     }
 
-    /// <summary>
-    /// 播放进度变化事件
-    /// </summary>
     public class PlayProgressEvent : ModuleEventBase
     {
-        public MusicInfo Music { get; set; }
+        public Track Music { get; set; }
         public float CurrentTime { get; set; }
         public float TotalTime { get; set; }
         public float Progress { get; set; }
     }
 
-    /// <summary>
-    /// 播放来源
-    /// </summary>
     public enum PlaySource
     {
-        /// <summary>
-        /// 用户点击
-        /// </summary>
         UserClick,
-
-        /// <summary>
-        /// 播放队列
-        /// </summary>
         Queue,
-
-        /// <summary>
-        /// 随机播放
-        /// </summary>
         Shuffle,
-
-        /// <summary>
-        /// 自动下一首
-        /// </summary>
         AutoNext,
-
-        /// <summary>
-        /// 上一首
-        /// </summary>
         Previous
     }
 
-    /// <summary>
-    /// 播放结束原因
-    /// </summary>
     public enum PlayEndReason
     {
-        /// <summary>
-        /// 自然结束
-        /// </summary>
         Completed,
-
-        /// <summary>
-        /// 用户跳过
-        /// </summary>
         Skipped,
-
-        /// <summary>
-        /// 用户停止
-        /// </summary>
         Stopped,
-
-        /// <summary>
-        /// 加载失败
-        /// </summary>
         Failed,
-
-        /// <summary>
-        /// 被其他歌曲替换
-        /// </summary>
         Replaced
     }
 
@@ -165,141 +76,51 @@ namespace OmniMixPlayer.SDK.Events
 
     #region Tag 和专辑事件
 
-    /// <summary>
-    /// Tag 切换事件
-    /// </summary>
     public class TagChangedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 之前的 Tag ID
-        /// </summary>
         public string OldTagId { get; set; }
-
-        /// <summary>
-        /// 当前的 Tag ID
-        /// </summary>
         public string NewTagId { get; set; }
-
-        /// <summary>
-        /// Tag 信息
-        /// </summary>
-        public TagInfo Tag { get; set; }
+        public Tag Tag { get; set; }
     }
 
-    /// <summary>
-    /// 专辑切换事件
-    /// </summary>
     public class AlbumChangedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 之前的专辑 ID
-        /// </summary>
         public string OldAlbumId { get; set; }
-
-        /// <summary>
-        /// 当前的专辑 ID
-        /// </summary>
         public string NewAlbumId { get; set; }
-
-        /// <summary>
-        /// 专辑信息
-        /// </summary>
-        public AlbumInfo Album { get; set; }
+        public Album Album { get; set; }
     }
 
     #endregion
 
     #region 歌单事件
 
-    /// <summary>
-    /// 歌单更新事件
-    /// </summary>
     public class PlaylistUpdatedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 更新的 Tag ID
-        /// </summary>
-        public string TagId { get; set; }
-
-        /// <summary>
-        /// 更新类型
-        /// </summary>
+        public string SourceRefId { get; set; }
         public PlaylistUpdateType UpdateType { get; set; }
-
-        /// <summary>
-        /// 变化的歌曲数量
-        /// </summary>
         public int ChangedCount { get; set; }
     }
 
-    /// <summary>
-    /// 歌单更新类型
-    /// </summary>
     public enum PlaylistUpdateType
     {
-        /// <summary>
-        /// 完全刷新
-        /// </summary>
         FullRefresh,
-
-        /// <summary>
-        /// 新增歌曲
-        /// </summary>
         Added,
-
-        /// <summary>
-        /// 新增歌曲 (别名)
-        /// </summary>
         SongAdded = Added,
-
-        /// <summary>
-        /// 移除歌曲
-        /// </summary>
         Removed,
-
-        /// <summary>
-        /// 移除歌曲 (别名)
-        /// </summary>
         SongRemoved = Removed,
-
-        /// <summary>
-        /// 顺序变化
-        /// </summary>
         Reordered
     }
 
-    /// <summary>
-    /// 歌单顺序变化事件
-    /// </summary>
     public class PlaylistOrderChangedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// Tag ID
-        /// </summary>
         public string TagId { get; set; }
-
-        /// <summary>
-        /// 更新类型
-        /// </summary>
         public PlaylistUpdateType UpdateType { get; set; }
-
-        /// <summary>
-        /// 涉及的歌曲 UUID 列表
-        /// </summary>
         public string[] AffectedUUIDs { get; set; }
-
-        /// <summary>
-        /// 涉及的歌曲 UUID 列表 (别名)
-        /// </summary>
         public string[] AffectedSongUUIDs
         {
             get => AffectedUUIDs;
             set => AffectedUUIDs = value;
         }
-
-        /// <summary>
-        /// 模块 ID (可选)
-        /// </summary>
         public string ModuleId { get; set; }
     }
 
@@ -307,55 +128,19 @@ namespace OmniMixPlayer.SDK.Events
 
     #region 收藏和排除事件
 
-    /// <summary>
-    /// 收藏状态变化事件
-    /// </summary>
     public class FavoriteChangedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 歌曲 UUID
-        /// </summary>
         public string UUID { get; set; }
-
-        /// <summary>
-        /// 是否收藏
-        /// </summary>
         public bool IsFavorite { get; set; }
-
-        /// <summary>
-        /// 歌曲信息
-        /// </summary>
-        public MusicInfo Music { get; set; }
-
-        /// <summary>
-        /// 模块 ID (可选，用于标识来源模块)
-        /// </summary>
+        public Track Music { get; set; }
         public string ModuleId { get; set; }
     }
 
-    /// <summary>
-    /// 排除状态变化事件
-    /// </summary>
     public class ExcludeChangedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 歌曲 UUID
-        /// </summary>
         public string UUID { get; set; }
-
-        /// <summary>
-        /// 是否排除
-        /// </summary>
         public bool IsExcluded { get; set; }
-
-        /// <summary>
-        /// 歌曲信息
-        /// </summary>
-        public MusicInfo Music { get; set; }
-
-        /// <summary>
-        /// 模块 ID (可选，用于标识来源模块)
-        /// </summary>
+        public Track Music { get; set; }
         public string ModuleId { get; set; }
     }
 
@@ -363,38 +148,19 @@ namespace OmniMixPlayer.SDK.Events
 
     #region 模块生命周期事件
 
-    /// <summary>
-    /// 模块加载完成事件
-    /// </summary>
     public class ModuleLoadedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 模块 ID
-        /// </summary>
         public string ModuleId { get; set; }
-
-        /// <summary>
-        /// 模块显示名称
-        /// </summary>
         public string DisplayName { get; set; }
     }
 
-    /// <summary>
-    /// 模块卸载事件
-    /// </summary>
     public class ModuleUnloadedEvent : ModuleEventBase
     {
         public string ModuleId { get; set; }
     }
 
-    /// <summary>
-    /// 所有模块加载完成事件
-    /// </summary>
     public class AllModulesLoadedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 加载的模块数量
-        /// </summary>
         public int ModuleCount { get; set; }
     }
 
@@ -402,25 +168,12 @@ namespace OmniMixPlayer.SDK.Events
 
     #region 队列事件
 
-    /// <summary>
-    /// 队列变化事件
-    /// </summary>
     public class QueueChangedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 变化类型
-        /// </summary>
         public QueueChangeType ChangeType { get; set; }
-
-        /// <summary>
-        /// 当前队列长度
-        /// </summary>
         public int QueueLength { get; set; }
     }
 
-    /// <summary>
-    /// 队列变化类型
-    /// </summary>
     public enum QueueChangeType
     {
         Added,
@@ -433,56 +186,18 @@ namespace OmniMixPlayer.SDK.Events
 
     #region 增长列表事件
 
-    /// <summary>
-    /// 增长列表触底事件
-    /// 当用户滚动到增长列表 Tag 对应歌曲的底部时触发
-    /// 模块可以选择：
-    /// 1. 订阅此事件并调用 ReportLoaded() 来通知完成
-    /// 2. 或在注册 Tag 时提供 LoadMoreCallback（两种方式可同时使用）
-    /// </summary>
     public class GrowableListBottomOutEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 触底的 Tag ID (增长列表)
-        /// </summary>
         public string TagId { get; set; }
-
-        /// <summary>
-        /// 触底的 Tag 信息
-        /// </summary>
-        public TagInfo TagInfo { get; set; }
-
-        /// <summary>
-        /// 当前列表中该 Tag 下的歌曲数量
-        /// </summary>
+        public Tag TagInfo { get; set; }
         public int CurrentSongCount { get; set; }
-
-        /// <summary>
-        /// 用于报告加载完成的回调
-        /// 模块加载完数据后应调用此方法通知主插件刷新 UI
-        /// </summary>
         public System.Action<int> ReportLoaded { get; set; }
     }
 
-    /// <summary>
-    /// 增长列表加载完成事件
-    /// 当 LoadMoreCallback 执行完成后触发
-    /// </summary>
     public class GrowableListLoadedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// Tag ID
-        /// </summary>
         public string TagId { get; set; }
-
-        /// <summary>
-        /// 新加载的歌曲数量
-        /// </summary>
         public int LoadedCount { get; set; }
-
-        /// <summary>
-        /// 是否还有更多数据
-        /// </summary>
         public bool HasMore { get; set; }
     }
 
@@ -490,25 +205,10 @@ namespace OmniMixPlayer.SDK.Events
 
     #region 封面事件
 
-    /// <summary>
-    /// 封面缓存失效事件
-    /// 当模块需要通知 CoverService 清除缓存时发布此事件
-    /// </summary>
     public class CoverInvalidatedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 需要失效的歌曲 UUID (与 AlbumId 二选一)
-        /// </summary>
         public string MusicUuid { get; set; }
-
-        /// <summary>
-        /// 需要失效的专辑 ID (与 MusicUuid 二选一)
-        /// </summary>
         public string AlbumId { get; set; }
-
-        /// <summary>
-        /// 失效原因 (用于日志)
-        /// </summary>
         public string Reason { get; set; }
     }
 
@@ -516,34 +216,12 @@ namespace OmniMixPlayer.SDK.Events
 
     #region Seek 事件
 
-    /// <summary>
-    /// 播放 Seek 事件（用户拖动进度条跳转）
-    /// </summary>
     public class PlaySeekEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 正在播放的歌曲信息
-        /// </summary>
-        public MusicInfo Music { get; set; }
-
-        /// <summary>
-        /// Seek 目标进度（0~1）
-        /// </summary>
+        public Track Music { get; set; }
         public float Progress { get; set; }
-
-        /// <summary>
-        /// Seek 目标时间（秒）
-        /// </summary>
         public float TargetTime { get; set; }
-
-        /// <summary>
-        /// 是否为延迟 Seek（流媒体需要先下载缓存）
-        /// </summary>
         public bool IsPending { get; set; }
-
-        /// <summary>
-        /// Seek 是否成功完成（IsPending=false 时才有意义）
-        /// </summary>
         public bool IsCompleted { get; set; }
     }
 
@@ -582,91 +260,43 @@ namespace OmniMixPlayer.SDK.Events
 
     #region 控制请求事件 (模块 → 主机)
 
-    /// <summary>
-    /// 播放请求事件
-    /// 模块请求开始播放指定歌曲 (或不指定则播放当前)
-    /// </summary>
     public class PlayRequestedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 要播放的歌曲 UUID，为 null 时播放当前歌曲或队列下一首
-        /// </summary>
         public string MusicUuid { get; set; }
     }
 
-    /// <summary>
-    /// 暂停请求事件
-    /// </summary>
     public class PauseRequestedEvent : ModuleEventBase { }
 
-    /// <summary>
-    /// 恢复播放请求事件
-    /// </summary>
     public class ResumeRequestedEvent : ModuleEventBase { }
 
-    /// <summary>
-    /// 停止播放请求事件
-    /// </summary>
     public class StopRequestedEvent : ModuleEventBase { }
 
-    /// <summary>
-    /// 播放/暂停切换请求事件
-    /// </summary>
     public class TogglePlayRequestedEvent : ModuleEventBase { }
 
-    /// <summary>
-    /// 下一首请求事件
-    /// </summary>
     public class NextTrackRequestedEvent : ModuleEventBase { }
 
-    /// <summary>
-    /// 上一首请求事件
-    /// </summary>
     public class PreviousTrackRequestedEvent : ModuleEventBase { }
 
-    /// <summary>
-    /// Seek 跳转请求事件
-    /// </summary>
     public class SeekRequestedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 目标位置 (秒)
-        /// </summary>
         public float PositionSeconds { get; set; }
     }
 
-    /// <summary>
-    /// 音量变化请求事件
-    /// </summary>
     public class VolumeChangeRequestedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 目标音量 (0.0 ~ 1.0)
-        /// </summary>
         public float Volume { get; set; }
     }
 
-    /// <summary>
-    /// 随机播放切换请求事件
-    /// </summary>
     public class ToggleShuffleRequestedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 是否启用随机播放
-        /// </summary>
         public bool Enabled { get; set; }
     }
 
-    /// <summary>
-    /// 循环模式切换请求事件
-    /// </summary>
     public class SetRepeatModeRequestedEvent : ModuleEventBase
     {
-        /// <summary>
-        /// 目标循环模式
-        /// </summary>
-        public Interfaces.RepeatMode Mode { get; set; }
+        public Protos.Models.RepeatMode Mode { get; set; }
     }
 
     #endregion
 }
+

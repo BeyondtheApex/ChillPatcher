@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
 import '../models/mod_manifest.dart';
-import '../models/node_data.dart';
 import '../models/mod_enums.dart';
+import '../generated/omni_mix_player/models/instance.pb.dart';
 import '../services/mod_deployment_service.dart'
     if (dart.library.js_interop) '../stubs/mod_deployment_service_web.dart';
 
@@ -301,12 +301,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                         ],
                         _buildInstanceStatusCard(game, st, l10n, cs),
                         const SizedBox(height: 20),
-                        _buildComponentCards(
-                          game,
-                          st,
-                          l10n,
-                          cs,
-                        ),
+                        _buildComponentCards(game, st, l10n, cs),
                       ],
                     ],
                   ),
@@ -526,7 +521,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
             ),
             const SizedBox(height: 12),
             ...instances.map((inst) {
-              final online = inst.attached;
+              final online = inst.isOnline;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
@@ -554,16 +549,16 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: inst.isServerManaged
+                        color: st.canControlInstance(inst.id)
                             ? Colors.blue.withAlpha(30)
                             : Colors.orange.withAlpha(30),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        inst.mode,
+                        inst.mode.name,
                         style: TextStyle(
                           fontSize: 11,
-                          color: inst.isServerManaged
+                          color: st.canControlInstance(inst.id)
                               ? Colors.blue
                               : Colors.orange,
                         ),
@@ -605,29 +600,25 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
               l10n,
               cs,
             ),
-            versionInfo: _buildVersionInfo(
-              framework.id,
-              framework.version,
-              cs,
-            ),
+            versionInfo: _buildVersionInfo(framework.id, framework.version, cs),
             actions: _buildFrameworkActions(st, l10n, cs, game, framework),
           ),
         ),
       for (final mod in modsForGame(game))
         _buildResponsiveComponentCard(
           child: _buildComponentCard(
-              icon: Icons.extension_rounded,
-              title: mod.name,
-              statusBadge: _buildModDetailedStatusBadge(
-                st.modStatusFor(game.id, mod.id),
-                l10n,
-                cs,
-              ),
-              versionInfo: _buildVersionInfo(mod.id, mod.version, cs),
-              actions: _buildModActions(st, l10n, cs, game, mod),
-              onSettingsPressed: mod.hasSettings
-                  ? () => _showModSettings(context, mod, game.id)
-                  : null,
+            icon: Icons.extension_rounded,
+            title: mod.name,
+            statusBadge: _buildModDetailedStatusBadge(
+              st.modStatusFor(game.id, mod.id),
+              l10n,
+              cs,
+            ),
+            versionInfo: _buildVersionInfo(mod.id, mod.version, cs),
+            actions: _buildModActions(st, l10n, cs, game, mod),
+            onSettingsPressed: mod.hasSettings
+                ? () => _showModSettings(context, mod, game.id)
+                : null,
           ),
         ),
     ];
@@ -1034,7 +1025,11 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
           break;
         case BepInExStatus.managed:
           list.add(
-            _badge('${framework.name}: ${l10n.statusManaged}', Colors.green, cs),
+            _badge(
+              '${framework.name}: ${l10n.statusManaged}',
+              Colors.green,
+              cs,
+            ),
           );
           break;
         case BepInExStatus.unmanaged:
@@ -1058,7 +1053,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
           );
           break;
         case ModStatus.installed:
-          list.add(_badge('${mod.name}: ${l10n.modInstalled}', Colors.green, cs));
+          list.add(
+            _badge('${mod.name}: ${l10n.modInstalled}', Colors.green, cs),
+          );
           break;
       }
       list.add(const SizedBox(width: 8));
@@ -1101,10 +1098,10 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     }
   }
 
-  void _showArchiveInstanceDialog(PlaybackInstanceInfo inst) {
+  void _showArchiveInstanceDialog(InstanceSummary inst) {
     final l10n = AppLocalizations.of(context);
     final ctrl = TextEditingController(
-      text: inst.gameName.isNotEmpty ? inst.gameName : inst.id,
+      text: inst.id.isNotEmpty ? inst.id : inst.id,
     );
     showDialog(
       context: context,
@@ -1157,11 +1154,8 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => ModInstallWizard(
-          state: st,
-          gameId: gameId,
-          modId: modId,
-        ),
+        builder: (context) =>
+            ModInstallWizard(state: st, gameId: gameId, modId: modId),
       );
       return;
     }
@@ -1528,13 +1522,14 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
-    
+
     final String titleText;
     if (widget.modId != null) {
       final modName = modById(widget.modId!)?.name ?? widget.modId;
       titleText = '${l10n.installMod}: $modName';
     } else {
-      final frameworkName = frameworkById(widget.frameworkId!)?.name ?? widget.frameworkId;
+      final frameworkName =
+          frameworkById(widget.frameworkId!)?.name ?? widget.frameworkId;
       titleText = 'Install $frameworkName';
     }
 
@@ -1546,13 +1541,13 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
             _step == WizardStep.success
                 ? Icons.check_circle_outline
                 : _step == WizardStep.failed
-                    ? Icons.error_outline
-                    : Icons.download_rounded,
+                ? Icons.error_outline
+                : Icons.download_rounded,
             color: _step == WizardStep.success
                 ? Colors.green
                 : _step == WizardStep.failed
-                    ? Colors.red
-                    : cs.primary,
+                ? Colors.red
+                : cs.primary,
           ),
           const SizedBox(width: 10),
           Expanded(child: Text(titleText)),
@@ -1579,7 +1574,11 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
       case WizardStep.ready:
         return _buildReviewList(cs);
       case WizardStep.installing:
-        return _buildLoading('Installing (Requires Administrator Privilege)...', _execLogs, cs);
+        return _buildLoading(
+          'Installing (Requires Administrator Privilege)...',
+          _execLogs,
+          cs,
+        );
       case WizardStep.manualReady:
         return _buildManualReady(cs, l10n);
       case WizardStep.success:
@@ -1644,23 +1643,44 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
       children: [
         Text(
           'Review the files to be processed:',
-          style: TextStyle(fontWeight: FontWeight.w600, color: cs.onSurfaceVariant),
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: cs.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 10),
         Expanded(
           child: ListView(
             children: [
               if (pr.links.isNotEmpty) ...[
-                _buildGroupHeader('Links to be Created (Symlinks)', Colors.blue, cs),
-                ...pr.links.map((f) => _buildFileRow(f, Icons.link, Colors.blue)),
+                _buildGroupHeader(
+                  'Links to be Created (Symlinks)',
+                  Colors.blue,
+                  cs,
+                ),
+                ...pr.links.map(
+                  (f) => _buildFileRow(f, Icons.link, Colors.blue),
+                ),
               ],
               if (pr.added.isNotEmpty) ...[
-                _buildGroupHeader('Files to be Added/Overwritten', Colors.green, cs),
-                ...pr.added.map((f) => _buildFileRow(f, Icons.add_box_outlined, Colors.green)),
+                _buildGroupHeader(
+                  'Files to be Added/Overwritten',
+                  Colors.green,
+                  cs,
+                ),
+                ...pr.added.map(
+                  (f) => _buildFileRow(f, Icons.add_box_outlined, Colors.green),
+                ),
               ],
               if (pr.backups.isNotEmpty) ...[
-                _buildGroupHeader('Original Files to be Backed Up', Colors.orange, cs),
-                ...pr.backups.map((f) => _buildFileRow(f, Icons.backup_outlined, Colors.orange)),
+                _buildGroupHeader(
+                  'Original Files to be Backed Up',
+                  Colors.orange,
+                  cs,
+                ),
+                ...pr.backups.map(
+                  (f) => _buildFileRow(f, Icons.backup_outlined, Colors.orange),
+                ),
               ],
             ],
           ),
@@ -1681,7 +1701,11 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
         ),
         child: Text(
           title,
-          style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 13),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: color,
+            fontSize: 13,
+          ),
         ),
       ),
     );
@@ -1738,7 +1762,11 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
         const SizedBox(height: 12),
         const Text(
           'Installation Failed!',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.red,
+          ),
         ),
         const SizedBox(height: 12),
         Expanded(
@@ -1750,7 +1778,9 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: ListView.builder(
-              itemCount: _execLogs.isNotEmpty ? _execLogs.length : _prepLogs.length,
+              itemCount: _execLogs.isNotEmpty
+                  ? _execLogs.length
+                  : _prepLogs.length,
               itemBuilder: (context, idx) {
                 final logs = _execLogs.isNotEmpty ? _execLogs : _prepLogs;
                 return Text(
@@ -1785,9 +1815,7 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
         return Row(
           children: [
             TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.orange,
-              ),
+              style: TextButton.styleFrom(foregroundColor: Colors.orange),
               onPressed: () {
                 _prepareManualInstallFolder();
                 setState(() {
@@ -1942,7 +1970,10 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
               const SizedBox(height: 6),
               Text(
                 l10n.manualInstallCheckHint,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -1952,17 +1983,28 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
     );
   }
 
-  Widget _buildPathRow(String label, String path, ColorScheme cs, AppLocalizations l10n) {
+  Widget _buildPathRow(
+    String label,
+    String path,
+    ColorScheme cs,
+    AppLocalizations l10n,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+        ),
         const SizedBox(height: 4),
         Row(
           children: [
             Expanded(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: cs.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(6),
@@ -1999,7 +2041,7 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
     final l10n = AppLocalizations.of(context)!;
     final gameDir = widget.state.gamePathFor(widget.gameId);
     bool verified = false;
-    
+
     if (widget.modId != null) {
       final mod = modById(widget.modId!);
       if (mod != null) {
@@ -2092,7 +2134,8 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
     final id = widget.modId ?? widget.frameworkId;
     if (id == null) return;
 
-    final managerBackupDir = '${ModDeploymentService.managerDir}/backups/$id/v$version';
+    final managerBackupDir =
+        '${ModDeploymentService.managerDir}/backups/$id/v$version';
 
     for (final relPath in pr.backups) {
       final tempBackupFile = File('$tempDir/$relPath.v$version.bak');
@@ -2121,7 +2164,8 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
     final id = widget.modId ?? widget.frameworkId;
     if (id == null) return;
 
-    final managerBackupDir = '${ModDeploymentService.managerDir}/backups/$id/v$version';
+    final managerBackupDir =
+        '${ModDeploymentService.managerDir}/backups/$id/v$version';
 
     for (final relPath in pr.backups) {
       final tempBackupFile = File('$tempDir/$relPath.v$version.bak');
@@ -2136,4 +2180,3 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
     }
   }
 }
-

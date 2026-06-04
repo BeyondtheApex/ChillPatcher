@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using OmniMixPlayer.SDK.Attributes;
 using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.SDK.Protos.Models;
 
 
 namespace OmniMixPlayer.Module.QQMusic
@@ -31,10 +31,10 @@ namespace OmniMixPlayer.Module.QQMusic
         private QQMusicCoverLoader _coverLoader;
 
         // State
-        private List<MusicInfo> _musicList;
-        private List<MusicInfo> _recommendMusicList;
+        private List<Track> _musicList;
+        private List<Track> _recommendMusicList;
         private Dictionary<string, QQMusicBridge.SongInfo> _songInfoMap;
-        private Dictionary<long, List<MusicInfo>> _customPlaylistMusicLists;
+        private Dictionary<long, List<Track>> _customPlaylistMusicLists;
         private bool _isReady;
         private bool _isLoggedIn;
         private QRLoginManager _qrLoginManager;
@@ -72,10 +72,10 @@ namespace OmniMixPlayer.Module.QQMusic
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _logger = context.Logger;
 
-            _musicList = new List<MusicInfo>();
-            _recommendMusicList = new List<MusicInfo>();
+            _musicList = new List<Track>();
+            _recommendMusicList = new List<Track>();
             _songInfoMap = new Dictionary<string, QQMusicBridge.SongInfo>();
-            _customPlaylistMusicLists = new Dictionary<long, List<MusicInfo>>();
+            _customPlaylistMusicLists = new Dictionary<long, List<Track>>();
 
             // Load native DLL
             try
@@ -150,33 +150,11 @@ namespace OmniMixPlayer.Module.QQMusic
 
         public bool IsReady => _isReady;
         public event Action<bool> OnReadyStateChanged;
-        public MusicSourceType SourceType => MusicSourceType.Stream;
+        public SourceType SourceType => SourceType.Stream;
 
-        public Task<List<MusicInfo>> GetMusicListAsync()
+        public Task<List<Track>> GetMusicListAsync()
         {
-            List<MusicInfo> musicListSnapshot;
-            List<MusicInfo> recommendSnapshot;
-            List<List<MusicInfo>> customPlaylistsSnapshot;
-
-            lock (_stateLock)
-            {
-                musicListSnapshot = _musicList?.ToList() ?? new List<MusicInfo>();
-                recommendSnapshot = _recommendMusicList?.ToList() ?? new List<MusicInfo>();
-                customPlaylistsSnapshot = _customPlaylistMusicLists?.Values
-                    .Select(list => list?.ToList() ?? new List<MusicInfo>())
-                    .ToList() ?? new List<List<MusicInfo>>();
-            }
-
-            var allMusic = new List<MusicInfo>();
-            allMusic.AddRange(musicListSnapshot);
-            allMusic.AddRange(recommendSnapshot.Where(m => !musicListSnapshot.Any(f => f.UUID == m.UUID)));
-
-            foreach (var playlist in customPlaylistsSnapshot)
-            {
-                allMusic.AddRange(playlist.Where(m => !allMusic.Any(e => e.UUID == m.UUID)));
-            }
-
-            return Task.FromResult(allMusic);
+            return Task.FromResult(_context.Library.QueryTracks(new TrackQuery { ModuleId = ModuleId, Limit = 0 }).ToList());
         }
 
         public void UnloadAudio(string uuid)
@@ -192,7 +170,7 @@ namespace OmniMixPlayer.Module.QQMusic
 
             _context.EventBus.Publish(new PlaylistUpdatedEvent
             {
-                TagId = QQMusicSongRegistry.TAG_FAVORITES,
+                SourceRefId = QQMusicSongRegistry.PLAYLIST_FAVORITES,
                 UpdateType = PlaylistUpdateType.FullRefresh
             });
         }
@@ -310,33 +288,30 @@ namespace OmniMixPlayer.Module.QQMusic
 
         public bool IsExcluded(string uuid)
         {
-            var music = _musicList.FirstOrDefault(m => m.UUID == uuid)
-                ?? _recommendMusicList.FirstOrDefault(m => m.UUID == uuid);
-            return music?.IsExcluded ?? false;
+            var track = _context.Library.GetTrack(uuid);
+            return track?.IsExcluded ?? false;
         }
 
         public void SetExcluded(string uuid, bool isExcluded)
         {
-            var music = _musicList.FirstOrDefault(m => m.UUID == uuid)
-                ?? _recommendMusicList.FirstOrDefault(m => m.UUID == uuid);
-            if (music != null)
+            var track = _context.Library.GetTrack(uuid);
+            if (track != null)
             {
-                music.IsExcluded = isExcluded;
-                _context.MusicRegistry.UpdateMusic(music);
+                track.IsExcluded = isExcluded;
+                _context.Library.UpsertTrack(track);
             }
         }
 
         public IReadOnlyList<string> GetFavorites()
         {
-            return _musicList.Where(m => m.IsFavorite).Select(m => m.UUID).ToList();
+            return _context.Library.QueryTracks(new TrackQuery { ModuleId = ModuleId, IsFavorite = true, Limit = 0 })
+                .Select(m => m.Uuid).ToList();
         }
 
         public IReadOnlyList<string> GetExcluded()
         {
-            var allMusic = new List<MusicInfo>();
-            allMusic.AddRange(_musicList);
-            allMusic.AddRange(_recommendMusicList);
-            return allMusic.Where(m => m.IsExcluded).Select(m => m.UUID).ToList();
+            return _context.Library.QueryTracks(new TrackQuery { ModuleId = ModuleId, IsExcluded = true, Limit = 0 })
+                .Select(m => m.Uuid).ToList();
         }
 
         #endregion
@@ -391,7 +366,7 @@ namespace OmniMixPlayer.Module.QQMusic
                 }
 
                 // 注销旧的所有专辑，重新注册
-                _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
+                _context.Library.UnregisterModule(ModuleId);
 
                 _isLoggedIn = true;
 
@@ -403,7 +378,7 @@ namespace OmniMixPlayer.Module.QQMusic
                 // 通知 UI 刷新（触发跳转到歌曲列表）
                 _context.EventBus.Publish(new PlaylistUpdatedEvent
                 {
-                    TagId = QQMusicSongRegistry.TAG_FAVORITES,
+                    SourceRefId = QQMusicSongRegistry.PLAYLIST_FAVORITES,
                     UpdateType = PlaylistUpdateType.FullRefresh
                 });
 
@@ -459,13 +434,12 @@ namespace OmniMixPlayer.Module.QQMusic
                 var likeSongs = await Task.Run(() => _bridge.GetLikeSongs(true));
                 _logger?.LogInformation($"ScanAndRegisterAsync: Got {likeSongs?.Count ?? 0} like songs, error: {_bridge.GetLastError()}");
 
-                // 即使收藏为空也注册收藏 Tag/专辑，避免 UI 在刷新时访问到缺失实体
-                _songRegistry.RegisterFavoritesTag();
-                _songRegistry.RegisterFavoritesAlbum(likeSongs?.Count ?? 0);
+                // 即使收藏为空也注册收藏 Playlist/Album，避免 UI 在刷新时访问到缺失实体
+                _songRegistry.RegisterFavoritesPlaylist();
 
                 var registeredFavorites = likeSongs != null && likeSongs.Count > 0
                     ? _songRegistry.RegisterFavoritesSongs(likeSongs, _songInfoMap)
-                    : new List<MusicInfo>();
+                    : new List<Track>();
 
                 lock (_stateLock)
                 {
@@ -492,11 +466,14 @@ namespace OmniMixPlayer.Module.QQMusic
                 if (songs == null || songs.Count == 0) return 0;
 
                 var newSongs = songs.Where(s =>
-                    !_recommendMusicList.Any(m => m.UUID == QQMusicSongRegistry.GenerateUUID(s.Mid))).ToList();
+                    !_recommendMusicList.Any(m => m.Uuid == QQMusicSongRegistry.GenerateUUID(s.Mid))).ToList();
 
                 if (newSongs.Count == 0) return 0;
 
-                var newMusic = _songRegistry.RegisterRecommendSongs(newSongs, _songInfoMap, _musicList);
+                // 确保 Playlist 和 Album 已注册
+                _songRegistry.RegisterRecommendPlaylist();
+
+                var newMusic = _songRegistry.RegisterRecommendSongs(newSongs, _songInfoMap, _musicList, _recommendMusicList.Count);
                 _recommendMusicList.AddRange(newMusic);
 
                 return newMusic.Count;
@@ -526,8 +503,7 @@ namespace OmniMixPlayer.Module.QQMusic
                     var detail = await Task.Run(() => _bridge.GetPlaylistSongs(playlistId));
                     if (detail == null || detail.Songs == null) continue;
 
-                    _songRegistry.RegisterPlaylistTag(playlistId, detail.DissName);
-                    _songRegistry.RegisterPlaylistAlbum(playlistId, detail.DissName, detail.SongCount, detail.CoverUrl);
+                    _songRegistry.RegisterPlaylist(playlistId, detail.DissName, detail.CoverUrl);
 
                     var musicList = _songRegistry.RegisterPlaylistSongs(playlistId, detail.Songs, _songInfoMap);
                     _customPlaylistMusicLists[playlistId] = musicList;
@@ -545,16 +521,14 @@ namespace OmniMixPlayer.Module.QQMusic
         {
             _favoriteManager.HandleFavoriteChanged(evt, ModuleId, (uuid, isFavorite) =>
             {
-                var music = _musicList.FirstOrDefault(m => m.UUID == uuid)
-                    ?? _recommendMusicList.FirstOrDefault(m => m.UUID == uuid);
-
-                if (music != null)
+                var track = _context.Library.GetTrack(uuid);
+                if (track != null)
                 {
-                    music.IsFavorite = isFavorite;
-                    _context.MusicRegistry.UpdateMusic(music);
+                    track.IsFavorite = isFavorite;
+                    _context.Library.UpsertTrack(track);
 
                     // If favorited from recommend, move to favorites
-                    if (isFavorite && _recommendMusicList.Contains(music))
+                    if (isFavorite && _recommendMusicList.Any(m => m.Uuid == uuid))
                     {
                         _songRegistry.MoveSongToFavorites(uuid, _recommendMusicList, _musicList);
                     }
@@ -714,7 +688,7 @@ namespace OmniMixPlayer.Module.QQMusic
         private async Task RefreshQRCodeAsync()
         {
             if (_qrLoginManager == null) return;
-            _logger?.LogInformation("[{DisplayName}] 刷新二维码...");
+            _logger?.LogInformation("[{DisplayName}] 刷新二维码...", DisplayName);
             _qrVersion = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             PushUI?.Invoke(BuildUI()); // 先推 UI 显示加载状态
             var success = await _qrLoginManager.StartLoginAsync(_currentLoginType);
@@ -758,9 +732,7 @@ namespace OmniMixPlayer.Module.QQMusic
                 _songInfoMap?.Clear();
                 _customPlaylistMusicLists?.Clear();
 
-                _context?.MusicRegistry?.UnregisterAllByModule(ModuleId);
-                _context?.AlbumRegistry?.UnregisterAllByModule(ModuleId);
-                _context?.TagRegistry?.UnregisterAllByModule(ModuleId);
+                _context?.Library?.UnregisterModule(ModuleId);
 
                 // 重新初始化 QR 登录
                 _qrLoginManager = new QRLoginManager(_bridge, _logger);

@@ -11,7 +11,7 @@ using OmniMixPlayer.Module.LocalFolder.Services.Scanner;
 using OmniMixPlayer.SDK.Attributes;
 using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.SDK.Protos.Models;
 
 namespace OmniMixPlayer.Module.LocalFolder
 {
@@ -48,6 +48,7 @@ namespace OmniMixPlayer.Module.LocalFolder
         private CoverLoader _coverLoader;
         private LocalDatabase _database;
         private string _dataPath;
+        private readonly List<IDisposable> _subscriptions = new List<IDisposable>();
 
         // 配置项 (accessed via _context.ConfigManager.GetValue<T>)
 
@@ -65,7 +66,8 @@ namespace OmniMixPlayer.Module.LocalFolder
             CanExclude = true,
             SupportsLiveUpdate = false,
             ProvidesCover = true,
-            ProvidesAlbum = true
+            ProvidesAlbum = true,
+            ProvidesPlaylist = true
         };
 
         public async Task InitializeAsync(IModuleContext context)
@@ -129,6 +131,9 @@ namespace OmniMixPlayer.Module.LocalFolder
         public void OnUnload()
         {
             // 清理资源
+            foreach (var subscription in _subscriptions)
+                subscription.Dispose();
+            _subscriptions.Clear();
             _coverLoader?.ClearCache();
             _database?.Dispose();
 
@@ -172,16 +177,21 @@ namespace OmniMixPlayer.Module.LocalFolder
         private void SubscribeEvents()
         {
             // 订阅播放事件
-            _context.EventBus.Subscribe<PlayStartedEvent>(OnPlayStarted);
-            _context.EventBus.Subscribe<PlayEndedEvent>(OnPlayEnded);
+            _subscriptions.Add(_context.EventBus.Subscribe<PlayStartedEvent>(OnPlayStarted));
+            _subscriptions.Add(_context.EventBus.Subscribe<PlayEndedEvent>(OnPlayEnded));
         }
 
         private void OnPlayStarted(PlayStartedEvent evt)
         {
-            // 如果是本模块的歌曲，更新播放统计
             if (evt.Music?.ModuleId == ModuleId)
             {
-                _database.UpdatePlayCount(evt.Music.UUID);
+                _database.UpdatePlayCount(evt.Music.Uuid);
+                var track = _context.Library.GetTrack(evt.Music.Uuid);
+                if (track != null)
+                {
+                    track.PlayCount = _database.GetPlayCount(evt.Music.Uuid);
+                    _context.Library.UpsertTrack(track);
+                }
             }
         }
 
@@ -201,61 +211,51 @@ namespace OmniMixPlayer.Module.LocalFolder
             // 扫描文件夹
             var scanResult = await _scanner.ScanAsync();
 
-            // 注册 Tag (歌单) - 检查 JSON 更新显示名称
+            // 注册 Playlist (歌单)
             foreach (var playlist in scanResult.Playlists)
             {
-                // 检查 playlist.json 获取最新显示名称
                 var jsonDisplayName = MetadataReader.ReadPlaylistName(playlist.DirectoryPath);
                 var finalDisplayName = !string.IsNullOrEmpty(jsonDisplayName) ? jsonDisplayName : playlist.DisplayName;
 
-                var tagInfo = _context.TagRegistry.RegisterTag(
-                    playlist.TagId,
-                    finalDisplayName,
-                    ModuleId
-                );
+                _context.Logger.LogInformation($"注册歌单: {finalDisplayName}");
 
-                _context.Logger.LogInformation($"注册歌单 Tag: {finalDisplayName}");
+                var pl = new Playlist
+                {
+                    Id = $"local_{playlist.TagId}",
+                    Name = finalDisplayName,
+                    ModuleId = ModuleId,
+                    Kind = PlaylistKind.User
+                };
+                _context.Library.UpsertPlaylist(pl);
             }
 
-            // 注册专辑 - 检查 JSON 更新显示名称和艺术家
+            // 注册专辑
             foreach (var album in scanResult.Albums)
             {
-                // 检查 album.json 获取最新显示名称和艺术家
-                if (!string.IsNullOrEmpty(album.DirectoryPath))
-                {
-                    var jsonDisplayName = MetadataReader.ReadAlbumName(album.DirectoryPath);
-                    var jsonArtist = MetadataReader.ReadAlbumArtist(album.DirectoryPath);
-
-                    if (!string.IsNullOrEmpty(jsonDisplayName))
-                    {
-                        album.DisplayName = jsonDisplayName;
-                    }
-                    if (!string.IsNullOrEmpty(jsonArtist))
-                    {
-                        album.Artist = jsonArtist;
-                    }
-                }
-
-                _context.AlbumRegistry.RegisterAlbum(album, ModuleId);
+                _context.Library.UpsertAlbum(album);
             }
 
-            // 注册歌曲
+            // 注册歌曲 + 设置 track tags
             foreach (var music in scanResult.Music)
             {
-                // 恢复收藏和排除状态
-                bool isFavorite = _database.IsFavorite(music.UUID);
-                bool isExcluded = _database.IsExcluded(music.UUID);
-
-                if (isFavorite || isExcluded)
-                {
-                    music.ExtendedData = new LocalMusicData { IsFavorite = isFavorite, IsExcluded = isExcluded };
-                }
-
-                // 同步 MusicInfo.IsExcluded 属性
-                music.IsExcluded = isExcluded;
+                bool isFavorite = _database.IsFavorite(music.Uuid);
+                bool isExcluded = _database.IsExcluded(music.Uuid);
                 music.IsFavorite = isFavorite;
+                music.IsExcluded = isExcluded;
+                music.ModuleId = ModuleId;
+                _context.Library.UpsertTrack(music);
+            }
 
-                _context.MusicRegistry.RegisterMusic(music, ModuleId);
+            // Build per-playlist entries — only tracks belonging to each playlist
+            foreach (var playlist in scanResult.Playlists)
+            {
+                var playlistId = $"local_{playlist.TagId}";
+                var tagId = playlist.TagId;
+                var entries = scanResult.Music
+                    .Where(m => scanResult.TrackPlaylistTags.TryGetValue(m.Uuid, out var tags) && tags.Contains(tagId))
+                    .Select((m, i) => new PlaylistEntrySpec { TrackUuid = m.Uuid, Position = i })
+                    .ToList();
+                _context.Library.ReplacePlaylistEntries(playlistId, entries);
             }
 
             // 清理孤儿记录（不再存在的歌曲的收藏/排除/播放统计）
@@ -272,7 +272,7 @@ namespace OmniMixPlayer.Module.LocalFolder
             try
             {
                 // 收集所有有效的 UUID 和 TagId
-                var validUuids = new HashSet<string>(scanResult.Music.Select(m => m.UUID));
+                var validUuids = new HashSet<string>(scanResult.Music.Select(m => m.Uuid));
                 var validTagIds = new HashSet<string>(scanResult.Playlists.Select(p => p.TagId));
 
                 // 清理不存在的歌曲的收藏/排除/播放统计
@@ -299,30 +299,19 @@ namespace OmniMixPlayer.Module.LocalFolder
 
         #region IMusicSourceProvider
 
-        public MusicSourceType SourceType => MusicSourceType.File;
+        public SourceType SourceType => SourceType.File;
 
-        public async Task<List<MusicInfo>> GetMusicListAsync()
+        public async Task<List<Track>> GetMusicListAsync()
         {
-            return new List<MusicInfo>(_context.MusicRegistry.GetMusicByModule(ModuleId));
+            return _context.Library.QueryTracks(new TrackQuery { ModuleId = ModuleId, Limit = 0 }).ToList();
         }
 
         public async Task RefreshAsync()
         {
-            // 清除当前注册的内容
-            _context.TagRegistry.UnregisterAllByModule(ModuleId);
-            _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
-            _context.MusicRegistry.UnregisterAllByModule(ModuleId);
-
-            // 重新扫描
+            _context.Library.UnregisterModule(ModuleId);
             _scanner.UpdateRootPath(_dataPath);
             await ScanAndRegisterAsync();
-
-            // 发布刷新事件
-            _context.EventBus.Publish(new PlaylistUpdatedEvent
-            {
-                TagId = null,  // 所有歌单
-                UpdateType = PlaylistUpdateType.FullRefresh
-            });
+            _context.EventBus.Publish(new PlaylistUpdatedEvent { SourceRefId = null, UpdateType = PlaylistUpdateType.FullRefresh });
         }
 
         #endregion
@@ -331,52 +320,37 @@ namespace OmniMixPlayer.Module.LocalFolder
 
         public async Task<(byte[] data, string mimeType)> GetMusicCoverAsync(string uuid)
         {
-            var music = _context.MusicRegistry.GetMusic(uuid);
+            var music = _context.Library.GetTrack(uuid);
             if (music == null || music.ModuleId != ModuleId)
                 return (null, null);
-
             return await _coverLoader.GetMusicCoverAsync(music.SourcePath);
         }
 
         public async Task<(byte[] data, string mimeType)> GetAlbumCoverAsync(string albumId)
         {
-            var album = _context.AlbumRegistry.GetAlbum(albumId);
-            if (album == null || album.ModuleId != ModuleId)
-                return (null, null);
-
-            return await _coverLoader.GetAlbumCoverAsync(album.DirectoryPath);
+            return await _coverLoader.GetAlbumCoverAsync(_dataPath);
         }
 
         public async Task<(byte[] data, string mimeType)> GetMusicCoverBytesAsync(string uuid)
         {
-            var music = _context.MusicRegistry.GetMusic(uuid);
+            var music = _context.Library.GetTrack(uuid);
             if (music == null || music.ModuleId != ModuleId)
                 return (null, null);
-
             return await _coverLoader.GetMusicCoverBytesAsync(music.SourcePath);
         }
 
-        public void ClearCache()
-        {
-            _coverLoader?.ClearCache();
-        }
+        public void ClearCache() { _coverLoader?.ClearCache(); }
 
         public void RemoveMusicCoverCache(string uuid)
         {
-            var music = _context.MusicRegistry.GetMusic(uuid);
-            if (music == null || music.ModuleId != ModuleId)
-                return;
-
+            var music = _context.Library.GetTrack(uuid);
+            if (music == null || music.ModuleId != ModuleId) return;
             _coverLoader?.RemoveMusicCoverCache(music.SourcePath);
         }
 
         public void RemoveAlbumCoverCache(string albumId)
         {
-            var album = _context.AlbumRegistry.GetAlbum(albumId);
-            if (album == null || album.ModuleId != ModuleId)
-                return;
-
-            _coverLoader?.RemoveAlbumCoverCache(album.DirectoryPath);
+            _coverLoader?.RemoveAlbumCoverCache(_dataPath);
         }
 
         #endregion
@@ -400,11 +374,18 @@ namespace OmniMixPlayer.Module.LocalFolder
             }
 
             // 发布事件
+            var track = _context.Library.GetTrack(uuid);
+            if (track != null)
+            {
+                track.IsFavorite = isFavorite;
+                _context.Library.UpsertTrack(track);
+            }
+
             _context.EventBus.Publish(new FavoriteChangedEvent
             {
                 UUID = uuid,
                 IsFavorite = isFavorite,
-                Music = _context.MusicRegistry.GetMusic(uuid)
+                Music = track
             });
         }
 
@@ -425,11 +406,18 @@ namespace OmniMixPlayer.Module.LocalFolder
             }
 
             // 发布事件
+            var track = _context.Library.GetTrack(uuid);
+            if (track != null)
+            {
+                track.IsExcluded = isExcluded;
+                _context.Library.UpsertTrack(track);
+            }
+
             _context.EventBus.Publish(new ExcludeChangedEvent
             {
                 UUID = uuid,
                 IsExcluded = isExcluded,
-                Music = _context.MusicRegistry.GetMusic(uuid)
+                Music = track
             });
         }
 
@@ -530,8 +518,8 @@ namespace OmniMixPlayer.Module.LocalFolder
         private SlintNode BuildUIWithStatus(string statusText = null)
         {
             var rootFolder = _dataPath ?? "未设置";
-            var musicCount = _context?.MusicRegistry?.GetMusicByModule(ModuleId)?.Count ?? 0;
-            var albumCount = _context?.AlbumRegistry?.GetAlbumsByModule(ModuleId)?.Count ?? 0;
+            var musicCount = _context?.Library?.QueryTracks(new TrackQuery { ModuleId = ModuleId, Limit = 0 })?.Count ?? 0;
+            var albumCount = _context?.Library?.QueryAlbums(new AlbumQuery { ModuleId = ModuleId, Limit = 0 })?.Count ?? 0;
 
             var column = SlintUi.Column(spacing: 16, padding: 20)
                 .AddChild(SlintUi.Text("本地文件夹", fontSize: 18))

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 using OmniMixPlayer.SDK.Attributes;
 using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.SDK.Protos.Models;
 
 
 namespace OmniMixPlayer.Module.Netease
@@ -35,25 +35,26 @@ namespace OmniMixPlayer.Module.Netease
         private NeteaseSessionManager _sessionManager;
         private NeteaseAccountApi _accountApi;
 
-        private List<MusicInfo> _musicList = new List<MusicInfo>();
-        private List<MusicInfo> _fmMusicList = new List<MusicInfo>();
+        private List<Track> _musicList = new List<Track>();
+        private List<Track> _fmMusicList = new List<Track>();
         private Dictionary<string, NeteaseBridge.SongInfo> _songInfoMap = new Dictionary<string, NeteaseBridge.SongInfo>();
         private bool _isReady = false;
         private bool _isLoggedIn = false;
 
         // 登录歌曲常量
         private const string LOGIN_SONG_UUID_PREFIX = "netease_qr_login_";
+        private const string LOGIN_ALBUM_ID = "netease_login_album";
         private const string LOGIN_SONG_TITLE = "网易云扫码登录";
         private const float LOGIN_SONG_DURATION = 120f; // 2 分钟
 
         // 当前登录歌曲的 UUID（每次登录生成新的）
         private string _currentLoginSongUuid;
         private IDisposable _playStartedSubscription;
+        private IDisposable _favoriteChangedSubscription;
 
         // QR 码版本号：每次刷新变化，用于 Flutter 端破坏图片缓存
         private long _qrVersion = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        // TODO: register control API via HTTP
 
         // 文件缓存管理器
         private NeteaseFileCache _fileCache;
@@ -63,7 +64,7 @@ namespace OmniMixPlayer.Module.Netease
         private IDisposable _resourcesReleasedSubscription;
 
         // 自定义歌单
-        private Dictionary<long, List<MusicInfo>> _customPlaylistMusicLists = new Dictionary<long, List<MusicInfo>>();
+        private Dictionary<long, List<Track>> _customPlaylistMusicLists = new Dictionary<long, List<Track>>();
 
         #region IMusicModule
 
@@ -75,11 +76,12 @@ namespace OmniMixPlayer.Module.Netease
         public ModuleCapabilities Capabilities => new ModuleCapabilities
         {
             CanDelete = true,
-            CanFavorite = true,  // 支持收藏操作，同步到网易云
+            CanFavorite = true,
             CanExclude = false,
             SupportsLiveUpdate = false,
             ProvidesCover = true,
-            ProvidesAlbum = true
+            ProvidesAlbum = true,
+            ProvidesPlaylist = true
         };
 
         public async Task InitializeAsync(IModuleContext context)
@@ -124,9 +126,6 @@ namespace OmniMixPlayer.Module.Netease
             {
                 context.Logger.LogWarning($"[{DisplayName}] 未登录网易云音乐，显示二维码登录");
 
-                // 未登录时只注册收藏 Tag（用于显示登录二维码）
-                RegisterFavoritesTag();
-
                 // 初始化二维码登录管理器
                 _qrLoginManager = new QRLoginManager(_bridge, context.Logger);
                 _qrLoginManager.OnLoginSuccess += OnQRLoginSuccess;
@@ -150,7 +149,6 @@ namespace OmniMixPlayer.Module.Netease
                 // 注册账户 API（未登录模式也需要，供 UI 触发登录）
                 _accountApi = new NeteaseAccountApi(_sessionManager, context.Logger);
                 _accountApi.SetQRLoginManager(_qrLoginManager);
-                // TODO: register control API via HTTP
 
                 _isReady = true;
                 OnReadyStateChanged?.Invoke(_isReady);
@@ -172,17 +170,10 @@ namespace OmniMixPlayer.Module.Netease
 
             // 初始化辅助管理器
             _favoriteManager = new NeteaseFavoriteManager(_bridge, context.Logger, _songInfoMap);
-            _songRegistry = new NeteaseSongRegistry(context, ModuleId, _songInfoMap, _favoriteManager, context.Logger);
+            _songRegistry = new NeteaseSongRegistry(context, ModuleId, _songInfoMap, _favoriteManager);
             if (IsPersonalFMEnabled)
             {
                 _fmManager = new PersonalFMManager(_bridge);
-            }
-
-            // 登录后注册 Tags
-            RegisterFavoritesTag();
-            if (IsPersonalFMEnabled)
-            {
-                RegisterFMTag();
             }
 
             // 获取并缓存收藏歌曲 ID 列表
@@ -207,8 +198,6 @@ namespace OmniMixPlayer.Module.Netease
             SubscribeToFavoriteEvents();
 
             // 注册歌词 API 和账户 API
-            // TODO: register control API via HTTP
-            // TODO: register control API via HTTP
 
             _isReady = true;
             OnReadyStateChanged?.Invoke(_isReady);
@@ -234,6 +223,8 @@ namespace OmniMixPlayer.Module.Netease
             _qrLoginManager?.CancelLogin();
             _playStartedSubscription?.Dispose();
             _playStartedSubscription = null;
+            _favoriteChangedSubscription?.Dispose();
+            _favoriteChangedSubscription = null;
             _sessionManager = null;
             _accountApi = null;
             _resourcesReleasedSubscription?.Dispose();
@@ -252,11 +243,11 @@ namespace OmniMixPlayer.Module.Netease
         public bool IsReady => _isReady;
         public event Action<bool> OnReadyStateChanged;
 
-        public MusicSourceType SourceType => MusicSourceType.Url;
+        public SourceType SourceType => SourceType.Url;
 
-        public Task<List<MusicInfo>> GetMusicListAsync()
+        public async Task<List<Track>> GetMusicListAsync()
         {
-            return Task.FromResult(_musicList.ToList());
+            return _context.Library.QueryTracks(new TrackQuery { ModuleId = ModuleId, Limit = 0 }).ToList();
         }
 
         public void UnloadAudio(string uuid)
@@ -273,8 +264,7 @@ namespace OmniMixPlayer.Module.Netease
             _songInfoMap.Clear();
 
             // 重新注销并注册
-            _context.MusicRegistry.UnregisterAllByModule(ModuleId);
-            _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
+            _context.Library.UnregisterModule(ModuleId);
 
             // 重新扫描
             await ScanAndRegisterAsync();
@@ -463,31 +453,15 @@ namespace OmniMixPlayer.Module.Netease
 
         public async Task<(byte[] data, string mimeType)> GetAlbumCoverAsync(string albumId)
         {
-            // 收藏专辑使用 FAVORITES.png 封面
-            if (albumId == NeteaseSongRegistry.FAVORITES_ALBUM_ID)
+            if (albumId == LOGIN_ALBUM_ID)
             {
                 return (_coverLoader.FavoritesCoverBytes, "image/png");
             }
-            // FM 专辑使用 FM.png 封面
-            if (albumId == NeteaseSongRegistry.PERSONAL_FM_ALBUM_ID)
-            {
-                return (_coverLoader.FMCoverBytes, "image/png");
-            }
 
-            // 自定义歌单：从 AlbumRegistry 获取封面 URL
-            if (albumId.StartsWith("netease_playlist_album_"))
+            var album = _context.Library.GetAlbum(albumId);
+            if (album != null && !string.IsNullOrWhiteSpace(album.CoverUri))
             {
-                var album = _context.AlbumRegistry.GetAlbum(albumId);
-                if (album != null && album.ExtendedData is string extData)
-                {
-                    // ExtendedData 格式: "PLAYLIST:{playlistId}:{coverUrl}"
-                    var parts = extData.Split(new[] { ':' }, 3);
-                    if (parts.Length >= 3 && parts[0] == "PLAYLIST" && !string.IsNullOrEmpty(parts[2]))
-                    {
-                        var coverUrl = parts[2];
-                        return await _coverLoader.GetCoverFromUrlAsync(coverUrl);
-                    }
-                }
+                return await _coverLoader.GetCoverFromUrlAsync(album.CoverUri);
             }
 
             return (_coverLoader.DefaultCoverBytes, "image/png");
@@ -558,39 +532,6 @@ namespace OmniMixPlayer.Module.Netease
 
         private bool IsPersonalFMEnabled => _context.ConfigManager.GetBool("EnablePersonalFM", false);
 
-        /// <summary>
-        /// 注册收藏 Tag（无论登录与否都需要）
-        /// </summary>
-        private void RegisterFavoritesTag()
-        {
-            // 注册"收藏歌曲" Tag（普通 Tag）
-            _context.TagRegistry.RegisterTag(
-                NeteaseSongRegistry.TAG_FAVORITES,
-                "网易云收藏",
-                ModuleId);
-            _context.Logger.LogInformation($"[{DisplayName}] 已注册 Tag: 网易云收藏");
-        }
-
-        /// <summary>
-        /// 注册个人 FM Tag（仅登录后需要）
-        /// </summary>
-        private void RegisterFMTag()
-        {
-            // 注册"个人FM" Tag
-            // 会在注册增长专辑 (IsGrowableAlbum=true) 时自动标记为增长 Tag
-            _context.TagRegistry.RegisterTag(
-                NeteaseSongRegistry.TAG_PERSONAL_FM,
-                "个人FM ∞",
-                ModuleId);
-
-            // 设置加载更多回调
-            _context.TagRegistry.SetLoadMoreCallback(
-                NeteaseSongRegistry.TAG_PERSONAL_FM,
-                LoadMoreFMSongsAsync);
-
-            _context.Logger.LogInformation($"[{DisplayName}] 已注册 Tag: 个人FM ∞");
-        }
-
         #region Login Song Methods
 
         /// <summary>
@@ -598,19 +539,14 @@ namespace OmniMixPlayer.Module.Netease
         /// </summary>
         private void RegisterLoginSongAlbum()
         {
-            var album = new AlbumInfo
+            var album = new Album
             {
-                AlbumId = NeteaseSongRegistry.FAVORITES_ALBUM_ID,
-                DisplayName = "网易云收藏",
+                Id = LOGIN_ALBUM_ID,
+                Title = "网易云登录",
                 Artist = "请扫码登录",
-                TagIds = new List<string> { NeteaseSongRegistry.TAG_FAVORITES },
-                ModuleId = ModuleId,
-                SongCount = 1,
-                SortOrder = 0,
-                IsGrowableAlbum = false,
-                ExtendedData = "LOGIN"
+                ModuleId = ModuleId
             };
-            _context.AlbumRegistry.RegisterAlbum(album, ModuleId);
+            _context.Library.UpsertAlbum(album);
         }
 
         /// <summary>
@@ -621,25 +557,21 @@ namespace OmniMixPlayer.Module.Netease
             // 每次生成新的 UUID，避免缓存问题
             _currentLoginSongUuid = LOGIN_SONG_UUID_PREFIX + Guid.NewGuid().ToString("N").Substring(0, 8);
 
-            var loginMusic = new MusicInfo
+            var loginMusic = new Track
             {
-                UUID = _currentLoginSongUuid,
+                Uuid = _currentLoginSongUuid,
                 Title = LOGIN_SONG_TITLE,
                 Artist = statusText,
-                AlbumId = NeteaseSongRegistry.FAVORITES_ALBUM_ID,
-                TagId = NeteaseSongRegistry.TAG_FAVORITES,
-                SourceType = MusicSourceType.Stream,
+                AlbumId = LOGIN_ALBUM_ID,
+                SourceType = SourceType.Stream,
                 SourcePath = "login",
                 Duration = LOGIN_SONG_DURATION,
                 ModuleId = ModuleId,
-                IsUnlocked = true,
-                IsFavorite = false,
-                IsDeletable = false,
-                ExtendedData = "QR_LOGIN"
+                IsFavorite = false
             };
 
             _musicList.Add(loginMusic);
-            _context.MusicRegistry.RegisterMusic(loginMusic, ModuleId);
+            _context.Library.UpsertTrack(loginMusic);
             _context.Logger.LogInformation($"[{DisplayName}] 已注册登录歌曲: {_currentLoginSongUuid}");
         }
 
@@ -656,11 +588,11 @@ namespace OmniMixPlayer.Module.Netease
         /// </summary>
         private void UpdateLoginSongStatus(string statusText)
         {
-            var loginMusic = _musicList.FirstOrDefault(m => IsLoginSongUuid(m.UUID));
+            var loginMusic = _musicList.FirstOrDefault(m => IsLoginSongUuid(m.Uuid));
             if (loginMusic != null)
             {
                 loginMusic.Artist = statusText;
-                _context.MusicRegistry.UpdateMusic(loginMusic);
+                _context.Library.UpsertTrack(loginMusic);
             }
         }
 
@@ -669,11 +601,11 @@ namespace OmniMixPlayer.Module.Netease
         /// </summary>
         private void RemoveLoginSong()
         {
-            var loginMusic = _musicList.FirstOrDefault(m => IsLoginSongUuid(m.UUID));
+            var loginMusic = _musicList.FirstOrDefault(m => IsLoginSongUuid(m.Uuid));
             if (loginMusic != null)
             {
                 _musicList.Remove(loginMusic);
-                _context.MusicRegistry.UnregisterMusic(loginMusic.UUID);
+                _context.Library.DeleteTrack(loginMusic.Uuid);
                 _currentLoginSongUuid = null;
                 _context.Logger.LogInformation($"[{DisplayName}] 已删除登录歌曲");
             }
@@ -684,7 +616,7 @@ namespace OmniMixPlayer.Module.Netease
         /// </summary>
         private void OnMusicResourcesReleased(MusicResourcesReleasedEvent evt)
         {
-            var uuid = evt?.Music?.UUID;
+            var uuid = evt?.Music?.Uuid;
             if (string.IsNullOrEmpty(uuid)) return;
 
             if (!_pendingTags.TryGetValue(uuid, out var pending)) return;
@@ -733,6 +665,8 @@ namespace OmniMixPlayer.Module.Netease
             // 停止登录前的播放监听
             _playStartedSubscription?.Dispose();
             _playStartedSubscription = null;
+            _favoriteChangedSubscription?.Dispose();
+            _favoriteChangedSubscription = null;
 
             // 获取用户信息
             var userInfo = _bridge.GetUserInfo();
@@ -745,11 +679,11 @@ namespace OmniMixPlayer.Module.Netease
             RemoveLoginSong();
 
             // 注销旧的专辑
-            _context.AlbumRegistry.UnregisterAllByModule(ModuleId);
+            _context.Library.UnregisterModule(ModuleId);
 
             // 初始化辅助管理器
             _favoriteManager = new NeteaseFavoriteManager(_bridge, _context.Logger, _songInfoMap);
-            _songRegistry = new NeteaseSongRegistry(_context, ModuleId, _songInfoMap, _favoriteManager, _context.Logger);
+            _songRegistry = new NeteaseSongRegistry(_context, ModuleId, _songInfoMap, _favoriteManager);
             if (IsPersonalFMEnabled)
             {
                 _fmManager = new PersonalFMManager(_bridge);
@@ -778,8 +712,6 @@ namespace OmniMixPlayer.Module.Netease
             SubscribeToFavoriteEvents();
 
             // 注册歌词 API 和账户 API
-            // TODO: register control API via HTTP
-            // TODO: register control API via HTTP
 
             // 统计自定义歌单歌曲数
             var customSongCount = _customPlaylistMusicLists.Values.Sum(list => list.Count);
@@ -789,7 +721,7 @@ namespace OmniMixPlayer.Module.Netease
             // 发布刷新事件
             _context.EventBus.Publish(new SDK.Events.PlaylistUpdatedEvent
             {
-                TagId = NeteaseSongRegistry.TAG_FAVORITES,
+                SourceRefId = NeteaseSongRegistry.PLAYLIST_FAVORITES,
                 UpdateType = SDK.Events.PlaylistUpdateType.FullRefresh
             });
 
@@ -799,7 +731,7 @@ namespace OmniMixPlayer.Module.Netease
 
         private void OnPlayStartedBeforeLogin(PlayStartedEvent evt)
         {
-            var uuid = evt?.Music?.UUID;
+            var uuid = evt?.Music?.Uuid;
             if (uuid == null || IsLoginSongUuid(uuid)) return;
             _qrLoginManager?.CancelLogin();
         }
@@ -857,7 +789,8 @@ namespace OmniMixPlayer.Module.Netease
 
         private void SubscribeToFavoriteEvents()
         {
-            _context.EventBus.Subscribe<FavoriteChangedEvent>(OnFavoriteChanged);
+            _favoriteChangedSubscription?.Dispose();
+            _favoriteChangedSubscription = _context.EventBus.Subscribe<FavoriteChangedEvent>(OnFavoriteChanged);
         }
 
         private void OnFavoriteChanged(FavoriteChangedEvent evt)
@@ -887,7 +820,7 @@ namespace OmniMixPlayer.Module.Netease
             _context.Logger.LogInformation($"[{DisplayName}] 获取到 {songs.Count} 首收藏歌曲");
 
             // 使用 SongRegistry 注册专辑和歌曲
-            _songRegistry.RegisterFavoritesAlbum(songs.Count, IsPersonalFMEnabled);
+            _songRegistry.RegisterFavoritesPlaylist(songs.Count);
             _musicList = _songRegistry.RegisterFavoritesSongs(songs);
 
             _context.Logger.LogInformation($"[{DisplayName}] 已注册 1 个专辑(歌单), {_musicList.Count} 首歌曲");
@@ -903,7 +836,7 @@ namespace OmniMixPlayer.Module.Netease
             }
 
             // 使用 SongRegistry 注册 FM 专辑和歌曲
-            _songRegistry.RegisterFMAlbum(_fmManager.Count);
+            _songRegistry.RegisterFMPlaylist(_fmManager.Count);
             _fmMusicList = _songRegistry.RegisterFMSongs(_fmManager.Songs);
 
             _context.Logger.LogInformation($"[{DisplayName}] 个人FM 已初始化，{_fmMusicList.Count} 首歌曲");
@@ -971,18 +904,10 @@ namespace OmniMixPlayer.Module.Netease
             _context.Logger.LogInformation($"[{DisplayName}] 正在注册歌单: {playlist.Name} ({playlist.SongCount} 首)");
 
             // 注册 Tag
-            _songRegistry.RegisterPlaylistTag(playlist.Id, playlist.Name);
+            _songRegistry.RegisterPlaylist(playlist.Id, playlist.Name);
 
             // 获取歌单中的歌曲
-            var songs = await Task.Run(() => _bridge.GetPlaylistSongs(playlist.Id, true));
-            if (songs == null || songs.Count == 0)
-            {
-                _context.Logger.LogWarning($"[{DisplayName}] 歌单 {playlist.Name} 获取歌曲失败或为空");
-                return;
-            }
-
-            // 注册专辑
-            _songRegistry.RegisterPlaylistAlbum(playlist.Id, playlist.Name, songs.Count, playlist.CoverUrl);
+            var songs = await Task.Run(() => _bridge.GetPlaylistSongs(playlist.Id));
 
             // 注册歌曲
             var musicList = _songRegistry.RegisterPlaylistSongs(playlist.Id, songs);
@@ -1054,10 +979,9 @@ namespace OmniMixPlayer.Module.Netease
             }
 
             // 注册 Tag
-            _songRegistry.RegisterPlaylistTag(playlistId, detail.Name);
 
             // 注册专辑
-            _songRegistry.RegisterPlaylistAlbum(playlistId, detail.Name, detail.SongCount, detail.CoverUrl);
+            _songRegistry.RegisterPlaylist(playlistId, detail.Name, detail.CoverUrl);
 
             // 注册歌曲
             if (detail.Songs != null && detail.Songs.Count > 0)
@@ -1074,17 +998,13 @@ namespace OmniMixPlayer.Module.Netease
 
         private void UpdateMusicFavoriteState(string uuid, bool isFavorite)
         {
-            var music = _musicList.FirstOrDefault(m => m.UUID == uuid)
-                     ?? _fmMusicList.FirstOrDefault(m => m.UUID == uuid);
+            var music = _musicList.FirstOrDefault(m => m.Uuid == uuid)
+                     ?? _fmMusicList.FirstOrDefault(m => m.Uuid == uuid);
             if (music != null)
             {
                 music.IsFavorite = isFavorite;
 
-                // 取消收藏后，允许删除（从列表移除）
-                // 收藏时，不允许删除
-                music.IsDeletable = !isFavorite;
-
-                _context.MusicRegistry.UpdateMusic(music);
+                _context.Library.UpsertTrack(music);
             }
         }
 
@@ -1137,17 +1057,10 @@ namespace OmniMixPlayer.Module.Netease
             _favoriteManager.SetFavorite(uuid, isFavorite);
             UpdateMusicFavoriteState(uuid, isFavorite);
 
-            // 收藏时，将歌曲移动到收藏专辑（Tag 不变）
+            // 收藏时加入收藏列表；保留原有 FM/自定义歌单成员关系。
             if (isFavorite)
             {
-                // FM 歌曲
                 _songRegistry.MoveSongToFavorites(uuid, _fmMusicList, _musicList);
-
-                // 自定义歌单歌曲
-                foreach (var customList in _customPlaylistMusicLists.Values)
-                {
-                    _songRegistry.MoveSongToFavorites(uuid, customList, _musicList);
-                }
             }
         }
 
@@ -1182,12 +1095,18 @@ namespace OmniMixPlayer.Module.Netease
             try
             {
                 // 查找歌曲
-                var music = _musicList.FirstOrDefault(m => m.UUID == uuid);
-                var isFromMusicList = music != null;
+                var music = _musicList.FirstOrDefault(m => m.Uuid == uuid);
 
                 if (music == null)
                 {
-                    music = _fmMusicList.FirstOrDefault(m => m.UUID == uuid);
+                    music = _fmMusicList.FirstOrDefault(m => m.Uuid == uuid);
+                }
+
+                if (music == null)
+                {
+                    music = _customPlaylistMusicLists.Values
+                        .SelectMany(list => list)
+                        .FirstOrDefault(m => m.Uuid == uuid);
                 }
 
                 if (music == null)
@@ -1196,8 +1115,8 @@ namespace OmniMixPlayer.Module.Netease
                     return false;
                 }
 
-                // 判断是否在 FM 专辑中（需要调用不喜欢 API）
-                bool isInFMAlbum = music.AlbumId == NeteaseSongRegistry.PERSONAL_FM_ALBUM_ID;
+                // 判断是否在 FM 播放列表中（需要调用不喜欢 API）
+                bool isInFMAlbum = _fmMusicList.Any(m => m.Uuid == uuid);
 
                 // 如果在 FM 专辑中，调用 FMTrash API
                 if (isInFMAlbum)
@@ -1224,20 +1143,15 @@ namespace OmniMixPlayer.Module.Netease
                 }
 
                 // 从本地列表移除
-                if (isFromMusicList)
-                {
-                    _musicList.Remove(music);
-                }
-                else
-                {
-                    _fmMusicList.Remove(music);
-                }
+                _musicList.RemoveAll(m => m.Uuid == uuid);
+                _fmMusicList.RemoveAll(m => m.Uuid == uuid);
+                foreach (var customList in _customPlaylistMusicLists.Values)
+                    customList.RemoveAll(m => m.Uuid == uuid);
 
                 // 从 songInfoMap 移除
                 _songInfoMap.Remove(uuid);
 
-                // 从 MusicRegistry 注销
-                _context.MusicRegistry.UnregisterMusic(uuid);
+                _context.Library.DeleteTrack(uuid);
 
                 // 清理封面缓存
                 RemoveMusicCoverCache(uuid);
@@ -1395,12 +1309,22 @@ namespace OmniMixPlayer.Module.Netease
             if (!_isLoggedIn) return;
             try
             {
+                var previousPlaylistIds = _context.Library
+                    .QueryPlaylists(new PlaylistQuery { ModuleId = ModuleId, Limit = 0 })
+                    .Where(p => p.Kind == PlaylistKind.Imported)
+                    .Select(p => p.Id)
+                    .ToHashSet();
+
                 _customPlaylistMusicLists.Clear();
                 await SearchAndRegisterCustomPlaylistsAsync();
                 await ImportPlaylistsByIdAsync();
+                CleanupRemovedCustomPlaylists(
+                    previousPlaylistIds,
+                    _customPlaylistMusicLists.Keys.Select(NeteaseSongRegistry.PlaylistId));
+
                 _context?.EventBus?.Publish(new PlaylistUpdatedEvent
                 {
-                    TagId = NeteaseSongRegistry.TAG_FAVORITES,
+                    SourceRefId = NeteaseSongRegistry.PLAYLIST_FAVORITES,
                     UpdateType = PlaylistUpdateType.FullRefresh
                 });
             }
@@ -1410,10 +1334,36 @@ namespace OmniMixPlayer.Module.Netease
             }
         }
 
+        private void CleanupRemovedCustomPlaylists(HashSet<string> previousPlaylistIds, IEnumerable<string> currentPlaylistIds)
+        {
+            var current = currentPlaylistIds.ToHashSet();
+            foreach (var playlistId in previousPlaylistIds.Where(id => !current.Contains(id)))
+            {
+                var playlist = _context.Library.GetPlaylistWithEntries(playlistId);
+                var trackUuids = playlist?.Entries.Select(e => e.TrackUuid).Distinct().ToList() ?? new List<string>();
+
+                foreach (var uuid in trackUuids)
+                    _context.Library.RemoveTrackTag(uuid, playlistId);
+
+                _context.Library.DeletePlaylist(playlistId);
+                _context.Library.DeleteTag(playlistId);
+
+                foreach (var uuid in trackUuids)
+                {
+                    var remainingTags = _context.Library.GetTrackTags(uuid);
+                    if (remainingTags.Count == 0)
+                    {
+                        _context.Library.DeleteTrack(uuid);
+                        _songInfoMap.Remove(uuid);
+                    }
+                }
+            }
+        }
+
         private async Task RefreshQRCodeAsync()
         {
             if (_qrLoginManager == null) return;
-            _context?.Logger.LogInformation("[{DisplayName}] 刷新二维码...");
+            _context?.Logger.LogInformation("[{DisplayName}] 刷新二维码...", DisplayName);
             var success = await _qrLoginManager.StartLoginAsync();
             if (success)
             {
@@ -1472,9 +1422,7 @@ namespace OmniMixPlayer.Module.Netease
                 _songInfoMap.Clear();
                 _customPlaylistMusicLists.Clear();
 
-                _context?.MusicRegistry?.UnregisterAllByModule(ModuleId);
-                _context?.AlbumRegistry?.UnregisterAllByModule(ModuleId);
-                _context?.TagRegistry?.UnregisterAllByModule(ModuleId);
+                _context?.Library?.UnregisterModule(ModuleId);
 
                 RegisterFavoritesTag();
                 RegisterLoginSongAlbum();
@@ -1491,7 +1439,7 @@ namespace OmniMixPlayer.Module.Netease
 
                 _context?.EventBus?.Publish(new PlaylistUpdatedEvent
                 {
-                    TagId = NeteaseSongRegistry.TAG_FAVORITES,
+                    SourceRefId = NeteaseSongRegistry.PLAYLIST_FAVORITES,
                     UpdateType = PlaylistUpdateType.FullRefresh
                 });
 
@@ -1508,3 +1456,5 @@ namespace OmniMixPlayer.Module.Netease
         #endregion
     }
 }
+
+

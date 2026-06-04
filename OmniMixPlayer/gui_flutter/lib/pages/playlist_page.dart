@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
-import '../models/node_data.dart';
+import '../generated/omni_mix_player/models/tag.pb.dart';
+import '../generated/omni_mix_player/models/album.pb.dart';
+import '../generated/omni_mix_player/models/track.pb.dart';
 
 /// 曲库浏览器 — 树形三级结构：歌单(模块) → 专辑 → 曲目
 ///
@@ -19,15 +21,15 @@ class PlaylistPage extends StatefulWidget {
 // ── 内部树节点 ──
 
 class _AlbumNode {
-  final AlbumInfo album;
-  List<SongInfo> songs;
+  final Album album;
+  List<Track> songs;
   bool expanded;
 
   _AlbumNode(this.album, {this.songs = const [], this.expanded = false});
 }
 
 class _TagNode {
-  final TagInfo tag;
+  final Tag tag;
   final List<_AlbumNode> albums;
   bool expanded;
 
@@ -45,10 +47,10 @@ class _FlatItem {
   final int indentLevel;
   final bool expandable;
   final bool expanded;
-  // 数据引用
-  final TagInfo? tag;
-  final AlbumInfo? album;
-  final SongInfo? song;
+
+  final Tag? tag;
+  final Album? album;
+  final Track? song;
 
   const _FlatItem({
     required this.kind,
@@ -63,7 +65,7 @@ class _FlatItem {
   });
 }
 
-// ── 页面状态 ──
+// Page state
 
 class _PlaylistPageState extends State<PlaylistPage> {
   final List<_TagNode> _tree = [];
@@ -109,20 +111,22 @@ class _PlaylistPageState extends State<PlaylistPage> {
       _error = '';
     });
     try {
-      final playlist = await widget.state.api.getPlaylist();
+      final tags = await widget.state.api.getTags();
       if (!mounted) return;
-
-      final tags = playlist.tags;
-      final allAlbums = playlist.albums;
-      final allSongs = playlist.songs;
 
       _tree.clear();
       var total = 0;
       for (final tag in tags) {
-        final tagAlbums = allAlbums.where((a) => a.tagId == tag.id).toList();
+        final tagAlbums = await widget.state.api.getAlbums(tagId: tag.id);
+        final tagSongs = await widget.state.api.getSongs(tagId: tag.id);
+        if (!mounted) return;
+        final tagAlbumIds = tagSongs.map((s) => s.albumId).toSet();
+        final filteredAlbums = tagAlbums
+            .where((a) => tagAlbumIds.contains(a.id))
+            .toList();
         final albumNodes = <_AlbumNode>[];
-        for (final album in tagAlbums) {
-          final albumSongs = allSongs
+        for (final album in filteredAlbums) {
+          final albumSongs = tagSongs
               .where((s) => s.albumId == album.id)
               .toList();
           albumNodes.add(_AlbumNode(album, songs: albumSongs));
@@ -135,7 +139,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
     } catch (e) {
       if (mounted) {
         final l10n = context.mounted ? AppLocalizations.of(context) : null;
-        _error = l10n?.loadLibraryFailed(e.toString()) ?? 'Failed to load library: $e';
+        _error =
+            l10n?.loadLibraryFailed(e.toString()) ??
+            'Failed to load library: $e';
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -152,7 +158,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
         _FlatItem(
           kind: _ItemKind.tag,
           label: tagNode.tag.name,
-          subtitle: '${tagNode.tag.moduleId} · ${l10n.albumCountLabel(tagNode.albums.length)}',
+          subtitle:
+              '${tagNode.tag.moduleId} • ${l10n.albumCountLabel(tagNode.albums.length)}',
           indentLevel: 0,
           expandable: tagNode.albums.isNotEmpty,
           expanded: tagNode.expanded,
@@ -165,7 +172,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
         _flatItems.add(
           _FlatItem(
             kind: _ItemKind.album,
-            label: albumNode.album.name,
+            label: albumNode.album.title,
             subtitle: l10n.songCountLabel(albumNode.songs.length),
             indentLevel: 1,
             expandable: albumNode.songs.isNotEmpty,

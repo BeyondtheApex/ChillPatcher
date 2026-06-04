@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -17,7 +16,10 @@ using OmniMixPlayer.Backend.ModuleSystem;
 using OmniMixPlayer.Backend.ModuleSystem.Registry;
 using OmniMixPlayer.Backend.ModuleSystem.Services;
 using OmniMixPlayer.Backend.ModuleSystem.Services.Streaming;
+using OmniMixPlayer.Backend.Services;
+using OmniMixPlayer.Backend.Storage;
 using OmniMixPlayer.SDK.Interfaces;
+using ProtoEvents = OmniMixPlayer.SDK.Protos.Events;
 
 namespace OmniMixPlayer.Backend
 {
@@ -78,6 +80,12 @@ namespace OmniMixPlayer.Backend
                 var configPath = Path.Combine(configDir, "global_config.json");
                 if (File.Exists(configPath))
                 {
+                    if (!StorageVersion.JsonHasCurrentVersion(configPath))
+                    {
+                        File.Delete(configPath);
+                        throw new InvalidDataException("Global config has no current storage version.");
+                    }
+
                     var json = File.ReadAllText(configPath);
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("ipc_port", out var portProp) && portProp.TryGetInt32(out var cp))
@@ -123,13 +131,20 @@ namespace OmniMixPlayer.Backend
             builder.WebHost.ConfigureKestrel(options =>
             {
                 // IPC — localhost TCP (primary)
-                options.Listen(IPAddress.Loopback, IpcPort);
+                if (IpcPort == 17890)
+                {
+                    options.Listen(IPAddress.Any, IpcPort);
+                }
+                else
+                {
+                    options.Listen(IPAddress.Loopback, IpcPort);
+                    options.Listen(IPAddress.Any, 17890);
+                }
 
                 // Unix Domain Socket (fallback for filesystem-based discovery)
                 options.ListenUnixSocket(SocketPath);
 
                 // TCP — browser WASM remote control (0.0.0.0)
-                options.Listen(IPAddress.Any, 17890);
             });
 
             // ── Write port file to all configured directories ──
@@ -139,14 +154,6 @@ namespace OmniMixPlayer.Backend
             {
                 options.AddDefaultPolicy(policy =>
                     policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
-            });
-
-            // Register JSON source generator for trimmed (AOT) publishing.
-            // All API request types must be listed in ApiJsonContext.
-            builder.Services.ConfigureHttpJsonOptions(options =>
-            {
-                options.SerializerOptions.TypeInfoResolverChain.Insert(0, ApiJsonContext.Default);
-                options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
             });
 
             var app = builder.Build();
@@ -163,10 +170,9 @@ namespace OmniMixPlayer.Backend
             logger.LogInformation("IPC port: {Port} (configured: {ConfiguredPort})", IpcPort, configuredPort);
             logger.LogInformation("Port files written to: {Dirs}", string.Join(", ", PortFileDirs));
 
-            // 1. Initialize Registries
-            TagRegistry.Initialize(loggerFactory.CreateLogger("TagRegistry"));
-            AlbumRegistry.Initialize(loggerFactory.CreateLogger("AlbumRegistry"));
-            MusicRegistry.Initialize(loggerFactory.CreateLogger("MusicRegistry"));
+            // 1. Initialize Library Storage + Registry
+            var libraryStorage = new LibraryStorage(configDir, loggerFactory.CreateLogger("LibraryStorage"));
+            var libraryRegistry = new LibraryRegistry(libraryStorage, loggerFactory.CreateLogger("LibraryRegistry"));
 
             // 2. Initialize EventBus
             EventBus.Initialize(loggerFactory.CreateLogger("EventBus"));
@@ -183,43 +189,37 @@ namespace OmniMixPlayer.Backend
             // 5. Initialize StreamingService
             var streamingService = new CoreStreamingService(loggerFactory.CreateLogger("CoreStreaming"));
 
-            // 8. Initialize ModuleManager config
+            // 6. Initialize ModuleManager config
             var moduleConfigManager = new ModuleConfigManager("modules", configDir);
 
-            // 8b. Initialize GlobalConfigManager
+            // 7. Initialize GlobalConfigManager
             var globalConfig = new GlobalConfigManager(configDir);
-
-            // ── When global config is saved via API, re-write port files
-            // so newly-added port_file_dirs take effect without restart ──
             globalConfig.OnConfigSaved = () => WritePortFiles();
 
-            // 9. Initialize ModuleLoader
+            // 8. Initialize ModuleLoader with new LibraryRegistry
             var contextFactory = new ModuleContextFactory(
                 pluginPath,
                 configDir,
                 loggerFactory.CreateLogger("ModuleContext"),
-                TagRegistry.Instance,
-                AlbumRegistry.Instance,
-                MusicRegistry.Instance,
+                libraryRegistry,
                 EventBus.Instance,
                 DefaultCoverProvider.Instance,
                 dependencyLoader,
-                streamingService,
-                new NullPlayQueue());
+                streamingService);
             ModuleLoader.Initialize(modulesPath, contextFactory, loggerFactory.CreateLogger("ModuleLoader"), moduleConfigManager);
 
-            // 10. Playback instances are created lazily when audio clients connect.
-            var playbackInstances = new PlaybackInstanceManager(
+            // 9. Instance registry + playback session manager
+            var profileStore = new InstanceProfileStore(configDir, loggerFactory.CreateLogger("InstanceProfileStore"));
+            var instanceRegistry = new InstanceRegistry(profileStore, loggerFactory.CreateLogger("InstanceRegistry"));
+            var sessionManager = new PlaybackSessionManager(
                 loggerFactory,
                 EventBus.Instance,
-                MusicRegistry.Instance,
+                libraryRegistry,
                 streamingService,
-                configBaseDir: configDir);
+                instanceRegistry);
 
-            // 11. Create ApiServer
-            var apiServer = new ApiServer(playbackInstances, ModuleLoader.Instance,
-                TagRegistry.Instance, AlbumRegistry.Instance, MusicRegistry.Instance,
-                loggerFactory.CreateLogger("ApiServer"));
+            // 10. Create ApiServer (WS only)
+            var apiServer = new ApiServer(instanceRegistry, sessionManager, loggerFactory.CreateLogger("ApiServer"));
 
             var moduleUIHandler = new ModuleUIHandler(ModuleLoader.Instance, apiServer,
                 loggerFactory.CreateLogger("ModuleUIHandler"));
@@ -228,12 +228,24 @@ namespace OmniMixPlayer.Backend
 
             new EventBridge(apiServer);
 
+            // 11. Register gRPC services
+            builder.Services.AddGrpc();
+            builder.Services.AddSingleton<ILibraryRegistry>(libraryRegistry);
+            builder.Services.AddSingleton(instanceRegistry);
+            builder.Services.AddSingleton(sessionManager);
+
             // 12. Configure routes
             app.UseCors();
             app.UseWebSockets();
+            app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
             app.UseDefaultFiles();
             app.UseStaticFiles();
             apiServer.Configure(app);
+
+            // Map gRPC services
+            app.MapGrpcService<LibraryServiceImpl>();
+            app.MapGrpcService<PlaybackServiceImpl>();
+            app.MapGrpcService<InstanceServiceImpl>();
 
             // 13. Load modules in background
             _ = Task.Run(async () =>
@@ -243,26 +255,25 @@ namespace OmniMixPlayer.Backend
                     logger.LogInformation("Loading modules...");
                     await ModuleLoader.Instance.LoadAllModulesAsync();
 
-                    // Sync songs to playback queue
-                    var allSongs = MusicRegistry.Instance.GetAllMusic();
-                    logger.LogInformation("Loaded {Count} songs from {ModuleCount} modules",
-                        allSongs.Count, ModuleLoader.Instance.LoadedModules.Count);
+                    var tracks = libraryRegistry.QueryTracks(new SDK.Protos.Models.TrackQuery { Limit = 0 });
+                    logger.LogInformation("Loaded {Count} tracks from {ModuleCount} modules",
+                        tracks.Count, ModuleLoader.Instance.LoadedModules.Count);
 
-                    // Re-resolve all profile data now that music registry is fully populated.
-                    // Without this, any PlaybackController created before modules loaded
-                    // would have dropped all songs during RestoreState().
-                    playbackInstances.RefreshAllFromDisk();
-
-                    // Sync profile SongUuids with current tag/album registries.
-                    // This ensures that if a source (e.g. a Netease playlist) gained new songs,
-                    // the profile's UUID list is automatically updated.
-                    playbackInstances.SyncProfileSources(TagRegistry.Instance, AlbumRegistry.Instance);
-
-                    _ = apiServer.BroadcastEvent("playlist.updated", new { songCount = allSongs.Count });
+                    await apiServer.BroadcastProtoEvent(new ProtoEvents.WsEvent
+                    {
+                        Type = "playlist.updated",
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        PlaylistUpdated = new ProtoEvents.PlaylistUpdatedEvent { SongCount = tracks.Count }
+                    });
 
                     foreach (var loaded in ModuleLoader.Instance.LoadedModules)
                     {
-                        _ = apiServer.BroadcastEvent("module.loaded", new { moduleId = loaded.Module.ModuleId, displayName = loaded.Module.DisplayName });
+                        await apiServer.BroadcastProtoEvent(new ProtoEvents.WsEvent
+                        {
+                            Type = "module.loaded",
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            ModuleChanged = new ProtoEvents.ModuleChangedEvent { ModuleId = loaded.Module.ModuleId, Enabled = true, DisplayName = loaded.Module.DisplayName }
+                        });
 
                         if (loaded.Module is IModuleUIProvider uiProvider)
                         {
@@ -382,7 +393,7 @@ namespace OmniMixPlayer.Backend
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
-            Exception? exception, Func<TState, Exception?, string> formatter)
+            Exception exception, Func<TState, Exception, string> formatter)
         {
             lock (_lock)
             {

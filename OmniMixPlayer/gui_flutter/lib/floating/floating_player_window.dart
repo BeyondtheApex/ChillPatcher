@@ -1,4 +1,4 @@
-﻿import "dart:convert";
+import "dart:convert";
 import "dart:math" as math;
 import "dart:ui";
 
@@ -532,11 +532,11 @@ class _FloatingPlayerCard extends StatelessWidget {
                                 min: 0,
                                 max: duration,
                                 onChanged:
-                                    snapshot.canControl && snapshot.duration > 0
+                                    snapshot.canSeek && snapshot.duration > 0
                                     ? onDragPosition
                                     : null,
                                 onChangeEnd:
-                                    snapshot.canControl && snapshot.duration > 0
+                                    snapshot.canSeek && snapshot.duration > 0
                                     ? onSeek
                                     : null,
                               ),

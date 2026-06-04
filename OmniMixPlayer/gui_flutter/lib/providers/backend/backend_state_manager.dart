@@ -14,6 +14,7 @@ import '../../services/backend_manager.dart'
     if (dart.library.js_interop) '../../stubs/backend_manager_web.dart';
 import '../../services/platform_service.dart'
     if (dart.library.js_interop) '../../stubs/platform_service_web.dart';
+import '../../generated/omni_mix_player/events/ws_events.pb.dart';
 
 class BackendStateManager extends ChangeNotifier {
   late ApiClient api;
@@ -68,6 +69,9 @@ class BackendStateManager extends ChangeNotifier {
   Future<void> Function()? onNeedLoadModules;
   Future<void> Function()? onNeedLoadActiveProfile;
   void Function(dynamic data)? onPositionEvent;
+  void Function(String instanceId, TrackChangedEvent event)? onTrackChanged;
+  void Function(String instanceId, int state)? onStateChanged;
+  void Function(String instanceId, double position)? onPositionChanged;
   void Function()? onEqualizerChanged;
   void Function()? onPlaylistUpdated;
   void Function()? onModulesChanged;
@@ -259,56 +263,71 @@ class BackendStateManager extends ChangeNotifier {
   // ── WebSocket setup ──
 
   void _setupWs() {
-    ws.onEvent = (event) {
-      if (event.senderId != null && event.senderId == api.clientId) return;
-
+    ws.onProtoEvent = (event) {
       switch (event.type) {
         case 'backend.state.changed':
-          final data = event.data is Map<String, dynamic>
-              ? event.data as Map<String, dynamic>
-              : const <String, dynamic>{};
-          final r = data['running'] == true;
-          if (_running != r) {
-            _running = r;
-            _online = r;
-            notifyListeners();
+          if (event.hasBackendState()) {
+            final r = event.backendState.running;
+            if (_running != r) {
+              _running = r;
+              _online = r;
+              notifyListeners();
+            }
           }
-
-        case 'error':
-          final data = event.data is Map<String, dynamic>
-              ? event.data as Map<String, dynamic>
-              : const <String, dynamic>{};
-          onError?.call(data['message'] as String? ?? 'Unknown error');
-
+          break;
         case 'instances.changed':
-        case 'track.changed':
-        case 'state.changed':
         case 'queue.changed':
-        case 'exclude.changed':
           onNeedRefreshPlayback?.call();
           onNeedRefreshArchives?.call();
-
-        case 'equalizer.changed':
-          onEqualizerChanged?.call();
-
+          break;
+        case 'track.changed':
+          if (event.hasTrackChanged()) {
+            onTrackChanged?.call(
+              event.trackChanged.instanceId,
+              event.trackChanged,
+            );
+          }
+          onNeedRefreshPlayback?.call();
+          break;
+        case 'state.changed':
+          if (event.hasStateChanged()) {
+            onStateChanged?.call(
+              event.stateChanged.instanceId,
+              event.stateChanged.state,
+            );
+          }
+          break;
+        case 'position.changed':
+          if (event.hasPositionChanged()) {
+            onPositionChanged?.call(
+              event.positionChanged.instanceId,
+              event.positionChanged.position,
+            );
+          }
+          break;
+        case 'profile.changed':
+          onProfileChanged?.call();
+          break;
+        case 'favorite.changed':
+        case 'exclude.changed':
         case 'playlist.updated':
           onNeedRefreshPlayback?.call();
           onLibraryBump?.call();
           notifyListeners();
-
+          break;
         case 'module.loaded':
         case 'module.unloaded':
           onNeedLoadModules?.call();
           onLibraryBump?.call();
           notifyListeners();
-
-        case 'profile.changed':
-          onProfileChanged?.call();
-
-        case 'position':
-          onPositionEvent?.call(event.data);
+          break;
+        default:
+          break;
       }
     };
+
+    // JSON text frames are only used for ui_push (handled by onUiPush below).
+    // All other events now go through protobuf binary → onProtoEvent above.
 
     ws.onUiPush = (push) {
       if (push.replace && push.tree != null) {

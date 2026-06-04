@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/common.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Models";
+
+// 标签 — 独立实体
+message Tag {
+  string id = 1;
+  string name = 2;
+  string color = 3;
+  string module_id = 4;
+  TagKind kind = 5;
+}
+
+// Tag upsert
+message UpsertTagRequest {
+  Tag tag = 1;
+}
+
+message UpsertTagResponse {
+  bool created = 1;
+  Tag tag = 2;
+}
+
+// 批量 Tag upsert
+message UpsertTagsRequest {
+  repeated Tag tags = 1;
+}
+
+message UpsertTagsResponse {
+  int32 created = 1;
+  int32 updated = 2;
+}

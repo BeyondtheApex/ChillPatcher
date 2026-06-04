@@ -18,6 +18,11 @@ dependencies:
   http: ^1.2.0
   web_socket_channel: ^3.0.0
   url_launcher: ^6.3.1
+
+  # gRPC + Protobuf
+  grpc: ^5.1.0
+  protobuf: ^6.0.0
+  fixnum: ^1.1.0
   audio_service: ^0.18.18
   audio_service_win: ^0.0.3
 

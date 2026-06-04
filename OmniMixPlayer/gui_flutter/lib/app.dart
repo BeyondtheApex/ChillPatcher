@@ -430,10 +430,10 @@ class _GlobalInstanceDropdown extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final st = ref.watch(appStateProvider);
     final allInstances = st.playbackInstances
-        .where((i) => i.gameName.isNotEmpty || i.attached)
+        .where((i) => i.id.isNotEmpty || i.isOnline)
         .toList();
     final onlineIds = st.backendOnline
-        ? st.playbackInstances.where((i) => i.attached).map((i) => i.id).toSet()
+        ? st.playbackInstances.where((i) => i.isOnline).map((i) => i.id).toSet()
         : <String>{};
     final cs = Theme.of(context).colorScheme;
 
@@ -477,13 +477,15 @@ class _GlobalInstanceDropdown extends ConsumerWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      inst.gameName.isNotEmpty ? inst.gameName : inst.id,
+                      inst.gameName.isNotEmpty
+                          ? inst.gameName
+                          : inst.displayName,
                       style: const TextStyle(fontSize: 13),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   Text(
-                    inst.mode,
+                    inst.mode.name,
                     style: TextStyle(fontSize: 11, color: cs.outline),
                   ),
                 ],

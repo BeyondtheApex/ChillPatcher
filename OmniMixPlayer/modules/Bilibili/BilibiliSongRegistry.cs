@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using OmniMixPlayer.SDK.Interfaces;
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.SDK.Protos.Models;
 
 namespace OmniMixPlayer.Module.Bilibili
 {
@@ -9,8 +9,7 @@ namespace OmniMixPlayer.Module.Bilibili
         private readonly IModuleContext _context;
         private readonly string _moduleId;
 
-        public const string TAG_LOGIN = "bili_login_tag";
-        public const string ALBUM_LOGIN = "bili_login_album";
+        public const string PLAYLIST_LOGIN = "bili_login";
         public const string UUID_LOGIN = "bili_login_action";
 
         public BilibiliSongRegistry(IModuleContext context, string moduleId)
@@ -21,86 +20,87 @@ namespace OmniMixPlayer.Module.Bilibili
 
         public void RegisterLoginSong(string statusText)
         {
-            var music = new MusicInfo
+            _context.Library.UpsertPlaylist(new Playlist
             {
-                UUID = UUID_LOGIN,
+                Id = PLAYLIST_LOGIN,
+                Name = "Bilibili 登录",
+                ModuleId = _moduleId,
+                Kind = PlaylistKind.System
+            });
+
+            var track = new Track
+            {
+                Uuid = UUID_LOGIN,
                 Title = "B站扫码登录",
-                Artist = "请使用B站扫码登录",
-                AlbumId = ALBUM_LOGIN,
-                TagId = TAG_LOGIN,
-                SourceType = MusicSourceType.Stream,
+                Artist = statusText,
+                SourceType = SourceType.Stream,
                 SourcePath = "login_trigger",
                 Duration = 120,
                 ModuleId = _moduleId,
                 IsFavorite = false
             };
+            _context.Library.UpsertTrack(track);
 
-            _context.TagRegistry.RegisterTag(TAG_LOGIN, "Bilibili 登录", _moduleId);
-            _context.AlbumRegistry.RegisterAlbum(new AlbumInfo
-            {
-                AlbumId = ALBUM_LOGIN,
-                DisplayName = "Bilibili 登录",
-                TagIds = new List<string> { TAG_LOGIN },
-                ModuleId = _moduleId
-            }, _moduleId);
-
-            _context.MusicRegistry.RegisterMusic(music, _moduleId);
+            _context.Library.ReplacePlaylistEntries(PLAYLIST_LOGIN,
+                new[] { new PlaylistEntrySpec { TrackUuid = UUID_LOGIN, Position = 0 } });
         }
 
         public void UpdateLoginSongTitle(string newStatus)
         {
-            var music = _context.MusicRegistry.GetMusic(UUID_LOGIN);
-            if (music != null)
+            var track = _context.Library.GetTrack(UUID_LOGIN);
+            if (track != null)
             {
-                music.Artist = newStatus;
-                try
-                {
-                    var method = _context.MusicRegistry.GetType().GetMethod("UpdateMusic");
-                    if (method != null) method.Invoke(_context.MusicRegistry, new object[] { music });
-                    else RegisterLoginSong(newStatus);
-                }
-                catch { RegisterLoginSong(newStatus); }
+                track.Artist = newStatus;
+                _context.Library.UpsertTrack(track);
             }
-            else RegisterLoginSong(newStatus);
+            else
+            {
+                RegisterLoginSong(newStatus);
+            }
         }
 
         public void RegisterFolder(BiliFolder folder, List<BiliVideoInfo> videos)
         {
-            string tagId = $"bili_fav_{folder.Id}";
-            string albumId = $"bili_album_{folder.Id}";
-
-            _context.TagRegistry.RegisterTag(tagId, folder.Title, _moduleId);
-
-            var album = new AlbumInfo
+            string playlistId = $"bili_playlist_{folder.Id}";
+            _context.Library.UpsertPlaylist(new Playlist
             {
-                AlbumId = albumId,
-                DisplayName = folder.Title,
-                Artist = "Bilibili",
-                TagIds = new List<string> { tagId },
+                Id = playlistId,
+                Name = folder.Title,
                 ModuleId = _moduleId,
-                SongCount = videos.Count,
-                CoverPath = videos.Count > 0 ? videos[0].CoverUrl : null
-            };
-            _context.AlbumRegistry.RegisterAlbum(album, _moduleId);
+                Kind = PlaylistKind.Imported
+            });
+
+            var entries = new List<PlaylistEntrySpec>();
+            int position = 0;
 
             foreach (var v in videos)
             {
-                var music = new MusicInfo
+                var uuid = GenerateUuid(v.Bvid);
+
+                var track = new Track
                 {
-                    UUID = MusicInfo.GenerateUUID("bili_" + v.Bvid),
+                    Uuid = uuid,
                     Title = v.Title,
                     Artist = v.Artist,
-                    AlbumId = albumId,
-                    TagId = tagId,
-                    SourceType = MusicSourceType.Stream,
+                    SourceType = SourceType.Stream,
                     SourcePath = v.Bvid,
                     Duration = v.Duration,
                     ModuleId = _moduleId,
-                    CoverUrl = v.CoverUrl,
-                    ExtendedData = v.CoverUrl
+                    CoverUri = v.CoverUrl ?? ""
                 };
-                _context.MusicRegistry.RegisterMusic(music, _moduleId);
+                _context.Library.UpsertTrack(track);
+
+                entries.Add(new PlaylistEntrySpec { TrackUuid = uuid, Position = position++ });
             }
+
+            _context.Library.ReplacePlaylistEntries(playlistId, entries);
+        }
+
+        public static string GenerateUuid(string bvid)
+        {
+            using var md5 = System.Security.Cryptography.MD5.Create();
+            var hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes($"bili_{bvid}"));
+            return new System.Guid(hash).ToString("N");
         }
     }
 }

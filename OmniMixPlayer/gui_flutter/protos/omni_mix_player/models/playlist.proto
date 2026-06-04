@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/common.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Models";
+
+// 歌单
+message Playlist {
+  string id = 1;
+  string name = 2;
+  string module_id = 3;
+  PlaylistKind kind = 4;
+  string cover_uri = 5;
+  int32 sort_order = 6;
+  OmniTimestamp created_at = 7;
+  OmniTimestamp updated_at = 8;
+}
+
+// 歌单条目 — 歌单中的歌曲位置
+message PlaylistEntry {
+  string id = 1;
+  string playlist_id = 2;
+  string track_uuid = 3;
+  int32 position = 4;
+  OmniTimestamp added_at = 5;
+}
+
+// 歌单条目规格 (用于插入时指定)
+message PlaylistEntrySpec {
+  string track_uuid = 1;
+  int32 position = 2;
+}
+
+// Playlist upsert
+message UpsertPlaylistRequest {
+  Playlist playlist = 1;
+}
+
+message UpsertPlaylistResponse {
+  bool created = 1;
+  Playlist playlist = 2;
+}
+
+// 替换整个歌单的条目
+message ReplacePlaylistEntriesRequest {
+  string playlist_id = 1;
+  repeated PlaylistEntrySpec entries = 2;
+}
+
+message ReplacePlaylistEntriesResponse {
+  bool success = 1;
+  int32 entry_count = 2;
+}
+
+// 在指定位置插入条目
+message InsertPlaylistEntryRequest {
+  string playlist_id = 1;
+  PlaylistEntrySpec entry = 2;
+  int32 index = 3; // -1 表示末尾
+}
+
+message InsertPlaylistEntryResponse {
+  bool success = 1;
+  PlaylistEntry entry = 2;
+}
+
+// 删除条目
+message RemovePlaylistEntryRequest {
+  string entry_id = 1;
+}
+
+message RemovePlaylistEntryResponse {
+  bool success = 1;
+}
+
+// 移动条目
+message MovePlaylistEntryRequest {
+  string entry_id = 1;
+  int32 new_index = 2;
+}
+
+message MovePlaylistEntryResponse {
+  bool success = 1;
+}
+
+// 歌单查询结果（包含 entries 以支持重复歌曲）
+message PlaylistWithEntries {
+  string playlist_id = 1;
+  string playlist_name = 2;
+  repeated PlaylistEntryWithTrack entries = 3;
+}
+
+// 条目 + 关联 Track 信息
+message PlaylistEntryWithTrack {
+  string entry_id = 1;
+  string track_uuid = 2;
+  string title = 3;
+  string artist = 4;
+  float duration = 5;
+  string album_id = 6;
+  string cover_uri = 7;
+  int32 position = 8;
+}

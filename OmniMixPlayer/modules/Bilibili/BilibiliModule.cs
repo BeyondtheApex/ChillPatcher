@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using OmniMixPlayer.SDK;
 using OmniMixPlayer.SDK.Attributes;
 using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
-using OmniMixPlayer.SDK.Models;
+using OmniMixPlayer.SDK.Protos.Models;
 using Microsoft.Extensions.Logging;
 
 namespace OmniMixPlayer.Module.Bilibili
@@ -23,7 +24,7 @@ namespace OmniMixPlayer.Module.Bilibili
         public string Version => "1.0.0";
         public int Priority => 10;
         public ModuleCapabilities Capabilities => new ModuleCapabilities { CanDelete = false, CanFavorite = false, CanExclude = false, ProvidesCover = true };
-        public MusicSourceType SourceType => MusicSourceType.Stream;
+        public SourceType SourceType => SourceType.Stream;
 
         public bool IsReady => true;
         public event Action<bool> OnReadyStateChanged;
@@ -33,7 +34,6 @@ namespace OmniMixPlayer.Module.Bilibili
         private QRLoginManager _qrManager;
         private BilibiliSongRegistry _registry;
 
-        private Dictionary<string, string> _albumCoverUrls = new Dictionary<string, string>();
         private Dictionary<string, (byte[] data, string mimeType)> _spriteCache = new Dictionary<string, (byte[] data, string mimeType)>();
 
         // UI 相关
@@ -62,7 +62,7 @@ namespace OmniMixPlayer.Module.Bilibili
                 // 通知 UI 刷新
                 _context.EventBus.Publish(new PlaylistUpdatedEvent
                 {
-                    TagId = "bili_all",
+                    SourceRefId = "bili_login",
                     UpdateType = PlaylistUpdateType.FullRefresh
                 });
 
@@ -93,17 +93,17 @@ namespace OmniMixPlayer.Module.Bilibili
 
         public async Task<PlayableSource> ResolveAsync(string uuid, AudioQuality quality, CancellationToken token = default)
         {
-            var music = _context.MusicRegistry.GetMusic(uuid);
-            if (music == null) return null;
+            var track = _context.Library.GetTrack(uuid);
+            if (track == null) return null;
 
             const int maxRetries = 3;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                var url = await _bridge.GetPlayUrlAsync(music.SourcePath);
+                var url = await _bridge.GetPlayUrlAsync(track.SourcePath);
                 if (string.IsNullOrEmpty(url))
                 {
-                    _context.Logger.LogWarning($"[{DisplayName}] 获取播放 URL 失败: {music.Title} (尝试 {attempt}/{maxRetries})");
+                    _context.Logger.LogWarning($"[{DisplayName}] 获取播放 URL 失败: {track.Title} (尝试 {attempt}/{maxRetries})");
                     if (attempt < maxRetries)
                     {
                         await Task.Delay(1000, token);
@@ -112,7 +112,7 @@ namespace OmniMixPlayer.Module.Bilibili
                     return null;
                 }
 
-                _context.Logger.LogInformation($"[Stream] 启动流: {music.Title} (尝试 {attempt}/{maxRetries})");
+                _context.Logger.LogInformation($"[Stream] 启动流: {track.Title} (尝试 {attempt}/{maxRetries})");
 
                 return new PlayableSource
                 {
@@ -125,7 +125,7 @@ namespace OmniMixPlayer.Module.Bilibili
                         ["Referer"] = "https://www.bilibili.com",
                         ["User-Agent"] = BilibiliBridge.UserAgent
                     },
-                    CacheKey = $"bili_{music.SourcePath}"
+                    CacheKey = $"bili_{track.SourcePath}"
                 };
             }
 
@@ -134,53 +134,24 @@ namespace OmniMixPlayer.Module.Bilibili
 
         public Task<PlayableSource> RefreshUrlAsync(string u, AudioQuality q, CancellationToken t) => ResolveAsync(u, q, t);
 
-        public async Task<List<MusicInfo>> GetMusicListAsync()
+        public async Task<List<Track>> GetMusicListAsync()
         {
-            var list = new List<MusicInfo>();
-            if (!_bridge.IsLoggedIn) return list;
-
-            _albumCoverUrls.Clear();
-            _spriteCache.Clear();
-
-            var folders = await _bridge.GetMyFoldersAsync();
-            foreach (var f in folders)
-            {
-                var videos = await _bridge.GetFolderVideosAsync(f.Id);
-
-                if (videos.Count > 0 && !string.IsNullOrEmpty(videos[0].CoverUrl))
-                {
-                    string albumId = $"bili_album_{f.Id}";
-                    string coverUrl = videos[0].CoverUrl;
-                    if (coverUrl.StartsWith("http://")) coverUrl = coverUrl.Replace("http://", "https://");
-                    _albumCoverUrls[albumId] = coverUrl;
-
-                    _context.EventBus.Publish(new CoverInvalidatedEvent { AlbumId = albumId, Reason = "FolderLoaded" });
-                }
-
-                _registry.RegisterFolder(f, videos);
-
-                foreach (var v in videos)
-                {
-                    string uuid = MusicInfo.GenerateUUID("bili_" + v.Bvid);
-                    var registeredMusic = _context.MusicRegistry.GetMusic(uuid);
-                    if (registeredMusic != null) list.Add(registeredMusic);
-                }
-            }
-            return list;
+            return _context.Library.QueryTracks(new TrackQuery { ModuleId = ModuleId, Limit = 0 }).ToList();
         }
 
         public async Task<(byte[] data, string mimeType)> GetAlbumCoverAsync(string albumId)
         {
-            if (_albumCoverUrls.TryGetValue(albumId, out string url))
-                return await DownloadSpriteAsync(url);
+            var album = _context.Library.GetAlbum(albumId);
+            if (album != null && !string.IsNullOrWhiteSpace(album.CoverUri))
+                return await DownloadSpriteAsync(album.CoverUri);
             return (_context.DefaultCover.DefaultAlbumCover, "image/png");
         }
 
         public async Task<(byte[] data, string mimeType)> GetMusicCoverAsync(string uuid)
         {
-            var music = _context.MusicRegistry.GetMusic(uuid);
-            if (music?.ExtendedData is string url && !string.IsNullOrEmpty(url))
-                return await DownloadSpriteAsync(url);
+            var track = _context.Library.GetTrack(uuid);
+            if (track != null && !string.IsNullOrWhiteSpace(track.CoverUri))
+                return await DownloadSpriteAsync(track.CoverUri);
             return (_context.DefaultCover.DefaultMusicCover, "image/png");
         }
 
@@ -215,11 +186,12 @@ namespace OmniMixPlayer.Module.Bilibili
         public void RemoveAlbumCoverCache(string a) { }
         public async Task<(byte[], string)> GetMusicCoverBytesAsync(string uuid)
         {
-            var music = _context.MusicRegistry.GetMusic(uuid);
-            if (music?.ExtendedData is string url && !string.IsNullOrEmpty(url))
+            var track = _context.Library.GetTrack(uuid);
+            if (track != null && !string.IsNullOrWhiteSpace(track.CoverUri))
             {
                 try
                 {
+                    var url = track.CoverUri;
                     if (url.StartsWith("http://")) url = url.Replace("http://", "https://");
                     using (var client = new System.Net.Http.HttpClient())
                     {
@@ -232,7 +204,22 @@ namespace OmniMixPlayer.Module.Bilibili
             }
             return (null, null);
         }
-        public async Task RefreshAsync() => await GetMusicListAsync();
+        public async Task RefreshAsync() => await RefreshMusicListAsync();
+
+        private async Task RefreshMusicListAsync()
+        {
+            if (!_bridge.IsLoggedIn) return;
+
+            _context.Library.UnregisterModule(ModuleId);
+            _spriteCache.Clear();
+
+            var folders = await _bridge.GetMyFoldersAsync();
+            foreach (var f in folders)
+            {
+                var videos = await _bridge.GetFolderVideosAsync(f.Id);
+                _registry.RegisterFolder(f, videos);
+            }
+        }
 
         #region IModuleUIProvider
 
@@ -328,7 +315,7 @@ namespace OmniMixPlayer.Module.Bilibili
         private async Task RefreshQRCodeAsync()
         {
             if (_qrManager == null) return;
-            _context?.Logger.LogInformation("[{DisplayName}] 刷新二维码...");
+            _context?.Logger.LogInformation("[{DisplayName}] 刷新二维码...", DisplayName);
             _qrVersion = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             // 等待二维码就绪再推 UI
@@ -380,11 +367,8 @@ namespace OmniMixPlayer.Module.Bilibili
                 _qrManager?.Stop();
                 _bridge?.ClearSession();
                 _spriteCache.Clear();
-                _albumCoverUrls.Clear();
 
-                _context?.MusicRegistry?.UnregisterAllByModule(ModuleId);
-                _context?.AlbumRegistry?.UnregisterAllByModule(ModuleId);
-                _context?.TagRegistry?.UnregisterAllByModule(ModuleId);
+                _context?.Library?.UnregisterModule(ModuleId);
 
                 // 重新初始化 QR 登录
                 _qrManager = new QRLoginManager(_bridge, _context?.Logger);
@@ -394,7 +378,7 @@ namespace OmniMixPlayer.Module.Bilibili
                     await RefreshAsync();
                     _context?.EventBus?.Publish(new PlaylistUpdatedEvent
                     {
-                        TagId = "bili_all",
+                        SourceRefId = "bili_all",
                         UpdateType = PlaylistUpdateType.FullRefresh
                     });
                     PushUI?.Invoke(BuildUI());

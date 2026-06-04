@@ -2,12 +2,17 @@ import 'dart:async';
 import 'dart:convert' hide json;
 import '../utils/json_utils.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../generated/omni_mix_player/events/ws_events.pb.dart';
 import '../models/node_data.dart';
 import 'ws_unix_native.dart'
     if (dart.library.js_interop) '../stubs/ws_unix_web.dart';
 
 /// WebSocket client that talks to the C# backend.
 /// Supports TCP (primary) and Unix Domain Socket (fallback).
+///
+/// Protocol:
+///   - Binary frames = protobuf WsEvent (playback/instance events)
+///   - Text frames   = JSON ui_push events (module UI)
 class WsClient {
   final String _wsUrl;
   final String? _socketPath;
@@ -15,8 +20,15 @@ class WsClient {
   StreamSubscription? _sub;
   bool _intentionalClose = false;
 
-  void Function(WsEvent)? onEvent;
-  void Function(UiPushPayload)? onUiPush;
+  /// Protobuf playback/instance events (binary frames).
+  void Function(WsEvent event)? onProtoEvent;
+
+  /// JSON UI push events (text frames, module UI).
+  void Function(UiPushPayload payload)? onUiPush;
+
+  /// Legacy JSON events (text frames, non-ui).
+  void Function(Map<String, dynamic> json)? onJsonEvent;
+
   void Function()? onDisconnected;
 
   /// TCP mode.
@@ -60,7 +72,7 @@ class WsClient {
       }
       await _channel!.ready;
       _sub = _channel!.stream.listen(
-        (data) => _handleMessage(data as String),
+        (data) => _handleMessage(data),
         onDone: () {
           _cleanup();
           if (!_intentionalClose) onDisconnected?.call();
@@ -84,21 +96,29 @@ class WsClient {
     _channel = null;
   }
 
-  void _handleMessage(String text) {
-    try {
-      final jsonMap = json.decode(text) as Map<String, dynamic>;
-      final type = jsonMap['type'] as String? ?? '';
+  /// Handle incoming messages. Binary = protobuf WsEvent, Text = JSON.
+  void _handleMessage(dynamic data) {
+    if (data is List<int>) {
+      // Binary frame: protobuf WsEvent
+      try {
+        final event = WsEvent.fromBuffer(data);
+        onProtoEvent?.call(event);
+      } catch (_) {}
+    } else if (data is String) {
+      // Text frame: JSON (ui_push or legacy events)
+      try {
+        final jsonMap = json.decode(data) as Map<String, dynamic>;
+        final type = jsonMap['type'] as String? ?? '';
 
-      if (type == 'ui_push') {
-        // BroadcastEvent 包裹在 data 字段中，需要解包
-        final inner = (jsonMap['data'] as Map<String, dynamic>?) ?? jsonMap;
-        final push = UiPushPayload.fromJson(inner);
-        onUiPush?.call(push);
-      } else {
-        final event = WsEvent.fromJson(jsonMap);
-        onEvent?.call(event);
-      }
-    } catch (_) {}
+        if (type == 'ui_push') {
+          final inner = (jsonMap['data'] as Map<String, dynamic>?) ?? jsonMap;
+          final push = UiPushPayload.fromJson(inner);
+          onUiPush?.call(push);
+        } else {
+          onJsonEvent?.call(jsonMap);
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> sendUiEvent(

@@ -3,7 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 
-import '../models/node_data.dart';
+import '../generated/omni_mix_player/models/tag.pb.dart';
+import '../generated/omni_mix_player/models/album.pb.dart';
+import '../generated/omni_mix_player/models/playlist.pb.dart';
+import '../generated/omni_mix_player/models/track.pb.dart';
+import '../generated/omni_mix_player/services/playback.pb.dart';
 import '../providers/app_state.dart';
 
 class HomePage extends StatefulWidget {
@@ -20,9 +24,10 @@ enum _LibraryView { playlist, album, song }
 enum _QueueTab { queue, history }
 
 class _HomePageState extends State<HomePage> {
-  List<TagInfo> _tags = [];
-  List<AlbumInfo> _albums = [];
-  List<SongInfo> _songs = [];
+  List<Tag> _tags = [];
+  List<Album> _albums = [];
+  List<Playlist> _playlists = [];
+  List<Track> _songs = [];
   String _query = '';
   bool _loading = false;
   String _error = '';
@@ -164,12 +169,14 @@ class _HomePageState extends State<HomePage> {
         widget.state.api.getTags(),
         widget.state.api.getAlbums(),
         widget.state.api.getSongs(),
+        widget.state.api.getPlaylists(),
       ]);
       if (!mounted) return;
       setState(() {
-        _tags = results[0] as List<TagInfo>;
-        _albums = results[1] as List<AlbumInfo>;
-        _songs = results[2] as List<SongInfo>;
+        _tags = results[0] as List<Tag>;
+        _albums = results[1] as List<Album>;
+        _songs = results[2] as List<Track>;
+        _playlists = results[3] as List<Playlist>;
       });
     } catch (e) {
       if (!mounted) return;
@@ -208,12 +215,6 @@ class _HomePageState extends State<HomePage> {
       child: LayoutBuilder(
         builder: (_, c) {
           final canControl = widget.state.canControlActiveInstance;
-          if (!canControl) {
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [_buildNowPlaying(minimalClientMode: true)],
-            );
-          }
           final compact = c.maxWidth < 1080;
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -221,7 +222,7 @@ class _HomePageState extends State<HomePage> {
               compact
                   ? Column(
                       children: [
-                        _buildNowPlaying(),
+                        _buildNowPlaying(minimalClientMode: !canControl),
                         const SizedBox(height: 12),
                         SizedBox(height: 430, child: _buildQueuePanel()),
                         const SizedBox(height: 12),
@@ -231,7 +232,12 @@ class _HomePageState extends State<HomePage> {
                   : Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(flex: 10, child: _buildNowPlaying()),
+                        Expanded(
+                          flex: 10,
+                          child: _buildNowPlaying(
+                            minimalClientMode: !canControl,
+                          ),
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           flex: 11,
@@ -261,14 +267,18 @@ class _HomePageState extends State<HomePage> {
     final l10n = AppLocalizations.of(context)!;
     final cs = Theme.of(context).colorScheme;
     final instance = widget.state.activeInstance;
-    final track = instance?.currentTrack;
+    final trackUuid = instance?.currentTrackUuid ?? '';
     final canControl = widget.state.canControlActiveInstance;
-    final duration = track?.duration ?? 0.0;
-    final position =
-        _draggingPosition ??
-        ((instance?.position ?? 0.0).clamp(0.0, duration <= 0 ? 1.0 : duration)
-                as num)
-            .toDouble();
+    final title = (widget.state.currentTrackTitle.isNotEmpty)
+        ? widget.state.currentTrackTitle
+        : (trackUuid.isNotEmpty ? trackUuid : l10n.noSongPlaying);
+    final artist = widget.state.currentTrackArtist;
+    final duration = widget.state.currentTrackDuration;
+    final isPlaying = widget.state.isPlaying;
+    final position = _draggingPosition ?? widget.state.currentTrackPosition;
+    final canSeek = canControl;
+    final canSetVolume = canControl;
+    final canSetLatency = canControl;
 
     return _Panel(
       child: Column(
@@ -279,17 +289,12 @@ class _HomePageState extends State<HomePage> {
             height: 230,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: _Cover(
-                uuid: track?.uuid ?? '',
-                baseUrl: widget.state.apiBaseUrl,
-              ),
+              child: _Cover(uuid: trackUuid, baseUrl: widget.state.apiBaseUrl),
             ),
           ),
           const SizedBox(height: 12),
           Text(
-            (track?.title.isNotEmpty ?? false)
-                ? track!.title
-                : l10n.noSongPlaying,
+            title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -297,10 +302,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 6),
           Text(
-            [
-              track?.artist ?? '',
-              _albumName(track?.albumId ?? ''),
-            ].where((e) => e.isNotEmpty).join(' • '),
+            artist,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -316,12 +318,12 @@ class _HomePageState extends State<HomePage> {
                 IconButton(
                   onPressed: canControl
                       ? () => widget.state.setShuffle(
-                          !(instance?.shuffle ?? false),
+                          !widget.state.shuffleEnabled,
                         )
                       : null,
                   icon: Icon(
                     Icons.shuffle_rounded,
-                    color: (instance?.shuffle ?? false) ? cs.primary : null,
+                    color: widget.state.shuffleEnabled ? cs.primary : null,
                   ),
                   tooltip: l10n.shuffle,
                 ),
@@ -333,9 +335,7 @@ class _HomePageState extends State<HomePage> {
                 IconButton(
                   onPressed: canControl ? widget.state.togglePlayback : null,
                   icon: Icon(
-                    (instance?.isPlaying ?? false)
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
+                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   ),
                   tooltip: l10n.playPause,
                 ),
@@ -347,14 +347,16 @@ class _HomePageState extends State<HomePage> {
                 IconButton(
                   onPressed: canControl
                       ? () {
-                          final single =
-                              (instance?.repeatMode ?? 'all') == 'one';
-                          widget.state.setRepeatMode(single ? 'all' : 'one');
+                          final current = widget.state.repeatModeStr;
+                          final next = current == 'REPEAT_MODE_ONE'
+                              ? 'all'
+                              : 'one';
+                          widget.state.setRepeatMode(next);
                         }
                       : null,
                   icon: Icon(
                     Icons.repeat_one_rounded,
-                    color: (instance?.repeatMode ?? 'all') == 'one'
+                    color: widget.state.repeatModeStr == 'REPEAT_MODE_ONE'
                         ? cs.primary
                         : null,
                   ),
@@ -378,14 +380,14 @@ class _HomePageState extends State<HomePage> {
                   value: position,
                   min: 0,
                   max: duration > 0 ? duration : 1,
-                  onChanged: canControl && duration > 0
+                  onChanged: canSeek && duration > 0
                       ? (val) {
                           setState(() {
                             _draggingPosition = val;
                           });
                         }
                       : null,
-                  onChangeEnd: canControl && duration > 0
+                  onChangeEnd: canSeek && duration > 0
                       ? (val) async {
                           await widget.state.seekActive(val);
                           if (mounted) {
@@ -413,27 +415,29 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(width: 8),
               Expanded(
                 child: Slider(
-                  value:
-                      _draggingVolume ??
-                      (instance?.volume ?? widget.state.lastVolume ?? 1.0),
+                  value: _draggingVolume ?? widget.state.lastVolume,
                   min: 0.0,
                   max: 1.0,
-                  onChanged: (val) {
-                    _updateVolumeThrottled(val);
-                  },
-                  onChangeEnd: (val) {
-                    _volumeThrottleTimer?.cancel();
-                    _sendVolume(val);
-                    setState(() {
-                      _draggingVolume = null;
-                    });
-                  },
+                  onChanged: canSetVolume
+                      ? (val) {
+                          _updateVolumeThrottled(val);
+                        }
+                      : null,
+                  onChangeEnd: canSetVolume
+                      ? (val) {
+                          _volumeThrottleTimer?.cancel();
+                          _sendVolume(val);
+                          setState(() {
+                            _draggingVolume = null;
+                          });
+                        }
+                      : null,
                 ),
               ),
               SizedBox(
                 width: 42,
                 child: Text(
-                  "${((_draggingVolume ?? (instance?.volume ?? widget.state.lastVolume ?? 1.0)) * 100).round()}%",
+                  "${((_draggingVolume ?? widget.state.lastVolume) * 100).round()}%",
                   style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                 ),
               ),
@@ -449,29 +453,29 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(width: 8),
               Expanded(
                 child: Slider(
-                  value:
-                      _draggingLatency ??
-                      (instance?.targetLatency ??
-                          widget.state.lastTargetLatency ??
-                          0.05),
+                  value: _draggingLatency ?? widget.state.lastTargetLatency,
                   min: 0.03,
                   max: 1.0,
-                  onChanged: (val) {
-                    _updateLatencyThrottled(val);
-                  },
-                  onChangeEnd: (val) {
-                    _latencyThrottleTimer?.cancel();
-                    _sendLatency(val);
-                    setState(() {
-                      _draggingLatency = null;
-                    });
-                  },
+                  onChanged: canSetLatency
+                      ? (val) {
+                          _updateLatencyThrottled(val);
+                        }
+                      : null,
+                  onChangeEnd: canSetLatency
+                      ? (val) {
+                          _latencyThrottleTimer?.cancel();
+                          _sendLatency(val);
+                          setState(() {
+                            _draggingLatency = null;
+                          });
+                        }
+                      : null,
                 ),
               ),
               SizedBox(
                 width: 42,
                 child: Text(
-                  "${(_draggingLatency ?? (instance?.targetLatency ?? widget.state.lastTargetLatency ?? 0.05)).toStringAsFixed(2)}s",
+                  "${(_draggingLatency ?? widget.state.lastTargetLatency).toStringAsFixed(2)}s",
                   style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                 ),
               ),
@@ -491,7 +495,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildQueuePanel() {
     final l10n = AppLocalizations.of(context)!;
-    final canControl = widget.state.canControlActiveInstance;
+    final canQueue = widget.state.canControlActiveInstance;
     return _Panel(
       child: Column(
         children: [
@@ -512,7 +516,7 @@ class _HomePageState extends State<HomePage> {
                 onSelectionChanged: (s) => setState(() => _queueTab = s.first),
               ),
               const Spacer(),
-              if (canControl)
+              if (canQueue)
                 TextButton(
                   onPressed: _queueTab == _QueueTab.queue
                       ? widget.state.clearActiveQueue
@@ -532,15 +536,16 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildReorderList(List<QueueItemInfo> items, {required bool isQueue}) {
+  Widget _buildReorderList(List<QueueTrack> items, {required bool isQueue}) {
     final l10n = AppLocalizations.of(context)!;
-    final canControl = widget.state.canControlActiveInstance;
+    final canQueue = widget.state.canControlActiveInstance;
+    final canPlayback = widget.state.canControlActiveInstance;
     if (items.isEmpty) return Center(child: Text(l10n.empty));
 
     return ReorderableListView.builder(
-      buildDefaultDragHandles: canControl,
+      buildDefaultDragHandles: canQueue,
       itemCount: items.length,
-      onReorder: canControl
+      onReorder: canQueue
           ? (oldIndex, newIndex) async {
               var to = newIndex;
               if (newIndex > oldIndex) to -= 1;
@@ -556,22 +561,22 @@ class _HomePageState extends State<HomePage> {
         return _SongRow(
           key: ValueKey('${isQueue ? 'q' : 'h'}_${s.uuid}_$i'),
           song: _songWithFallback(s),
-          canControl: canControl,
+          canControl: canQueue || canPlayback,
           playOnlyButton: true,
-          onPlay: canControl
+          onPlay: canPlayback
               ? () => widget.state.playSongOnActive(s.uuid)
               : null,
-          onAddTail: canControl
+          onAddTail: canQueue
               ? () => widget.state.addSongToActiveQueue(s.uuid)
               : null,
-          onNext: canControl
+          onNext: canQueue
               ? () => widget.state.addSongNextOnActive(s.uuid)
               : null,
-          onExcludeToggle: canControl
+          onExcludeToggle: canPlayback
               ? () => widget.state.setSongExcluded(s.uuid, !_isExcluded(s.uuid))
               : null,
           excluded: _isExcluded(s.uuid),
-          onDelete: canControl
+          onDelete: canQueue
               ? () => isQueue
                     ? widget.state.removeQueueItem(i)
                     : widget.state.removeHistoryItem(i)
@@ -589,7 +594,8 @@ class _HomePageState extends State<HomePage> {
     if (_error.isNotEmpty)
       return _Panel(child: Center(child: Text(l10n.errorWithMessage(_error))));
 
-    final canControl = widget.state.canControlActiveInstance;
+    final canManagePlaylist = widget.state.canManageActiveLibrary;
+    final canAddSources = canManagePlaylist;
     return _Panel(
       child: Column(
         children: [
@@ -615,7 +621,7 @@ class _HomePageState extends State<HomePage> {
                     setState(() => _libraryView = s.first),
               ),
               const Spacer(),
-              if (canControl)
+              if (canAddSources)
                 IconButton(
                   onPressed: _showAddSourceSheet,
                   tooltip: l10n.addSource,
@@ -633,7 +639,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(height: 8),
-          Expanded(child: _buildLibraryList(canControl)),
+          Expanded(child: _buildLibraryList(canManagePlaylist)),
         ],
       ),
     );
@@ -642,9 +648,11 @@ class _HomePageState extends State<HomePage> {
   Widget _buildLibraryList(bool canControl) {
     final l10n = AppLocalizations.of(context)!;
     final songs = _filteredSongs();
-    if (widget.state.activePlaylist.isEmpty) {
-      return Center(child: Text(l10n.noActivePlaylist));
-    }
+    final canPlayback = widget.state.canControlActiveInstance;
+    final canQueue = widget.state.canControlActiveInstance;
+    final selectedSourceIds = widget.state.playlistSources
+        .map((s) => s.id)
+        .toSet();
     if (_libraryView == _LibraryView.song) {
       if (songs.isEmpty) return Center(child: Text(l10n.noSongs));
       return ListView.builder(
@@ -653,19 +661,23 @@ class _HomePageState extends State<HomePage> {
           final s = songs[i];
           return _SongRow(
             song: s,
-            canControl: canControl,
+            canControl: canControl || canPlayback || canQueue,
             playOnlyButton: true,
-            onPlay: canControl
+            onPlay: canPlayback
                 ? () => widget.state.playSongOnActive(s.uuid)
                 : null,
-            onNext: canControl
+            onNext: canQueue
                 ? () => widget.state.addSongNextOnActive(s.uuid)
                 : null,
-            onAddTail: canControl
+            onAddTail: canQueue
                 ? () => widget.state.addSongToActiveQueue(s.uuid)
                 : null,
-            onExcludeToggle: canControl
+            onExcludeToggle: canPlayback
                 ? () => widget.state.setSongExcluded(s.uuid, !(s.isExcluded))
+                : null,
+            onAddToLibrary:
+                canControl && !selectedSourceIds.contains('track_${s.uuid}')
+                ? () => widget.state.addTrackToActivePlaylist(s)
                 : null,
             excluded: s.isExcluded,
             baseUrl: widget.state.apiBaseUrl,
@@ -674,9 +686,10 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    final selectedSourceIds = widget.state.playlistSources
-        .map((s) => s.id)
-        .toSet();
+    if (widget.state.activePlaylist.isEmpty) {
+      return Center(child: Text(l10n.noActivePlaylist));
+    }
+
     if (_libraryView == _LibraryView.album) {
       // Collect album IDs from songs in the active playlist (via full SongInfo)
       final playlistUuids = widget.state.activePlaylist
@@ -702,7 +715,7 @@ class _HomePageState extends State<HomePage> {
       final filteredAlbums = _albums.where((a) {
         if (!selectedAlbumIds.contains(a.id)) return false;
         if (_query.isEmpty) return true;
-        return a.name.toLowerCase().contains(_query) ||
+        return a.title.toLowerCase().contains(_query) ||
             a.moduleId.toLowerCase().contains(_query);
       }).toList();
       if (filteredAlbums.isEmpty) {
@@ -718,8 +731,10 @@ class _HomePageState extends State<HomePage> {
               height: 40,
               child: _AlbumCover(album: a, baseUrl: widget.state.apiBaseUrl),
             ),
-            title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(l10n.songCountWithModule(a.songCount, a.moduleId)),
+            title: Text(a.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+              l10n.songCountWithModule(_albumSongCount(a.id), a.moduleId),
+            ),
             trailing: canControl && selectedSourceIds.contains('album_${a.id}')
                 ? PopupMenuButton<String>(
                     onSelected: (v) {
@@ -739,32 +754,26 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    final selectedTagIds = selectedSourceIds
-        .where((id) => id.startsWith('tag_'))
-        .map((id) => id.substring('tag_'.length))
-        .toSet();
-    final filteredTags = _tags.where((t) {
-      if (!selectedTagIds.contains(t.id)) return false;
-      return _query.isEmpty ||
-          t.name.toLowerCase().contains(_query) ||
-          t.moduleId.toLowerCase().contains(_query);
-    }).toList();
-    if (filteredTags.isEmpty) {
-      return Center(child: Text(l10n.noPlaylistsAdded));
-    }
-    return ListView.builder(
-      itemCount: filteredTags.length,
-      itemBuilder: (_, i) {
-        final t = filteredTags[i];
-        return ListTile(
-          leading: const Icon(Icons.folder_rounded),
-          title: Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(t.moduleId),
+    final sourceRows = <ListTile>[];
+    for (final p in _playlists) {
+      final sourceId = 'playlist_${p.id}';
+      if (!selectedSourceIds.contains(sourceId)) continue;
+      if (_query.isNotEmpty &&
+          !p.name.toLowerCase().contains(_query) &&
+          !p.moduleId.toLowerCase().contains(_query)) {
+        continue;
+      }
+      sourceRows.add(
+        ListTile(
+          leading: const Icon(Icons.queue_music_rounded),
+          title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(p.moduleId),
           trailing: canControl
               ? PopupMenuButton<String>(
                   onSelected: (v) {
-                    if (v == 'remove')
-                      widget.state.removePlaylistSource('tag_${t.id}');
+                    if (v == 'remove') {
+                      widget.state.removePlaylistSource(sourceId);
+                    }
                   },
                   itemBuilder: (_) => [
                     PopupMenuItem(
@@ -774,21 +783,58 @@ class _HomePageState extends State<HomePage> {
                   ],
                 )
               : null,
-        );
-      },
-    );
+        ),
+      );
+    }
+    for (final t in _tags) {
+      final sourceId = 'tag_${t.id}';
+      if (!selectedSourceIds.contains(sourceId)) continue;
+      if (_query.isNotEmpty &&
+          !t.name.toLowerCase().contains(_query) &&
+          !t.moduleId.toLowerCase().contains(_query)) {
+        continue;
+      }
+      sourceRows.add(
+        ListTile(
+          leading: const Icon(Icons.folder_rounded),
+          title: Text(t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(t.moduleId),
+          trailing: canControl
+              ? PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'remove') {
+                      widget.state.removePlaylistSource(sourceId);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'remove',
+                      child: Text(l10n.removeFromLibrary),
+                    ),
+                  ],
+                )
+              : null,
+        ),
+      );
+    }
+    if (sourceRows.isEmpty) {
+      return Center(child: Text(l10n.noPlaylistsAdded));
+    }
+    return ListView(children: sourceRows);
   }
 
-  List<SongInfo> _filteredSongs() {
+  List<Track> _filteredSongs() {
     final sourceSet = widget.state.activePlaylist.map((e) => e.uuid).toSet();
-    var list = _songs.where((s) => sourceSet.contains(s.uuid)).toList();
+    var list = sourceSet.isEmpty
+        ? _songs.toList()
+        : _songs.where((s) => sourceSet.contains(s.uuid)).toList();
     // Fallback: if _songs is empty (offline instance), convert _activePlaylist items
     if (list.isEmpty &&
         _songs.isEmpty &&
         widget.state.activePlaylist.isNotEmpty) {
       list = widget.state.activePlaylist
           .map(
-            (q) => SongInfo(
+            (q) => Track(
               uuid: q.uuid,
               title: q.title,
               artist: q.artist,
@@ -810,10 +856,10 @@ class _HomePageState extends State<HomePage> {
     return list;
   }
 
-  SongInfo _songWithFallback(TrackInfo s) {
+  Track _songWithFallback(QueueTrack s) {
     final found = _songs.where((e) => e.uuid == s.uuid);
     if (found.isNotEmpty) return found.first;
-    return SongInfo(
+    return Track(
       uuid: s.uuid,
       title: s.title,
       artist: s.artist,
@@ -830,8 +876,11 @@ class _HomePageState extends State<HomePage> {
 
   String _albumName(String albumId) {
     final m = _albums.where((a) => a.id == albumId);
-    return m.isEmpty ? '' : m.first.name;
+    return m.isEmpty ? '' : m.first.title;
   }
+
+  int _albumSongCount(String albumId) =>
+      _songs.where((s) => s.albumId == albumId).length;
 
   void _showAddSourceSheet() {
     final l10n = AppLocalizations.of(context)!;
@@ -843,10 +892,11 @@ class _HomePageState extends State<HomePage> {
           final selectedIds = widget.state.playlistSources
               .map((s) => s.id)
               .toSet();
+          final canUseSources = widget.state.canManageActiveLibrary;
           return SizedBox(
             height: MediaQuery.of(context).size.height * 0.82,
             child: DefaultTabController(
-              length: 2,
+              length: 3,
               child: Column(
                 children: [
                   const SizedBox(height: 8),
@@ -875,35 +925,39 @@ class _HomePageState extends State<HomePage> {
                     tabs: [
                       Tab(text: l10n.playlistsTab),
                       Tab(text: l10n.albumsTab),
+                      const Tab(text: 'Tags'),
                     ],
                   ),
                   Expanded(
                     child: TabBarView(
                       children: [
                         ListView.builder(
-                          itemCount: _tags.length,
+                          itemCount: _playlists.length,
                           itemBuilder: (_, i) {
-                            final t = _tags[i];
-                            final sourceId = 'tag_${t.id}';
+                            final p = _playlists[i];
+                            final sourceId = 'playlist_${p.id}';
                             final checked = selectedIds.contains(sourceId);
                             return CheckboxListTile(
                               value: checked,
                               controlAffinity: ListTileControlAffinity.leading,
-                              secondary: const Icon(Icons.folder_rounded),
-                              title: Text(t.name),
-                              subtitle: Text(t.moduleId),
-                              onChanged: (v) async {
-                                if (v == null) return;
-                                if (v) {
-                                  await widget.state.addTagToActivePlaylist(t);
-                                } else {
-                                  await widget.state.removePlaylistSource(
-                                    sourceId,
-                                  );
-                                }
-                                if (mounted) setState(() {});
-                                setSheetState(() {});
-                              },
+                              secondary: const Icon(Icons.queue_music_rounded),
+                              title: Text(p.name),
+                              subtitle: Text(p.moduleId),
+                              onChanged: canUseSources
+                                  ? (v) async {
+                                      if (v == null) return;
+                                      if (v) {
+                                        await widget.state
+                                            .addPlaylistToActivePlaylist(p);
+                                      } else {
+                                        await widget.state.removePlaylistSource(
+                                          sourceId,
+                                        );
+                                      }
+                                      if (mounted) setState(() {});
+                                      setSheetState(() {});
+                                    }
+                                  : null,
                             );
                           },
                         ),
@@ -936,27 +990,58 @@ class _HomePageState extends State<HomePage> {
                                   baseUrl: widget.state.apiBaseUrl,
                                 ),
                               ),
-                              title: Text(a.name),
+                              title: Text(a.title),
                               subtitle: Text(
                                 l10n.songCountWithModule(
-                                  a.songCount,
+                                  _albumSongCount(a.id),
                                   a.moduleId,
                                 ),
                               ),
-                              onChanged: (v) async {
-                                if (v == null) return;
-                                if (v) {
-                                  await widget.state.addAlbumToActivePlaylist(
-                                    a,
-                                  );
-                                } else {
-                                  await widget.state.removePlaylistSource(
-                                    sourceId,
-                                  );
-                                }
-                                if (mounted) setState(() {});
-                                setSheetState(() {});
-                              },
+                              onChanged: canUseSources
+                                  ? (v) async {
+                                      if (v == null) return;
+                                      if (v) {
+                                        await widget.state
+                                            .addAlbumToActivePlaylist(a);
+                                      } else {
+                                        await widget.state.removePlaylistSource(
+                                          sourceId,
+                                        );
+                                      }
+                                      if (mounted) setState(() {});
+                                      setSheetState(() {});
+                                    }
+                                  : null,
+                            );
+                          },
+                        ),
+                        ListView.builder(
+                          itemCount: _tags.length,
+                          itemBuilder: (_, i) {
+                            final t = _tags[i];
+                            final sourceId = 'tag_${t.id}';
+                            final checked = selectedIds.contains(sourceId);
+                            return CheckboxListTile(
+                              value: checked,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              secondary: const Icon(Icons.folder_rounded),
+                              title: Text(t.name),
+                              subtitle: Text(t.moduleId),
+                              onChanged: canUseSources
+                                  ? (v) async {
+                                      if (v == null) return;
+                                      if (v) {
+                                        await widget.state
+                                            .addTagToActivePlaylist(t);
+                                      } else {
+                                        await widget.state.removePlaylistSource(
+                                          sourceId,
+                                        );
+                                      }
+                                      if (mounted) setState(() {});
+                                      setSheetState(() {});
+                                    }
+                                  : null,
                             );
                           },
                         ),
@@ -1065,7 +1150,7 @@ class _Cover extends StatelessWidget {
 }
 
 class _AlbumCover extends StatelessWidget {
-  final AlbumInfo album;
+  final Album album;
   final String baseUrl;
 
   const _AlbumCover({required this.album, required this.baseUrl});
@@ -1073,7 +1158,7 @@ class _AlbumCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    if (album.coverPath.isEmpty) {
+    if (album.coverUri.isEmpty) {
       return DecoratedBox(
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest,
@@ -1085,7 +1170,7 @@ class _AlbumCover extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: Image.network(
-        '$baseUrl/${album.coverPath}',
+        '$baseUrl/${album.coverUri}',
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => const Icon(Icons.album_rounded),
       ),
@@ -1094,12 +1179,13 @@ class _AlbumCover extends StatelessWidget {
 }
 
 class _SongRow extends StatelessWidget {
-  final SongInfo song;
+  final Track song;
   final bool canControl;
   final bool playOnlyButton;
   final VoidCallback? onPlay;
   final VoidCallback? onNext;
   final VoidCallback? onAddTail;
+  final VoidCallback? onAddToLibrary;
   final VoidCallback? onExcludeToggle;
   final VoidCallback? onDelete;
   final bool excluded;
@@ -1114,6 +1200,7 @@ class _SongRow extends StatelessWidget {
     this.onPlay,
     this.onNext,
     this.onAddTail,
+    this.onAddToLibrary,
     this.onExcludeToggle,
     this.onDelete,
     this.excluded = false,
@@ -1134,7 +1221,7 @@ class _SongRow extends StatelessWidget {
       ),
       title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '${song.artist.isEmpty ? AppLocalizations.of(context)!.unknownArtist : song.artist} • ${song.albumId}',
+        '${song.artist.isEmpty ? AppLocalizations.of(context)!.unknownArtist : song.artist} · ${song.albumId}',
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1155,6 +1242,7 @@ class _SongRow extends StatelessWidget {
             onSelected: (v) {
               if (v == 'next') onNext?.call();
               if (v == 'tail') onAddTail?.call();
+              if (v == 'library') onAddToLibrary?.call();
               if (v == 'exclude') onExcludeToggle?.call();
               if (v == 'remove') onDelete?.call();
             },
@@ -1163,6 +1251,8 @@ class _SongRow extends StatelessWidget {
               return [
                 PopupMenuItem(value: 'next', child: Text(l10n.playNext)),
                 PopupMenuItem(value: 'tail', child: Text(l10n.addToQueueTail)),
+                if (onAddToLibrary != null)
+                  PopupMenuItem(value: 'library', child: Text(l10n.addSource)),
                 PopupMenuItem(
                   value: 'exclude',
                   child: Text(excluded ? l10n.removeExclusion : l10n.exclude),

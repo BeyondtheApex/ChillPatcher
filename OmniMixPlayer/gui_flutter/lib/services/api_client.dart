@@ -1,8 +1,25 @@
-import 'dart:convert' hide json;
+/// API client that combines gRPC (library, playback, instance) with
+/// REST (config, health, modules). All data operations now go through gRPC;
+/// only module UI and config remain REST.
+///
+/// Public API is kept compatible with existing providers, migrating from old
+/// JSON models to generated protobuf types where possible.
+
 import '../utils/json_utils.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import '../models/node_data.dart';
+import '../generated/omni_mix_player/models/track.pb.dart';
+import '../generated/omni_mix_player/models/album.pb.dart';
+import '../generated/omni_mix_player/models/tag.pb.dart';
+import '../generated/omni_mix_player/models/playlist.pb.dart';
+import '../generated/omni_mix_player/models/query.pb.dart';
+import '../generated/omni_mix_player/models/instance.pb.dart';
+import '../generated/omni_mix_player/services/library.pb.dart';
+import '../generated/omni_mix_player/services/playback.pb.dart';
+import '../generated/omni_mix_player/services/instance.pb.dart';
+import '../generated/omni_mix_player/models/common.pbenum.dart';
+import 'grpc_services.dart';
 import 'unix_socket_client.dart'
     if (dart.library.js_interop) '../stubs/unix_socket_client_web.dart';
 
@@ -19,19 +36,16 @@ class ClientIdClient extends http.BaseClient {
   }
 
   @override
-  void close() {
-    _inner.close();
-  }
+  void close() => _inner.close();
 }
 
-/// HTTP REST client that talks to the C# backend.
-/// Supports TCP (primary) and Unix Domain Socket (fallback).
+/// Unified API client: gRPC for data, REST for config/modules.
 class ApiClient {
   final String _baseUrl;
   final http.Client _http;
+  late final GrpcServices _grpc;
   final String clientId;
 
-  /// The backend base URL, used by image widgets to resolve relative paths.
   String get baseUrl => _baseUrl;
 
   static String _generateClientId() {
@@ -53,7 +67,10 @@ class ApiClient {
        _http = ClientIdClient(
          isSocket ? createUnixHttpClient(socketPath!) : http.Client(),
          cid,
-       );
+       ) {
+    final effectivePort = port ?? 17890;
+    _grpc = GrpcServices(host: '127.0.0.1', port: effectivePort);
+  }
 
   factory ApiClient({required int port}) {
     final cid = _generateClientId();
@@ -80,7 +97,14 @@ class ApiClient {
     return ApiClient._internal(isSocket: false, isWeb: true, cid: cid);
   }
 
-  void dispose() => _http.close();
+  void dispose() {
+    _http.close();
+    _grpc.dispose();
+  }
+
+  void reconnectGrpc() => _grpc.reconnect();
+
+  // ── Health & Config (REST) ──
 
   Future<bool> checkHealth() async {
     try {
@@ -88,16 +112,40 @@ class ApiClient {
           .get(Uri.parse('$_baseUrl/api/health'))
           .timeout(const Duration(seconds: 3));
       return resp.statusCode == 200;
-    } catch (e, st) {
+    } catch (_) {
       return false;
     }
   }
 
+  Future<Map<String, dynamic>> getConfig() async {
+    final resp = await _http.get(Uri.parse('$_baseUrl/api/config'));
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return json.decode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<void> putConfig(AppConfig config) => putConfigRaw(config.toJson());
+
+  Future<void> putConfigRaw(Map<String, dynamic> updates) async {
+    await _http.put(
+      Uri.parse('$_baseUrl/api/config'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(updates),
+    );
+  }
+
+  Future<void> saveConfig() async {
+    await _http.post(Uri.parse('$_baseUrl/api/config/save'));
+  }
+
+  Future<void> stopBackend() async {
+    await _http.post(Uri.parse('$_baseUrl/api/backend/stop'));
+  }
+
+  // ── Modules (REST) ──
+
   Future<List<ModuleInfoResponse>> getModules() async {
     final resp = await _http.get(Uri.parse('$_baseUrl/api/modules'));
-    if (resp.statusCode != 200) {
-      throw Exception('HTTP ${resp.statusCode}');
-    }
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
     final list = json.decode(resp.body) as List<dynamic>;
     return list
         .map((e) => ModuleInfoResponse.fromJson(e as Map<String, dynamic>))
@@ -108,9 +156,7 @@ class ApiClient {
     final resp = await _http.get(
       Uri.parse('$_baseUrl/api/modules/$moduleId/ui'),
     );
-    if (resp.statusCode != 200) {
-      throw Exception('HTTP ${resp.statusCode}');
-    }
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
     return RawNodeData.fromJson(json.decode(resp.body) as Map<String, dynamic>);
   }
 
@@ -118,9 +164,15 @@ class ApiClient {
     final resp = await _http.get(
       Uri.parse('$_baseUrl/api/modules/$moduleId/link/$linkId'),
     );
-    if (resp.statusCode != 200) {
-      throw Exception('HTTP ${resp.statusCode}');
-    }
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+    return RawNodeData.fromJson(json.decode(resp.body) as Map<String, dynamic>);
+  }
+
+  Future<RawNodeData> getModuleSettingsUi(String moduleId) async {
+    final resp = await _http.get(
+      Uri.parse('$_baseUrl/api/modules/$moduleId/settings'),
+    );
+    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
     return RawNodeData.fromJson(json.decode(resp.body) as Map<String, dynamic>);
   }
 
@@ -132,444 +184,451 @@ class ApiClient {
     );
   }
 
-  Future<RawNodeData> getModuleSettingsUi(String moduleId) async {
-    final resp = await _http.get(
-      Uri.parse('$_baseUrl/api/modules/$moduleId/settings'),
+  // ── Library: Tags, Albums, Tracks (gRPC) ──
+
+  Future<List<Tag>> getTags({String? moduleId}) async {
+    final resp = await _grpc.library.queryTags(
+      TagQuery(moduleId: moduleId ?? ''),
     );
-    if (resp.statusCode != 200) {
-      throw Exception('HTTP ${resp.statusCode}');
+    return resp.tags;
+  }
+
+  Future<List<Album>> getAlbums({String? tagId}) async {
+    final resp = await _grpc.library.queryAlbums(
+      AlbumQuery(tagId: tagId ?? ''),
+    );
+    return resp.albums;
+  }
+
+  Future<List<Playlist>> getPlaylists({String? moduleId}) async {
+    final resp = await _grpc.library.queryPlaylists(
+      PlaylistQuery(moduleId: moduleId ?? ''),
+    );
+    return resp.playlists;
+  }
+
+  Future<List<Track>> getSongs({
+    String? albumId,
+    String? tagId,
+    String? playlistId,
+  }) async {
+    final resp = await _grpc.library.queryTracks(
+      TrackQuery(
+        albumId: albumId ?? '',
+        playlistId: playlistId ?? '',
+        tagIds: tagId != null ? [tagId] : [],
+        isExcluded: false,
+      ),
+    );
+    return resp.tracks;
+  }
+
+  Future<Track?> getSong(String uuid) async {
+    try {
+      return await _grpc.library.getTrack(GetTrackRequest(uuid: uuid));
+    } catch (_) {
+      return null;
     }
-    return RawNodeData.fromJson(json.decode(resp.body) as Map<String, dynamic>);
   }
 
-  Future<void> putConfig(AppConfig config) async {
-    await _http.put(
-      Uri.parse('$_baseUrl/api/config'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(config.toJson()),
-    );
+  Future<void> setSongExcluded(String uuid, bool excluded) async {
+    try {
+      final track = await _grpc.library.getTrack(GetTrackRequest(uuid: uuid));
+      track.isExcluded = excluded;
+      await _grpc.library.upsertTrack(UpsertTrackRequest(track: track));
+    } catch (_) {}
   }
 
-  /// Send arbitrary key-value pairs to update backend config.
-  Future<void> putConfigRaw(Map<String, dynamic> updates) async {
-    await _http.put(
-      Uri.parse('$_baseUrl/api/config'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(updates),
-    );
+  // ── Instances (gRPC) ──
+
+  Future<List<InstanceSummary>> getInstances() async {
+    final resp = await _grpc.instance.listInstances(ListInstancesRequest());
+    return resp.instances;
   }
 
-  Future<Map<String, dynamic>> getConfig() async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/config'));
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    return json.decode(resp.body) as Map<String, dynamic>;
+  Future<Map<String, dynamic>> getInstanceStats() async {
+    final instances = await getInstances();
+    return {
+      'total': instances.length,
+      'online': instances.where((i) => i.isOnline).length,
+    };
   }
 
-  Future<void> saveConfig() async {
-    await _http.post(Uri.parse('$_baseUrl/api/config/save'));
-  }
-
-  // ── Active instance endpoints (backend routes to active instance) ──
-  Future<Map<String, dynamic>> getActiveProfile() async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/active/profile'));
-    if (resp.statusCode == 404) return {};
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    return json.decode(resp.body) as Map<String, dynamic>;
-  }
-
-  Future<void> updateActiveProfile(Map<String, dynamic> data) async {
-    final resp = await _http.put(
-      Uri.parse('$_baseUrl/api/active/profile'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(data),
-    );
-    if (resp.statusCode >= 400) throw Exception('HTTP ${resp.statusCode}');
-  }
-
-  Future<List<dynamic>> getArchives() async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/archives'));
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    return json.decode(resp.body) as List<dynamic>;
-  }
-
-  Future<void> deleteArchive(String id) async {
-    await _http.delete(Uri.parse('$_baseUrl/api/instances/archives/$id'));
-  }
-
-  Future<void> renameArchive(String id, String label) async {
-    await _http.put(
-      Uri.parse('$_baseUrl/api/instances/archives/$id/rename'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'label': label}),
-    );
-  }
-
-  Future<void> archiveInstance(String id, {String label = ''}) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$id/archive'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'label': label}),
-    );
-  }
-
-  Future<void> deleteInstance(String id) async {
-    await _http.delete(Uri.parse('$_baseUrl/api/instances/$id'));
-  }
-
-  /// Set instance metadata (modId, gameName, mode) on the backend.
-  Future<void> setInstanceMeta(
-    String instanceId,
-    String modId,
-    String gameName,
-    String mode,
-  ) async {
-    await _http.put(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/meta'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'modId': modId, 'gameName': gameName, 'mode': mode}),
-    );
-  }
-
-  /// Inherit profile from archive to a new instance.
-  /// Returns: {"inherited": true, "consumed": true/false}
-  Future<Map<String, dynamic>> inheritFromArchive(
-    String instanceId,
-    String archiveId,
-  ) async {
-    final resp = await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/inherit/$archiveId'),
-    );
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    return json.decode(resp.body) as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> getInstanceProfile(String instanceId) async {
-    final resp = await _http.get(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/profile'),
-    );
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    return json.decode(resp.body) as Map<String, dynamic>;
+  Future<InstanceProfile?> getInstanceProfile(String instanceId) async {
+    try {
+      return await _grpc.instance.getProfile(
+        GetProfileRequest(instanceId: instanceId),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> updateInstanceProfile(
     String instanceId,
     Map<String, dynamic> data,
   ) async {
-    final resp = await _http.put(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/profile'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(data),
-    );
-    if (resp.statusCode == 404) throw Exception('Instance not found');
-    if (resp.statusCode >= 400) throw Exception('HTTP ${resp.statusCode}');
-  }
-
-  Future<Map<String, dynamic>> getInstanceEqualizer(String instanceId) async {
-    final resp = await _http.get(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/equalizer'),
-    );
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    return json.decode(resp.body) as Map<String, dynamic>;
-  }
-
-  Future<void> updateInstanceEqualizer(
-    String instanceId,
-    Map<String, dynamic> data,
-  ) async {
-    final resp = await _http.put(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/equalizer'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(data),
-    );
-    if (resp.statusCode >= 400) throw Exception('HTTP ${resp.statusCode}');
-  }
-
-  Future<Map<String, dynamic>> getInstanceEqualizerPresets(
-    String instanceId,
-  ) async {
-    final resp = await _http.get(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/equalizer/presets'),
-    );
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    return json.decode(resp.body) as Map<String, dynamic>;
-  }
-
-  Future<void> stopBackend() async {
-    await _http.post(Uri.parse('$_baseUrl/api/backend/stop'));
-  }
-
-  Future<PlaylistData> getPlaylist() async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/playlist'));
-    if (resp.statusCode != 200) {
-      throw Exception('HTTP ${resp.statusCode}');
+    final profile = await _loadProfileForUpdate(instanceId);
+    if (data['displayName'] != null) {
+      profile.displayName = data['displayName'] as String? ?? '';
     }
-    return PlaylistData.fromJson(
-      json.decode(resp.body) as Map<String, dynamic>,
+    if (data['volume'] != null)
+      profile.volume = (data['volume'] as num).toDouble();
+    if (data['targetLatency'] != null) {
+      profile.targetLatency = (data['targetLatency'] as num).toDouble();
+    }
+    if (data['mode'] != null) {
+      profile.mode = data['mode'] == 'servermanaged'
+          ? PlaybackModeType.PLAYBACK_MODE_SERVER_MANAGED
+          : PlaybackModeType.PLAYBACK_MODE_CLIENT_MANAGED;
+    }
+    await _grpc.instance.updateProfile(
+      UpdateProfileRequest(instanceId: instanceId, profile: profile),
     );
   }
 
-  Future<List<TagInfo>> getTags() async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/tags'));
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    final list = json.decode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => TagInfo.fromJson(e as Map<String, dynamic>))
-        .toList();
+  Future<List<InstanceProfile>> getArchives() async {
+    final resp = await _grpc.instance.listArchives(ListArchivesRequest());
+    return resp.archives;
   }
 
-  Future<List<AlbumInfo>> getAlbums({String? tagId}) async {
-    final query = tagId != null ? '?tagId=$tagId' : '';
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/albums$query'));
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    final list = json.decode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => AlbumInfo.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  Future<List<SongInfo>> getSongs({String? albumId, String? tagId}) async {
-    final params = <String>[];
-    if (albumId != null) params.add('albumId=$albumId');
-    if (tagId != null) params.add('tagId=$tagId');
-    final query = params.isNotEmpty ? '?${params.join('&')}' : '';
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/songs$query'));
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    final list = json.decode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => SongInfo.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  Future<List<PlaybackInstanceInfo>> getInstances() async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances'));
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    final list = json.decode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => PlaybackInstanceInfo.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  Future<Map<String, dynamic>> getInstanceStats() async {
-    final resp = await _http.get(Uri.parse('$_baseUrl/api/instances/stats'));
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    return json.decode(resp.body) as Map<String, dynamic>;
-  }
-
-  Future<void> connectController({String clientId = 'flutter'}) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/connect'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'clientId': clientId,
-        'role': 'controller',
-        'mode': 'server',
-      }),
+  Future<void> deleteArchive(String archiveId) async {
+    await _grpc.instance.deleteArchive(
+      DeleteArchiveRequest(archiveId: archiveId),
     );
   }
+
+  Future<void> renameArchive(String id, String label) async {
+    final profile = InstanceProfile()..id = id;
+    try {
+      final existing = await _grpc.instance.getArchive(
+        GetArchiveRequest(archiveId: id),
+      );
+      profile.mergeFromMessage(existing);
+    } catch (_) {}
+    profile.displayName = label;
+    await _grpc.instance.updateProfile(
+      UpdateProfileRequest(instanceId: id, profile: profile),
+    );
+  }
+
+  Future<void> deleteInstance(String instanceId) async {
+    await _grpc.instance.deleteInstance(
+      DeleteInstanceRequest(instanceId: instanceId),
+    );
+  }
+
+  /// Archive an instance (move to archive list).
+  Future<void> archiveInstance(String id, {String label = ''}) async {
+    await _grpc.instance.archiveInstance(
+      ArchiveInstanceRequest(instanceId: id, label: label),
+    );
+  }
+
+  Future<void> setInstanceMeta(
+    String instanceId,
+    String modId,
+    String gameName,
+    String mode,
+  ) async {
+    final profile = await _loadProfileForUpdate(instanceId)
+      ..modId = modId
+      ..gameName = gameName
+      ..displayName = gameName
+      ..mode = mode == 'servermanaged'
+          ? PlaybackModeType.PLAYBACK_MODE_SERVER_MANAGED
+          : PlaybackModeType.PLAYBACK_MODE_CLIENT_MANAGED;
+    await _grpc.instance.updateProfile(
+      UpdateProfileRequest(instanceId: instanceId, profile: profile),
+    );
+  }
+
+  Future<InstanceProfile> _loadProfileForUpdate(String instanceId) async {
+    try {
+      final existing = await _grpc.instance.getProfile(
+        GetProfileRequest(instanceId: instanceId),
+      );
+      return existing.deepCopy()..id = instanceId;
+    } catch (_) {
+      return InstanceProfile()..id = instanceId;
+    }
+  }
+
+  Future<Map<String, dynamic>> inheritFromArchive(
+    String instanceId,
+    String archiveId,
+  ) async {
+    final resp = await _grpc.instance.inheritFromArchive(
+      InheritFromArchiveRequest(
+        newInstanceId: instanceId,
+        archiveId: archiveId,
+      ),
+    );
+    return {'inherited': resp.inherited, 'consumed': true};
+  }
+
+  Future<InstanceProfile> connectController({
+    String clientId = 'flutter',
+  }) async {
+    final resp = await _grpc.instance.connect(
+      InstanceConnectRequest(
+        clientId: clientId,
+        mode: PlaybackModeType.PLAYBACK_MODE_SERVER_MANAGED,
+      ),
+    );
+    return resp.profile;
+  }
+
+  // ── Playback Control (gRPC) ──
 
   Future<void> play(String instanceId, {String? uuid}) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/play'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'uuid': uuid ?? ''}),
+    await _grpc.playback.play(
+      PlayRequest(instanceId: instanceId, uuid: uuid ?? ''),
     );
   }
 
-  Future<void> pause(String instanceId) =>
-      _post('/api/instances/$instanceId/pause');
-  Future<void> resume(String instanceId) =>
-      _post('/api/instances/$instanceId/resume');
-  Future<void> toggle(String instanceId) =>
-      _post('/api/instances/$instanceId/toggle');
-  Future<void> next(String instanceId) =>
-      _post('/api/instances/$instanceId/next');
-  Future<void> previous(String instanceId) =>
-      _post('/api/instances/$instanceId/prev');
+  Future<void> pause(String instanceId) async {
+    await _grpc.playback.pause(PauseRequest(instanceId: instanceId));
+  }
+
+  Future<void> resume(String instanceId) async {
+    await _grpc.playback.resume(ResumeRequest(instanceId: instanceId));
+  }
+
+  Future<void> toggle(String instanceId) async {
+    await _grpc.playback.toggle(ToggleRequest(instanceId: instanceId));
+  }
+
+  Future<void> next(String instanceId) async {
+    await _grpc.playback.next(NextRequest(instanceId: instanceId));
+  }
+
+  Future<void> previous(String instanceId) async {
+    await _grpc.playback.prev(PrevRequest(instanceId: instanceId));
+  }
 
   Future<void> seek(String instanceId, double position) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/seek'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'position': position}),
+    await _grpc.playback.seek(
+      SeekRequest(instanceId: instanceId, position: position),
     );
   }
 
   Future<void> setVolume(String instanceId, double volume) async {
-    await _http.put(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/volume'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'volume': volume}),
+    await _grpc.playback.setVolume(
+      SetVolumeRequest(instanceId: instanceId, volume: volume),
     );
+  }
+
+  Future<double> getVolume(String instanceId) async {
+    final resp = await _grpc.playback.getVolume(
+      GetVolumeRequest(instanceId: instanceId),
+    );
+    return resp.volume;
   }
 
   Future<void> setLatency(String instanceId, double latency) async {
-    await _http.put(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/latency'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'latency': latency}),
+    await _grpc.playback.setTargetLatency(
+      SetTargetLatencyRequest(instanceId: instanceId, latency: latency),
     );
   }
 
-  Future<List<QueueItemInfo>> getInstanceQueue(String instanceId) async {
-    final resp = await _http.get(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/queue'),
+  Future<PlaybackStatus> getPlaybackStatus(String instanceId) async {
+    return _grpc.instance.getStatus(
+      GetInstanceStatusRequest(instanceId: instanceId),
     );
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    final list = json.decode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>))
-        .toList();
   }
 
-  Future<List<QueueItemInfo>> getInstanceHistory(String instanceId) async {
-    final resp = await _http.get(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/history'),
+  // ── Queue (gRPC) ──
+
+  Future<List<QueueTrack>> getInstanceQueue(String instanceId) async {
+    final resp = await _grpc.playback.getQueue(
+      GetQueueRequest(instanceId: instanceId),
     );
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    final list = json.decode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return resp.queue;
   }
 
-  Future<List<QueueItemInfo>> getInstancePlaylist(String instanceId) async {
-    final resp = await _http.get(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist'),
+  Future<List<QueueTrack>> getInstanceHistory(String instanceId) async {
+    final resp = await _grpc.playback.getHistory(
+      GetHistoryRequest(instanceId: instanceId),
     );
-    if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-    final list = json.decode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => QueueItemInfo.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return resp.history;
   }
 
   Future<void> addToQueue(String instanceId, String uuid) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/queue'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'uuid': uuid}),
+    await _grpc.playback.addToQueue(
+      AddToQueueRequest(instanceId: instanceId, uuid: uuid),
     );
   }
 
-  Future<void> removeQueueAt(String instanceId, int index) =>
-      _delete('/api/instances/$instanceId/queue/$index');
+  Future<void> removeQueueAt(String instanceId, int index) async {
+    await _grpc.playback.removeFromQueue(
+      RemoveFromQueueRequest(instanceId: instanceId, index: index),
+    );
+  }
+
   Future<void> moveQueue(String instanceId, int from, int to) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/queue/move'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'from': from, 'to': to}),
+    await _grpc.playback.moveInQueue(
+      MoveInQueueRequest(instanceId: instanceId, fromIndex: from, toIndex: to),
     );
   }
 
-  Future<void> clearQueue(String instanceId) =>
-      _post('/api/instances/$instanceId/queue/clear');
-
-  Future<void> removeHistoryAt(String instanceId, int index) =>
-      _delete('/api/instances/$instanceId/history/$index');
-  Future<void> moveHistory(String instanceId, int from, int to) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/history/move'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'from': from, 'to': to}),
-    );
+  Future<void> clearQueue(String instanceId) async {
+    await _grpc.playback.clearQueue(ClearQueueRequest(instanceId: instanceId));
   }
 
-  Future<void> clearHistory(String instanceId) =>
-      _post('/api/instances/$instanceId/history/clear');
+  Future<void> setQueue(String instanceId, List<String> uuids) async {
+    await _grpc.playback.setQueue(
+      SetQueueRequest(instanceId: instanceId, uuids: uuids),
+    );
+  }
 
   Future<void> insertQueueAt(
     String instanceId, {
     required List<String> uuids,
     required int index,
   }) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/queue/insert'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'uuids': uuids, 'index': index}),
+    await _grpc.playback.insertIntoQueue(
+      InsertIntoQueueRequest(
+        instanceId: instanceId,
+        uuids: uuids,
+        index: index,
+      ),
     );
   }
 
+  Future<void> removeHistoryAt(String instanceId, int index) async {
+    await _grpc.playback.removeFromHistory(
+      RemoveFromHistoryRequest(instanceId: instanceId, index: index),
+    );
+  }
+
+  Future<void> moveHistory(String instanceId, int from, int to) async {
+    await _grpc.playback.moveInHistory(
+      MoveInHistoryRequest(
+        instanceId: instanceId,
+        fromIndex: from,
+        toIndex: to,
+      ),
+    );
+  }
+
+  Future<void> clearHistory(String instanceId) async {
+    await _grpc.playback.clearHistory(
+      ClearHistoryRequest(instanceId: instanceId),
+    );
+  }
+
+  // ── Shuffle / Repeat (gRPC) ──
+
   Future<void> setShuffle(String instanceId, bool enabled) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/shuffle'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'enabled': enabled}),
+    await _grpc.playback.setShuffle(
+      SetShuffleRequest(instanceId: instanceId, enabled: enabled),
     );
   }
 
   Future<void> setRepeatMode(String instanceId, String mode) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/repeat'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'mode': mode}),
+    final repeatMode = _parseRepeatMode(mode);
+    await _grpc.playback.setRepeatMode(
+      SetRepeatModeRequest(instanceId: instanceId, mode: repeatMode),
     );
   }
 
-  Future<void> setExcluded(String uuid, bool excluded) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/exclude'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'uuid': uuid, 'isFavorite': excluded}),
-    );
-  }
-
-  Future<void> addPlaylistSource(
-    String instanceId, {
-    required String id,
-    required String name,
-    required List<String> uuids,
-  }) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'source': {'id': id, 'name': name, 'uuids': uuids},
-      }),
-    );
-  }
-
-  Future<void> insertPlaylistSource(
-    String instanceId, {
-    required String id,
-    required String name,
-    required List<String> uuids,
-    int index = -1,
-  }) async {
-    await _http.post(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'index': index,
-        'source': {'id': id, 'name': name, 'uuids': uuids},
-      }),
-    );
-  }
-
-  Future<void> replacePlaylistSources(
-    String instanceId, {
-    required List<Map<String, dynamic>> sources,
-  }) async {
-    await _http.put(
-      Uri.parse('$_baseUrl/api/instances/$instanceId/playlist/sources'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'sources': sources}),
-    );
-  }
-
-  Future<void> removePlaylistSource(String instanceId, String sourceId) =>
-      _delete('/api/instances/$instanceId/playlist/sources/$sourceId');
-
-  Future<void> _post(String path) async {
-    final resp = await _http.post(Uri.parse('$_baseUrl$path'));
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception('HTTP ${resp.statusCode}');
+  RepeatMode _parseRepeatMode(String mode) {
+    switch (mode.toLowerCase()) {
+      case 'one':
+        return RepeatMode.REPEAT_MODE_ONE;
+      case 'all':
+        return RepeatMode.REPEAT_MODE_ALL;
+      default:
+        return RepeatMode.REPEAT_MODE_NONE;
     }
   }
 
-  Future<void> _delete(String path) async {
-    final resp = await _http.delete(Uri.parse('$_baseUrl$path'));
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception('HTTP ${resp.statusCode}');
+  // ── Playlist Sources (gRPC) ──
+
+  Future<List<PlaylistSourceState>> getPlaylistSources(
+    String instanceId,
+  ) async {
+    final resp = await _grpc.playback.getPlaylistSources(
+      GetPlaylistSourcesRequest(instanceId: instanceId),
+    );
+    return resp.sources
+        .map(
+          (s) => PlaylistSourceState()
+            ..id = s.id
+            ..name = s.name
+            ..kind = s.kind
+            ..refId = s.refId,
+        )
+        .toList();
+  }
+
+  Future<void> setPlaylistSources(
+    String instanceId,
+    List<PlaylistSourceState> sources,
+  ) async {
+    final specs = sources.map(
+      (s) => PlaylistSourceSpec()
+        ..id = s.id
+        ..name = s.name
+        ..kind = s.kind
+        ..refId = s.refId
+        ..uuids.addAll(s.uuids),
+    );
+    await _grpc.playback.setPlaylistSources(
+      SetPlaylistSourcesRequest(instanceId: instanceId, sources: specs),
+    );
+  }
+
+  // ── Equalizer (gRPC) ──
+
+  Future<EqualizerState> getInstanceEqualizer(String instanceId) async {
+    return _grpc.playback.getEqualizer(
+      GetEqualizerRequest(instanceId: instanceId),
+    );
+  }
+
+  Future<void> updateInstanceEqualizer(
+    String instanceId,
+    Map<String, dynamic> data,
+  ) async {
+    final eq = EqualizerState()
+      ..enabled = data['enabled'] as bool? ?? false
+      ..globalGainDb = (data['globalGainDb'] as num?)?.toDouble() ?? 0.0
+      ..softClipEnabled = data['softClipEnabled'] as bool? ?? false;
+    final points = data['points'] as List?;
+    if (points != null) {
+      for (final p in points) {
+        final m = p as Map<String, dynamic>;
+        eq.points.add(
+          EqualizerPoint()
+            ..id = m['id'] as String? ?? ''
+            ..frequency = (m['frequency'] as num).toDouble()
+            ..gainDb = (m['gainDb'] as num).toDouble()
+            ..q = (m['q'] as num?)?.toDouble() ?? 1.0
+            ..type = _parseEqFilterType(m['type'] as String? ?? 'peak'),
+        );
+      }
+    }
+    await _grpc.playback.setEqualizer(
+      SetEqualizerRequest(instanceId: instanceId, state: eq),
+    );
+  }
+
+  EqualizerFilterType _parseEqFilterType(String type) {
+    switch (type.toLowerCase()) {
+      case 'lowpass':
+        return EqualizerFilterType.EQ_FILTER_TYPE_LOW_PASS;
+      case 'highpass':
+        return EqualizerFilterType.EQ_FILTER_TYPE_HIGH_PASS;
+      case 'lowshelf':
+        return EqualizerFilterType.EQ_FILTER_TYPE_LOW_SHELF;
+      case 'highshelf':
+        return EqualizerFilterType.EQ_FILTER_TYPE_HIGH_SHELF;
+      case 'notch':
+        return EqualizerFilterType.EQ_FILTER_TYPE_PEAKING;
+      default:
+        return EqualizerFilterType.EQ_FILTER_TYPE_PEAKING;
     }
   }
 }

@@ -37,7 +37,7 @@ namespace OmniMixPlayer.SDK.Interfaces
 
         /// <summary>
         /// 初始化模块
-        /// 在此阶段注册 Tag、专辑和歌曲
+        /// 在此阶段使用 context.Library 注册 Track、Album、Tag、Playlist
         /// </summary>
         /// <param name="context">主程序提供的上下文</param>
         Task InitializeAsync(IModuleContext context);
@@ -64,34 +64,25 @@ namespace OmniMixPlayer.SDK.Interfaces
     /// </summary>
     public class ModuleCapabilities
     {
-        /// <summary>
-        /// 是否支持删除歌曲
-        /// </summary>
-        public bool CanDelete { get; set; } = false;
+        /// <summary>是否支持删除歌曲</summary>
+        public bool CanDelete { get; set; }
 
-        /// <summary>
-        /// 是否支持收藏
-        /// </summary>
+        /// <summary>是否支持收藏</summary>
         public bool CanFavorite { get; set; } = true;
 
-        /// <summary>
-        /// 是否支持排除
-        /// </summary>
+        /// <summary>是否支持排除</summary>
         public bool CanExclude { get; set; } = true;
 
-        /// <summary>
-        /// 是否支持实时更新 (文件监控等)
-        /// </summary>
-        public bool SupportsLiveUpdate { get; set; } = false;
+        /// <summary>是否支持实时更新（文件监控等）</summary>
+        public bool SupportsLiveUpdate { get; set; }
 
-        /// <summary>
-        /// 是否提供自己的封面
-        /// </summary>
+        /// <summary>是否提供封面</summary>
         public bool ProvidesCover { get; set; } = true;
 
-        /// <summary>
-        /// 是否提供自己的专辑
-        /// </summary>
+        /// <summary>是否提供专辑</summary>
         public bool ProvidesAlbum { get; set; } = true;
+
+        /// <summary>是否提供歌单</summary>
+        public bool ProvidesPlaylist { get; set; }
     }
 }

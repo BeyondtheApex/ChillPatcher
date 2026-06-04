@@ -1,22 +1,21 @@
 using System;
 using System.Collections.Generic;
-using OmniMixPlayer.Backend.Audio;
 using OmniMixPlayer.Backend.ModuleSystem;
 using OmniMixPlayer.SDK.Events;
+using ProtoEvents = OmniMixPlayer.SDK.Protos.Events;
 
 namespace OmniMixPlayer.Backend.Http
 {
     public class EventBridge : IDisposable
     {
         private readonly ApiServer _apiServer;
-        private readonly List<IDisposable> _subscriptions = new List<IDisposable>();
+        private readonly List<IDisposable> _subscriptions = new();
         private bool _disposed;
 
         public EventBridge(ApiServer apiServer)
         {
             _apiServer = apiServer;
 
-            _subscriptions.Add(EventBus.Instance.Subscribe<PlayStartedEvent>(OnPlayStarted));
             _subscriptions.Add(EventBus.Instance.Subscribe<ModuleLoadedEvent>(OnModuleLoaded));
             _subscriptions.Add(EventBus.Instance.Subscribe<ModuleUnloadedEvent>(OnModuleUnloaded));
             _subscriptions.Add(EventBus.Instance.Subscribe<FavoriteChangedEvent>(OnFavoriteChanged));
@@ -29,117 +28,59 @@ namespace OmniMixPlayer.Backend.Http
             _subscriptions.Add(EventBus.Instance.Subscribe<LyricPositionEvent>(OnLyricPosition));
         }
 
-        private void OnPlayStarted(PlayStartedEvent e)
-        {
-            var m = e.Music;
-            _ = _apiServer.BroadcastEvent("track.changed", new
-            {
-                uuid = m?.UUID,
-                title = m?.Title,
-                artist = m?.Artist,
-                albumId = m?.AlbumId,
-                duration = m?.Duration ?? 0,
-                moduleId = m?.ModuleId
-            });
-        }
+        private static ProtoEvents.WsEvent MakeEvent(string type) => new ProtoEvents.WsEvent { Type = type, Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() };
 
         private void OnModuleLoaded(ModuleLoadedEvent e)
         {
-            _ = _apiServer.BroadcastEvent("module.loaded", new
-            {
-                moduleId = e.ModuleId,
-                displayName = e.DisplayName
-            });
+            var evt = MakeEvent("module.loaded");
+            evt.ModuleChanged = new ProtoEvents.ModuleChangedEvent { ModuleId = e.ModuleId, Enabled = true, DisplayName = e.DisplayName };
+            _ = _apiServer.BroadcastProtoEvent(evt);
         }
 
         private void OnModuleUnloaded(ModuleUnloadedEvent e)
         {
-            _ = _apiServer.BroadcastEvent("module.unloaded", new { moduleId = e.ModuleId });
+            var evt = MakeEvent("module.unloaded");
+            evt.ModuleChanged = new ProtoEvents.ModuleChangedEvent { ModuleId = e.ModuleId, Enabled = false };
+            _ = _apiServer.BroadcastProtoEvent(evt);
         }
 
         private void OnFavoriteChanged(FavoriteChangedEvent e)
         {
-            _ = _apiServer.BroadcastEvent("favorite.changed", new
-            {
-                uuid = e.UUID,
-                isFavorite = e.IsFavorite,
-                moduleId = e.ModuleId
-            });
+            var evt = MakeEvent("favorite.changed");
+            evt.FavoriteChanged = new ProtoEvents.FavoriteChangedEvent { Uuid = e.UUID, IsFavorite = e.IsFavorite, ModuleId = e.ModuleId };
+            _ = _apiServer.BroadcastProtoEvent(evt);
         }
 
         private void OnExcludeChanged(ExcludeChangedEvent e)
         {
-            _ = _apiServer.BroadcastEvent("exclude.changed", new
-            {
-                uuid = e.UUID,
-                isExcluded = e.IsExcluded,
-                moduleId = e.ModuleId
-            });
+            var evt = MakeEvent("exclude.changed");
+            evt.ExcludeChanged = new ProtoEvents.ExcludeChangedEvent { Uuid = e.UUID, IsExcluded = e.IsExcluded, ModuleId = e.ModuleId };
+            _ = _apiServer.BroadcastProtoEvent(evt);
         }
 
         private void OnQueueChangedEvent(QueueChangedEvent e)
         {
-            _ = _apiServer.BroadcastEvent("queue.changed", new
-            {
-                changeType = e.ChangeType.ToString(),
-                queueLength = e.QueueLength
-            });
+            var evt = MakeEvent("queue.changed");
+            evt.QueueChanged = new ProtoEvents.QueueChangedEvent { ChangeType = e.ChangeType.ToString(), QueueLength = e.QueueLength };
+            _ = _apiServer.BroadcastProtoEvent(evt);
         }
 
-        private void OnCoverInvalidated(CoverInvalidatedEvent e)
-        {
-            _ = _apiServer.BroadcastEvent("cover.invalidated", new
-            {
-                musicUuid = e.MusicUuid,
-                albumId = e.AlbumId,
-                reason = e.Reason
-            });
-        }
+        private void OnCoverInvalidated(CoverInvalidatedEvent e) { /* skip */ }
 
         private void OnPlaylistUpdated(PlaylistUpdatedEvent e)
         {
-            _ = _apiServer.BroadcastEvent("playlist.updated", new
-            {
-                tagId = e.TagId,
-                updateType = e.UpdateType.ToString(),
-                changedCount = e.ChangedCount
-            });
+            var evt = MakeEvent("playlist.updated");
+            evt.PlaylistUpdated = new ProtoEvents.PlaylistUpdatedEvent { SourceRefId = e.SourceRefId ?? "", SongCount = e.ChangedCount, UpdateType = e.UpdateType.ToString() };
+            _ = _apiServer.BroadcastProtoEvent(evt);
         }
 
-        private void OnError(ErrorEvent e)
-        {
-            _ = _apiServer.BroadcastEvent("error", new { code = e.Code, message = e.Message });
-        }
-
-        private void OnLyricFetched(LyricFetchedEvent e)
-        {
-            _ = _apiServer.BroadcastEvent("lyric.fetched", new
-            {
-                uuid = e.Uuid,
-                lrc = e.Lrc,
-                tlyric = e.Tlyric,
-                rlyric = e.Rlyric
-            });
-        }
-
-        private void OnLyricPosition(LyricPositionEvent e)
-        {
-            _ = _apiServer.BroadcastEvent("lyric.position", new
-            {
-                uuid = e.Uuid,
-                lineIndex = e.LineIndex,
-                timeMs = e.TimeMs
-            });
-        }
+        private void OnError(ErrorEvent e) { }
+        private void OnLyricFetched(LyricFetchedEvent e) { }
+        private void OnLyricPosition(LyricPositionEvent e) { }
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
-
-            foreach (var sub in _subscriptions)
-                sub.Dispose();
-            _subscriptions.Clear();
+            if (!_disposed) { _disposed = true; foreach (var s in _subscriptions) s.Dispose(); _subscriptions.Clear(); }
         }
     }
 }

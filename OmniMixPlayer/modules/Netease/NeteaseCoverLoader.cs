@@ -49,8 +49,11 @@ namespace OmniMixPlayer.Module.Netease
                         return;
                     }
 
-                    _favoritesCoverBytes = new byte[stream.Length];
-                    stream.Read(_favoritesCoverBytes, 0, _favoritesCoverBytes.Length);
+                    using (var memory = new MemoryStream())
+                    {
+                        stream.CopyTo(memory);
+                        _favoritesCoverBytes = memory.ToArray();
+                    }
                     _logger.LogInformation($"[NeteaseCoverLoader] 已加载收藏封面: {_favoritesCoverBytes.Length} bytes");
                 }
             }
@@ -75,8 +78,11 @@ namespace OmniMixPlayer.Module.Netease
                         return;
                     }
 
-                    _fmCoverBytes = new byte[stream.Length];
-                    stream.Read(_fmCoverBytes, 0, _fmCoverBytes.Length);
+                    using (var memory = new MemoryStream())
+                    {
+                        stream.CopyTo(memory);
+                        _fmCoverBytes = memory.ToArray();
+                    }
                     _logger.LogInformation($"[NeteaseCoverLoader] 已加载FM封面: {_fmCoverBytes.Length} bytes");
                 }
             }

@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/common.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Models";
+
+// 专辑 — 独立实体
+message Album {
+  string id = 1;
+  string title = 2;
+  string artist = 3;
+  string cover_uri = 4;
+  int32 year = 5;
+  string module_id = 6;
+}
+
+// Album upsert
+message UpsertAlbumRequest {
+  Album album = 1;
+}
+
+message UpsertAlbumResponse {
+  bool created = 1;
+  Album album = 2;
+}
+
+// 批量 Album upsert
+message UpsertAlbumsRequest {
+  repeated Album albums = 1;
+}
+
+message UpsertAlbumsResponse {
+  int32 created = 1;
+  int32 updated = 2;
+}

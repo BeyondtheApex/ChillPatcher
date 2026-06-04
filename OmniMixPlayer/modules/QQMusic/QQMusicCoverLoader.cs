@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -102,15 +103,21 @@ namespace OmniMixPlayer.Module.QQMusic
                 return cached;
             }
 
-            if (albumId == QQMusicSongRegistry.FAVORITES_ALBUM_ID)
+            if (albumId?.StartsWith("qqmusic_album_", StringComparison.Ordinal) == true)
             {
-                return (_defaultFavoritesCoverBytes ?? _defaultQQMusicCoverBytes, "image/png");
-            }
-
-            if (albumId == QQMusicSongRegistry.RECOMMEND_ALBUM_ID ||
-                albumId == QQMusicSongRegistry.LOGIN_ALBUM_ID)
-            {
-                return (_defaultQQMusicCoverBytes, "image/png");
+                var songInfo = _songInfoMap.Values.FirstOrDefault(s =>
+                    !string.IsNullOrWhiteSpace(s.AlbumMid) &&
+                    albumId == $"qqmusic_album_{s.AlbumMid}" &&
+                    !string.IsNullOrWhiteSpace(s.CoverUrl));
+                if (songInfo != null)
+                {
+                    var result = await DownloadCoverAsync(songInfo.CoverUrl);
+                    if (result.data != null)
+                    {
+                        _coverCache[albumId] = result;
+                        return result;
+                    }
+                }
             }
 
             return (_defaultQQMusicCoverBytes, "image/png");

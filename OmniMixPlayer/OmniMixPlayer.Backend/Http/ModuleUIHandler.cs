@@ -12,11 +12,21 @@ namespace OmniMixPlayer.Backend.Http
         private readonly ApiServer _apiServer;
         private readonly ILogger _logger;
 
+        /// <summary>Exposed for REST endpoint access.</summary>
+        public ModuleSystem.ModuleLoader ModuleLoader => _moduleLoader;
+
         public ModuleUIHandler(ModuleSystem.ModuleLoader moduleLoader, ApiServer apiServer, ILogger logger)
         {
             _moduleLoader = moduleLoader;
             _apiServer = apiServer;
             _logger = logger;
+        }
+
+        /// <summary>Get the IModuleUIProvider for a module, if any.</summary>
+        public IModuleUIProvider GetUIProvider(string moduleId)
+        {
+            var module = _moduleLoader.GetModule(moduleId);
+            return module as IModuleUIProvider;
         }
 
         public async Task HandleUiEvent(string message)
@@ -100,7 +110,7 @@ namespace OmniMixPlayer.Backend.Http
                     tree
                 };
 
-                await _apiServer.BroadcastEvent("ui_push", payload);
+                await _apiServer.BroadcastJsonEvent("ui_push", payload);
             }
             catch (Exception ex)
             {

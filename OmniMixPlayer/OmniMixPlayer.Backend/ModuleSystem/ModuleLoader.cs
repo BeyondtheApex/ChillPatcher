@@ -14,39 +14,30 @@ namespace OmniMixPlayer.Backend.ModuleSystem
         private readonly string _pluginPath;
         private readonly string _configDirectory;
         private readonly ILogger _logger;
-        private readonly ITagRegistry _tagRegistry;
-        private readonly IAlbumRegistry _albumRegistry;
-        private readonly IMusicRegistry _musicRegistry;
+        private readonly ILibraryRegistry _library;
         private readonly IEventBus _eventBus;
         private readonly IDefaultCoverProvider _defaultCover;
         private readonly IDependencyLoader _dependencyLoader;
         private readonly IStreamingService _streamingService;
-        private readonly IPlayQueue _playQueue;
 
         public ModuleContextFactory(
             string pluginPath,
             string configDirectory,
             ILogger logger,
-            ITagRegistry tagRegistry,
-            IAlbumRegistry albumRegistry,
-            IMusicRegistry musicRegistry,
+            ILibraryRegistry library,
             IEventBus eventBus,
             IDefaultCoverProvider defaultCover,
             IDependencyLoader dependencyLoader,
-            IStreamingService streamingService,
-            IPlayQueue playQueue)
+            IStreamingService streamingService)
         {
             _pluginPath = pluginPath;
             _configDirectory = configDirectory;
             _logger = logger;
-            _tagRegistry = tagRegistry;
-            _albumRegistry = albumRegistry;
-            _musicRegistry = musicRegistry;
+            _library = library;
             _eventBus = eventBus;
             _defaultCover = defaultCover;
             _dependencyLoader = dependencyLoader;
             _streamingService = streamingService;
-            _playQueue = playQueue;
         }
 
         public IModuleContext CreateContext(string moduleId)
@@ -55,14 +46,11 @@ namespace OmniMixPlayer.Backend.ModuleSystem
                 _pluginPath,
                 _logger,
                 moduleId,
-                _tagRegistry,
-                _albumRegistry,
-                _musicRegistry,
+                _library,
                 _eventBus,
                 _defaultCover,
                 _dependencyLoader,
                 _streamingService,
-                _playQueue,
                 _configDirectory);
         }
     }

@@ -4,6 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/node_data.dart';
 import '../models/mod_manifest.dart';
 import '../models/mod_enums.dart';
+import '../generated/omni_mix_player/models/instance.pb.dart';
+import '../generated/omni_mix_player/models/track.pb.dart';
+import '../generated/omni_mix_player/models/album.pb.dart';
+import '../generated/omni_mix_player/models/tag.pb.dart';
+import '../generated/omni_mix_player/models/playlist.pb.dart';
+import '../generated/omni_mix_player/services/playback.pb.dart';
 import '../services/api_client.dart';
 import '../services/ws_client.dart';
 import '../services/floating_window_service.dart';
@@ -110,21 +116,35 @@ class AppState extends ChangeNotifier {
   Future<bool> setServiceAutoStart(bool v) => _service.setAutoStart(v);
 
   // ── Playback ──
-  List<PlaybackInstanceInfo> get playbackInstances => _playback.instances;
+  List<InstanceSummary> get playbackInstances => _playback.instances;
   String? get activeInstanceId => _playback.activeInstanceId;
-  List<QueueItemInfo> get activeQueue => _playback.activeQueue;
-  List<QueueItemInfo> get activeHistory => _playback.activeHistory;
-  List<QueueItemInfo> get activePlaylist => _playback.activePlaylist;
-  List<PlaylistSourceInfo> get playlistSources => _playback.playlistSources;
+  List<QueueTrack> get activeQueue => _playback.activeQueue;
+  List<QueueTrack> get activeHistory => _playback.activeHistory;
+  List<QueueTrack> get activePlaylist => _playback.activePlaylist;
+  List<PlaylistSourceState> get playlistSources => _playback.playlistSources;
   bool get playbackLoading => _playback.loading;
   double get lastVolume => _playback.lastVolume;
   double get lastTargetLatency => _playback.lastTargetLatency;
   int get playbackInstanceCount => _playback.instanceCount;
   int get attachedAudioClientCount => _playback.attachedAudioClientCount;
-  PlaybackInstanceInfo? get activeInstance => _playback.activeInstance;
+  InstanceSummary? get activeInstance => _playback.activeInstance;
   bool get canControlActiveInstance => _playback.canControlActiveInstance;
+  bool get canManageActiveLibrary => _playback.canManageActiveLibrary;
+  PlaybackStatus? get playbackStatus => _playback.status;
+  String get currentTrackTitle => _playback.currentTitle;
+  String get currentTrackArtist => _playback.currentArtist;
+  double get currentTrackDuration => _playback.currentDuration;
+  double get currentTrackPosition => _playback.currentPosition;
+  bool get isPlaying => _playback.isPlaying;
+  bool get shuffleEnabled => _playback.shuffle;
+  String get repeatModeStr => _playback.repeatMode.name;
   bool isInstanceOnline(String id) => _playback.isInstanceOnline(id);
   bool instanceExists(String id) => _playback.instanceExists(id);
+  bool canControlInstance(String id) => _playback.canControlInstance(id);
+  bool canManageInstanceLibrary(String id) =>
+      _playback.canManageInstanceLibrary(id);
+  bool hasCapability(bool Function(InstanceCapabilities c) check) =>
+      _playback.hasCapability(check);
   Set<String> get backendInstanceIds => _playback.backendInstanceIds;
   Future<void> selectInstance(String? id) => _playback.selectInstance(id);
   void selectPlaybackInstance(String id) => _playback.selectInstance(id);
@@ -154,12 +174,16 @@ class AppState extends ChangeNotifier {
       _playback.setSongExcluded(uuid, e);
   Future<void> setShuffle(bool e) => _playback.setShuffle(e);
   Future<void> setRepeatMode(String m) => _playback.setRepeatMode(m);
-  Future<void> addTagToActivePlaylist(TagInfo tag) =>
+  Future<void> addTagToActivePlaylist(Tag tag) =>
       _playback.addTagToActivePlaylist(tag);
-  Future<void> addAlbumToActivePlaylist(AlbumInfo a) =>
+  Future<void> addAlbumToActivePlaylist(Album a) =>
       _playback.addAlbumToActivePlaylist(a);
   Future<void> removePlaylistSource(String id) =>
       _playback.removePlaylistSource(id);
+  Future<void> addPlaylistToActivePlaylist(Playlist p) =>
+      _playback.addPlaylistToActivePlaylist(p);
+  Future<void> addTrackToActivePlaylist(Track t) =>
+      _playback.addTrackToActivePlaylist(t);
 
   // ── Modules ──
   List<ModuleInfoResponse> get modules => _modules.modules;
@@ -503,7 +527,18 @@ class AppState extends ChangeNotifier {
     _backend.onNeedRefreshArchives = () => _game.refreshBackendArchives();
     _backend.onNeedLoadModules = () => _modules.loadModules();
     _backend.onNeedLoadActiveProfile = () => _playback.loadActiveProfile();
-    _backend.onPositionEvent = (d) => _playback.applyPositionEvent(d);
+    _backend.onPositionEvent = (d) {
+      if (d is Map<String, dynamic>) {
+        final instanceId = d['instanceId'] as String? ?? '';
+        final position = (d['position'] as num?)?.toDouble() ?? 0.0;
+        _playback.applyPositionChanged(instanceId, position);
+      }
+    };
+    _backend.onTrackChanged = (id, e) => _playback.applyTrackChanged(id, e);
+    _backend.onStateChanged = (id, state) =>
+        _playback.applyStateChanged(id, state);
+    _backend.onPositionChanged = (id, position) =>
+        _playback.applyPositionChanged(id, position);
     _backend.onEqualizerChanged = () {
       _equalizerGeneration++;
       notifyListeners();
@@ -536,7 +571,7 @@ class AppState extends ChangeNotifier {
       _playback.startPolling();
       if (_playback.activeInstanceId == null) {
         final si = _playback.instances
-            .where((i) => i.isServerManaged)
+            .where((i) => _playback.canControlInstance(i.id))
             .firstOrNull;
         if (si != null) _playback.selectInstance(si.id);
       }
@@ -568,7 +603,7 @@ class AppState extends ChangeNotifier {
 
   void _syncFloatingPlayer() {
     final instance = activeInstance;
-    final track = instance?.currentTrack;
+    final trackUuid = instance?.currentTrackUuid ?? '';
     unawaited(
       FloatingWindowService.instance.updatePlayer(
         FloatingPlayerSnapshot(
@@ -577,13 +612,14 @@ class AppState extends ChangeNotifier {
           useSystemColor: _useSystemColor,
           themeMode: _themeMode.name,
           canControl: canControlActiveInstance,
-          hasTrack: track?.isEmpty == false,
-          isPlaying: instance?.isPlaying ?? false,
-          uuid: track?.uuid ?? '',
-          title: track?.title ?? '',
-          artist: track?.artist ?? '',
-          position: instance?.position ?? 0,
-          duration: track?.duration ?? 0,
+          canSeek: canControlActiveInstance,
+          hasTrack: trackUuid.isNotEmpty,
+          isPlaying: isPlaying,
+          uuid: trackUuid,
+          title: currentTrackTitle,
+          artist: currentTrackArtist,
+          position: currentTrackPosition,
+          duration: currentTrackDuration,
           lastManualX: _lastManualX,
           lastManualY: _lastManualY,
         ),

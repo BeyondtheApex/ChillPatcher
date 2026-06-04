@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/common.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Models";
+
+// 曲目（歌曲）— 核心实体
+message Track {
+  string uuid = 1;
+  string title = 2;
+  string artist = 3;
+  string album_id = 4;
+  float duration = 5;
+  string module_id = 6;
+  SourceType source_type = 7;
+  string source_path = 8;
+  bool is_favorite = 9;
+  bool is_excluded = 10;
+  string cover_uri = 11;
+  int32 play_count = 13;
+  OmniTimestamp created_at = 14;
+  OmniTimestamp last_played_at = 15;
+  bytes extended_data = 16; // 模块自定义数据 (protobuf Any 序列化)
+}
+
+// Track-Tag 多对多关联
+message TrackTag {
+  string track_uuid = 1;
+  string tag_id = 2;
+}
+
+// Track upsert 请求
+message UpsertTrackRequest {
+  Track track = 1;
+}
+
+// Track upsert 响应
+message UpsertTrackResponse {
+  bool created = 1;
+  Track track = 2;
+}
+
+// 批量 Track upsert
+message UpsertTracksRequest {
+  repeated Track tracks = 1;
+}
+
+message UpsertTracksResponse {
+  int32 created = 1;
+  int32 updated = 2;
+}
+
+// 设置 Track Tags
+message SetTrackTagsRequest {
+  string track_uuid = 1;
+  repeated string tag_ids = 2;
+}
+
+message SetTrackTagsResponse {
+  bool success = 1;
+  int32 tag_count = 2;
+}
+
+// 添加/移除单个 Track Tag
+message ModifyTrackTagRequest {
+  string track_uuid = 1;
+  string tag_id = 2;
+}
+
+message ModifyTrackTagResponse {
+  bool success = 1;
+}

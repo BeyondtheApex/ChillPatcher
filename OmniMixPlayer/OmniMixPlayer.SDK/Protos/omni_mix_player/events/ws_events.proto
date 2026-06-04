@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/track.proto";
+import "omni_mix_player/models/instance.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Events";
+
+// ── WebSocket 事件消息（protobuf binary payload） ──
+// 通过 WebSocket 发送二进制帧，反序列化为 WsEvent，然后用 oneof 判断实际事件类型
+
+message WsEvent {
+  string type = 1;    // 事件类型标识符
+  int64 timestamp = 2; // unix millis
+  oneof event {
+    TrackChangedEvent track_changed = 10;
+    StateChangedEvent state_changed = 11;
+    PositionChangedEvent position_changed = 12;
+    QueueChangedEvent queue_changed = 13;
+    InstancesChangedEvent instances_changed = 14;
+    FavoriteChangedEvent favorite_changed = 15;
+    ExcludeChangedEvent exclude_changed = 16;
+    PlaylistUpdatedEvent playlist_updated = 17;
+    ModuleChangedEvent module_changed = 18;
+    ProfileChangedEvent profile_changed = 19;
+    BackendStateEvent backend_state = 20;
+  }
+}
+
+// 歌曲切换
+message TrackChangedEvent {
+  string instance_id = 1;
+  string uuid = 2;
+  string title = 3;
+  string artist = 4;
+  string album_id = 5;
+  float duration = 6;
+  string module_id = 7;
+}
+
+// 播放状态变化
+message StateChangedEvent {
+  string instance_id = 1;
+  int32 state = 2; // 0=stopped, 1=playing, 2=paused
+}
+
+// 进度变化
+message PositionChangedEvent {
+  string instance_id = 1;
+  float position = 2;
+}
+
+// 队列变化
+message QueueChangedEvent {
+  string instance_id = 1;
+  string change_type = 2;
+  int32 queue_length = 3;
+}
+
+// 实例列表变化
+message InstancesChangedEvent {
+  repeated InstanceSummary instances = 1;
+}
+
+// 收藏变化
+message FavoriteChangedEvent {
+  string uuid = 1;
+  bool is_favorite = 2;
+  string module_id = 3;
+}
+
+// 排除变化
+message ExcludeChangedEvent {
+  string uuid = 1;
+  bool is_excluded = 2;
+  string module_id = 3;
+}
+
+// 歌单更新
+message PlaylistUpdatedEvent {
+  string source_ref_id = 1;
+  int32 song_count = 2;
+  string update_type = 3;
+}
+
+// 模块状态变化
+message ModuleChangedEvent {
+  string module_id = 1;
+  bool enabled = 2;
+  string display_name = 3;
+}
+
+// Profile 变化
+message ProfileChangedEvent {
+  string instance_id = 1;
+}
+
+// 后端状态
+message BackendStateEvent {
+  bool running = 1;
+}

@@ -3,15 +3,17 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
+import '../generated/omni_mix_player/models/instance.pb.dart' as eq_proto;
+import '../generated/omni_mix_player/models/common.pbenum.dart';
 
-class EqualizerPoint {
+class EqPoint {
   String id;
   double frequency;
   double gainDb;
   double q;
-  String type; // 'Peaking', 'LowShelf', 'HighShelf', 'LowPass', 'HighPass'
+  String type;
 
-  EqualizerPoint({
+  EqPoint({
     required this.id,
     required this.frequency,
     required this.gainDb,
@@ -19,13 +21,23 @@ class EqualizerPoint {
     required this.type,
   });
 
-  factory EqualizerPoint.fromJson(Map<String, dynamic> json) {
-    return EqualizerPoint(
-      id: json['id'] ?? json['Id'] ?? '',
-      frequency: (json['frequency'] ?? json['Frequency'] ?? 1000.0).toDouble(),
-      gainDb: (json['gainDb'] ?? json['GainDb'] ?? 0.0).toDouble(),
-      q: (json['q'] ?? json['Q'] ?? 1.0).toDouble(),
-      type: json['type'] ?? json['Type'] ?? 'Peaking',
+  factory EqPoint.fromProto(eq_proto.EqualizerPoint p) {
+    return EqPoint(
+      id: p.id,
+      frequency: p.frequency,
+      gainDb: p.gainDb,
+      q: p.q,
+      type: p.type == EqualizerFilterType.EQ_FILTER_TYPE_LOW_PASS
+          ? 'LowPass'
+          : p.type == EqualizerFilterType.EQ_FILTER_TYPE_HIGH_PASS
+          ? 'HighPass'
+          : p.type == EqualizerFilterType.EQ_FILTER_TYPE_LOW_SHELF
+          ? 'LowShelf'
+          : p.type == EqualizerFilterType.EQ_FILTER_TYPE_HIGH_SHELF
+          ? 'HighShelf'
+          : p.type == EqualizerFilterType.EQ_FILTER_TYPE_PEAKING
+          ? 'Peaking'
+          : 'Peaking',
     );
   }
 
@@ -38,30 +50,25 @@ class EqualizerPoint {
   };
 }
 
-class EqualizerState {
+class EqState {
   bool enabled;
   double globalGainDb;
   bool softClipEnabled;
-  List<EqualizerPoint> points;
+  List<EqPoint> points;
 
-  EqualizerState({
+  EqState({
     required this.enabled,
     required this.globalGainDb,
     required this.softClipEnabled,
     required this.points,
   });
 
-  factory EqualizerState.fromJson(Map<String, dynamic> json) {
-    final pts = (json['points'] ?? json['Points']) as List? ?? [];
-    return EqualizerState(
-      enabled: json['enabled'] ?? json['Enabled'] ?? false,
-      globalGainDb: (json['globalGainDb'] ?? json['GlobalGainDb'] ?? 0.0)
-          .toDouble(),
-      softClipEnabled:
-          json['softClipEnabled'] ?? json['SoftClipEnabled'] ?? true,
-      points: pts
-          .map((p) => EqualizerPoint.fromJson(p as Map<String, dynamic>))
-          .toList(),
+  factory EqState.fromProto(eq_proto.EqualizerState es) {
+    return EqState(
+      enabled: es.enabled,
+      globalGainDb: es.globalGainDb,
+      softClipEnabled: es.softClipEnabled,
+      points: es.points.map((p) => EqPoint.fromProto(p)).toList(),
     );
   }
 
@@ -166,7 +173,7 @@ class BiquadCoefficients {
 
 /// A specialized Notifier to isolate drag updates and repaint events from the main layout tree.
 class EqualizerNotifier extends ChangeNotifier {
-  final EqualizerState state;
+  final EqState state;
   String? _selectedPointId;
 
   EqualizerNotifier(this.state);
@@ -177,7 +184,7 @@ class EqualizerNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  EqualizerPoint? get selectedPoint {
+  EqPoint? get selectedPoint {
     if (_selectedPointId == null) return null;
     for (final p in state.points) {
       if (p.id == _selectedPointId) return p;
@@ -200,19 +207,222 @@ class EqualizerPage extends StatefulWidget {
 }
 
 class _EqualizerPageState extends State<EqualizerPage> {
-  EqualizerState? _eqState;
+  EqState? _eqState;
   EqualizerNotifier? _notifier;
   String? _lastActiveInstanceId;
   Timer? _saveDebounce;
-  Map<String, EqualizerState> _presets = {};
-  bool _loadingPresets = false;
+
+  /// Hardcoded EQ presets — pure client-side, no backend dependency.
+  static final Map<String, EqState> _builtinPresets = {
+    'Flat': EqState(
+      enabled: true,
+      globalGainDb: 0.0,
+      softClipEnabled: true,
+      points: [],
+    ),
+    'Rock': EqState(
+      enabled: true,
+      globalGainDb: 0.0,
+      softClipEnabled: true,
+      points: [
+        EqPoint(id: 'p1', frequency: 60, gainDb: 4.0, q: 0.7, type: 'LowShelf'),
+        EqPoint(
+          id: 'p2',
+          frequency: 200,
+          gainDb: -2.0,
+          q: 1.0,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p3',
+          frequency: 3000,
+          gainDb: 3.0,
+          q: 0.8,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p4',
+          frequency: 8000,
+          gainDb: -1.0,
+          q: 2.0,
+          type: 'HighShelf',
+        ),
+      ],
+    ),
+    'Pop': EqState(
+      enabled: true,
+      globalGainDb: 0.0,
+      softClipEnabled: true,
+      points: [
+        EqPoint(id: 'p1', frequency: 80, gainDb: 2.0, q: 0.7, type: 'LowShelf'),
+        EqPoint(
+          id: 'p2',
+          frequency: 1000,
+          gainDb: 0.0,
+          q: 1.0,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p3',
+          frequency: 5000,
+          gainDb: 3.0,
+          q: 1.0,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p4',
+          frequency: 12000,
+          gainDb: 2.0,
+          q: 0.7,
+          type: 'HighShelf',
+        ),
+      ],
+    ),
+    'Classical': EqState(
+      enabled: true,
+      globalGainDb: -2.0,
+      softClipEnabled: true,
+      points: [
+        EqPoint(
+          id: 'p1',
+          frequency: 100,
+          gainDb: 3.0,
+          q: 0.6,
+          type: 'LowShelf',
+        ),
+        EqPoint(
+          id: 'p2',
+          frequency: 500,
+          gainDb: -1.0,
+          q: 1.5,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p3',
+          frequency: 2000,
+          gainDb: 1.0,
+          q: 1.2,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p4',
+          frequency: 10000,
+          gainDb: -3.0,
+          q: 0.6,
+          type: 'HighShelf',
+        ),
+      ],
+    ),
+    'Jazz': EqState(
+      enabled: true,
+      globalGainDb: 0.0,
+      softClipEnabled: true,
+      points: [
+        EqPoint(id: 'p1', frequency: 80, gainDb: 3.0, q: 0.6, type: 'LowShelf'),
+        EqPoint(
+          id: 'p2',
+          frequency: 400,
+          gainDb: -1.0,
+          q: 1.0,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p3',
+          frequency: 2500,
+          gainDb: 2.0,
+          q: 0.8,
+          type: 'Peaking',
+        ),
+      ],
+    ),
+    'Bass Boost': EqState(
+      enabled: true,
+      globalGainDb: 0.0,
+      softClipEnabled: false,
+      points: [
+        EqPoint(id: 'p1', frequency: 50, gainDb: 8.0, q: 0.5, type: 'LowShelf'),
+        EqPoint(id: 'p2', frequency: 120, gainDb: 4.0, q: 0.7, type: 'Peaking'),
+      ],
+    ),
+    'Treble Boost': EqState(
+      enabled: true,
+      globalGainDb: 0.0,
+      softClipEnabled: true,
+      points: [
+        EqPoint(
+          id: 'p1',
+          frequency: 4000,
+          gainDb: 4.0,
+          q: 0.7,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p2',
+          frequency: 10000,
+          gainDb: 6.0,
+          q: 0.5,
+          type: 'HighShelf',
+        ),
+      ],
+    ),
+    'Vocal': EqState(
+      enabled: true,
+      globalGainDb: 0.0,
+      softClipEnabled: true,
+      points: [
+        EqPoint(
+          id: 'p1',
+          frequency: 200,
+          gainDb: -3.0,
+          q: 0.7,
+          type: 'HighPass',
+        ),
+        EqPoint(id: 'p2', frequency: 800, gainDb: 1.0, q: 1.0, type: 'Peaking'),
+        EqPoint(
+          id: 'p3',
+          frequency: 3000,
+          gainDb: 2.0,
+          q: 1.0,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p4',
+          frequency: 6000,
+          gainDb: -2.0,
+          q: 1.5,
+          type: 'Peaking',
+        ),
+      ],
+    ),
+    'Loudness': EqState(
+      enabled: true,
+      globalGainDb: 0.0,
+      softClipEnabled: true,
+      points: [
+        EqPoint(id: 'p1', frequency: 80, gainDb: 5.0, q: 0.5, type: 'LowShelf'),
+        EqPoint(
+          id: 'p2',
+          frequency: 3000,
+          gainDb: 2.0,
+          q: 0.8,
+          type: 'Peaking',
+        ),
+        EqPoint(
+          id: 'p3',
+          frequency: 10000,
+          gainDb: 4.0,
+          q: 0.5,
+          type: 'HighShelf',
+        ),
+      ],
+    ),
+  };
 
   @override
   void initState() {
     super.initState();
     _lastActiveInstanceId = widget.state.activeInstanceId;
     _loadState();
-    _loadPresets();
     widget.state.addListener(_onAppStateChanged);
   }
 
@@ -249,11 +459,21 @@ class _EqualizerPageState extends State<EqualizerPage> {
   Future<void> _loadState() async {
     final instId = widget.state.activeInstanceId;
     if (instId == null) return;
+    if (!widget.state.canControlActiveInstance) {
+      _notifier?.removeListener(_onNotifierChanged);
+      if (mounted) {
+        setState(() {
+          _eqState = null;
+          _notifier = null;
+        });
+      }
+      return;
+    }
     try {
-      final jsonMap = await widget.state.api.getInstanceEqualizer(instId);
+      final protoEq = await widget.state.api.getInstanceEqualizer(instId);
       if (!mounted) return;
       _notifier?.removeListener(_onNotifierChanged);
-      final eq = EqualizerState.fromJson(jsonMap);
+      final eq = EqState.fromProto(protoEq);
       setState(() {
         _eqState = eq;
         _notifier = EqualizerNotifier(eq);
@@ -264,32 +484,10 @@ class _EqualizerPageState extends State<EqualizerPage> {
     }
   }
 
-  Future<void> _loadPresets() async {
-    final instId = widget.state.activeInstanceId;
-    if (instId == null) return;
-    if (!mounted) return;
-    setState(() => _loadingPresets = true);
-    try {
-      final data = await widget.state.api.getInstanceEqualizerPresets(instId);
-      if (!mounted) return;
-      final map = <String, EqualizerState>{};
-      data.forEach((k, v) {
-        map[k] = EqualizerState.fromJson(v as Map<String, dynamic>);
-      });
-      setState(() {
-        _presets = map;
-      });
-    } catch (e) {
-      debugPrint("Failed to load EQ presets: $e");
-    } finally {
-      if (!mounted) return;
-      setState(() => _loadingPresets = false);
-    }
-  }
-
   Future<void> _saveState() async {
     final instId = widget.state.activeInstanceId;
     if (instId == null || _eqState == null) return;
+    if (!widget.state.canControlActiveInstance) return;
     try {
       await widget.state.api.updateInstanceEqualizer(
         instId,
@@ -303,7 +501,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
   void _addPoint(double frequency, double gainDb) {
     if (_eqState == null || _notifier == null) return;
     final newId = "point_${DateTime.now().millisecondsSinceEpoch}";
-    final pt = EqualizerPoint(
+    final pt = EqPoint(
       id: newId,
       frequency: frequency,
       gainDb: gainDb,
@@ -326,7 +524,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
   }
 
   void _applyPreset(String name) {
-    final preset = _presets[name];
+    final preset = _builtinPresets[name];
     if (preset == null || _eqState == null || _notifier == null) return;
     setState(() {
       _eqState!.enabled = preset.enabled;
@@ -334,7 +532,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
       _eqState!.softClipEnabled = preset.softClipEnabled;
       _eqState!.points = preset.points
           .map(
-            (p) => EqualizerPoint(
+            (p) => EqPoint(
               id: p.id,
               frequency: p.frequency,
               gainDb: p.gainDb,
@@ -349,6 +547,9 @@ class _EqualizerPageState extends State<EqualizerPage> {
     _saveState();
   }
 
+  /// Expose preset names for the UI.
+  List<String> get presetNames => _builtinPresets.keys.toList();
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -357,6 +558,10 @@ class _EqualizerPageState extends State<EqualizerPage> {
 
     if (instId == null) {
       return Center(child: Text(l10n.noSelectedInstance));
+    }
+
+    if (!widget.state.canControlActiveInstance) {
+      return Center(child: Text(l10n.disabled));
     }
 
     if (_eqState == null || _notifier == null) {
@@ -395,15 +600,15 @@ class _EqualizerPageState extends State<EqualizerPage> {
                 style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
               ),
               const SizedBox(width: 24),
-              // Preset Dropdown
-              if (_presets.isNotEmpty)
+              // Preset Dropdown (hardcoded client-side presets)
+              if (presetNames.isNotEmpty)
                 DropdownButton<String>(
                   hint: Text(
                     l10n.selectPreset,
                     style: const TextStyle(fontSize: 13),
                   ),
                   style: TextStyle(color: cs.onSurface, fontSize: 13),
-                  items: _presets.keys.map((name) {
+                  items: presetNames.map((name) {
                     return DropdownMenuItem<String>(
                       value: name,
                       child: Text(name),
@@ -788,7 +993,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
 }
 
 class _EqualizerPainter extends CustomPainter {
-  final EqualizerState state;
+  final EqState state;
   final String? selectedId;
   final ColorScheme colorScheme;
 

@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package omni_mix_player;
+
+import "omni_mix_player/models/common.proto";
+import "omni_mix_player/models/track.proto";
+import "omni_mix_player/models/album.proto";
+import "omni_mix_player/models/tag.proto";
+import "omni_mix_player/models/playlist.proto";
+
+option csharp_namespace = "OmniMixPlayer.SDK.Protos.Models";
+
+// Track 查询过滤器
+message TrackQuery {
+  string text = 1;                        // 模糊搜索 title / artist
+  string album_id = 2;                    // 按专辑过滤
+  repeated string tag_ids = 3;            // 按标签过滤（AND）
+  string playlist_id = 4;                 // 按歌单过滤（返回歌单中所有 Track）
+  string module_id = 5;                   // 按模块过滤
+  optional bool is_favorite = 6;         // 按收藏过滤
+  optional bool is_excluded = 7;         // 按排除过滤
+  int32 offset = 10;
+  int32 limit = 11;                       // 0 表示全部
+  TrackSort sort = 12;
+}
+
+// 排序规格
+message TrackSort {
+  TrackSortField field = 1;
+  SortDirection direction = 2;
+}
+
+// 分页信息
+message Pagination {
+  int32 offset = 1;
+  int32 limit = 2;
+  int32 total = 3;
+}
+
+// 查询 Track 的响应
+message QueryTracksResponse {
+  repeated Track tracks = 1;
+  Pagination pagination = 2;
+}
+
+// 查询 Album 的过滤
+message AlbumQuery {
+  string tag_id = 1;          // 按标签过滤
+  string module_id = 2;       // 按模块过滤
+  string text = 3;            // 模糊搜索
+  int32 offset = 4;
+  int32 limit = 5;
+}
+
+message QueryAlbumsResponse {
+  repeated Album albums = 1;
+  Pagination pagination = 2;
+}
+
+// 查询 Tag
+message TagQuery {
+  string module_id = 1;
+  repeated TagKind kinds = 2;
+  int32 offset = 3;
+  int32 limit = 4;
+}
+
+message QueryTagsResponse {
+  repeated Tag tags = 1;
+  Pagination pagination = 2;
+}
+
+// 查询 Playlist
+message PlaylistQuery {
+  string module_id = 1;
+  repeated PlaylistKind kinds = 2;
+  int32 offset = 3;
+  int32 limit = 4;
+}
+
+message QueryPlaylistsResponse {
+  repeated Playlist playlists = 1;
+  Pagination pagination = 2;
+}
