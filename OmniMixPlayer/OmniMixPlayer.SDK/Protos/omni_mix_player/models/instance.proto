@@ -21,6 +21,7 @@ message InstanceCapabilities {
   bool seek = 11;
   bool volume_control = 12;
   bool equalizer = 13;
+  bool audio_playback = 14;
 
   // 限制（null 表示无限制，proto3 用 0 表示未设置 / wrapper types）
   optional int32 max_imported_playlists = 20;
@@ -116,6 +117,7 @@ message InstanceConnectRequest {
   string mod_id = 5;
   string game_name = 6;
   string display_name = 7;
+  bool no_instance = 8;
 }
 
 // 连接响应
@@ -123,6 +125,7 @@ message InstanceConnectResponse {
   string instance_id = 1;
   bool is_new = 2;
   InstanceProfile profile = 3;
+  bool no_instance = 4;
 }
 
 // 心跳请求

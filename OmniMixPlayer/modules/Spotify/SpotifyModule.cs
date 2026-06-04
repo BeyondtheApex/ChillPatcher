@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -793,6 +793,8 @@ namespace OmniMixPlayer.Module.Spotify
         // =====================================================================
 
         public Action<SlintNode> PushUI { get; set; }
+
+        public bool HasSettingsUI => true;
 
         public bool HasQuickLinks => true;
 

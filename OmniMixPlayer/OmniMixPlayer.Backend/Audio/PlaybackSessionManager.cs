@@ -69,7 +69,7 @@ namespace OmniMixPlayer.Backend.Audio
                 }
 
                 var caps = profile.Capabilities ?? new InstanceCapabilities();
-                var needsAudio = caps.ServerControlledPlayback;
+                var needsAudio = InstanceCapabilityPolicy.SupportsAudioPlayback(caps);
 
                 SharedMemoryServer sharedMemory = null;
                 if (needsAudio)
@@ -81,7 +81,7 @@ namespace OmniMixPlayer.Backend.Audio
                 }
                 else
                 {
-                    _logger.LogInformation("Skipping SharedMemory for {Id}: no server-controlled playback capability", id);
+                    _logger.LogInformation("Skipping SharedMemory for {Id}: no audio playback capability", id);
                 }
 
                 var controller = new PlaybackController(
@@ -90,8 +90,7 @@ namespace OmniMixPlayer.Backend.Audio
                     _eventBus,
                     _library,
                     _streamingService,
-                    instanceId: id,
-                    mode: profile.Mode);
+                    instanceId: id);
                 controller.ApplyProfile(profile);
                 WireController(id, controller);
 
@@ -99,7 +98,6 @@ namespace OmniMixPlayer.Backend.Audio
                 {
                     Id = id,
                     ClientId = id,
-                    Mode = profile.Mode,
                     Kind = profile.Kind,
                     CreatedAt = DateTime.UtcNow,
                     LastHeartbeat = DateTime.UtcNow,
@@ -108,7 +106,7 @@ namespace OmniMixPlayer.Backend.Audio
                 };
                 _sessions[id] = session;
 
-                _logger.LogInformation("Created session {Id} kind={Kind} mode={Mode}", id, profile.Kind, profile.Mode);
+                _logger.LogInformation("Created session {Id} kind={Kind}", id, profile.Kind);
                 OnSessionsChanged?.Invoke();
                 return session;
             }

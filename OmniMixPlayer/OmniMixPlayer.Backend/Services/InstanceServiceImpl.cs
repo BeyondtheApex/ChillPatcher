@@ -23,6 +23,9 @@ namespace OmniMixPlayer.Backend.Services
             if (string.IsNullOrWhiteSpace(request.ClientId))
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "client_id is required"));
 
+            if (request.NoInstance)
+                return Task.FromResult(new InstanceConnectResponse { NoInstance = true });
+
             var profile = _registry.ConnectOrCreate(request, out var isNew);
             _sessions.Attach(profile);
             return Task.FromResult(new InstanceConnectResponse { InstanceId = profile.Id, IsNew = isNew, Profile = profile });

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:omnimix_gui/l10n/app_localizations.dart';
 import '../providers/app_state.dart';
-import '../generated/omni_mix_player/models/tag.pb.dart';
+import '../generated/omni_mix_player/models/playlist.pb.dart';
 import '../generated/omni_mix_player/models/album.pb.dart';
 import '../generated/omni_mix_player/models/track.pb.dart';
 
@@ -28,17 +28,17 @@ class _AlbumNode {
   _AlbumNode(this.album, {this.songs = const [], this.expanded = false});
 }
 
-class _TagNode {
-  final Tag tag;
+class _PlaylistNode {
+  final Playlist playlist;
   final List<_AlbumNode> albums;
   bool expanded;
 
-  _TagNode(this.tag, this.albums, {this.expanded = false});
+  _PlaylistNode(this.playlist, this.albums, {this.expanded = false});
 }
 
 // ── 扁平列表条目（供 ListView.builder 虚拟滚动） ──
 
-enum _ItemKind { tag, album, song }
+enum _ItemKind { playlist, album, song }
 
 class _FlatItem {
   final _ItemKind kind;
@@ -48,7 +48,7 @@ class _FlatItem {
   final bool expandable;
   final bool expanded;
 
-  final Tag? tag;
+  final Playlist? playlist;
   final Album? album;
   final Track? song;
 
@@ -59,7 +59,7 @@ class _FlatItem {
     required this.indentLevel,
     this.expandable = false,
     this.expanded = false,
-    this.tag,
+    this.playlist,
     this.album,
     this.song,
   });
@@ -68,7 +68,7 @@ class _FlatItem {
 // Page state
 
 class _PlaylistPageState extends State<PlaylistPage> {
-  final List<_TagNode> _tree = [];
+  final List<_PlaylistNode> _tree = [];
   final List<_FlatItem> _flatItems = [];
   bool _loading = false;
   String _error = '';
@@ -102,7 +102,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
     setState(() {});
   }
 
-  // ── 数据加载：单次 GET /api/playlist 获取全部标签+专辑+曲目 ──
+  // ── 数据加载：单次 GET 获取全部歌单+专辑+曲目 ──
 
   Future<void> _loadTree() async {
     if (!widget.state.backendOnline) return;
@@ -111,28 +111,28 @@ class _PlaylistPageState extends State<PlaylistPage> {
       _error = '';
     });
     try {
-      final tags = await widget.state.api.getTags();
+      final playlists = await widget.state.api.getPlaylists();
+      final allAlbums = await widget.state.api.getAlbums();
       if (!mounted) return;
 
       _tree.clear();
       var total = 0;
-      for (final tag in tags) {
-        final tagAlbums = await widget.state.api.getAlbums(tagId: tag.id);
-        final tagSongs = await widget.state.api.getSongs(tagId: tag.id);
+      for (final playlist in playlists) {
+        final playlistSongs = await widget.state.api.getSongs(playlistId: playlist.id);
         if (!mounted) return;
-        final tagAlbumIds = tagSongs.map((s) => s.albumId).toSet();
-        final filteredAlbums = tagAlbums
+        final tagAlbumIds = playlistSongs.map((s) => s.albumId).toSet();
+        final filteredAlbums = allAlbums
             .where((a) => tagAlbumIds.contains(a.id))
             .toList();
         final albumNodes = <_AlbumNode>[];
         for (final album in filteredAlbums) {
-          final albumSongs = tagSongs
+          final albumSongs = playlistSongs
               .where((s) => s.albumId == album.id)
               .toList();
           albumNodes.add(_AlbumNode(album, songs: albumSongs));
           total += albumSongs.length;
         }
-        _tree.add(_TagNode(tag, albumNodes));
+        _tree.add(_PlaylistNode(playlist, albumNodes));
       }
       _totalSongs = total;
       _rebuildFlatList();
@@ -153,22 +153,22 @@ class _PlaylistPageState extends State<PlaylistPage> {
   void _rebuildFlatList() {
     final l10n = AppLocalizations.of(context)!;
     _flatItems.clear();
-    for (final tagNode in _tree) {
+    for (final playlistNode in _tree) {
       _flatItems.add(
         _FlatItem(
-          kind: _ItemKind.tag,
-          label: tagNode.tag.name,
+          kind: _ItemKind.playlist,
+          label: playlistNode.playlist.name,
           subtitle:
-              '${tagNode.tag.moduleId} • ${l10n.albumCountLabel(tagNode.albums.length)}',
+              '${playlistNode.playlist.moduleId} • ${l10n.albumCountLabel(playlistNode.albums.length)}',
           indentLevel: 0,
-          expandable: tagNode.albums.isNotEmpty,
-          expanded: tagNode.expanded,
-          tag: tagNode.tag,
+          expandable: playlistNode.albums.isNotEmpty,
+          expanded: playlistNode.expanded,
+          playlist: playlistNode.playlist,
         ),
       );
-      if (!tagNode.expanded) continue;
+      if (!playlistNode.expanded) continue;
 
-      for (final albumNode in tagNode.albums) {
+      for (final albumNode in playlistNode.albums) {
         _flatItems.add(
           _FlatItem(
             kind: _ItemKind.album,
@@ -195,18 +195,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
         }
       }
     }
-    // 用 notifyListeners 等效触发重建 — setState 会触发 build
     setState(() {});
   }
 
   // ── 展开/折叠 ──
 
-  void _toggleTag(int flatIndex) {
+  void _togglePlaylist(int flatIndex) {
     final item = _flatItems[flatIndex];
-    if (item.tag == null) return;
-    for (final t in _tree) {
-      if (t.tag.id == item.tag!.id) {
-        t.expanded = !t.expanded;
+    if (item.playlist == null) return;
+    for (final p in _tree) {
+      if (p.playlist.id == item.playlist!.id) {
+        p.expanded = !p.expanded;
         _rebuildFlatList();
         return;
       }
@@ -216,8 +215,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
   void _toggleAlbum(int flatIndex) {
     final item = _flatItems[flatIndex];
     if (item.album == null) return;
-    for (final tagNode in _tree) {
-      for (final albumNode in tagNode.albums) {
+    for (final playlistNode in _tree) {
+      for (final albumNode in playlistNode.albums) {
         if (albumNode.album.id == item.album!.id) {
           albumNode.expanded = !albumNode.expanded;
           _rebuildFlatList();
@@ -346,8 +345,8 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   Widget _buildRow(_FlatItem item, int index, ColorScheme cs) {
     switch (item.kind) {
-      case _ItemKind.tag:
-        return _buildTagRow(item, index, cs);
+      case _ItemKind.playlist:
+        return _buildPlaylistRow(item, index, cs);
       case _ItemKind.album:
         return _buildAlbumRow(item, index, cs);
       case _ItemKind.song:
@@ -357,9 +356,9 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   // ── 歌单行（一级） ──
 
-  Widget _buildTagRow(_FlatItem item, int index, ColorScheme cs) {
+  Widget _buildPlaylistRow(_FlatItem item, int index, ColorScheme cs) {
     return InkWell(
-      onTap: () => _toggleTag(index),
+      onTap: () => _togglePlaylist(index),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
         child: SizedBox(
@@ -375,7 +374,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
               ),
               const SizedBox(width: 8),
               Icon(
-                Icons.folder_rounded,
+                Icons.queue_music_rounded,
                 size: 22,
                 color: cs.primary.withAlpha(180),
               ),
@@ -406,7 +405,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                   ],
                 ),
               ),
-              if (item.tag != null) ...[
+              if (item.playlist != null) ...[
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -418,7 +417,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${_tree.firstWhere((t) => t.tag.id == item.tag!.id).albums.length}',
+                    '${_tree.firstWhere((p) => p.playlist.id == item.playlist!.id).albums.length}',
                     style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
                   ),
                 ),
@@ -622,7 +621,7 @@ class _Cover extends StatelessWidget {
               child: CircularProgressIndicator(
                 value: progress.expectedTotalBytes != null
                     ? progress.cumulativeBytesLoaded /
-                          progress.expectedTotalBytes!
+                        progress.expectedTotalBytes!
                     : null,
                 strokeWidth: 1.5,
               ),

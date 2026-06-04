@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -222,6 +222,8 @@ namespace OmniMixPlayer.Module.Bilibili
         }
 
         #region IModuleUIProvider
+
+        public bool HasSettingsUI => true;
 
         public Action<SlintNode> PushUI { get; set; }
 

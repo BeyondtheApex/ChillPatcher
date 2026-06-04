@@ -82,8 +82,7 @@ namespace OmniMixPlayer.Backend.Audio
             IEventBus eventBus,
             ILibraryRegistry library,
             IStreamingService streamingService,
-            string instanceId,
-            PlaybackModeType mode)
+            string instanceId)
         {
             _logger = logger;
             _sharedMemory = sharedMemory;

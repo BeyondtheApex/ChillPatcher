@@ -19,8 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#define BUILDING_OMNI_PCM_SHARED
-
 #include "omni_pcm_shared.h"
 
 #include <algorithm>

@@ -126,7 +126,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<SetTargetLatencyResponse> SetTargetLatency(SetTargetLatencyRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireServerPlayback(caps, "setTargetLatency");
+            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "setTargetLatency");
             GetController(request.InstanceId).SetTargetLatency(request.Latency);
             _registry.SaveTargetLatency(request.InstanceId, request.Latency);
             return Task.FromResult(new SetTargetLatencyResponse { Saved = true });

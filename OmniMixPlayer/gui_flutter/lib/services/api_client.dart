@@ -45,6 +45,8 @@ class ApiClient {
   final http.Client _http;
   late final GrpcServices _grpc;
   final String clientId;
+  final bool _isWeb;
+  static const _libraryTimeout = Duration(seconds: 6);
 
   String get baseUrl => _baseUrl;
 
@@ -64,12 +66,12 @@ class ApiClient {
        _baseUrl = isWeb
            ? ''
            : (isSocket ? 'http://unix' : 'http://127.0.0.1:$port'),
+       _isWeb = isWeb,
        _http = ClientIdClient(
          isSocket ? createUnixHttpClient(socketPath!) : http.Client(),
          cid,
        ) {
-    final effectivePort = port ?? 17890;
-    _grpc = GrpcServices(host: '127.0.0.1', port: effectivePort);
+    _grpc = GrpcServices(host: '127.0.0.1', port: port ?? 17890);
   }
 
   factory ApiClient({required int port}) {
@@ -189,21 +191,21 @@ class ApiClient {
   Future<List<Tag>> getTags({String? moduleId}) async {
     final resp = await _grpc.library.queryTags(
       TagQuery(moduleId: moduleId ?? ''),
-    );
+    ).timeout(_libraryTimeout);
     return resp.tags;
   }
 
   Future<List<Album>> getAlbums({String? tagId}) async {
     final resp = await _grpc.library.queryAlbums(
       AlbumQuery(tagId: tagId ?? ''),
-    );
+    ).timeout(_libraryTimeout);
     return resp.albums;
   }
 
   Future<List<Playlist>> getPlaylists({String? moduleId}) async {
     final resp = await _grpc.library.queryPlaylists(
       PlaylistQuery(moduleId: moduleId ?? ''),
-    );
+    ).timeout(_libraryTimeout);
     return resp.playlists;
   }
 
@@ -219,7 +221,7 @@ class ApiClient {
         tagIds: tagId != null ? [tagId] : [],
         isExcluded: false,
       ),
-    );
+    ).timeout(_libraryTimeout);
     return resp.tracks;
   }
 
@@ -277,11 +279,6 @@ class ApiClient {
     if (data['targetLatency'] != null) {
       profile.targetLatency = (data['targetLatency'] as num).toDouble();
     }
-    if (data['mode'] != null) {
-      profile.mode = data['mode'] == 'servermanaged'
-          ? PlaybackModeType.PLAYBACK_MODE_SERVER_MANAGED
-          : PlaybackModeType.PLAYBACK_MODE_CLIENT_MANAGED;
-    }
     await _grpc.instance.updateProfile(
       UpdateProfileRequest(instanceId: instanceId, profile: profile),
     );
@@ -334,10 +331,7 @@ class ApiClient {
     final profile = await _loadProfileForUpdate(instanceId)
       ..modId = modId
       ..gameName = gameName
-      ..displayName = gameName
-      ..mode = mode == 'servermanaged'
-          ? PlaybackModeType.PLAYBACK_MODE_SERVER_MANAGED
-          : PlaybackModeType.PLAYBACK_MODE_CLIENT_MANAGED;
+      ..displayName = gameName;
     await _grpc.instance.updateProfile(
       UpdateProfileRequest(instanceId: instanceId, profile: profile),
     );
@@ -373,11 +367,43 @@ class ApiClient {
     final resp = await _grpc.instance.connect(
       InstanceConnectRequest(
         clientId: clientId,
-        mode: PlaybackModeType.PLAYBACK_MODE_SERVER_MANAGED,
+        kind: InstanceKind.INSTANCE_KIND_GUI,
+        displayName: 'OmniMix GUI',
+        gameName: 'Flutter GUI',
+        capabilities: _fullGuiCapabilities(),
+        noInstance: _isWeb,
       ),
     );
+    if (resp.noInstance) return InstanceProfile();
     return resp.profile;
   }
+
+  Future<bool> heartbeat(String instanceId) async {
+    try {
+      final resp = await _grpc.instance.heartbeat(
+        InstanceHeartbeatRequest(instanceId: instanceId),
+      );
+      return resp.alive;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  InstanceCapabilities _fullGuiCapabilities() => InstanceCapabilities()
+    ..serverControlledPlayback = true
+    ..clientManagedPlayback = true
+    ..queueManagement = true
+    ..playlistManagement = true
+    ..multiplePlaylists = true
+    ..tagFiltering = true
+    ..unlimitedTags = true
+    ..albumFiltering = true
+    ..shuffle = true
+    ..repeat = true
+    ..seek = true
+    ..volumeControl = true
+    ..equalizer = true
+    ..audioPlayback = true;
 
   // ── Playback Control (gRPC) ──
 

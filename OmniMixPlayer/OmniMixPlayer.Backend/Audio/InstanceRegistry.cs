@@ -44,7 +44,6 @@ namespace OmniMixPlayer.Backend.Audio
                 Kind = req.Kind,
                 ModId = req.ModId ?? existing.ModId,
                 GameName = req.GameName ?? existing.GameName,
-                Mode = req.Mode,
                 Capabilities = req.Capabilities ?? existing.Capabilities ?? new InstanceCapabilities(),
                 Volume = existing.Volume,
                 TargetLatency = existing.TargetLatency,
@@ -136,7 +135,6 @@ namespace OmniMixPlayer.Backend.Audio
                     Id = p.Id,
                     DisplayName = p.DisplayName,
                     Kind = p.Kind,
-                    Mode = p.Mode,
                     IsOnline = online,
                     CurrentTrackUuid = sessions?.GetCurrentTrackUuid(p.Id) ?? "",
                     QueueCount = sessions?.GetQueueCount(p.Id) ?? 0

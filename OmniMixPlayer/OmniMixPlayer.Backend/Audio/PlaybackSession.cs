@@ -10,7 +10,6 @@ namespace OmniMixPlayer.Backend.Audio
     {
         public string Id { get; init; }
         public string ClientId { get; init; }
-        public SDK.Protos.Models.PlaybackModeType Mode { get; set; }
         public SDK.Protos.Models.InstanceKind Kind { get; init; }
         public DateTime CreatedAt { get; init; }
         public DateTime LastHeartbeat { get; set; }

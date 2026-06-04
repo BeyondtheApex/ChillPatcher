@@ -75,6 +75,7 @@ const InstanceCapabilities$json = {
     {'1': 'seek', '3': 11, '4': 1, '5': 8, '10': 'seek'},
     {'1': 'volume_control', '3': 12, '4': 1, '5': 8, '10': 'volumeControl'},
     {'1': 'equalizer', '3': 13, '4': 1, '5': 8, '10': 'equalizer'},
+    {'1': 'audio_playback', '3': 14, '4': 1, '5': 8, '10': 'audioPlayback'},
     {
       '1': 'max_imported_playlists',
       '3': 20,
@@ -121,11 +122,12 @@ final $typed_data.Uint8List instanceCapabilitiesDescriptor = $convert.base64Deco
     'cxgHIAEoCFINdW5saW1pdGVkVGFncxInCg9hbGJ1bV9maWx0ZXJpbmcYCCABKAhSDmFsYnVtRm'
     'lsdGVyaW5nEhgKB3NodWZmbGUYCSABKAhSB3NodWZmbGUSFgoGcmVwZWF0GAogASgIUgZyZXBl'
     'YXQSEgoEc2VlaxgLIAEoCFIEc2VlaxIlCg52b2x1bWVfY29udHJvbBgMIAEoCFINdm9sdW1lQ2'
-    '9udHJvbBIcCgllcXVhbGl6ZXIYDSABKAhSCWVxdWFsaXplchI5ChZtYXhfaW1wb3J0ZWRfcGxh'
-    'eWxpc3RzGBQgASgFSABSFG1heEltcG9ydGVkUGxheWxpc3RziAEBEh4KCG1heF90YWdzGBUgAS'
-    'gFSAFSB21heFRhZ3OIAQESNQoUbWF4X3BsYXlsaXN0X2VudHJpZXMYFiABKAVIAlISbWF4UGxh'
-    'eWxpc3RFbnRyaWVziAEBQhkKF19tYXhfaW1wb3J0ZWRfcGxheWxpc3RzQgsKCV9tYXhfdGFnc0'
-    'IXChVfbWF4X3BsYXlsaXN0X2VudHJpZXM=');
+    '9udHJvbBIcCgllcXVhbGl6ZXIYDSABKAhSCWVxdWFsaXplchIlCg5hdWRpb19wbGF5YmFjaxgO'
+    'IAEoCFINYXVkaW9QbGF5YmFjaxI5ChZtYXhfaW1wb3J0ZWRfcGxheWxpc3RzGBQgASgFSABSFG'
+    '1heEltcG9ydGVkUGxheWxpc3RziAEBEh4KCG1heF90YWdzGBUgASgFSAFSB21heFRhZ3OIAQES'
+    'NQoUbWF4X3BsYXlsaXN0X2VudHJpZXMYFiABKAVIAlISbWF4UGxheWxpc3RFbnRyaWVziAEBQh'
+    'kKF19tYXhfaW1wb3J0ZWRfcGxheWxpc3RzQgsKCV9tYXhfdGFnc0IXChVfbWF4X3BsYXlsaXN0'
+    'X2VudHJpZXM=');
 
 @$core.Deprecated('Use equalizerPointDescriptor instead')
 const EqualizerPoint$json = {
@@ -389,6 +391,7 @@ const InstanceConnectRequest$json = {
     {'1': 'mod_id', '3': 5, '4': 1, '5': 9, '10': 'modId'},
     {'1': 'game_name', '3': 6, '4': 1, '5': 9, '10': 'gameName'},
     {'1': 'display_name', '3': 7, '4': 1, '5': 9, '10': 'displayName'},
+    {'1': 'no_instance', '3': 8, '4': 1, '5': 8, '10': 'noInstance'},
   ],
 };
 
@@ -399,7 +402,8 @@ final $typed_data.Uint8List instanceConnectRequestDescriptor = $convert.base64De
     'ZRgDIAEoDjIhLm9tbmlfbWl4X3BsYXllci5QbGF5YmFja01vZGVUeXBlUgRtb2RlEkkKDGNhcG'
     'FiaWxpdGllcxgEIAEoCzIlLm9tbmlfbWl4X3BsYXllci5JbnN0YW5jZUNhcGFiaWxpdGllc1IM'
     'Y2FwYWJpbGl0aWVzEhUKBm1vZF9pZBgFIAEoCVIFbW9kSWQSGwoJZ2FtZV9uYW1lGAYgASgJUg'
-    'hnYW1lTmFtZRIhCgxkaXNwbGF5X25hbWUYByABKAlSC2Rpc3BsYXlOYW1l');
+    'hnYW1lTmFtZRIhCgxkaXNwbGF5X25hbWUYByABKAlSC2Rpc3BsYXlOYW1lEh8KC25vX2luc3Rh'
+    'bmNlGAggASgIUgpub0luc3RhbmNl');
 
 @$core.Deprecated('Use instanceConnectResponseDescriptor instead')
 const InstanceConnectResponse$json = {
@@ -415,6 +419,7 @@ const InstanceConnectResponse$json = {
       '6': '.omni_mix_player.InstanceProfile',
       '10': 'profile'
     },
+    {'1': 'no_instance', '3': 4, '4': 1, '5': 8, '10': 'noInstance'},
   ],
 };
 
@@ -422,7 +427,8 @@ const InstanceConnectResponse$json = {
 final $typed_data.Uint8List instanceConnectResponseDescriptor = $convert.base64Decode(
     'ChdJbnN0YW5jZUNvbm5lY3RSZXNwb25zZRIfCgtpbnN0YW5jZV9pZBgBIAEoCVIKaW5zdGFuY2'
     'VJZBIVCgZpc19uZXcYAiABKAhSBWlzTmV3EjoKB3Byb2ZpbGUYAyABKAsyIC5vbW5pX21peF9w'
-    'bGF5ZXIuSW5zdGFuY2VQcm9maWxlUgdwcm9maWxl');
+    'bGF5ZXIuSW5zdGFuY2VQcm9maWxlUgdwcm9maWxlEh8KC25vX2luc3RhbmNlGAQgASgIUgpub0'
+    'luc3RhbmNl');
 
 @$core.Deprecated('Use instanceHeartbeatRequestDescriptor instead')
 const InstanceHeartbeatRequest$json = {

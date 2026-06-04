@@ -55,6 +55,17 @@ private:
     using ReadFramesFn = int64_t (*)(OmniPcmHandle, float*, int32_t);
     using RequestSeekFn = int (*)(OmniPcmHandle, int64_t);
     using SetAudibleCursorFn = int (*)(OmniPcmHandle, int64_t, int);
+    using ClientCreateFn = OmniPcmClientHandle (*)(const OmniPcmClientConfig*);
+    using ClientDestroyFn = void (*)(OmniPcmClientHandle);
+    using ClientLastErrorFn = const char* (*)(OmniPcmClientHandle);
+    using ClientGetPortFn = int32_t (*)(OmniPcmClientHandle);
+    using ClientConnectFn = int (*)(OmniPcmClientHandle, const OmniPcmConnectOptions*, OmniPcmConnectionInfo*);
+    using ClientHeartbeatFn = int (*)(OmniPcmClientHandle, const char*, int*);
+    using ClientDisconnectFn = int (*)(OmniPcmClientHandle, const char*);
+    using ClientGetStatusFn = int (*)(OmniPcmClientHandle, const char*, OmniPcmPlaybackStatusInfo*);
+    using ClientPlaybackCommandFn = int (*)(OmniPcmClientHandle, const char*, int32_t);
+    using ClientPlayFn = int (*)(OmniPcmClientHandle, const char*, const char*);
+    using ClientSeekFn = int (*)(OmniPcmClientHandle, const char*, float);
 
     struct Api {
         HMODULE dll = nullptr;
@@ -71,6 +82,17 @@ private:
         ReadFramesFn read_frames = nullptr;
         RequestSeekFn request_seek = nullptr;
         SetAudibleCursorFn set_audible = nullptr;
+        ClientCreateFn client_create = nullptr;
+        ClientDestroyFn client_destroy = nullptr;
+        ClientLastErrorFn client_last_error = nullptr;
+        ClientGetPortFn client_get_port = nullptr;
+        ClientConnectFn client_connect = nullptr;
+        ClientHeartbeatFn client_heartbeat = nullptr;
+        ClientDisconnectFn client_disconnect = nullptr;
+        ClientGetStatusFn client_status = nullptr;
+        ClientPlaybackCommandFn client_command = nullptr;
+        ClientPlayFn client_play = nullptr;
+        ClientSeekFn client_seek = nullptr;
 
         bool ready() const noexcept;
     };
@@ -90,12 +112,6 @@ private:
     void update_audible_from_ring(const RingBuffer& ring);
     void maybe_advance_on_complete(const RingBuffer& ring);
 
-    bool http_get(const std::wstring& path, std::string& body);
-    bool http_post(const std::wstring& path, std::string_view json_body, std::string& body);
-    bool http_request(const wchar_t* verb, const std::wstring& path,
-                      std::string_view json_body, std::string& body);
-
-    bool command_post(const std::wstring& path);
     bool discover_port();
 
     bool ensure_pending_input(int min_frames);
@@ -103,16 +119,12 @@ private:
     int append_to_ring(RingBuffer& ring, const float* stereo, int frames, int64_t input_end);
     void trim_pending_input();
 
-    static std::wstring widen(std::string_view text);
-    static std::string json_string(std::string_view body, std::string_view key);
-    static std::string json_object(std::string_view body, std::string_view key);
-    static double json_number(std::string_view body, std::string_view key, double fallback);
-    static bool json_bool(std::string_view body, std::string_view key, bool fallback);
-
     mutable std::mutex mutex_;
     Api api_;
     OmniPcmHandle pcm_ = nullptr;
+    OmniPcmClientHandle client_ = nullptr;
     std::string client_id_;
+    std::string instance_id_;
     std::string shared_memory_name_;
     uint16_t port_ = 17890;
     bool connected_ = false;

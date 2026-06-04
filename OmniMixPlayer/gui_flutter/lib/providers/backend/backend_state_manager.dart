@@ -9,6 +9,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../services/api_client.dart';
+import '../../services/flutter_pcm_playback_service.dart';
 import '../../services/ws_client.dart';
 import '../../services/backend_manager.dart'
     if (dart.library.js_interop) '../../stubs/backend_manager_web.dart';
@@ -20,6 +21,8 @@ class BackendStateManager extends ChangeNotifier {
   late ApiClient api;
   late WsClient ws;
   late final BackendManager backendMgr;
+  final FlutterPcmPlaybackService _pcmPlayback = FlutterPcmPlaybackService();
+  Timer? _heartbeatTimer;
 
   // ── State ──
   bool _online = false;
@@ -28,6 +31,7 @@ class BackendStateManager extends ChangeNotifier {
   int _port = 17890;
   String _bind = '127.0.0.1';
   bool _busy = false;
+  bool _connecting = false;
   bool _autostart = false;
   bool _minimizeToTray = true;
 
@@ -201,6 +205,8 @@ class BackendStateManager extends ChangeNotifier {
         _connectAndLoad();
       }
     } else {
+      _stopHeartbeat();
+      _pcmPlayback.stop();
       ws.disconnect();
       onStopCleanup?.call();
     }
@@ -208,6 +214,8 @@ class BackendStateManager extends ChangeNotifier {
   }
 
   Future<void> _connectAndLoad() async {
+    if (_connecting) return;
+    _connecting = true;
     try {
       final discovered = await backendMgr.discover();
       if (discovered == null) return;
@@ -225,7 +233,9 @@ class BackendStateManager extends ChangeNotifier {
 
       final connected = await ws.connectOnce();
       if (connected) {
-        await api.connectController();
+        final profile = await api.connectController();
+        _startHeartbeat(profile.id);
+        await _pcmPlayback.startForInstance(profile.id);
         await onNeedRefreshPlayback?.call();
         await onNeedLoadModules?.call();
         await onNeedRefreshArchives?.call();
@@ -234,11 +244,15 @@ class BackendStateManager extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e, st) {
-      // silently handle
+      debugPrint('OmniMix: _connectAndLoad failed: $e\n$st');
+    } finally {
+      _connecting = false;
     }
   }
 
   Future<void> _connectDirectly() async {
+    if (_connecting) return;
+    _connecting = true;
     try {
       for (var i = 0; i < 10; i++) {
         final ok = await api.checkHealth();
@@ -247,7 +261,11 @@ class BackendStateManager extends ChangeNotifier {
       }
       final connected = await ws.connectOnce();
       if (connected) {
-        await api.connectController();
+        final profile = await api.connectController();
+        _startHeartbeat(profile.id);
+        if (!_isWeb) {
+          await _pcmPlayback.startForInstance(profile.id);
+        }
         await onNeedRefreshPlayback?.call();
         await onNeedLoadModules?.call();
         await onNeedRefreshArchives?.call();
@@ -257,6 +275,8 @@ class BackendStateManager extends ChangeNotifier {
       }
     } catch (e, st) {
       debugPrint('OmniMix Web: _connectDirectly failed: $e\n$st');
+    } finally {
+      _connecting = false;
     }
   }
 
@@ -425,6 +445,7 @@ class BackendStateManager extends ChangeNotifier {
     _busy = true;
     notifyListeners();
     try {
+      await _pcmPlayback.stop();
       try {
         await api.stopBackend();
       } catch (_) {}
@@ -484,8 +505,31 @@ class BackendStateManager extends ChangeNotifier {
   // ── Dispose ──
 
   void disposeManager() {
+    _stopHeartbeat();
+    _pcmPlayback.stop();
     ws.disconnect();
     api.dispose();
     backendMgr.dispose?.call();
+  }
+
+  void _startHeartbeat(String instanceId) {
+    if (instanceId.isEmpty) return;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (timer) async {
+      if (!_online) {
+        timer.cancel();
+        return;
+      }
+      try {
+        await api.heartbeat(instanceId);
+      } catch (e) {
+        debugPrint('OmniMix: Heartbeat failed: $e');
+      }
+    });
+  }
+
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
   }
 }
