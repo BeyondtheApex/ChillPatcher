@@ -37,6 +37,7 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
     $core.bool? seek,
     $core.bool? volumeControl,
     $core.bool? equalizer,
+    $core.bool? audioPlayback,
     $core.int? maxImportedPlaylists,
     $core.int? maxTags,
     $core.int? maxPlaylistEntries,
@@ -58,6 +59,7 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
     if (seek != null) result.seek = seek;
     if (volumeControl != null) result.volumeControl = volumeControl;
     if (equalizer != null) result.equalizer = equalizer;
+    if (audioPlayback != null) result.audioPlayback = audioPlayback;
     if (maxImportedPlaylists != null)
       result.maxImportedPlaylists = maxImportedPlaylists;
     if (maxTags != null) result.maxTags = maxTags;
@@ -93,6 +95,7 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
     ..aOB(11, _omitFieldNames ? '' : 'seek')
     ..aOB(12, _omitFieldNames ? '' : 'volumeControl')
     ..aOB(13, _omitFieldNames ? '' : 'equalizer')
+    ..aOB(14, _omitFieldNames ? '' : 'audioPlayback')
     ..aI(20, _omitFieldNames ? '' : 'maxImportedPlaylists')
     ..aI(21, _omitFieldNames ? '' : 'maxTags')
     ..aI(22, _omitFieldNames ? '' : 'maxPlaylistEntries')
@@ -234,31 +237,40 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
   @$pb.TagNumber(13)
   void clearEqualizer() => $_clearField(13);
 
+  @$pb.TagNumber(14)
+  $core.bool get audioPlayback => $_getBF(13);
+  @$pb.TagNumber(14)
+  set audioPlayback($core.bool value) => $_setBool(13, value);
+  @$pb.TagNumber(14)
+  $core.bool hasAudioPlayback() => $_has(13);
+  @$pb.TagNumber(14)
+  void clearAudioPlayback() => $_clearField(14);
+
   /// 限制（null 表示无限制，proto3 用 0 表示未设置 / wrapper types）
   @$pb.TagNumber(20)
-  $core.int get maxImportedPlaylists => $_getIZ(13);
+  $core.int get maxImportedPlaylists => $_getIZ(14);
   @$pb.TagNumber(20)
-  set maxImportedPlaylists($core.int value) => $_setSignedInt32(13, value);
+  set maxImportedPlaylists($core.int value) => $_setSignedInt32(14, value);
   @$pb.TagNumber(20)
-  $core.bool hasMaxImportedPlaylists() => $_has(13);
+  $core.bool hasMaxImportedPlaylists() => $_has(14);
   @$pb.TagNumber(20)
   void clearMaxImportedPlaylists() => $_clearField(20);
 
   @$pb.TagNumber(21)
-  $core.int get maxTags => $_getIZ(14);
+  $core.int get maxTags => $_getIZ(15);
   @$pb.TagNumber(21)
-  set maxTags($core.int value) => $_setSignedInt32(14, value);
+  set maxTags($core.int value) => $_setSignedInt32(15, value);
   @$pb.TagNumber(21)
-  $core.bool hasMaxTags() => $_has(14);
+  $core.bool hasMaxTags() => $_has(15);
   @$pb.TagNumber(21)
   void clearMaxTags() => $_clearField(21);
 
   @$pb.TagNumber(22)
-  $core.int get maxPlaylistEntries => $_getIZ(15);
+  $core.int get maxPlaylistEntries => $_getIZ(16);
   @$pb.TagNumber(22)
-  set maxPlaylistEntries($core.int value) => $_setSignedInt32(15, value);
+  set maxPlaylistEntries($core.int value) => $_setSignedInt32(16, value);
   @$pb.TagNumber(22)
-  $core.bool hasMaxPlaylistEntries() => $_has(15);
+  $core.bool hasMaxPlaylistEntries() => $_has(16);
   @$pb.TagNumber(22)
   void clearMaxPlaylistEntries() => $_clearField(22);
 }
@@ -995,6 +1007,7 @@ class InstanceConnectRequest extends $pb.GeneratedMessage {
     $core.String? modId,
     $core.String? gameName,
     $core.String? displayName,
+    $core.bool? noInstance,
   }) {
     final result = create();
     if (clientId != null) result.clientId = clientId;
@@ -1004,6 +1017,7 @@ class InstanceConnectRequest extends $pb.GeneratedMessage {
     if (modId != null) result.modId = modId;
     if (gameName != null) result.gameName = gameName;
     if (displayName != null) result.displayName = displayName;
+    if (noInstance != null) result.noInstance = noInstance;
     return result;
   }
 
@@ -1031,6 +1045,7 @@ class InstanceConnectRequest extends $pb.GeneratedMessage {
     ..aOS(5, _omitFieldNames ? '' : 'modId')
     ..aOS(6, _omitFieldNames ? '' : 'gameName')
     ..aOS(7, _omitFieldNames ? '' : 'displayName')
+    ..aOB(8, _omitFieldNames ? '' : 'noInstance')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1117,6 +1132,15 @@ class InstanceConnectRequest extends $pb.GeneratedMessage {
   $core.bool hasDisplayName() => $_has(6);
   @$pb.TagNumber(7)
   void clearDisplayName() => $_clearField(7);
+
+  @$pb.TagNumber(8)
+  $core.bool get noInstance => $_getBF(7);
+  @$pb.TagNumber(8)
+  set noInstance($core.bool value) => $_setBool(7, value);
+  @$pb.TagNumber(8)
+  $core.bool hasNoInstance() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearNoInstance() => $_clearField(8);
 }
 
 /// 连接响应
@@ -1125,11 +1149,13 @@ class InstanceConnectResponse extends $pb.GeneratedMessage {
     $core.String? instanceId,
     $core.bool? isNew,
     InstanceProfile? profile,
+    $core.bool? noInstance,
   }) {
     final result = create();
     if (instanceId != null) result.instanceId = instanceId;
     if (isNew != null) result.isNew = isNew;
     if (profile != null) result.profile = profile;
+    if (noInstance != null) result.noInstance = noInstance;
     return result;
   }
 
@@ -1151,6 +1177,7 @@ class InstanceConnectResponse extends $pb.GeneratedMessage {
     ..aOB(2, _omitFieldNames ? '' : 'isNew')
     ..aOM<InstanceProfile>(3, _omitFieldNames ? '' : 'profile',
         subBuilder: InstanceProfile.create)
+    ..aOB(4, _omitFieldNames ? '' : 'noInstance')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1201,6 +1228,15 @@ class InstanceConnectResponse extends $pb.GeneratedMessage {
   void clearProfile() => $_clearField(3);
   @$pb.TagNumber(3)
   InstanceProfile ensureProfile() => $_ensure(2);
+
+  @$pb.TagNumber(4)
+  $core.bool get noInstance => $_getBF(3);
+  @$pb.TagNumber(4)
+  set noInstance($core.bool value) => $_setBool(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasNoInstance() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearNoInstance() => $_clearField(4);
 }
 
 /// 心跳请求

@@ -29,6 +29,7 @@ namespace OmniMixPlayer.Backend.Http
     {
         private readonly InstanceRegistry _registry;
         private readonly PlaybackSessionManager _sessions;
+        private readonly ILibraryRegistry _libraryRegistry;
         private readonly ILogger _logger;
         private readonly List<WebSocket> _wsClients = new();
         private readonly object _wsLock = new();
@@ -36,10 +37,11 @@ namespace OmniMixPlayer.Backend.Http
         private ModuleUIHandler _moduleUIHandler;
         private GlobalConfigManager _globalConfig;
 
-        public ApiServer(InstanceRegistry registry, PlaybackSessionManager sessions, ILogger logger)
+        public ApiServer(InstanceRegistry registry, PlaybackSessionManager sessions, ILibraryRegistry libraryRegistry, ILogger logger)
         {
             _registry = registry;
             _sessions = sessions;
+            _libraryRegistry = libraryRegistry;
             _logger = logger;
 
             _sessions.OnTrackChanged += (id, track) =>
@@ -222,6 +224,63 @@ namespace OmniMixPlayer.Backend.Http
                 }
                 return Results.BadRequest(new { error = "Missing 'enabled' field" });
             });
+
+            // Track cover proxy
+            endpoints.MapGet("/api/track/cover", async (string uuid) =>
+            {
+                if (string.IsNullOrEmpty(uuid)) return Results.BadRequest();
+                var (data, mimeType) = await GetCoverAsync(uuid);
+                return data != null ? Results.Bytes(data, mimeType ?? "image/jpeg") : Results.NotFound();
+            });
+
+            // Module raw content — modules serve their own binary data (QR codes, etc.)
+            endpoints.MapGet("/api/modules/{id}/content/{*path}", async (string id, string path) =>
+            {
+                var module = ModuleLoader.Instance?.GetModule(id);
+                if (module is IModuleUIProvider uiProvider)
+                {
+                    var contentTask = uiProvider.ServeRawContent(path ?? "");
+                    if (contentTask != null)
+                    {
+                        var content = await contentTask;
+                        if (content != null)
+                        {
+                            var contentType = uiProvider.ServeRawContentType(path ?? "") ?? "application/octet-stream";
+                            return Results.Bytes(content, contentType);
+                        }
+                    }
+                }
+                _logger.LogWarning("content: module {Id} path {Path} not found", id, path);
+                return Results.NotFound();
+            });
+
+            // Image proxy — proxies base64-encoded image URLs
+            endpoints.MapGet("/api/proxy/image", async (string url) =>
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(url)) return Results.BadRequest();
+                    _logger.LogInformation("Image proxy: raw query url={RawUrl}", url);
+                    var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(Uri.UnescapeDataString(url)));
+                    _logger.LogInformation("Image proxy: decoded url={DecodedUrl}", decoded);
+                    using var http = new System.Net.Http.HttpClient();
+                    var response = await http.GetAsync(decoded);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.LogWarning("Image proxy: HTTP {StatusCode} for {Url}", response.StatusCode, decoded);
+                        return Results.NotFound();
+                    }
+                    var bytes = await response.Content.ReadAsByteArrayAsync();
+                    var mime = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+                    _logger.LogInformation("Image proxy: OK {Mime} {Length} bytes", mime, bytes.Length);
+                    return Results.Bytes(bytes, mime);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Image proxy: Failed for {Url}", url);
+                    return Results.NotFound();
+                }
+            });
         }
 
         private async Task HandleWebSocket(WebSocket ws)
@@ -313,5 +372,26 @@ namespace OmniMixPlayer.Backend.Http
         };
 
         internal string GetClientId(HttpContext ctx) => ctx.Connection.Id;
+
+        public async Task<(byte[] data, string mimeType)> GetCoverAsync(string uuid)
+        {
+            if (string.IsNullOrEmpty(uuid)) return (null, null);
+
+            var track = _libraryRegistry.GetTrack(uuid);
+            if (track == null || string.IsNullOrEmpty(track.ModuleId)) return (null, null);
+
+            var provider = ModuleLoader.Instance?.GetProvider<ICoverProvider>(track.ModuleId);
+            if (provider == null) return (null, null);
+
+            try
+            {
+                return await provider.GetMusicCoverAsync(uuid);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get cover for uuid {Uuid}", uuid);
+                return (null, null);
+            }
+        }
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -575,6 +575,8 @@ namespace OmniMixPlayer.Module.QQMusic
         #endregion
 
         #region IModuleUIProvider
+
+        public bool HasSettingsUI => true;
 
         public Action<SlintNode> PushUI { get; set; }
 

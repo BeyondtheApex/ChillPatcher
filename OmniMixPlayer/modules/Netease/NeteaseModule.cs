@@ -532,6 +532,23 @@ namespace OmniMixPlayer.Module.Netease
 
         private bool IsPersonalFMEnabled => _context.ConfigManager.GetBool("EnablePersonalFM", false);
 
+        private NeteaseSongRegistry EnsureSongRegistry()
+        {
+            _favoriteManager ??= new NeteaseFavoriteManager(_bridge, _context.Logger, _songInfoMap);
+            _songRegistry ??= new NeteaseSongRegistry(_context, ModuleId, _songInfoMap, _favoriteManager);
+            return _songRegistry;
+        }
+
+        private void RegisterFavoritesTag()
+        {
+            EnsureSongRegistry().RegisterFavoritesPlaylist(_musicList.Count);
+        }
+
+        private void RegisterFMTag()
+        {
+            EnsureSongRegistry().RegisterFMPlaylist(_fmMusicList.Count);
+        }
+
         #region Login Song Methods
 
         /// <summary>
@@ -1169,6 +1186,8 @@ namespace OmniMixPlayer.Module.Netease
         #endregion
 
         #region IModuleUIProvider
+
+        public bool HasSettingsUI => true;
 
         public Action<SlintNode> PushUI { get; set; }
 

@@ -1039,11 +1039,16 @@ class _RoundIconButtonState extends State<_RoundIconButton>
   }
 }
 
-FloatingPlayerSnapshot floatingPlayerSnapshotFromArguments(String arguments) {
-  if (arguments.isEmpty) return const FloatingPlayerSnapshot();
-  final decoded = jsonDecode(arguments) as Map<String, dynamic>;
-  final snapshot = decoded["snapshot"];
-  if (snapshot is Map)
-    return FloatingPlayerSnapshot.fromJson(Map<String, dynamic>.from(snapshot));
+FloatingPlayerSnapshot floatingPlayerSnapshotFromArguments(dynamic arguments) {
+  if (arguments == null || arguments is! String || arguments.isEmpty) {
+    return const FloatingPlayerSnapshot();
+  }
+  try {
+    final decoded = jsonDecode(arguments) as Map<String, dynamic>;
+    final snapshot = decoded["snapshot"];
+    if (snapshot is Map) {
+      return FloatingPlayerSnapshot.fromJson(Map<String, dynamic>.from(snapshot));
+    }
+  } catch (_) {}
   return const FloatingPlayerSnapshot();
 }

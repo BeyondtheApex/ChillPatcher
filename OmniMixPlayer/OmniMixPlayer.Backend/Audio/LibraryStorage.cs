@@ -166,7 +166,6 @@ namespace OmniMixPlayer.Backend.Audio
             var trackTags = _db.GetCollection<TrackTagDoc>("track_tags");
             trackTags.EnsureIndex(x => x.TrackUuid);
             trackTags.EnsureIndex(x => x.TagId);
-            trackTags.EnsureIndex("unique_tt", $"$.TrackUuid,$.TagId", unique: true);
 
             var playlists = _db.GetCollection<PlaylistDoc>("playlists");
             playlists.EnsureIndex(x => x.ModuleId);

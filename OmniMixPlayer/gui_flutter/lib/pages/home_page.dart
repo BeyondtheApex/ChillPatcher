@@ -825,9 +825,7 @@ class _HomePageState extends State<HomePage> {
 
   List<Track> _filteredSongs() {
     final sourceSet = widget.state.activePlaylist.map((e) => e.uuid).toSet();
-    var list = sourceSet.isEmpty
-        ? _songs.toList()
-        : _songs.where((s) => sourceSet.contains(s.uuid)).toList();
+    var list = _songs.where((s) => sourceSet.contains(s.uuid)).toList();
     // Fallback: if _songs is empty (offline instance), convert _activePlaylist items
     if (list.isEmpty &&
         _songs.isEmpty &&

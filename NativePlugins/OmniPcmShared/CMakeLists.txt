@@ -9,13 +9,38 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
+include(FetchContent)
+
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "" FORCE)
+set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    protobuf
+    GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+    GIT_TAG v29.0
+)
+FetchContent_MakeAvailable(protobuf)
+
 include_directories(${CMAKE_SOURCE_DIR}/include)
+
+file(GLOB_RECURSE GENERATED_PROTO_SOURCES
+    "${CMAKE_SOURCE_DIR}/generated/*.pb.cc"
+)
 
 set(SOURCES
     src/omni_pcm_shared.cpp
+    src/omni_pcm_control.cpp
+    ${GENERATED_PROTO_SOURCES}
 )
 
 add_library(OmniPcmShared SHARED ${SOURCES})
+
+target_include_directories(OmniPcmShared PRIVATE
+    ${CMAKE_SOURCE_DIR}/generated
+    ${CMAKE_SOURCE_DIR}/../../ForzaRadioprobe
+)
+
+target_link_libraries(OmniPcmShared PRIVATE protobuf::libprotobuf-lite)
 
 if(WIN32)
     target_compile_definitions(OmniPcmShared PRIVATE
@@ -24,6 +49,7 @@ if(WIN32)
         WIN32_LEAN_AND_MEAN
         BUILDING_OMNI_PCM_SHARED
     )
+    target_link_libraries(OmniPcmShared PRIVATE winhttp)
 
     set_target_properties(OmniPcmShared PROPERTIES
         PREFIX ""

@@ -18,26 +18,32 @@ namespace OmniMixPlayer.Backend.Audio
         public static void RequireServerPlayback(InstanceCapabilities caps, string op)
             => Require(caps, op, caps.ServerControlledPlayback, "requires server-controlled playback");
 
+        public static bool SupportsAudioPlayback(InstanceCapabilities caps)
+            => caps?.AudioPlayback == true;
+
+        public static void RequireAudioPlayback(InstanceCapabilities caps, string op)
+            => Require(caps, op, SupportsAudioPlayback(caps), "audio playback not available");
+
         public static void RequireQueueManagement(InstanceCapabilities caps, string op)
-            => RequireServerPlayback(caps, op);
+            => Require(caps, op, caps.QueueManagement, "queue management not available");
 
         public static void RequirePlaylistManagement(InstanceCapabilities caps, string op)
-            => Require(caps, op, SupportsLibraryManagement(caps), "library management not available");
+            => Require(caps, op, caps.PlaylistManagement, "playlist management not available");
 
         public static void RequireVolumeControl(InstanceCapabilities caps, string op)
-            => RequireServerPlayback(caps, op);
+            => Require(caps, op, caps.VolumeControl, "volume control not available");
 
         public static void RequireEqualizer(InstanceCapabilities caps, string op)
-            => RequireServerPlayback(caps, op);
+            => Require(caps, op, caps.Equalizer, "equalizer not available");
 
         public static void RequireShuffle(InstanceCapabilities caps, string op)
-            => RequireServerPlayback(caps, op);
+            => Require(caps, op, caps.Shuffle, "shuffle not available");
 
         public static void RequireRepeat(InstanceCapabilities caps, string op)
-            => RequireServerPlayback(caps, op);
+            => Require(caps, op, caps.Repeat, "repeat not available");
 
         public static void RequireSeek(InstanceCapabilities caps, string op)
-            => RequireServerPlayback(caps, op);
+            => Require(caps, op, caps.Seek, "seek not available");
 
         public static void RequireTagFiltering(InstanceCapabilities caps, string op)
             => Require(caps, op, caps.TagFiltering, "tag filtering not available");
@@ -46,7 +52,7 @@ namespace OmniMixPlayer.Backend.Audio
             => RequirePlaylistManagement(caps, op);
 
         public static bool SupportsLibraryManagement(InstanceCapabilities caps)
-            => caps != null && (caps.ServerControlledPlayback || caps.PlaylistManagement);
+            => caps != null && (caps.PlaylistManagement || caps.TagFiltering || caps.AlbumFiltering);
 
         /// <summary>
         /// Get capabilities for an instance (from its profile)
@@ -66,7 +72,8 @@ namespace OmniMixPlayer.Backend.Audio
                 Repeat = true,
                 Seek = true,
                 VolumeControl = true,
-                Equalizer = true
+                Equalizer = true,
+                AudioPlayback = true
             };
         }
     }

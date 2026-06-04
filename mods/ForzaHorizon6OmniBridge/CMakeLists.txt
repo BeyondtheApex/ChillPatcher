@@ -51,7 +51,7 @@ target_include_directories(version PRIVATE
     "${OMNI_PCM_SHARED_DIR}/include"
 )
 
-target_link_libraries(version PRIVATE ws2_32 bcrypt psapi winhttp)
+target_link_libraries(version PRIVATE ws2_32 bcrypt psapi)
 
 set_target_properties(version PROPERTIES
     OUTPUT_NAME version

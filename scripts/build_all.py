@@ -64,6 +64,9 @@ GO_DIR = Path("")
 # Node.js 安装路径（可选，留空则自动发现）
 NODE_DIR = Path("")
 
+# Flutter SDK install path (optional; leave empty for auto-discovery)
+FLUTTER_DIR = Path(r"G:\flutter_SDK\flutter")
+
 # ════════════════════════════════════════════
 #  工具链自动发现 — 一般不需要修改
 # ════════════════════════════════════════════
@@ -123,6 +126,20 @@ def _setup_toolchain():
     ]
     for p in node_candidates:
         if p.joinpath("node.exe").exists():
+            _add_to_path(p)
+            break
+
+    # Flutter SDK
+    flutter_candidates = [FLUTTER_DIR / "bin"] if FLUTTER_DIR else []
+    flutter_candidates += [
+        Path("C:/src/flutter/bin"),
+        Path("D:/src/flutter/bin"),
+        Path("C:/flutter/bin"),
+        Path("D:/flutter/bin"),
+        Path.home() / "flutter" / "bin",
+    ]
+    for p in flutter_candidates:
+        if p.joinpath("flutter.bat").exists() or p.joinpath("flutter.exe").exists():
             _add_to_path(p)
             break
 
@@ -320,6 +337,30 @@ def build_native_plugins(projects: list[str], verbose: bool = False):
             info(f"  WARNING: {proj} build failed (exit={code})")
 
 
+def _stage_omni_pcm_dll():
+    """Copy OmniPcmShared.dll from CMake output to bin/native/x64/."""
+    src = NATIVE_PLUGINS_DIR / "OmniPcmShared" / "build" / "x64" / "bin" / "Release" / "OmniPcmShared.dll"
+    dst = ROOT / "bin" / "native" / "x64" / "OmniPcmShared.dll"
+    if src.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        _copy_with(src, dst.parent)
+        info("  OmniPcmShared.dll staged to bin/native/x64/")
+    else:
+        info(f"  WARNING: OmniPcmShared.dll not found at {src}")
+
+
+def _copy_omni_pcm_to_flutter_host(host_dir: Path, label: str):
+    """Copy OmniPcmShared.dll next to the Flutter Windows exe for Dart FFI."""
+    if not OMNI_PCM_DLL.exists():
+        info(f"  WARNING: OmniPcmShared.dll not staged; cannot copy to {label}")
+        return
+    if not host_dir.exists():
+        info(f"  WARNING: Flutter host directory not found for {label}: {host_dir}")
+        return
+    _copy_with(OMNI_PCM_DLL, host_dir)
+    info(f"  OmniPcmShared.dll copied to {label}")
+
+
 # ════════════════════════════════════════════
 #  C# 项目构建
 # ════════════════════════════════════════════
@@ -441,6 +482,7 @@ def cmd_mod(full: bool = False, verbose: bool = False):
     if full:
         step("6/8", "Building Native Plugins...")
         build_native_plugins(NATIVE_PROJECTS_ALWAYS + NATIVE_PROJECTS_FULL_ONLY, verbose)
+        _stage_omni_pcm_dll()
     else:
         info("Native plugins: SKIPPED (use --full to build)")
 
@@ -625,10 +667,17 @@ def cmd_player(full: bool = False, skip_flutter: bool = False, verbose: bool = F
     step("native", "Building native plugins...")
     build_native_plugins(NATIVE_PROJECTS_ALWAYS, verbose)
 
+    # Copy OmniPcmShared.dll (FFI SDK for Flutter GUI) to unified bin/native/
+    _stage_omni_pcm_dll()
+
     # ── Flutter Web (WASM) — must run BEFORE backend publish so wwwroot is included ──
     if skip_flutter:
         info("Flutter Web: SKIPPED")
     else:
+        step("flutter", "Resolving Flutter dependencies...")
+        code = run(["flutter", "pub", "get"], cwd=PLAYER_FLUTTER_DIR, verbose=verbose)
+        if code != 0:
+            info("  WARNING: flutter pub get failed")
         step("flutter-web", "Generating l10n + Building Flutter Web (WASM)...")
         run(["flutter", "gen-l10n"], cwd=PLAYER_FLUTTER_DIR, verbose=verbose)
         code = run(["flutter", "build", "web", "--wasm", "-t", "lib/main_web.dart"],
@@ -744,16 +793,17 @@ def assemble_player(full: bool = False, verbose: bool = False):
     else:
         info("  WARNING: Backend publish output not found")
 
-    # Native decoders: only the two audio decoders (other DLLs belong to modules / other projects)
+    # Native decoders: audio decoders + OmniPcmShared (Flutter FFI SDK)
     native_src = ROOT / "bin" / "native" / "x64"
     if native_src.exists():
         native_dst = PLAYER_BUILD / "native" / "x64"
         native_dst.mkdir(parents=True, exist_ok=True)
-        for dll in ["OmniAudioDecoder.dll", "ChillAudioDecoder.dll", "ChillFlacDecoder.dll"]:
+        for dll in ["OmniAudioDecoder.dll", "ChillAudioDecoder.dll", "ChillFlacDecoder.dll",
+                     "OmniPcmShared.dll"]:
             src = native_src / dll
             if src.exists():
                 _copy_with(src, native_dst)
-        info("  Native decoders copied from bin/native/x64")
+        info("  Native decoders + OmniPcmShared copied from bin/native/x64")
 
     # MediaGenerator（单文件发布，只复制 exe + 配置）
     info("MediaGenerator...")
@@ -833,12 +883,14 @@ def copy_flutter(verbose: bool = False):
     if not PLAYER_FLUTTER_BUILD.exists():
         info(f"  WARNING: Flutter build output not found")
         return
+    _copy_omni_pcm_to_flutter_host(PLAYER_FLUTTER_BUILD, "Flutter build output")
     for item in PLAYER_FLUTTER_BUILD.iterdir():
         dst = PLAYER_BUILD / item.name
         if item.is_dir():
             shutil.copytree(item, dst, dirs_exist_ok=True)
         else:
             _copy_with(item, PLAYER_BUILD)
+    _copy_omni_pcm_to_flutter_host(PLAYER_BUILD, "playerbuild GUI root")
     info("  Flutter GUI copied")
 
 

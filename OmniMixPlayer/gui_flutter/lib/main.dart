@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'dart:ui' show AppExitResponse;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:windows_single_instance/windows_single_instance.dart';
 import 'floating/floating_player_window.dart';
 import 'providers/app_state.dart';
 import 'providers/core/app_state_bridge.dart';
@@ -15,10 +17,14 @@ import 'app.dart';
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await windowManager.ensureInitialized();
+  if (!kIsWeb) {
+    HttpOverrides.global = UnixSocketHttpOverrides(PortFile.resolveSocketPath());
+  }
 
   final currentWindow = await WindowController.fromCurrentEngine();
-  if (_isFloatingPlayerWindow(currentWindow.arguments)) {
+  final isFloating = _isFloatingPlayerWindow(currentWindow.arguments);
+
+  if (isFloating) {
     runApp(
       FloatingPlayerWindowApp(
         controller: currentWindow,
@@ -29,6 +35,17 @@ void main(List<String> args) async {
     );
     return;
   }
+
+  if (Platform.isWindows) {
+    await WindowsSingleInstance.ensureSingleInstance(
+      args,
+      'OmniMixPlayerGUI',
+      onSecondWindow: _onNewInstance,
+      bringWindowToFront: true,
+    );
+  }
+
+  await windowManager.ensureInitialized();
 
   // Read IPC port from port file (written by backend)
   final port = PortFile.readPort();
@@ -91,10 +108,17 @@ void main(List<String> args) async {
   );
 }
 
-bool _isFloatingPlayerWindow(String arguments) {
+bool _isFloatingPlayerWindow(dynamic arguments) {
+  if (arguments == null) return false;
+  if (arguments is! String) return false;
   if (arguments.isEmpty) return false;
   return arguments.contains('"type":"player_rectangle"') ||
       arguments.contains('"type": "player_rectangle"');
+}
+
+void _onNewInstance(List<String> args) {
+  windowManager.show();
+  windowManager.focus();
 }
 
 /// Intercepts the window close request at the Flutter framework level,
@@ -118,5 +142,25 @@ class _CloseHandler with WidgetsBindingObserver {
 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+  }
+}
+
+class UnixSocketHttpOverrides extends HttpOverrides {
+  final String socketPath;
+  UnixSocketHttpOverrides(this.socketPath);
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    client.connectionFactory = (url, proxyHost, proxyPort) {
+      if (url.host == 'unix') {
+        return Socket.startConnect(
+          InternetAddress(socketPath, type: InternetAddressType.unix),
+          0,
+        );
+      }
+      return Socket.startConnect(url.host, url.port);
+    };
+    return client;
   }
 }

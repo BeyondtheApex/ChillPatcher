@@ -2,7 +2,6 @@
 #include "fh6/log.hpp"
 #include "fh6/ring_buffer.hpp"
 
-#include <winhttp.h>
 #include <shellapi.h>
 
 #include <algorithm>
@@ -12,10 +11,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <type_traits>
-
-#pragma comment(lib, "winhttp.lib")
 
 namespace fh6::sources {
 
@@ -31,33 +27,6 @@ std::wstring read_text_file_w(const std::filesystem::path& path) {
     std::wstring text;
     std::getline(in, text);
     return text;
-}
-
-uint16_t parse_port(std::wstring_view text) {
-    while (!text.empty() && iswspace(text.front())) text.remove_prefix(1);
-    while (!text.empty() && iswspace(text.back())) text.remove_suffix(1);
-    int value = 0;
-    try { value = std::stoi(std::wstring{text}); } catch (...) { value = 0; }
-    return value > 0 && value <= 65535 ? static_cast<uint16_t>(value) : 0;
-}
-
-std::filesystem::path public_omni_dir() {
-    wchar_t buf[MAX_PATH]{};
-    DWORD n = GetEnvironmentVariableW(L"PUBLIC", buf, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) return std::filesystem::temp_directory_path() / "OmniMixPlayer";
-    return std::filesystem::path{buf} / "OmniMixPlayer";
-}
-
-/// Resolve the Unix Domain Socket path used by the backend (fallback IPC).
-std::filesystem::path socket_path() {
-    return public_omni_dir() / "omnimix.sock";
-}
-
-/// Check if the socket file exists on disk.
-bool socket_file_exists() {
-    auto path = socket_path();
-    DWORD attr = GetFileAttributesW(path.c_str());
-    return attr != INVALID_FILE_ATTRIBUTES;
 }
 
 /// Try to start the OmniMixPlayer backend (best-effort).
@@ -112,7 +81,10 @@ void try_start_backend() {
 bool OmniPcmSource::Api::ready() const noexcept {
     return dll && open_utf8 && close && is_open && last_error && snapshot && info &&
            bind_current && format_ready && has_error && complete && read_frames &&
-           request_seek && set_audible;
+           request_seek && set_audible && client_create && client_destroy &&
+           client_last_error && client_get_port && client_connect && client_heartbeat &&
+           client_disconnect && client_status && client_command && client_play &&
+           client_seek;
 }
 
 // Forward declaration (must precede constructor use)
@@ -161,10 +133,13 @@ void OmniPcmSource::shutdown() noexcept {
     std::scoped_lock lk{mutex_};
     close_shared_memory();
     if (connected_) {
-        std::string ignored;
-        http_post(L"/api/instances/" + widen(client_id_) + L"/disconnect", "{}", ignored);
+        api_.client_disconnect(client_, instance_id_.empty() ? client_id_.c_str() : instance_id_.c_str());
     }
     connected_ = false;
+    if (client_ && api_.client_destroy) {
+        api_.client_destroy(client_);
+        client_ = nullptr;
+    }
     if (api_.dll) {
         FreeLibrary(api_.dll);
         api_ = {};
@@ -174,33 +149,33 @@ void OmniPcmSource::shutdown() noexcept {
 void OmniPcmSource::play() {
     std::scoped_lock lk{mutex_};
     if (!connected_) connect_backend();
-    command_post(L"/api/instances/" + widen(client_id_) + L"/play");
+    if (connected_) api_.client_play(client_, instance_id_.c_str(), nullptr);
     playing_ = true;
     refresh_status_if_due(true);
 }
 
 void OmniPcmSource::pause() {
     std::scoped_lock lk{mutex_};
-    command_post(L"/api/instances/" + widen(client_id_) + L"/pause");
+    if (connected_) api_.client_command(client_, instance_id_.c_str(), OMNI_PCM_COMMAND_PAUSE);
     playing_ = false;
 }
 
 void OmniPcmSource::stop() {
     std::scoped_lock lk{mutex_};
-    command_post(L"/api/instances/" + widen(client_id_) + L"/pause");
+    if (connected_) api_.client_command(client_, instance_id_.c_str(), OMNI_PCM_COMMAND_STOP);
     playing_ = false;
 }
 
 void OmniPcmSource::next() {
     std::scoped_lock lk{mutex_};
-    command_post(L"/api/instances/" + widen(client_id_) + L"/next");
+    if (connected_) api_.client_command(client_, instance_id_.c_str(), OMNI_PCM_COMMAND_NEXT);
     reset_stream_state();
     eof_advanced_ = false;
 }
 
 void OmniPcmSource::previous() {
     std::scoped_lock lk{mutex_};
-    command_post(L"/api/instances/" + widen(client_id_) + L"/prev");
+    if (connected_) api_.client_command(client_, instance_id_.c_str(), OMNI_PCM_COMMAND_PREV);
     reset_stream_state();
     eof_advanced_ = false;
 }
@@ -208,9 +183,7 @@ void OmniPcmSource::previous() {
 void OmniPcmSource::seek(uint64_t ms) {
     std::scoped_lock lk{mutex_};
     const double seconds = static_cast<double>(ms) / 1000.0;
-    std::string body = "{\"position\":" + std::to_string(seconds) + "}";
-    std::string ignored;
-    http_post(L"/api/instances/" + widen(client_id_) + L"/seek", body, ignored);
+    if (connected_) api_.client_seek(client_, instance_id_.c_str(), static_cast<float>(seconds));
     if (pcm_ && api_.request_seek) {
         const int rate = info_.sample_rate > 0 ? info_.sample_rate : kFmodRate;
         api_.request_seek(pcm_, static_cast<int64_t>(seconds * rate));
@@ -270,7 +243,7 @@ void OmniPcmSource::pump(RingBuffer& ring) {
     if (api_.has_error(pcm_)) {
         log::warn("[omni] shared memory stream reported an error: {} — attempting skip",
                   api_.last_error(pcm_));
-        command_post(L"/api/instances/" + widen(client_id_) + L"/next");
+        if (connected_) api_.client_command(client_, instance_id_.c_str(), OMNI_PCM_COMMAND_NEXT);
         reset_stream_state(&ring);
         eof_advanced_ = false;
         return;
@@ -351,19 +324,63 @@ bool OmniPcmSource::load_api() {
     proc(api_.read_frames, "OmniPcm_ReadFrames");
     proc(api_.request_seek, "OmniPcm_RequestSeek");
     proc(api_.set_audible, "OmniPcm_SetAudibleCursor");
+    proc(api_.client_create, "OmniPcmClient_Create");
+    proc(api_.client_destroy, "OmniPcmClient_Destroy");
+    proc(api_.client_last_error, "OmniPcmClient_GetLastError");
+    proc(api_.client_get_port, "OmniPcmClient_GetPort");
+    proc(api_.client_connect, "OmniPcmClient_ConnectInstance");
+    proc(api_.client_heartbeat, "OmniPcmClient_Heartbeat");
+    proc(api_.client_disconnect, "OmniPcmClient_DisconnectInstance");
+    proc(api_.client_status, "OmniPcmClient_GetStatus");
+    proc(api_.client_command, "OmniPcmClient_PlaybackCommand");
+    proc(api_.client_play, "OmniPcmClient_Play");
+    proc(api_.client_seek, "OmniPcmClient_Seek");
     return api_.ready();
 }
 
 bool OmniPcmSource::connect_backend() {
-    std::string body;
-    const std::string req = "{\"clientId\":\"" + client_id_ +
-                            "\",\"role\":\"audio\",\"mode\":\"server\"}";
-    if (!http_post(L"/api/instances/connect", req, body)) return false;
+    if (!api_.ready()) return false;
+    if (!client_) {
+        OmniPcmClientConfig cfg{};
+        cfg.timeout_ms = 2500;
+        client_ = api_.client_create(&cfg);
+        if (!client_) return false;
+        port_ = static_cast<uint16_t>(std::max<int32_t>(0, api_.client_get_port(client_)));
+    }
 
-    auto shm = json_string(body, "sharedMemoryName");
-    if (shm.empty()) shm = "Global\\OmniMixPlayer_PCM_" + client_id_;
-    shared_memory_name_ = std::move(shm);
-    log::info("[omni] connected backend on port {}, sharedMemory={}", port_, shared_memory_name_);
+    OmniPcmConnectOptions options{};
+    options.client_id = client_id_.c_str();
+    options.mod_id = "forza_horizon_6";
+    options.game_name = "Forza Horizon 6";
+    options.display_name = "Forza Horizon 6";
+    options.kind = OMNI_PCM_INSTANCE_KIND_GAME_MOD;
+    options.capability_flags =
+        OMNI_PCM_CAP_SERVER_CONTROLLED_PLAYBACK |
+        OMNI_PCM_CAP_CLIENT_MANAGED_PLAYBACK |
+        OMNI_PCM_CAP_QUEUE_MANAGEMENT |
+        OMNI_PCM_CAP_PLAYLIST_MANAGEMENT |
+        OMNI_PCM_CAP_SHUFFLE |
+        OMNI_PCM_CAP_REPEAT |
+        OMNI_PCM_CAP_SEEK |
+        OMNI_PCM_CAP_VOLUME_CONTROL |
+        OMNI_PCM_CAP_EQUALIZER |
+        OMNI_PCM_CAP_MULTIPLE_PLAYLISTS |
+        OMNI_PCM_CAP_TAG_FILTERING |
+        OMNI_PCM_CAP_UNLIMITED_TAGS |
+        OMNI_PCM_CAP_ALBUM_FILTERING |
+        OMNI_PCM_CAP_AUDIO_PLAYBACK;
+
+    OmniPcmConnectionInfo info{};
+    int result = api_.client_connect(client_, &options, &info);
+    if (result != OMNI_PCM_OK) {
+        log::warn("[omni] backend connect failed: {}", api_.client_last_error(client_));
+        return false;
+    }
+
+    instance_id_ = info.instance_id[0] ? info.instance_id : client_id_;
+    shared_memory_name_ = "Global\\OmniMixPlayer_PCM_" + instance_id_;
+    log::info("[omni] connected backend on port {}, instance={}, sharedMemory={}",
+              port_, instance_id_, shared_memory_name_);
     return true;
 }
 
@@ -398,32 +415,30 @@ void OmniPcmSource::close_shared_memory() noexcept {
 void OmniPcmSource::heartbeat_if_due() {
     auto now = std::chrono::steady_clock::now();
     if (!connected_ || now < next_heartbeat_) return;
-    command_post(L"/api/instances/" + widen(client_id_) + L"/heartbeat");
+    int alive = 0;
+    if (api_.client_heartbeat(client_, instance_id_.c_str(), &alive) != OMNI_PCM_OK || !alive) {
+        connected_ = false;
+        close_shared_memory();
+    }
     next_heartbeat_ = now + std::chrono::seconds(10);
 }
 
 void OmniPcmSource::refresh_status_if_due(bool force) {
     auto now = std::chrono::steady_clock::now();
     if (!force && now < next_status_refresh_) return;
-    std::string body;
-    if (http_get(L"/api/instances/" + widen(client_id_) + L"/status", body)) {
-        playing_ = json_bool(body, "IsPlaying", json_bool(body, "isPlaying", playing_));
-        const std::string track_obj = [&]() {
-            auto obj = json_object(body, "CurrentTrack");
-            if (!obj.empty()) return obj;
-            return json_object(body, "currentTrack");
-        }();
-        const std::string_view track_view =
-            track_obj.empty() ? std::string_view{body} : std::string_view{track_obj};
+    if (connected_) {
+        OmniPcmPlaybackStatusInfo status{};
+        if (api_.client_status(client_, instance_id_.c_str(), &status) == OMNI_PCM_OK) {
+            playing_ = status.is_playing != 0;
         TrackInfo t{};
-        t.title = json_string(track_view, "title");
-        t.artist = json_string(track_view, "artist");
-        t.duration_ms = static_cast<uint64_t>(json_number(track_view, "duration", 0) * 1000.0);
-        t.position_ms = static_cast<uint64_t>(json_number(body, "Position",
-            json_number(body, "position", 0)) * 1000.0);
+            t.title = status.title;
+            t.artist = status.artist;
+            t.duration_ms = static_cast<uint64_t>(std::max(0.0f, status.duration) * 1000.0f);
+            t.position_ms = static_cast<uint64_t>(std::max(0.0f, status.position) * 1000.0f);
         if (t.title.empty()) t.title = "OmniMixPlayer";
         if (t.artist.empty()) t.artist = playing_ ? "Playing" : "Idle";
         track_ = std::move(t);
+        }
     }
     next_status_refresh_ = now + std::chrono::milliseconds(500);
 }
@@ -457,107 +472,16 @@ void OmniPcmSource::maybe_advance_on_complete(const RingBuffer& ring) {
     }
 }
 
-bool OmniPcmSource::http_get(const std::wstring& path, std::string& body) {
-    return http_request(L"GET", path, {}, body);
-}
-
-bool OmniPcmSource::http_post(const std::wstring& path, std::string_view json_body,
-                              std::string& body) {
-    return http_request(L"POST", path, json_body, body);
-}
-
-bool OmniPcmSource::http_request(const wchar_t* verb, const std::wstring& path,
-                                 std::string_view json_body, std::string& body) {
-    body.clear();
-    HINTERNET session = WinHttpOpen(L"FH6 OmniMix Bridge/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
-                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) return false;
-    HINTERNET connect = WinHttpConnect(session, L"127.0.0.1", port_, 0);
-    if (!connect) {
-        WinHttpCloseHandle(session);
-        return false;
-    }
-    HINTERNET request = WinHttpOpenRequest(connect, verb, path.c_str(), nullptr,
-                                           WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
-    if (!request) {
-        WinHttpCloseHandle(connect);
-        WinHttpCloseHandle(session);
-        return false;
-    }
-    WinHttpSetTimeouts(request, 800, 800, 1200, 1200);
-
-    const wchar_t* headers = L"Content-Type: application/json\r\n";
-    DWORD body_size = static_cast<DWORD>(json_body.size());
-    BOOL ok = WinHttpSendRequest(request, headers, (DWORD)-1,
-                                 body_size ? (LPVOID)json_body.data() : WINHTTP_NO_REQUEST_DATA,
-                                 body_size, body_size, 0);
-    if (ok) ok = WinHttpReceiveResponse(request, nullptr);
-    if (ok) {
-        DWORD status = 0, status_size = sizeof(status);
-        WinHttpQueryHeaders(request,
-                            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                            WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
-                            WINHTTP_NO_HEADER_INDEX);
-        ok = status >= 200 && status < 300;
-    }
-    if (ok) {
-        for (;;) {
-            DWORD avail = 0;
-            if (!WinHttpQueryDataAvailable(request, &avail) || avail == 0) break;
-            std::string chunk(avail, '\0');
-            DWORD read = 0;
-            if (!WinHttpReadData(request, chunk.data(), avail, &read) || read == 0) break;
-            chunk.resize(read);
-            body += chunk;
-        }
-    }
-
-    WinHttpCloseHandle(request);
-    WinHttpCloseHandle(connect);
-    WinHttpCloseHandle(session);
-    return ok == TRUE;
-}
-
-bool OmniPcmSource::command_post(const std::wstring& path) {
-    std::string body;
-    return http_post(path, "{}", body);
-}
-
 bool OmniPcmSource::discover_port() {
-    std::vector<uint16_t> candidates;
-
-    // 1. Port file from PUBLIC/OmniMixPlayer (default shared location)
-    auto port_file = public_omni_dir() / "omnimix_port.txt";
-    if (auto p = parse_port(read_text_file_w(port_file)); p) candidates.push_back(p);
-
-    // 2. Port file from game's own directory (where Flutter writes during install)
-    wchar_t exePath[MAX_PATH]{};
-    if (GetModuleFileNameW(nullptr, exePath, MAX_PATH)) {
-        auto exeDir = std::filesystem::path{exePath}.parent_path();
-        auto gamePortFile = exeDir / "omnimix_port.txt";
-        if (auto p = parse_port(read_text_file_w(gamePortFile)); p && p != (candidates.empty() ? 0 : candidates[0])) {
-            candidates.insert(candidates.begin(), p);
-        }
+    if (!api_.ready()) return false;
+    if (!client_) {
+        OmniPcmClientConfig cfg{};
+        cfg.timeout_ms = 1200;
+        client_ = api_.client_create(&cfg);
     }
-
-    candidates.push_back(17890);
-    for (uint16_t p = 17891; p < 17900; ++p) candidates.push_back(p);
-
-    for (auto p : candidates) {
-        port_ = p;
-        std::string body;
-        if (http_get(L"/api/health", body)) return true;
-    }
-
-    // TCP port scanning failed; check if socket file exists as fallback
-    if (socket_file_exists()) {
-        log::info("[omni] TCP scan failed but socket file exists; assuming port 17890");
-        port_ = 17890;
-        return true;
-    }
-
-    port_ = candidates.front();
-    return false;
+    if (!client_) return false;
+    port_ = static_cast<uint16_t>(std::max<int32_t>(0, api_.client_get_port(client_)));
+    return port_ != 0;
 }
 
 bool OmniPcmSource::ensure_pending_input(int min_frames) {
@@ -644,151 +568,6 @@ void OmniPcmSource::trim_pending_input() {
         }
         pending_read_ofs_ = 0;
     }
-}
-
-std::wstring OmniPcmSource::widen(std::string_view text) {
-    if (text.empty()) return {};
-    int len = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
-                                  nullptr, 0);
-    std::wstring out(static_cast<std::size_t>(len), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
-                        out.data(), len);
-    return out;
-}
-
-std::string OmniPcmSource::json_string(std::string_view body, std::string_view key) {
-    std::string needle = "\"" + std::string{key} + "\"";
-    auto p = body.find(needle);
-    if (p == std::string_view::npos) return {};
-    p = body.find(':', p + needle.size());
-    if (p == std::string_view::npos) return {};
-    p = body.find('"', p);
-    if (p == std::string_view::npos) return {};
-    std::string out;
-    bool esc = false;
-    auto append_utf8 = [&](unsigned cp) {
-        if (cp <= 0x7F) {
-            out.push_back(static_cast<char>(cp));
-        } else if (cp <= 0x7FF) {
-            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        } else {
-            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
-            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        }
-    };
-    for (++p; p < body.size(); ++p) {
-        char c = body[p];
-        if (esc) {
-            if (c == 'u' && p + 4 < body.size()) {
-                unsigned cp = 0;
-                bool ok = true;
-                for (int i = 1; i <= 4; ++i) {
-                    char h = body[p + i];
-                    cp <<= 4;
-                    if (h >= '0' && h <= '9') cp |= static_cast<unsigned>(h - '0');
-                    else if (h >= 'a' && h <= 'f') cp |= static_cast<unsigned>(h - 'a' + 10);
-                    else if (h >= 'A' && h <= 'F') cp |= static_cast<unsigned>(h - 'A' + 10);
-                    else { ok = false; break; }
-                }
-                if (ok) {
-                    append_utf8(cp);
-                    p += 4;
-                } else {
-                    out.push_back(c);
-                }
-            } else {
-                switch (c) {
-                    case '"': out.push_back('"'); break;
-                    case '\\': out.push_back('\\'); break;
-                    case '/': out.push_back('/'); break;
-                    case 'b': out.push_back('\b'); break;
-                    case 'f': out.push_back('\f'); break;
-                    case 'n': out.push_back('\n'); break;
-                    case 'r': out.push_back('\r'); break;
-                    case 't': out.push_back('\t'); break;
-                    default: out.push_back(c); break;
-                }
-            }
-            esc = false;
-        } else if (c == '\\') {
-            esc = true;
-        } else if (c == '"') {
-            break;
-        } else {
-            out.push_back(c);
-        }
-    }
-    return out;
-}
-
-std::string OmniPcmSource::json_object(std::string_view body, std::string_view key) {
-    std::string needle = "\"" + std::string{key} + "\"";
-    auto p = body.find(needle);
-    if (p == std::string_view::npos) return {};
-    p = body.find(':', p + needle.size());
-    if (p == std::string_view::npos) return {};
-    p = body.find('{', p);
-    if (p == std::string_view::npos) return {};
-
-    int depth = 0;
-    bool in_str = false;
-    bool esc = false;
-    const std::size_t start = p;
-    for (; p < body.size(); ++p) {
-        const char c = body[p];
-        if (in_str) {
-            if (esc) {
-                esc = false;
-            } else if (c == '\\') {
-                esc = true;
-            } else if (c == '"') {
-                in_str = false;
-            }
-            continue;
-        }
-        if (c == '"') {
-            in_str = true;
-            continue;
-        }
-        if (c == '{') {
-            depth++;
-        } else if (c == '}') {
-            depth--;
-            if (depth == 0) {
-                return std::string(body.substr(start, p - start + 1));
-            }
-        }
-    }
-    return {};
-}
-
-double OmniPcmSource::json_number(std::string_view body, std::string_view key, double fallback) {
-    std::string needle = "\"" + std::string{key} + "\"";
-    auto p = body.find(needle);
-    if (p == std::string_view::npos) return fallback;
-    p = body.find(':', p + needle.size());
-    if (p == std::string_view::npos) return fallback;
-    ++p;
-    while (p < body.size() && std::isspace(static_cast<unsigned char>(body[p]))) ++p;
-    char* end = nullptr;
-    std::string tmp{body.substr(p, std::min<std::size_t>(body.size() - p, 64))};
-    double value = std::strtod(tmp.c_str(), &end);
-    return end && end != tmp.c_str() ? value : fallback;
-}
-
-bool OmniPcmSource::json_bool(std::string_view body, std::string_view key, bool fallback) {
-    std::string needle = "\"" + std::string{key} + "\"";
-    auto p = body.find(needle);
-    if (p == std::string_view::npos) return fallback;
-    p = body.find(':', p + needle.size());
-    if (p == std::string_view::npos) return fallback;
-    ++p;
-    while (p < body.size() && std::isspace(static_cast<unsigned char>(body[p]))) ++p;
-    if (body.substr(p, 4) == "true") return true;
-    if (body.substr(p, 5) == "false") return false;
-    return fallback;
 }
 
 } // namespace fh6::sources

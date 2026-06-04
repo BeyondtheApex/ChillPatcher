@@ -44,6 +44,7 @@ namespace OmniMixPlayer.Backend
 
         public static async Task Main(string[] args)
         {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
             var builder = WebApplication.CreateBuilder(args);
 
             // File logging — always log to omni_backend.log next to exe for debugging
@@ -143,8 +144,6 @@ namespace OmniMixPlayer.Backend
 
                 // Unix Domain Socket (fallback for filesystem-based discovery)
                 options.ListenUnixSocket(SocketPath);
-
-                // TCP — browser WASM remote control (0.0.0.0)
             });
 
             // ── Write port file to all configured directories ──
@@ -156,12 +155,15 @@ namespace OmniMixPlayer.Backend
                     policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
             });
 
-            var app = builder.Build();
-
             if (!Directory.Exists(configDir))
                 Directory.CreateDirectory(configDir);
 
-            var loggerFactory = app.Services.GetRequiredService<ILoggerFactory>();
+            using var loggerFactory = LoggerFactory.Create(logging =>
+            {
+                logging.AddConsole();
+                logging.AddProvider(new SimpleFileLoggerProvider(logFilePath));
+                logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+            });
             var logger = loggerFactory.CreateLogger("OmniMixPlayer");
 
             logger.LogInformation("OmniMixPlayer v{Version} starting...", SDK.SDKInfo.SDK_VERSION);
@@ -219,7 +221,7 @@ namespace OmniMixPlayer.Backend
                 instanceRegistry);
 
             // 10. Create ApiServer (WS only)
-            var apiServer = new ApiServer(instanceRegistry, sessionManager, loggerFactory.CreateLogger("ApiServer"));
+            var apiServer = new ApiServer(instanceRegistry, sessionManager, libraryRegistry, loggerFactory.CreateLogger("ApiServer"));
 
             var moduleUIHandler = new ModuleUIHandler(ModuleLoader.Instance, apiServer,
                 loggerFactory.CreateLogger("ModuleUIHandler"));
@@ -233,6 +235,8 @@ namespace OmniMixPlayer.Backend
             builder.Services.AddSingleton<ILibraryRegistry>(libraryRegistry);
             builder.Services.AddSingleton(instanceRegistry);
             builder.Services.AddSingleton(sessionManager);
+
+            var app = builder.Build();
 
             // 12. Configure routes
             app.UseCors();
@@ -288,7 +292,7 @@ namespace OmniMixPlayer.Backend
             });
 
             // 14. Start the server
-            logger.LogInformation("OmniMixPlayer API: tcp://127.0.0.1:{IpcPort} (primary), unix://{SocketPath} (fallback), http://0.0.0.0:17890 (remote)",
+            logger.LogInformation("OmniMixPlayer API: tcp://127.0.0.1:{IpcPort} (REST/WS/gRPC-Web), unix://{SocketPath} (fallback), http://0.0.0.0:17890 (remote)",
                 IpcPort, SocketPath);
             await app.RunAsync();
         }
@@ -366,7 +370,8 @@ namespace OmniMixPlayer.Backend
         public SimpleFileLoggerProvider(string filePath)
         {
             _filePath = filePath;
-            _writer = new StreamWriter(filePath, append: true) { AutoFlush = true };
+            var stream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            _writer = new StreamWriter(stream) { AutoFlush = true };
         }
 
         public ILogger CreateLogger(string categoryName)
