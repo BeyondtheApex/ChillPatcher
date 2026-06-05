@@ -174,6 +174,10 @@ final class OmniPcmInstanceSummaryInfo extends Struct {
   external int isOnline;
   @Int32()
   external int queueCount;
+  @Int32()
+  external int mode;
+  @Int64()
+  external int connectedAt;
 }
 
 final class OmniPcmInstanceProfileInfo extends Struct {
@@ -195,6 +199,12 @@ final class OmniPcmInstanceProfileInfo extends Struct {
   external double volume;
   @Float()
   external double targetLatency;
+  @Int32()
+  external int mode;
+  @Int64()
+  external int createdAt;
+  @Int64()
+  external int updatedAt;
 }
 
 final class OmniPcmQueueTrackInfo extends Struct {

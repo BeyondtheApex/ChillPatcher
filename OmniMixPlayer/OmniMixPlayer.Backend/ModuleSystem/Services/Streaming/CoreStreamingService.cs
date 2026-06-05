@@ -27,7 +27,7 @@ namespace OmniMixPlayer.Backend.ModuleSystem.Services.Streaming
             Dictionary<string, string> headers = null)
         {
             _logger.LogInformation("Creating stream: format={Format}, duration={Duration:F1}s, key={Key}", format, durationSeconds, cacheKey);
-            return new CorePcmStreamReader(url, format, durationSeconds, cacheKey, headers);
+            return new CorePcmStreamReader(url, format, durationSeconds, cacheKey, headers, _logger);
         }
 
         public IPcmStreamReader CreateStreamAndWait(
@@ -67,7 +67,7 @@ namespace OmniMixPlayer.Backend.ModuleSystem.Services.Streaming
             Dictionary<string, string> headers, bool useCachePath)
         {
             _logger.LogInformation("Creating stream: format={Format}, duration={Duration:F1}s, cachePath={CachePath}", format, durationSeconds, cachePath);
-            return new CorePcmStreamReader(url, format, durationSeconds, cachePath, headers, useCachePath);
+            return new CorePcmStreamReader(url, format, durationSeconds, cachePath, headers, useCachePath, _logger);
         }
 
         public async Task<IPcmStreamReader> CreateStreamAndWaitAsync(

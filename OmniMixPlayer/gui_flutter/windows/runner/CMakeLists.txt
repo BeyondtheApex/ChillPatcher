@@ -36,5 +36,26 @@ target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
+set(OMNIMIX_AUDIO_RUST_DIR "${CMAKE_SOURCE_DIR}/../rust")
+set(OMNIMIX_AUDIO_RUST_PROFILE "$<IF:$<OR:$<CONFIG:Release>,$<CONFIG:Profile>>,release,debug>")
+set(OMNIMIX_AUDIO_RUST_DLL
+  "${OMNIMIX_AUDIO_RUST_DIR}/target/${OMNIMIX_AUDIO_RUST_PROFILE}/omnimix_audio.dll")
+
+add_custom_target(omnimix_audio_rust ALL
+  COMMAND cargo build --manifest-path "${OMNIMIX_AUDIO_RUST_DIR}/Cargo.toml"
+          "$<$<OR:$<CONFIG:Release>,$<CONFIG:Profile>>:--release>"
+  WORKING_DIRECTORY "${OMNIMIX_AUDIO_RUST_DIR}"
+  COMMENT "Building Rust native audio engine"
+)
+
+add_dependencies(${BINARY_NAME} omnimix_audio_rust)
+
+add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${OMNIMIX_AUDIO_RUST_DLL}"
+          "$<TARGET_FILE_DIR:${BINARY_NAME}>/omnimix_audio.dll"
+  COMMENT "Copying Rust native audio engine"
+)
+
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)

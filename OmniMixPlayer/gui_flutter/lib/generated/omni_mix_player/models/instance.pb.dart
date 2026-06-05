@@ -12,6 +12,7 @@
 
 import 'dart:core' as $core;
 
+import 'package:fixnum/fixnum.dart' as $fixnum;
 import 'package:protobuf/protobuf.dart' as $pb;
 
 import 'common.pb.dart' as $0;
@@ -646,105 +647,168 @@ class PlaylistSourceState extends $pb.GeneratedMessage {
   void clearRefId() => $_clearField(5);
 }
 
-/// Persisted runtime queue state. Track details remain in LibraryService; this
-/// stores only stable IDs so the queue survives reconnects and backend restarts.
-class PlaybackQueueState extends $pb.GeneratedMessage {
-  factory PlaybackQueueState({
-    $core.String? activeQueueId,
-    $core.Iterable<$core.String>? queueUuids,
+/// Profile-owned playback timeline. Track details remain in LibraryService; this
+/// stores only stable IDs so playback order survives reconnects and restarts.
+class PlaybackTimelineState extends $pb.GeneratedMessage {
+  factory PlaybackTimelineState({
+    $core.int? version,
+    $core.Iterable<$core.String>? sourceUuids,
+    $core.int? sourceCursor,
+    $core.String? currentUuid,
+    $core.int? currentSourceIndex,
     $core.Iterable<$core.String>? historyUuids,
+    $core.Iterable<$core.String>? navForwardUuids,
+    $core.Iterable<$core.String>? manualQueueUuids,
     $core.Iterable<PlaylistSourceState>? playlistSources,
     $core.bool? shuffle,
     $0.RepeatMode? repeatMode,
+    $fixnum.Int64? revision,
   }) {
     final result = create();
-    if (activeQueueId != null) result.activeQueueId = activeQueueId;
-    if (queueUuids != null) result.queueUuids.addAll(queueUuids);
+    if (version != null) result.version = version;
+    if (sourceUuids != null) result.sourceUuids.addAll(sourceUuids);
+    if (sourceCursor != null) result.sourceCursor = sourceCursor;
+    if (currentUuid != null) result.currentUuid = currentUuid;
+    if (currentSourceIndex != null)
+      result.currentSourceIndex = currentSourceIndex;
     if (historyUuids != null) result.historyUuids.addAll(historyUuids);
+    if (navForwardUuids != null) result.navForwardUuids.addAll(navForwardUuids);
+    if (manualQueueUuids != null)
+      result.manualQueueUuids.addAll(manualQueueUuids);
     if (playlistSources != null) result.playlistSources.addAll(playlistSources);
     if (shuffle != null) result.shuffle = shuffle;
     if (repeatMode != null) result.repeatMode = repeatMode;
+    if (revision != null) result.revision = revision;
     return result;
   }
 
-  PlaybackQueueState._();
+  PlaybackTimelineState._();
 
-  factory PlaybackQueueState.fromBuffer($core.List<$core.int> data,
+  factory PlaybackTimelineState.fromBuffer($core.List<$core.int> data,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromBuffer(data, registry);
-  factory PlaybackQueueState.fromJson($core.String json,
+  factory PlaybackTimelineState.fromJson($core.String json,
           [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
       create()..mergeFromJson(json, registry);
 
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'PlaybackQueueState',
+      _omitMessageNames ? '' : 'PlaybackTimelineState',
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
       createEmptyInstance: create)
-    ..aOS(1, _omitFieldNames ? '' : 'activeQueueId')
-    ..pPS(2, _omitFieldNames ? '' : 'queueUuids')
-    ..pPS(3, _omitFieldNames ? '' : 'historyUuids')
-    ..pPM<PlaylistSourceState>(4, _omitFieldNames ? '' : 'playlistSources',
+    ..aI(1, _omitFieldNames ? '' : 'version')
+    ..pPS(2, _omitFieldNames ? '' : 'sourceUuids')
+    ..aI(3, _omitFieldNames ? '' : 'sourceCursor')
+    ..aOS(4, _omitFieldNames ? '' : 'currentUuid')
+    ..aI(5, _omitFieldNames ? '' : 'currentSourceIndex')
+    ..pPS(6, _omitFieldNames ? '' : 'historyUuids')
+    ..pPS(7, _omitFieldNames ? '' : 'navForwardUuids')
+    ..pPS(8, _omitFieldNames ? '' : 'manualQueueUuids')
+    ..pPM<PlaylistSourceState>(9, _omitFieldNames ? '' : 'playlistSources',
         subBuilder: PlaylistSourceState.create)
-    ..aOB(5, _omitFieldNames ? '' : 'shuffle')
-    ..aE<$0.RepeatMode>(6, _omitFieldNames ? '' : 'repeatMode',
+    ..aOB(10, _omitFieldNames ? '' : 'shuffle')
+    ..aE<$0.RepeatMode>(11, _omitFieldNames ? '' : 'repeatMode',
         enumValues: $0.RepeatMode.values)
+    ..aInt64(12, _omitFieldNames ? '' : 'revision')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  PlaybackQueueState clone() => deepCopy();
+  PlaybackTimelineState clone() => deepCopy();
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  PlaybackQueueState copyWith(void Function(PlaybackQueueState) updates) =>
-      super.copyWith((message) => updates(message as PlaybackQueueState))
-          as PlaybackQueueState;
+  PlaybackTimelineState copyWith(
+          void Function(PlaybackTimelineState) updates) =>
+      super.copyWith((message) => updates(message as PlaybackTimelineState))
+          as PlaybackTimelineState;
 
   @$core.override
   $pb.BuilderInfo get info_ => _i;
 
   @$core.pragma('dart2js:noInline')
-  static PlaybackQueueState create() => PlaybackQueueState._();
+  static PlaybackTimelineState create() => PlaybackTimelineState._();
   @$core.override
-  PlaybackQueueState createEmptyInstance() => create();
+  PlaybackTimelineState createEmptyInstance() => create();
   @$core.pragma('dart2js:noInline')
-  static PlaybackQueueState getDefault() => _defaultInstance ??=
-      $pb.GeneratedMessage.$_defaultFor<PlaybackQueueState>(create);
-  static PlaybackQueueState? _defaultInstance;
+  static PlaybackTimelineState getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<PlaybackTimelineState>(create);
+  static PlaybackTimelineState? _defaultInstance;
 
   @$pb.TagNumber(1)
-  $core.String get activeQueueId => $_getSZ(0);
+  $core.int get version => $_getIZ(0);
   @$pb.TagNumber(1)
-  set activeQueueId($core.String value) => $_setString(0, value);
+  set version($core.int value) => $_setSignedInt32(0, value);
   @$pb.TagNumber(1)
-  $core.bool hasActiveQueueId() => $_has(0);
+  $core.bool hasVersion() => $_has(0);
   @$pb.TagNumber(1)
-  void clearActiveQueueId() => $_clearField(1);
+  void clearVersion() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  $pb.PbList<$core.String> get queueUuids => $_getList(1);
+  $pb.PbList<$core.String> get sourceUuids => $_getList(1);
 
   @$pb.TagNumber(3)
-  $pb.PbList<$core.String> get historyUuids => $_getList(2);
+  $core.int get sourceCursor => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set sourceCursor($core.int value) => $_setSignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasSourceCursor() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSourceCursor() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $pb.PbList<PlaylistSourceState> get playlistSources => $_getList(3);
+  $core.String get currentUuid => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set currentUuid($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasCurrentUuid() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearCurrentUuid() => $_clearField(4);
 
   @$pb.TagNumber(5)
-  $core.bool get shuffle => $_getBF(4);
+  $core.int get currentSourceIndex => $_getIZ(4);
   @$pb.TagNumber(5)
-  set shuffle($core.bool value) => $_setBool(4, value);
+  set currentSourceIndex($core.int value) => $_setSignedInt32(4, value);
   @$pb.TagNumber(5)
-  $core.bool hasShuffle() => $_has(4);
+  $core.bool hasCurrentSourceIndex() => $_has(4);
   @$pb.TagNumber(5)
-  void clearShuffle() => $_clearField(5);
+  void clearCurrentSourceIndex() => $_clearField(5);
 
   @$pb.TagNumber(6)
-  $0.RepeatMode get repeatMode => $_getN(5);
-  @$pb.TagNumber(6)
-  set repeatMode($0.RepeatMode value) => $_setField(6, value);
-  @$pb.TagNumber(6)
-  $core.bool hasRepeatMode() => $_has(5);
-  @$pb.TagNumber(6)
-  void clearRepeatMode() => $_clearField(6);
+  $pb.PbList<$core.String> get historyUuids => $_getList(5);
+
+  @$pb.TagNumber(7)
+  $pb.PbList<$core.String> get navForwardUuids => $_getList(6);
+
+  @$pb.TagNumber(8)
+  $pb.PbList<$core.String> get manualQueueUuids => $_getList(7);
+
+  @$pb.TagNumber(9)
+  $pb.PbList<PlaylistSourceState> get playlistSources => $_getList(8);
+
+  @$pb.TagNumber(10)
+  $core.bool get shuffle => $_getBF(9);
+  @$pb.TagNumber(10)
+  set shuffle($core.bool value) => $_setBool(9, value);
+  @$pb.TagNumber(10)
+  $core.bool hasShuffle() => $_has(9);
+  @$pb.TagNumber(10)
+  void clearShuffle() => $_clearField(10);
+
+  @$pb.TagNumber(11)
+  $0.RepeatMode get repeatMode => $_getN(10);
+  @$pb.TagNumber(11)
+  set repeatMode($0.RepeatMode value) => $_setField(11, value);
+  @$pb.TagNumber(11)
+  $core.bool hasRepeatMode() => $_has(10);
+  @$pb.TagNumber(11)
+  void clearRepeatMode() => $_clearField(11);
+
+  @$pb.TagNumber(12)
+  $fixnum.Int64 get revision => $_getI64(11);
+  @$pb.TagNumber(12)
+  set revision($fixnum.Int64 value) => $_setInt64(11, value);
+  @$pb.TagNumber(12)
+  $core.bool hasRevision() => $_has(11);
+  @$pb.TagNumber(12)
+  void clearRevision() => $_clearField(12);
 }
 
 /// 实例配置 — 统一持久化
@@ -766,7 +830,7 @@ class InstanceProfile extends $pb.GeneratedMessage {
     $core.Iterable<$core.String>? pinnedTagIds,
     $0.OmniTimestamp? createdAt,
     $0.OmniTimestamp? updatedAt,
-    PlaybackQueueState? playbackQueue,
+    PlaybackTimelineState? playbackTimeline,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -786,7 +850,7 @@ class InstanceProfile extends $pb.GeneratedMessage {
     if (pinnedTagIds != null) result.pinnedTagIds.addAll(pinnedTagIds);
     if (createdAt != null) result.createdAt = createdAt;
     if (updatedAt != null) result.updatedAt = updatedAt;
-    if (playbackQueue != null) result.playbackQueue = playbackQueue;
+    if (playbackTimeline != null) result.playbackTimeline = playbackTimeline;
     return result;
   }
 
@@ -828,8 +892,8 @@ class InstanceProfile extends $pb.GeneratedMessage {
         subBuilder: $0.OmniTimestamp.create)
     ..aOM<$0.OmniTimestamp>(16, _omitFieldNames ? '' : 'updatedAt',
         subBuilder: $0.OmniTimestamp.create)
-    ..aOM<PlaybackQueueState>(17, _omitFieldNames ? '' : 'playbackQueue',
-        subBuilder: PlaybackQueueState.create)
+    ..aOM<PlaybackTimelineState>(17, _omitFieldNames ? '' : 'playbackTimeline',
+        subBuilder: PlaybackTimelineState.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -986,15 +1050,15 @@ class InstanceProfile extends $pb.GeneratedMessage {
   $0.OmniTimestamp ensureUpdatedAt() => $_ensure(15);
 
   @$pb.TagNumber(17)
-  PlaybackQueueState get playbackQueue => $_getN(16);
+  PlaybackTimelineState get playbackTimeline => $_getN(16);
   @$pb.TagNumber(17)
-  set playbackQueue(PlaybackQueueState value) => $_setField(17, value);
+  set playbackTimeline(PlaybackTimelineState value) => $_setField(17, value);
   @$pb.TagNumber(17)
-  $core.bool hasPlaybackQueue() => $_has(16);
+  $core.bool hasPlaybackTimeline() => $_has(16);
   @$pb.TagNumber(17)
-  void clearPlaybackQueue() => $_clearField(17);
+  void clearPlaybackTimeline() => $_clearField(17);
   @$pb.TagNumber(17)
-  PlaybackQueueState ensurePlaybackQueue() => $_ensure(16);
+  PlaybackTimelineState ensurePlaybackTimeline() => $_ensure(16);
 }
 
 /// 连接请求

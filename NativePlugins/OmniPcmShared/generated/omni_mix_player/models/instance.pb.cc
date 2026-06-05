@@ -307,20 +307,26 @@ struct EqualizerPointDefaultTypeInternal {
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
     PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 EqualizerPointDefaultTypeInternal _EqualizerPoint_default_instance_;
 
-inline constexpr PlaybackQueueState::Impl_::Impl_(
+inline constexpr PlaybackTimelineState::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
-      : queue_uuids_{},
+      : source_uuids_{},
         history_uuids_{},
+        nav_forward_uuids_{},
+        manual_queue_uuids_{},
         playlist_sources_{},
-        active_queue_id_(
+        current_uuid_(
             &::google::protobuf::internal::fixed_address_empty_string,
             ::_pbi::ConstantInitialized()),
+        version_{0},
+        source_cursor_{0},
+        current_source_index_{0},
         shuffle_{false},
+        revision_{::int64_t{0}},
         repeat_mode_{static_cast< ::omni_mix_player::RepeatMode >(0)},
         _cached_size_{0} {}
 
 template <typename>
-PROTOBUF_CONSTEXPR PlaybackQueueState::PlaybackQueueState(::_pbi::ConstantInitialized)
+PROTOBUF_CONSTEXPR PlaybackTimelineState::PlaybackTimelineState(::_pbi::ConstantInitialized)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
     : ::google::protobuf::MessageLite(_class_data_.base()),
 #else   // PROTOBUF_CUSTOM_VTABLE
@@ -328,16 +334,16 @@ PROTOBUF_CONSTEXPR PlaybackQueueState::PlaybackQueueState(::_pbi::ConstantInitia
 #endif  // PROTOBUF_CUSTOM_VTABLE
       _impl_(::_pbi::ConstantInitialized()) {
 }
-struct PlaybackQueueStateDefaultTypeInternal {
-  PROTOBUF_CONSTEXPR PlaybackQueueStateDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
-  ~PlaybackQueueStateDefaultTypeInternal() {}
+struct PlaybackTimelineStateDefaultTypeInternal {
+  PROTOBUF_CONSTEXPR PlaybackTimelineStateDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
+  ~PlaybackTimelineStateDefaultTypeInternal() {}
   union {
-    PlaybackQueueState _instance;
+    PlaybackTimelineState _instance;
   };
 };
 
 PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
-    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 PlaybackQueueStateDefaultTypeInternal _PlaybackQueueState_default_instance_;
+    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 PlaybackTimelineStateDefaultTypeInternal _PlaybackTimelineState_default_instance_;
 
 inline constexpr InstanceSummary::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
@@ -501,7 +507,7 @@ inline constexpr InstanceProfile::Impl_::Impl_(
         equalizer_{nullptr},
         created_at_{nullptr},
         updated_at_{nullptr},
-        playback_queue_{nullptr},
+        playback_timeline_{nullptr},
         kind_{static_cast< ::omni_mix_player::InstanceKind >(0)},
         mode_{static_cast< ::omni_mix_player::PlaybackModeType >(0)},
         volume_{0},
@@ -2482,282 +2488,380 @@ void PlaylistSourceState::InternalSwap(PlaylistSourceState* PROTOBUF_RESTRICT ot
 
 // ===================================================================
 
-class PlaybackQueueState::_Internal {
+class PlaybackTimelineState::_Internal {
  public:
 };
 
-PlaybackQueueState::PlaybackQueueState(::google::protobuf::Arena* arena)
+PlaybackTimelineState::PlaybackTimelineState(::google::protobuf::Arena* arena)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
     : ::google::protobuf::MessageLite(arena, _class_data_.base()) {
 #else   // PROTOBUF_CUSTOM_VTABLE
     : ::google::protobuf::MessageLite(arena) {
 #endif  // PROTOBUF_CUSTOM_VTABLE
   SharedCtor(arena);
-  // @@protoc_insertion_point(arena_constructor:omni_mix_player.PlaybackQueueState)
+  // @@protoc_insertion_point(arena_constructor:omni_mix_player.PlaybackTimelineState)
 }
-inline PROTOBUF_NDEBUG_INLINE PlaybackQueueState::Impl_::Impl_(
+inline PROTOBUF_NDEBUG_INLINE PlaybackTimelineState::Impl_::Impl_(
     ::google::protobuf::internal::InternalVisibility visibility, ::google::protobuf::Arena* arena,
-    const Impl_& from, const ::omni_mix_player::PlaybackQueueState& from_msg)
-      : queue_uuids_{visibility, arena, from.queue_uuids_},
+    const Impl_& from, const ::omni_mix_player::PlaybackTimelineState& from_msg)
+      : source_uuids_{visibility, arena, from.source_uuids_},
         history_uuids_{visibility, arena, from.history_uuids_},
+        nav_forward_uuids_{visibility, arena, from.nav_forward_uuids_},
+        manual_queue_uuids_{visibility, arena, from.manual_queue_uuids_},
         playlist_sources_{visibility, arena, from.playlist_sources_},
-        active_queue_id_(arena, from.active_queue_id_),
+        current_uuid_(arena, from.current_uuid_),
         _cached_size_{0} {}
 
-PlaybackQueueState::PlaybackQueueState(
+PlaybackTimelineState::PlaybackTimelineState(
     ::google::protobuf::Arena* arena,
-    const PlaybackQueueState& from)
+    const PlaybackTimelineState& from)
 #if defined(PROTOBUF_CUSTOM_VTABLE)
     : ::google::protobuf::MessageLite(arena, _class_data_.base()) {
 #else   // PROTOBUF_CUSTOM_VTABLE
     : ::google::protobuf::MessageLite(arena) {
 #endif  // PROTOBUF_CUSTOM_VTABLE
-  PlaybackQueueState* const _this = this;
+  PlaybackTimelineState* const _this = this;
   (void)_this;
   _internal_metadata_.MergeFrom<std::string>(
       from._internal_metadata_);
   new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
   ::memcpy(reinterpret_cast<char *>(&_impl_) +
-               offsetof(Impl_, shuffle_),
+               offsetof(Impl_, version_),
            reinterpret_cast<const char *>(&from._impl_) +
-               offsetof(Impl_, shuffle_),
+               offsetof(Impl_, version_),
            offsetof(Impl_, repeat_mode_) -
-               offsetof(Impl_, shuffle_) +
+               offsetof(Impl_, version_) +
                sizeof(Impl_::repeat_mode_));
 
-  // @@protoc_insertion_point(copy_constructor:omni_mix_player.PlaybackQueueState)
+  // @@protoc_insertion_point(copy_constructor:omni_mix_player.PlaybackTimelineState)
 }
-inline PROTOBUF_NDEBUG_INLINE PlaybackQueueState::Impl_::Impl_(
+inline PROTOBUF_NDEBUG_INLINE PlaybackTimelineState::Impl_::Impl_(
     ::google::protobuf::internal::InternalVisibility visibility,
     ::google::protobuf::Arena* arena)
-      : queue_uuids_{visibility, arena},
+      : source_uuids_{visibility, arena},
         history_uuids_{visibility, arena},
+        nav_forward_uuids_{visibility, arena},
+        manual_queue_uuids_{visibility, arena},
         playlist_sources_{visibility, arena},
-        active_queue_id_(arena),
+        current_uuid_(arena),
         _cached_size_{0} {}
 
-inline void PlaybackQueueState::SharedCtor(::_pb::Arena* arena) {
+inline void PlaybackTimelineState::SharedCtor(::_pb::Arena* arena) {
   new (&_impl_) Impl_(internal_visibility(), arena);
   ::memset(reinterpret_cast<char *>(&_impl_) +
-               offsetof(Impl_, shuffle_),
+               offsetof(Impl_, version_),
            0,
            offsetof(Impl_, repeat_mode_) -
-               offsetof(Impl_, shuffle_) +
+               offsetof(Impl_, version_) +
                sizeof(Impl_::repeat_mode_));
 }
-PlaybackQueueState::~PlaybackQueueState() {
-  // @@protoc_insertion_point(destructor:omni_mix_player.PlaybackQueueState)
+PlaybackTimelineState::~PlaybackTimelineState() {
+  // @@protoc_insertion_point(destructor:omni_mix_player.PlaybackTimelineState)
   SharedDtor(*this);
 }
-inline void PlaybackQueueState::SharedDtor(MessageLite& self) {
-  PlaybackQueueState& this_ = static_cast<PlaybackQueueState&>(self);
+inline void PlaybackTimelineState::SharedDtor(MessageLite& self) {
+  PlaybackTimelineState& this_ = static_cast<PlaybackTimelineState&>(self);
   this_._internal_metadata_.Delete<std::string>();
   ABSL_DCHECK(this_.GetArena() == nullptr);
-  this_._impl_.active_queue_id_.Destroy();
+  this_._impl_.current_uuid_.Destroy();
   this_._impl_.~Impl_();
 }
 
-inline void* PlaybackQueueState::PlacementNew_(const void*, void* mem,
+inline void* PlaybackTimelineState::PlacementNew_(const void*, void* mem,
                                         ::google::protobuf::Arena* arena) {
-  return ::new (mem) PlaybackQueueState(arena);
+  return ::new (mem) PlaybackTimelineState(arena);
 }
-constexpr auto PlaybackQueueState::InternalNewImpl_() {
+constexpr auto PlaybackTimelineState::InternalNewImpl_() {
   constexpr auto arena_bits = ::google::protobuf::internal::EncodePlacementArenaOffsets({
-      PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.queue_uuids_) +
-          decltype(PlaybackQueueState::_impl_.queue_uuids_)::
+      PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.source_uuids_) +
+          decltype(PlaybackTimelineState::_impl_.source_uuids_)::
               InternalGetArenaOffset(
                   ::google::protobuf::MessageLite::internal_visibility()),
-      PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.history_uuids_) +
-          decltype(PlaybackQueueState::_impl_.history_uuids_)::
+      PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.history_uuids_) +
+          decltype(PlaybackTimelineState::_impl_.history_uuids_)::
               InternalGetArenaOffset(
                   ::google::protobuf::MessageLite::internal_visibility()),
-      PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.playlist_sources_) +
-          decltype(PlaybackQueueState::_impl_.playlist_sources_)::
+      PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.nav_forward_uuids_) +
+          decltype(PlaybackTimelineState::_impl_.nav_forward_uuids_)::
+              InternalGetArenaOffset(
+                  ::google::protobuf::MessageLite::internal_visibility()),
+      PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.manual_queue_uuids_) +
+          decltype(PlaybackTimelineState::_impl_.manual_queue_uuids_)::
+              InternalGetArenaOffset(
+                  ::google::protobuf::MessageLite::internal_visibility()),
+      PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.playlist_sources_) +
+          decltype(PlaybackTimelineState::_impl_.playlist_sources_)::
               InternalGetArenaOffset(
                   ::google::protobuf::MessageLite::internal_visibility()),
   });
   if (arena_bits.has_value()) {
     return ::google::protobuf::internal::MessageCreator::CopyInit(
-        sizeof(PlaybackQueueState), alignof(PlaybackQueueState), *arena_bits);
+        sizeof(PlaybackTimelineState), alignof(PlaybackTimelineState), *arena_bits);
   } else {
-    return ::google::protobuf::internal::MessageCreator(&PlaybackQueueState::PlacementNew_,
-                                 sizeof(PlaybackQueueState),
-                                 alignof(PlaybackQueueState));
+    return ::google::protobuf::internal::MessageCreator(&PlaybackTimelineState::PlacementNew_,
+                                 sizeof(PlaybackTimelineState),
+                                 alignof(PlaybackTimelineState));
   }
 }
 PROTOBUF_CONSTINIT
 PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::google::protobuf::internal::ClassDataLite<35> PlaybackQueueState::_class_data_ = {
+const ::google::protobuf::internal::ClassDataLite<38> PlaybackTimelineState::_class_data_ = {
     {
-        &_PlaybackQueueState_default_instance_._instance,
+        &_PlaybackTimelineState_default_instance_._instance,
         &_table_.header,
         nullptr,  // OnDemandRegisterArenaDtor
         nullptr,  // IsInitialized
-        &PlaybackQueueState::MergeImpl,
-        ::google::protobuf::MessageLite::GetNewImpl<PlaybackQueueState>(),
+        &PlaybackTimelineState::MergeImpl,
+        ::google::protobuf::MessageLite::GetNewImpl<PlaybackTimelineState>(),
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-        &PlaybackQueueState::SharedDtor,
-        ::google::protobuf::MessageLite::GetClearImpl<PlaybackQueueState>(), &PlaybackQueueState::ByteSizeLong,
-            &PlaybackQueueState::_InternalSerialize,
+        &PlaybackTimelineState::SharedDtor,
+        ::google::protobuf::MessageLite::GetClearImpl<PlaybackTimelineState>(), &PlaybackTimelineState::ByteSizeLong,
+            &PlaybackTimelineState::_InternalSerialize,
 #endif  // PROTOBUF_CUSTOM_VTABLE
-        PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_._cached_size_),
+        PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_._cached_size_),
         true,
     },
-    "omni_mix_player.PlaybackQueueState",
+    "omni_mix_player.PlaybackTimelineState",
 };
-const ::google::protobuf::internal::ClassData* PlaybackQueueState::GetClassData() const {
+const ::google::protobuf::internal::ClassData* PlaybackTimelineState::GetClassData() const {
   return _class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<3, 6, 1, 82, 2> PlaybackQueueState::_table_ = {
+const ::_pbi::TcParseTable<4, 12, 1, 126, 2> PlaybackTimelineState::_table_ = {
   {
     0,  // no _has_bits_
     0, // no _extensions_
-    6, 56,  // max_field_number, fast_idx_mask
+    12, 120,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294967232,  // skipmap
+    4294963200,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    6,  // num_field_entries
+    12,  // num_field_entries
     1,  // num_aux_entries
     offsetof(decltype(_table_), aux_entries),
     _class_data_.base(),
     nullptr,  // post_loop_handler
     ::_pbi::TcParser::GenericFallbackLite,  // fallback
     #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
-    ::_pbi::TcParser::GetTable<::omni_mix_player::PlaybackQueueState>(),  // to_prefetch
+    ::_pbi::TcParser::GetTable<::omni_mix_player::PlaybackTimelineState>(),  // to_prefetch
     #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
   }, {{
     {::_pbi::TcParser::MiniParse, {}},
-    // string active_queue_id = 1;
-    {::_pbi::TcParser::FastUS1,
-     {10, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.active_queue_id_)}},
-    // repeated string queue_uuids = 2;
-    {::_pbi::TcParser::FastUR1,
-     {18, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.queue_uuids_)}},
-    // repeated string history_uuids = 3;
-    {::_pbi::TcParser::FastUR1,
-     {26, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.history_uuids_)}},
-    // repeated .omni_mix_player.PlaylistSourceState playlist_sources = 4;
-    {::_pbi::TcParser::FastMtR1,
-     {34, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.playlist_sources_)}},
-    // bool shuffle = 5;
-    {::_pbi::TcParser::FastV8S1,
-     {40, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.shuffle_)}},
-    // .omni_mix_player.RepeatMode repeat_mode = 6;
+    // int32 version = 1;
     {::_pbi::TcParser::FastV32S1,
-     {48, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.repeat_mode_)}},
+     {8, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.version_)}},
+    // repeated string source_uuids = 2;
+    {::_pbi::TcParser::FastUR1,
+     {18, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.source_uuids_)}},
+    // int32 source_cursor = 3;
+    {::_pbi::TcParser::FastV32S1,
+     {24, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.source_cursor_)}},
+    // string current_uuid = 4;
+    {::_pbi::TcParser::FastUS1,
+     {34, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.current_uuid_)}},
+    // int32 current_source_index = 5;
+    {::_pbi::TcParser::FastV32S1,
+     {40, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.current_source_index_)}},
+    // repeated string history_uuids = 6;
+    {::_pbi::TcParser::FastUR1,
+     {50, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.history_uuids_)}},
+    // repeated string nav_forward_uuids = 7;
+    {::_pbi::TcParser::FastUR1,
+     {58, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.nav_forward_uuids_)}},
+    // repeated string manual_queue_uuids = 8;
+    {::_pbi::TcParser::FastUR1,
+     {66, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.manual_queue_uuids_)}},
+    // repeated .omni_mix_player.PlaylistSourceState playlist_sources = 9;
+    {::_pbi::TcParser::FastMtR1,
+     {74, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.playlist_sources_)}},
+    // bool shuffle = 10;
+    {::_pbi::TcParser::FastV8S1,
+     {80, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.shuffle_)}},
+    // .omni_mix_player.RepeatMode repeat_mode = 11;
+    {::_pbi::TcParser::FastV32S1,
+     {88, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.repeat_mode_)}},
+    // int64 revision = 12;
+    {::_pbi::TcParser::FastV64S1,
+     {96, 63, 0, PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.revision_)}},
+    {::_pbi::TcParser::MiniParse, {}},
+    {::_pbi::TcParser::MiniParse, {}},
     {::_pbi::TcParser::MiniParse, {}},
   }}, {{
     65535, 65535
   }}, {{
-    // string active_queue_id = 1;
-    {PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.active_queue_id_), 0, 0,
+    // int32 version = 1;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.version_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kInt32)},
+    // repeated string source_uuids = 2;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.source_uuids_), 0, 0,
+    (0 | ::_fl::kFcRepeated | ::_fl::kUtf8String | ::_fl::kRepSString)},
+    // int32 source_cursor = 3;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.source_cursor_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kInt32)},
+    // string current_uuid = 4;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.current_uuid_), 0, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
-    // repeated string queue_uuids = 2;
-    {PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.queue_uuids_), 0, 0,
+    // int32 current_source_index = 5;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.current_source_index_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kInt32)},
+    // repeated string history_uuids = 6;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.history_uuids_), 0, 0,
     (0 | ::_fl::kFcRepeated | ::_fl::kUtf8String | ::_fl::kRepSString)},
-    // repeated string history_uuids = 3;
-    {PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.history_uuids_), 0, 0,
+    // repeated string nav_forward_uuids = 7;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.nav_forward_uuids_), 0, 0,
     (0 | ::_fl::kFcRepeated | ::_fl::kUtf8String | ::_fl::kRepSString)},
-    // repeated .omni_mix_player.PlaylistSourceState playlist_sources = 4;
-    {PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.playlist_sources_), 0, 0,
+    // repeated string manual_queue_uuids = 8;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.manual_queue_uuids_), 0, 0,
+    (0 | ::_fl::kFcRepeated | ::_fl::kUtf8String | ::_fl::kRepSString)},
+    // repeated .omni_mix_player.PlaylistSourceState playlist_sources = 9;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.playlist_sources_), 0, 0,
     (0 | ::_fl::kFcRepeated | ::_fl::kMessage | ::_fl::kTvTable)},
-    // bool shuffle = 5;
-    {PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.shuffle_), 0, 0,
+    // bool shuffle = 10;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.shuffle_), 0, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kBool)},
-    // .omni_mix_player.RepeatMode repeat_mode = 6;
-    {PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.repeat_mode_), 0, 0,
+    // .omni_mix_player.RepeatMode repeat_mode = 11;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.repeat_mode_), 0, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kOpenEnum)},
+    // int64 revision = 12;
+    {PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.revision_), 0, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kInt64)},
   }}, {{
     {::_pbi::TcParser::GetTable<::omni_mix_player::PlaylistSourceState>()},
   }}, {{
-    "\42\17\13\15\0\0\0\0"
-    "omni_mix_player.PlaybackQueueState"
-    "active_queue_id"
-    "queue_uuids"
+    "\45\0\14\0\14\0\15\21\22\0\0\0\0\0\0\0"
+    "omni_mix_player.PlaybackTimelineState"
+    "source_uuids"
+    "current_uuid"
     "history_uuids"
+    "nav_forward_uuids"
+    "manual_queue_uuids"
   }},
 };
 
-PROTOBUF_NOINLINE void PlaybackQueueState::Clear() {
-// @@protoc_insertion_point(message_clear_start:omni_mix_player.PlaybackQueueState)
+PROTOBUF_NOINLINE void PlaybackTimelineState::Clear() {
+// @@protoc_insertion_point(message_clear_start:omni_mix_player.PlaybackTimelineState)
   ::google::protobuf::internal::TSanWrite(&_impl_);
   ::uint32_t cached_has_bits = 0;
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
 
-  _impl_.queue_uuids_.Clear();
+  _impl_.source_uuids_.Clear();
   _impl_.history_uuids_.Clear();
+  _impl_.nav_forward_uuids_.Clear();
+  _impl_.manual_queue_uuids_.Clear();
   _impl_.playlist_sources_.Clear();
-  _impl_.active_queue_id_.ClearToEmpty();
-  ::memset(&_impl_.shuffle_, 0, static_cast<::size_t>(
+  _impl_.current_uuid_.ClearToEmpty();
+  ::memset(&_impl_.version_, 0, static_cast<::size_t>(
       reinterpret_cast<char*>(&_impl_.repeat_mode_) -
-      reinterpret_cast<char*>(&_impl_.shuffle_)) + sizeof(_impl_.repeat_mode_));
+      reinterpret_cast<char*>(&_impl_.version_)) + sizeof(_impl_.repeat_mode_));
   _internal_metadata_.Clear<std::string>();
 }
 
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-        ::uint8_t* PlaybackQueueState::_InternalSerialize(
+        ::uint8_t* PlaybackTimelineState::_InternalSerialize(
             const MessageLite& base, ::uint8_t* target,
             ::google::protobuf::io::EpsCopyOutputStream* stream) {
-          const PlaybackQueueState& this_ = static_cast<const PlaybackQueueState&>(base);
+          const PlaybackTimelineState& this_ = static_cast<const PlaybackTimelineState&>(base);
 #else   // PROTOBUF_CUSTOM_VTABLE
-        ::uint8_t* PlaybackQueueState::_InternalSerialize(
+        ::uint8_t* PlaybackTimelineState::_InternalSerialize(
             ::uint8_t* target,
             ::google::protobuf::io::EpsCopyOutputStream* stream) const {
-          const PlaybackQueueState& this_ = *this;
+          const PlaybackTimelineState& this_ = *this;
 #endif  // PROTOBUF_CUSTOM_VTABLE
-          // @@protoc_insertion_point(serialize_to_array_start:omni_mix_player.PlaybackQueueState)
+          // @@protoc_insertion_point(serialize_to_array_start:omni_mix_player.PlaybackTimelineState)
           ::uint32_t cached_has_bits = 0;
           (void)cached_has_bits;
 
-          // string active_queue_id = 1;
-          if (!this_._internal_active_queue_id().empty()) {
-            const std::string& _s = this_._internal_active_queue_id();
-            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
-                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.PlaybackQueueState.active_queue_id");
-            target = stream->WriteStringMaybeAliased(1, _s, target);
+          // int32 version = 1;
+          if (this_._internal_version() != 0) {
+            target = ::google::protobuf::internal::WireFormatLite::
+                WriteInt32ToArrayWithField<1>(
+                    stream, this_._internal_version(), target);
           }
 
-          // repeated string queue_uuids = 2;
-          for (int i = 0, n = this_._internal_queue_uuids_size(); i < n; ++i) {
-            const auto& s = this_._internal_queue_uuids().Get(i);
+          // repeated string source_uuids = 2;
+          for (int i = 0, n = this_._internal_source_uuids_size(); i < n; ++i) {
+            const auto& s = this_._internal_source_uuids().Get(i);
             ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
-                s.data(), static_cast<int>(s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.PlaybackQueueState.queue_uuids");
+                s.data(), static_cast<int>(s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.PlaybackTimelineState.source_uuids");
             target = stream->WriteString(2, s, target);
           }
 
-          // repeated string history_uuids = 3;
+          // int32 source_cursor = 3;
+          if (this_._internal_source_cursor() != 0) {
+            target = ::google::protobuf::internal::WireFormatLite::
+                WriteInt32ToArrayWithField<3>(
+                    stream, this_._internal_source_cursor(), target);
+          }
+
+          // string current_uuid = 4;
+          if (!this_._internal_current_uuid().empty()) {
+            const std::string& _s = this_._internal_current_uuid();
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.PlaybackTimelineState.current_uuid");
+            target = stream->WriteStringMaybeAliased(4, _s, target);
+          }
+
+          // int32 current_source_index = 5;
+          if (this_._internal_current_source_index() != 0) {
+            target = ::google::protobuf::internal::WireFormatLite::
+                WriteInt32ToArrayWithField<5>(
+                    stream, this_._internal_current_source_index(), target);
+          }
+
+          // repeated string history_uuids = 6;
           for (int i = 0, n = this_._internal_history_uuids_size(); i < n; ++i) {
             const auto& s = this_._internal_history_uuids().Get(i);
             ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
-                s.data(), static_cast<int>(s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.PlaybackQueueState.history_uuids");
-            target = stream->WriteString(3, s, target);
+                s.data(), static_cast<int>(s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.PlaybackTimelineState.history_uuids");
+            target = stream->WriteString(6, s, target);
           }
 
-          // repeated .omni_mix_player.PlaylistSourceState playlist_sources = 4;
+          // repeated string nav_forward_uuids = 7;
+          for (int i = 0, n = this_._internal_nav_forward_uuids_size(); i < n; ++i) {
+            const auto& s = this_._internal_nav_forward_uuids().Get(i);
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                s.data(), static_cast<int>(s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.PlaybackTimelineState.nav_forward_uuids");
+            target = stream->WriteString(7, s, target);
+          }
+
+          // repeated string manual_queue_uuids = 8;
+          for (int i = 0, n = this_._internal_manual_queue_uuids_size(); i < n; ++i) {
+            const auto& s = this_._internal_manual_queue_uuids().Get(i);
+            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
+                s.data(), static_cast<int>(s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.PlaybackTimelineState.manual_queue_uuids");
+            target = stream->WriteString(8, s, target);
+          }
+
+          // repeated .omni_mix_player.PlaylistSourceState playlist_sources = 9;
           for (unsigned i = 0, n = static_cast<unsigned>(
                                    this_._internal_playlist_sources_size());
                i < n; i++) {
             const auto& repfield = this_._internal_playlist_sources().Get(i);
             target =
                 ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
-                    4, repfield, repfield.GetCachedSize(),
+                    9, repfield, repfield.GetCachedSize(),
                     target, stream);
           }
 
-          // bool shuffle = 5;
+          // bool shuffle = 10;
           if (this_._internal_shuffle() != 0) {
             target = stream->EnsureSpace(target);
             target = ::_pbi::WireFormatLite::WriteBoolToArray(
-                5, this_._internal_shuffle(), target);
+                10, this_._internal_shuffle(), target);
           }
 
-          // .omni_mix_player.RepeatMode repeat_mode = 6;
+          // .omni_mix_player.RepeatMode repeat_mode = 11;
           if (this_._internal_repeat_mode() != 0) {
             target = stream->EnsureSpace(target);
             target = ::_pbi::WireFormatLite::WriteEnumToArray(
-                6, this_._internal_repeat_mode(), target);
+                11, this_._internal_repeat_mode(), target);
+          }
+
+          // int64 revision = 12;
+          if (this_._internal_revision() != 0) {
+            target = ::google::protobuf::internal::WireFormatLite::
+                WriteInt64ToArrayWithField<12>(
+                    stream, this_._internal_revision(), target);
           }
 
           if (PROTOBUF_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
@@ -2765,18 +2869,18 @@ PROTOBUF_NOINLINE void PlaybackQueueState::Clear() {
                 this_._internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString).data(),
                 static_cast<int>(this_._internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString).size()), target);
           }
-          // @@protoc_insertion_point(serialize_to_array_end:omni_mix_player.PlaybackQueueState)
+          // @@protoc_insertion_point(serialize_to_array_end:omni_mix_player.PlaybackTimelineState)
           return target;
         }
 
 #if defined(PROTOBUF_CUSTOM_VTABLE)
-        ::size_t PlaybackQueueState::ByteSizeLong(const MessageLite& base) {
-          const PlaybackQueueState& this_ = static_cast<const PlaybackQueueState&>(base);
+        ::size_t PlaybackTimelineState::ByteSizeLong(const MessageLite& base) {
+          const PlaybackTimelineState& this_ = static_cast<const PlaybackTimelineState&>(base);
 #else   // PROTOBUF_CUSTOM_VTABLE
-        ::size_t PlaybackQueueState::ByteSizeLong() const {
-          const PlaybackQueueState& this_ = *this;
+        ::size_t PlaybackTimelineState::ByteSizeLong() const {
+          const PlaybackTimelineState& this_ = *this;
 #endif  // PROTOBUF_CUSTOM_VTABLE
-          // @@protoc_insertion_point(message_byte_size_start:omni_mix_player.PlaybackQueueState)
+          // @@protoc_insertion_point(message_byte_size_start:omni_mix_player.PlaybackTimelineState)
           ::size_t total_size = 0;
 
           ::uint32_t cached_has_bits = 0;
@@ -2785,16 +2889,16 @@ PROTOBUF_NOINLINE void PlaybackQueueState::Clear() {
 
           ::_pbi::Prefetch5LinesFrom7Lines(&this_);
            {
-            // repeated string queue_uuids = 2;
+            // repeated string source_uuids = 2;
             {
               total_size +=
-                  1 * ::google::protobuf::internal::FromIntSize(this_._internal_queue_uuids().size());
-              for (int i = 0, n = this_._internal_queue_uuids().size(); i < n; ++i) {
+                  1 * ::google::protobuf::internal::FromIntSize(this_._internal_source_uuids().size());
+              for (int i = 0, n = this_._internal_source_uuids().size(); i < n; ++i) {
                 total_size += ::google::protobuf::internal::WireFormatLite::StringSize(
-                    this_._internal_queue_uuids().Get(i));
+                    this_._internal_source_uuids().Get(i));
               }
             }
-            // repeated string history_uuids = 3;
+            // repeated string history_uuids = 6;
             {
               total_size +=
                   1 * ::google::protobuf::internal::FromIntSize(this_._internal_history_uuids().size());
@@ -2803,7 +2907,25 @@ PROTOBUF_NOINLINE void PlaybackQueueState::Clear() {
                     this_._internal_history_uuids().Get(i));
               }
             }
-            // repeated .omni_mix_player.PlaylistSourceState playlist_sources = 4;
+            // repeated string nav_forward_uuids = 7;
+            {
+              total_size +=
+                  1 * ::google::protobuf::internal::FromIntSize(this_._internal_nav_forward_uuids().size());
+              for (int i = 0, n = this_._internal_nav_forward_uuids().size(); i < n; ++i) {
+                total_size += ::google::protobuf::internal::WireFormatLite::StringSize(
+                    this_._internal_nav_forward_uuids().Get(i));
+              }
+            }
+            // repeated string manual_queue_uuids = 8;
+            {
+              total_size +=
+                  1 * ::google::protobuf::internal::FromIntSize(this_._internal_manual_queue_uuids().size());
+              for (int i = 0, n = this_._internal_manual_queue_uuids().size(); i < n; ++i) {
+                total_size += ::google::protobuf::internal::WireFormatLite::StringSize(
+                    this_._internal_manual_queue_uuids().Get(i));
+              }
+            }
+            // repeated .omni_mix_player.PlaylistSourceState playlist_sources = 9;
             {
               total_size += 1UL * this_._internal_playlist_sources_size();
               for (const auto& msg : this_._internal_playlist_sources()) {
@@ -2812,16 +2934,36 @@ PROTOBUF_NOINLINE void PlaybackQueueState::Clear() {
             }
           }
            {
-            // string active_queue_id = 1;
-            if (!this_._internal_active_queue_id().empty()) {
+            // string current_uuid = 4;
+            if (!this_._internal_current_uuid().empty()) {
               total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
-                                              this_._internal_active_queue_id());
+                                              this_._internal_current_uuid());
             }
-            // bool shuffle = 5;
+            // int32 version = 1;
+            if (this_._internal_version() != 0) {
+              total_size += ::_pbi::WireFormatLite::Int32SizePlusOne(
+                  this_._internal_version());
+            }
+            // int32 source_cursor = 3;
+            if (this_._internal_source_cursor() != 0) {
+              total_size += ::_pbi::WireFormatLite::Int32SizePlusOne(
+                  this_._internal_source_cursor());
+            }
+            // int32 current_source_index = 5;
+            if (this_._internal_current_source_index() != 0) {
+              total_size += ::_pbi::WireFormatLite::Int32SizePlusOne(
+                  this_._internal_current_source_index());
+            }
+            // bool shuffle = 10;
             if (this_._internal_shuffle() != 0) {
               total_size += 2;
             }
-            // .omni_mix_player.RepeatMode repeat_mode = 6;
+            // int64 revision = 12;
+            if (this_._internal_revision() != 0) {
+              total_size += ::_pbi::WireFormatLite::Int64SizePlusOne(
+                  this_._internal_revision());
+            }
+            // .omni_mix_player.RepeatMode repeat_mode = 11;
             if (this_._internal_repeat_mode() != 0) {
               total_size += 1 +
                             ::_pbi::WireFormatLite::EnumSize(this_._internal_repeat_mode());
@@ -2834,23 +2976,37 @@ PROTOBUF_NOINLINE void PlaybackQueueState::Clear() {
           return total_size;
         }
 
-void PlaybackQueueState::MergeImpl(::google::protobuf::MessageLite& to_msg, const ::google::protobuf::MessageLite& from_msg) {
-  auto* const _this = static_cast<PlaybackQueueState*>(&to_msg);
-  auto& from = static_cast<const PlaybackQueueState&>(from_msg);
-  // @@protoc_insertion_point(class_specific_merge_from_start:omni_mix_player.PlaybackQueueState)
+void PlaybackTimelineState::MergeImpl(::google::protobuf::MessageLite& to_msg, const ::google::protobuf::MessageLite& from_msg) {
+  auto* const _this = static_cast<PlaybackTimelineState*>(&to_msg);
+  auto& from = static_cast<const PlaybackTimelineState&>(from_msg);
+  // @@protoc_insertion_point(class_specific_merge_from_start:omni_mix_player.PlaybackTimelineState)
   ABSL_DCHECK_NE(&from, _this);
   ::uint32_t cached_has_bits = 0;
   (void) cached_has_bits;
 
-  _this->_internal_mutable_queue_uuids()->MergeFrom(from._internal_queue_uuids());
+  _this->_internal_mutable_source_uuids()->MergeFrom(from._internal_source_uuids());
   _this->_internal_mutable_history_uuids()->MergeFrom(from._internal_history_uuids());
+  _this->_internal_mutable_nav_forward_uuids()->MergeFrom(from._internal_nav_forward_uuids());
+  _this->_internal_mutable_manual_queue_uuids()->MergeFrom(from._internal_manual_queue_uuids());
   _this->_internal_mutable_playlist_sources()->MergeFrom(
       from._internal_playlist_sources());
-  if (!from._internal_active_queue_id().empty()) {
-    _this->_internal_set_active_queue_id(from._internal_active_queue_id());
+  if (!from._internal_current_uuid().empty()) {
+    _this->_internal_set_current_uuid(from._internal_current_uuid());
+  }
+  if (from._internal_version() != 0) {
+    _this->_impl_.version_ = from._impl_.version_;
+  }
+  if (from._internal_source_cursor() != 0) {
+    _this->_impl_.source_cursor_ = from._impl_.source_cursor_;
+  }
+  if (from._internal_current_source_index() != 0) {
+    _this->_impl_.current_source_index_ = from._impl_.current_source_index_;
   }
   if (from._internal_shuffle() != 0) {
     _this->_impl_.shuffle_ = from._impl_.shuffle_;
+  }
+  if (from._internal_revision() != 0) {
+    _this->_impl_.revision_ = from._impl_.revision_;
   }
   if (from._internal_repeat_mode() != 0) {
     _this->_impl_.repeat_mode_ = from._impl_.repeat_mode_;
@@ -2858,29 +3014,31 @@ void PlaybackQueueState::MergeImpl(::google::protobuf::MessageLite& to_msg, cons
   _this->_internal_metadata_.MergeFrom<std::string>(from._internal_metadata_);
 }
 
-void PlaybackQueueState::CopyFrom(const PlaybackQueueState& from) {
-// @@protoc_insertion_point(class_specific_copy_from_start:omni_mix_player.PlaybackQueueState)
+void PlaybackTimelineState::CopyFrom(const PlaybackTimelineState& from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:omni_mix_player.PlaybackTimelineState)
   if (&from == this) return;
   Clear();
   MergeFrom(from);
 }
 
 
-void PlaybackQueueState::InternalSwap(PlaybackQueueState* PROTOBUF_RESTRICT other) {
+void PlaybackTimelineState::InternalSwap(PlaybackTimelineState* PROTOBUF_RESTRICT other) {
   using std::swap;
   auto* arena = GetArena();
   ABSL_DCHECK_EQ(arena, other->GetArena());
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
-  _impl_.queue_uuids_.InternalSwap(&other->_impl_.queue_uuids_);
+  _impl_.source_uuids_.InternalSwap(&other->_impl_.source_uuids_);
   _impl_.history_uuids_.InternalSwap(&other->_impl_.history_uuids_);
+  _impl_.nav_forward_uuids_.InternalSwap(&other->_impl_.nav_forward_uuids_);
+  _impl_.manual_queue_uuids_.InternalSwap(&other->_impl_.manual_queue_uuids_);
   _impl_.playlist_sources_.InternalSwap(&other->_impl_.playlist_sources_);
-  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.active_queue_id_, &other->_impl_.active_queue_id_, arena);
+  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.current_uuid_, &other->_impl_.current_uuid_, arena);
   ::google::protobuf::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.repeat_mode_)
-      + sizeof(PlaybackQueueState::_impl_.repeat_mode_)
-      - PROTOBUF_FIELD_OFFSET(PlaybackQueueState, _impl_.shuffle_)>(
-          reinterpret_cast<char*>(&_impl_.shuffle_),
-          reinterpret_cast<char*>(&other->_impl_.shuffle_));
+      PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.repeat_mode_)
+      + sizeof(PlaybackTimelineState::_impl_.repeat_mode_)
+      - PROTOBUF_FIELD_OFFSET(PlaybackTimelineState, _impl_.version_)>(
+          reinterpret_cast<char*>(&_impl_.version_),
+          reinterpret_cast<char*>(&other->_impl_.version_));
 }
 
 // ===================================================================
@@ -2952,8 +3110,8 @@ InstanceProfile::InstanceProfile(
   _impl_.updated_at_ = (cached_has_bits & 0x00000008u) ? ::google::protobuf::MessageLite::CopyConstruct<::omni_mix_player::OmniTimestamp>(
                               arena, *from._impl_.updated_at_)
                         : nullptr;
-  _impl_.playback_queue_ = (cached_has_bits & 0x00000010u) ? ::google::protobuf::MessageLite::CopyConstruct<::omni_mix_player::PlaybackQueueState>(
-                              arena, *from._impl_.playback_queue_)
+  _impl_.playback_timeline_ = (cached_has_bits & 0x00000010u) ? ::google::protobuf::MessageLite::CopyConstruct<::omni_mix_player::PlaybackTimelineState>(
+                              arena, *from._impl_.playback_timeline_)
                         : nullptr;
   ::memcpy(reinterpret_cast<char *>(&_impl_) +
                offsetof(Impl_, kind_),
@@ -3004,7 +3162,7 @@ inline void InstanceProfile::SharedDtor(MessageLite& self) {
   delete this_._impl_.equalizer_;
   delete this_._impl_.created_at_;
   delete this_._impl_.updated_at_;
-  delete this_._impl_.playback_queue_;
+  delete this_._impl_.playback_timeline_;
   this_._impl_.~Impl_();
 }
 
@@ -3127,9 +3285,9 @@ const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
     // .omni_mix_player.OmniTimestamp updated_at = 16;
     {::_pbi::TcParser::FastMtS2,
      {386, 3, 4, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.updated_at_)}},
-    // .omni_mix_player.PlaybackQueueState playback_queue = 17;
+    // .omni_mix_player.PlaybackTimelineState playback_timeline = 17;
     {::_pbi::TcParser::FastMtS2,
-     {394, 4, 5, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.playback_queue_)}},
+     {394, 4, 5, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.playback_timeline_)}},
     {::_pbi::TcParser::MiniParse, {}},
     {::_pbi::TcParser::MiniParse, {}},
     {::_pbi::TcParser::MiniParse, {}},
@@ -3195,8 +3353,8 @@ const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
     // .omni_mix_player.OmniTimestamp updated_at = 16;
     {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.updated_at_), _Internal::kHasBitsOffset + 3, 4,
     (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
-    // .omni_mix_player.PlaybackQueueState playback_queue = 17;
-    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.playback_queue_), _Internal::kHasBitsOffset + 4, 5,
+    // .omni_mix_player.PlaybackTimelineState playback_timeline = 17;
+    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.playback_timeline_), _Internal::kHasBitsOffset + 4, 5,
     (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
   }}, {{
     {::_pbi::TcParser::GetTable<::omni_mix_player::InstanceCapabilities>()},
@@ -3204,7 +3362,7 @@ const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
     {::_pbi::TcParser::GetTable<::omni_mix_player::QueueInfo>()},
     {::_pbi::TcParser::GetTable<::omni_mix_player::OmniTimestamp>()},
     {::_pbi::TcParser::GetTable<::omni_mix_player::OmniTimestamp>()},
-    {::_pbi::TcParser::GetTable<::omni_mix_player::PlaybackQueueState>()},
+    {::_pbi::TcParser::GetTable<::omni_mix_player::PlaybackTimelineState>()},
   }}, {{
     "\37\2\14\0\6\11\0\0\0\0\0\17\0\25\16\0\0\0\0\0\0\0\0\0"
     "omni_mix_player.InstanceProfile"
@@ -3252,8 +3410,8 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
       _impl_.updated_at_->Clear();
     }
     if (cached_has_bits & 0x00000010u) {
-      ABSL_DCHECK(_impl_.playback_queue_ != nullptr);
-      _impl_.playback_queue_->Clear();
+      ABSL_DCHECK(_impl_.playback_timeline_ != nullptr);
+      _impl_.playback_timeline_->Clear();
     }
   }
   ::memset(&_impl_.kind_, 0, static_cast<::size_t>(
@@ -3402,10 +3560,10 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
                 stream);
           }
 
-          // .omni_mix_player.PlaybackQueueState playback_queue = 17;
+          // .omni_mix_player.PlaybackTimelineState playback_timeline = 17;
           if (cached_has_bits & 0x00000010u) {
             target = ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
-                17, *this_._impl_.playback_queue_, this_._impl_.playback_queue_->GetCachedSize(), target,
+                17, *this_._impl_.playback_timeline_, this_._impl_.playback_timeline_->GetCachedSize(), target,
                 stream);
           }
 
@@ -3509,10 +3667,10 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
               total_size += 2 +
                             ::google::protobuf::internal::WireFormatLite::MessageSize(*this_._impl_.updated_at_);
             }
-            // .omni_mix_player.PlaybackQueueState playback_queue = 17;
+            // .omni_mix_player.PlaybackTimelineState playback_timeline = 17;
             if (cached_has_bits & 0x00000010u) {
               total_size += 2 +
-                            ::google::protobuf::internal::WireFormatLite::MessageSize(*this_._impl_.playback_queue_);
+                            ::google::protobuf::internal::WireFormatLite::MessageSize(*this_._impl_.playback_timeline_);
             }
           }
            {
@@ -3609,12 +3767,12 @@ void InstanceProfile::MergeImpl(::google::protobuf::MessageLite& to_msg, const :
       }
     }
     if (cached_has_bits & 0x00000010u) {
-      ABSL_DCHECK(from._impl_.playback_queue_ != nullptr);
-      if (_this->_impl_.playback_queue_ == nullptr) {
-        _this->_impl_.playback_queue_ =
-            ::google::protobuf::MessageLite::CopyConstruct<::omni_mix_player::PlaybackQueueState>(arena, *from._impl_.playback_queue_);
+      ABSL_DCHECK(from._impl_.playback_timeline_ != nullptr);
+      if (_this->_impl_.playback_timeline_ == nullptr) {
+        _this->_impl_.playback_timeline_ =
+            ::google::protobuf::MessageLite::CopyConstruct<::omni_mix_player::PlaybackTimelineState>(arena, *from._impl_.playback_timeline_);
       } else {
-        _this->_impl_.playback_queue_->MergeFrom(*from._impl_.playback_queue_);
+        _this->_impl_.playback_timeline_->MergeFrom(*from._impl_.playback_timeline_);
       }
     }
   }

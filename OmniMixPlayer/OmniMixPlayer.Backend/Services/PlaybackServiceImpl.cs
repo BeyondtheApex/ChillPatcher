@@ -3,30 +3,43 @@ using System.Threading.Tasks;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using OmniMixPlayer.Backend.Audio;
+using OmniMixPlayer.SDK.Interfaces;
 using OmniMixPlayer.SDK.Protos.Models;
 using OmniMixPlayer.SDK.Protos.Services;
 
 namespace OmniMixPlayer.Backend.Services
 {
-    /// <summary>
-    /// PlaybackService gRPC 实现 — 实例级别播放控制
-    /// </summary>
     public class PlaybackServiceImpl : PlaybackService.PlaybackServiceBase
     {
         private readonly InstanceRegistry _registry;
         private readonly PlaybackSessionManager _sessions;
+        private readonly PlaybackTimelineStore _timeline;
+        private readonly ILibraryRegistry _library;
 
-        public PlaybackServiceImpl(InstanceRegistry registry, PlaybackSessionManager sessions, ILogger<PlaybackServiceImpl> logger)
+        public PlaybackServiceImpl(
+            InstanceRegistry registry,
+            PlaybackSessionManager sessions,
+            PlaybackTimelineStore timeline,
+            ILibraryRegistry library,
+            ILogger<PlaybackServiceImpl> logger)
         {
             _registry = registry;
             _sessions = sessions;
+            _timeline = timeline;
+            _library = library;
         }
 
-        private PlaybackController GetController(string instanceId)
+        private InstanceProfile GetProfileOrThrow(string instanceId)
         {
             var profile = _registry.Get(instanceId);
             if (profile == null)
                 throw new RpcException(new Status(StatusCode.NotFound, "Instance not found"));
+            return profile;
+        }
+
+        private PlaybackController GetController(string instanceId)
+        {
+            GetProfileOrThrow(instanceId);
             var ctrl = _sessions.GetController(instanceId);
             if (ctrl == null)
                 throw new RpcException(new Status(StatusCode.Unavailable, "Instance not online"));
@@ -38,17 +51,11 @@ namespace OmniMixPlayer.Backend.Services
             return InstanceCapabilityPolicy.Get(_registry, instanceId);
         }
 
-        private void SaveQueueState(string instanceId, PlaybackController ctrl)
-        {
-            _registry.SavePlaybackQueue(instanceId, ctrl.CreateQueueSnapshot());
-        }
-
         public override Task<PlayResponse> Play(PlayRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireServerPlayback(caps, "play");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.Play(request.Uuid);
+            GetController(request.InstanceId).Play(request.Uuid);
             return Task.FromResult(new PlayResponse());
         }
 
@@ -112,39 +119,33 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireVolumeControl(caps, "setVolume");
-            GetController(request.InstanceId).SetVolume(request.Volume);
             _registry.SaveVolume(request.InstanceId, request.Volume);
             return Task.FromResult(new SetVolumeResponse { Saved = true });
         }
 
         public override Task<GetVolumeResponse> GetVolume(GetVolumeRequest request, ServerCallContext context)
         {
-            var vol = GetController(request.InstanceId).Volume;
-            return Task.FromResult(new GetVolumeResponse { Volume = vol });
+            return Task.FromResult(new GetVolumeResponse { Volume = GetProfileOrThrow(request.InstanceId).Volume });
         }
 
         public override Task<SetTargetLatencyResponse> SetTargetLatency(SetTargetLatencyRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireAudioPlayback(caps, "setTargetLatency");
-            GetController(request.InstanceId).SetTargetLatency(request.Latency);
             _registry.SaveTargetLatency(request.InstanceId, request.Latency);
             return Task.FromResult(new SetTargetLatencyResponse { Saved = true });
         }
 
         public override Task<GetTargetLatencyResponse> GetTargetLatency(GetTargetLatencyRequest request, ServerCallContext context)
         {
-            var lat = GetController(request.InstanceId).TargetLatency;
-            return Task.FromResult(new GetTargetLatencyResponse { Latency = lat });
+            return Task.FromResult(new GetTargetLatencyResponse { Latency = GetProfileOrThrow(request.InstanceId).TargetLatency });
         }
 
         public override Task<SetShuffleResponse> SetShuffle(SetShuffleRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireShuffle(caps, "setShuffle");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.SetShuffle(request.Enabled);
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.SetShuffle(request.InstanceId, request.Enabled);
             return Task.FromResult(new SetShuffleResponse());
         }
 
@@ -152,9 +153,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireRepeat(caps, "setRepeatMode");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.SetRepeatMode(request.Mode);
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.SetRepeatMode(request.InstanceId, request.Mode);
             return Task.FromResult(new SetRepeatModeResponse());
         }
 
@@ -162,9 +161,8 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "getQueue");
-            var ctrl = GetController(request.InstanceId);
             var resp = new GetQueueResponse();
-            resp.Queue.AddRange(ctrl.Queue.Select((m, i) => ToQueueTrack(m, i)));
+            resp.Queue.AddRange(_timeline.Get(request.InstanceId).ManualQueueUuids.Select((u, i) => ToQueueTrack(u, i)));
             return Task.FromResult(resp);
         }
 
@@ -172,9 +170,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "addToQueue");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.AddToQueue(request.Uuid);
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.AddToQueue(request.InstanceId, request.Uuid);
             return Task.FromResult(new AddToQueueResponse());
         }
 
@@ -182,9 +178,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "insertIntoQueue");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.InsertIntoQueue(request.Uuids, request.Index);
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.InsertIntoQueue(request.InstanceId, request.Uuids, request.Index);
             return Task.FromResult(new InsertIntoQueueResponse());
         }
 
@@ -192,9 +186,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "setQueue");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.SetQueue(request.Uuids);
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.SetQueue(request.InstanceId, request.Uuids);
             return Task.FromResult(new SetQueueResponse());
         }
 
@@ -202,17 +194,15 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "removeFromQueue");
-            var ctrl = GetController(request.InstanceId);
             switch (request.TargetCase)
             {
                 case RemoveFromQueueRequest.TargetOneofCase.Index:
-                    ctrl.RemoveFromQueue(request.Index);
+                    _timeline.RemoveFromQueue(request.InstanceId, request.Index);
                     break;
                 case RemoveFromQueueRequest.TargetOneofCase.Uuid:
-                    ctrl.RemoveFromQueue(request.Uuid);
+                    _timeline.RemoveFromQueue(request.InstanceId, request.Uuid);
                     break;
             }
-            SaveQueueState(request.InstanceId, ctrl);
             return Task.FromResult(new RemoveFromQueueResponse());
         }
 
@@ -220,9 +210,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "moveInQueue");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.MoveInQueue(request.FromIndex, request.ToIndex);
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.MoveInQueue(request.InstanceId, request.FromIndex, request.ToIndex);
             return Task.FromResult(new MoveInQueueResponse());
         }
 
@@ -230,9 +218,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "clearQueue");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.ClearQueue();
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.ClearQueue(request.InstanceId);
             return Task.FromResult(new ClearQueueResponse());
         }
 
@@ -240,9 +226,8 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "getHistory");
-            var ctrl = GetController(request.InstanceId);
             var resp = new GetHistoryResponse();
-            resp.History.AddRange(ctrl.History.Select((m, i) => ToQueueTrack(m, i)));
+            resp.History.AddRange(_timeline.Get(request.InstanceId).HistoryUuids.Select((u, i) => ToQueueTrack(u, i)));
             return Task.FromResult(resp);
         }
 
@@ -250,9 +235,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "removeFromHistory");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.RemoveFromHistory(request.Index);
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.RemoveFromHistory(request.InstanceId, request.Index);
             return Task.FromResult(new RemoveFromHistoryResponse());
         }
 
@@ -260,9 +243,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "moveInHistory");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.MoveInHistory(request.FromIndex, request.ToIndex);
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.MoveInHistory(request.InstanceId, request.FromIndex, request.ToIndex);
             return Task.FromResult(new MoveInHistoryResponse());
         }
 
@@ -270,9 +251,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireQueueManagement(caps, "clearHistory");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.ClearHistory();
-            SaveQueueState(request.InstanceId, ctrl);
+            _timeline.ClearHistory(request.InstanceId);
             return Task.FromResult(new ClearHistoryResponse());
         }
 
@@ -280,9 +259,8 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequirePlaylistManagement(caps, "getPlaylistSources");
-            var sources = GetController(request.InstanceId).PlaylistSources;
             var resp = new GetPlaylistSourcesResponse();
-            resp.Sources.AddRange(sources.Select(s => new SDK.Protos.Services.PlaylistSourceInfo
+            resp.Sources.AddRange(_timeline.GetPlaylistSources(request.InstanceId).Select(s => new SDK.Protos.Services.PlaylistSourceInfo
             {
                 Id = s.Id,
                 Name = s.Name,
@@ -297,18 +275,34 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequirePlaylistManagement(caps, "setPlaylistSources");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.SetPlaylistSources(request.Sources.Select(s =>
+            _timeline.SetPlaylistSources(request.InstanceId, request.Sources.Select(s =>
                 new PlaylistSourceRequest { id = s.Id, name = s.Name, kind = s.Kind, refId = s.RefId, uuids = s.Uuids.ToArray() }));
-            SaveQueueState(request.InstanceId, ctrl);
             return Task.FromResult(new SetPlaylistSourcesResponse());
         }
 
         public override Task<PlaybackStatus> GetStatus(GetStatusRequest request, ServerCallContext context)
         {
             var status = _sessions.GetPlaybackStatus(request.InstanceId);
-            if (status == null)
-                throw new RpcException(new Status(StatusCode.NotFound, "Instance not found"));
+            if (status != null)
+                return Task.FromResult(status);
+
+            var profile = GetProfileOrThrow(request.InstanceId);
+            var timeline = _timeline.Get(request.InstanceId);
+            status = new PlaybackStatus
+            {
+                Shuffle = timeline.Shuffle,
+                RepeatMode = timeline.RepeatMode,
+                Volume = profile.Volume
+            };
+            if (!string.IsNullOrWhiteSpace(timeline.CurrentUuid))
+            {
+                var track = _library.GetTrack(timeline.CurrentUuid);
+                status.TrackUuid = timeline.CurrentUuid;
+                status.Title = track?.Title ?? "";
+                status.Artist = track?.Artist ?? "";
+                status.AlbumId = track?.AlbumId ?? "";
+                status.Duration = track?.Duration ?? 0;
+            }
             return Task.FromResult(status);
         }
 
@@ -316,23 +310,18 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireEqualizer(caps, "getEqualizer");
-            var state = GetController(request.InstanceId).Equalizer.CurrentState;
-            return Task.FromResult(MapEqualizerState(state));
+            return Task.FromResult(GetProfileOrThrow(request.InstanceId).Equalizer ?? new SDK.Protos.Models.EqualizerState { SoftClipEnabled = true });
         }
 
         public override Task<SetEqualizerResponse> SetEqualizer(SetEqualizerRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequireEqualizer(caps, "setEqualizer");
-            var ctrl = GetController(request.InstanceId);
-            ctrl.Equalizer.UpdateState(MapEqualizerStateToInternal(request.State));
             _registry.SaveEqualizer(request.InstanceId, request.State);
             return Task.FromResult(new SetEqualizerResponse { Saved = true });
         }
 
-        // ── Helpers ──
-
-        private static QueueTrack ToQueueTrack(Track m, int index) => new QueueTrack
+        private static QueueTrack ToQueueTrack(Track m, int index) => new()
         {
             Index = index,
             Uuid = m.Uuid,
@@ -344,48 +333,12 @@ namespace OmniMixPlayer.Backend.Services
             CoverUri = m.CoverUri
         };
 
-        private static SDK.Protos.Models.EqualizerState MapEqualizerState(Audio.EqualizerState internalState)
+        private QueueTrack ToQueueTrack(string uuid, int index)
         {
-            var state = new SDK.Protos.Models.EqualizerState
-            {
-                Enabled = internalState.Enabled,
-                GlobalGainDb = internalState.GlobalGainDb,
-                SoftClipEnabled = internalState.SoftClipEnabled
-            };
-            foreach (var pt in internalState.Points)
-            {
-                state.Points.Add(new SDK.Protos.Models.EqualizerPoint
-                {
-                    Id = pt.Id,
-                    Frequency = pt.Frequency,
-                    GainDb = pt.GainDb,
-                    Q = pt.Q,
-                    Type = (SDK.Protos.Models.EqualizerFilterType)(int)pt.Type
-                });
-            }
-            return state;
-        }
-
-        private static Audio.EqualizerState MapEqualizerStateToInternal(SDK.Protos.Models.EqualizerState proto)
-        {
-            var state = new Audio.EqualizerState
-            {
-                Enabled = proto.Enabled,
-                GlobalGainDb = proto.GlobalGainDb,
-                SoftClipEnabled = proto.SoftClipEnabled
-            };
-            foreach (var pt in proto.Points)
-            {
-                state.Points.Add(new Audio.EqualizerPoint
-                {
-                    Id = pt.Id,
-                    Frequency = pt.Frequency,
-                    GainDb = pt.GainDb,
-                    Q = pt.Q,
-                    Type = (Audio.EqualizerFilterType)(int)pt.Type
-                });
-            }
-            return state;
+            var track = _library.GetTrack(uuid);
+            if (track == null)
+                return new QueueTrack { Index = index, Uuid = uuid ?? "" };
+            return ToQueueTrack(track, index);
         }
     }
 }

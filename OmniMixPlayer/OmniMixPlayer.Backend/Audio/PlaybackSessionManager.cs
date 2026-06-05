@@ -27,6 +27,9 @@ namespace OmniMixPlayer.Backend.Audio
         private readonly ILibraryRegistry _library;
         private readonly IStreamingService _streamingService;
         private readonly InstanceRegistry _registry;
+        private readonly PlaybackTimelineStore _timeline;
+        private readonly Action<string> _timelineChangedHandler;
+        private readonly Action<string> _profileChangedHandler;
         private readonly CancellationTokenSource _cleanupCts = new();
         private bool _disposed;
 
@@ -41,7 +44,8 @@ namespace OmniMixPlayer.Backend.Audio
             IEventBus eventBus,
             ILibraryRegistry library,
             IStreamingService streamingService,
-            InstanceRegistry registry)
+            InstanceRegistry registry,
+            PlaybackTimelineStore timeline)
         {
             _loggerFactory = loggerFactory;
             _logger = loggerFactory.CreateLogger("PlaybackSessionManager");
@@ -49,6 +53,11 @@ namespace OmniMixPlayer.Backend.Audio
             _library = library;
             _streamingService = streamingService;
             _registry = registry;
+            _timeline = timeline;
+            _timelineChangedHandler = id => OnQueueChanged?.Invoke(id);
+            _timeline.OnTimelineChanged += _timelineChangedHandler;
+            _profileChangedHandler = ApplyProfileToOnlineController;
+            _registry.OnProfileChanged += _profileChangedHandler;
             _ = Task.Run(() => CleanupLoopAsync(_cleanupCts.Token));
         }
 
@@ -90,6 +99,7 @@ namespace OmniMixPlayer.Backend.Audio
                     _eventBus,
                     _library,
                     _streamingService,
+                    _timeline,
                     instanceId: id);
                 controller.ApplyProfile(profile);
                 WireController(id, controller);
@@ -162,8 +172,8 @@ namespace OmniMixPlayer.Backend.Audio
         public PlaybackController GetController(string id) => Get(id)?.Controller;
         public bool IsOnline(string id) { lock (_lock) { return _sessions.TryGetValue(id, out var s) && s.IsAttached; } }
 
-        public string GetCurrentTrackUuid(string id) => GetController(id)?.CurrentTrack?.Uuid ?? "";
-        public int GetQueueCount(string id) => GetController(id)?.QueueCount ?? 0;
+        public string GetCurrentTrackUuid(string id) => _timeline.Get(id).CurrentUuid ?? "";
+        public int GetQueueCount(string id) => _timeline.GetManualQueueCount(id);
 
         public PlaybackStatus GetPlaybackStatus(string id)
         {
@@ -190,11 +200,20 @@ namespace OmniMixPlayer.Backend.Audio
             ctrl.OnTrackChanged += track => OnTrackChanged?.Invoke(id, track);
             ctrl.OnStateChanged += state => OnStateChanged?.Invoke(id, ctrl);
             ctrl.OnPositionChanged += pos => OnPositionChanged?.Invoke(id, pos);
-            ctrl.OnQueueChanged += () =>
+        }
+
+        private void ApplyProfileToOnlineController(string id)
+        {
+            PlaybackController ctrl;
+            InstanceProfile profile;
+            lock (_lock)
             {
-                _registry?.SavePlaybackQueue(id, ctrl.CreateQueueSnapshot());
-                OnQueueChanged?.Invoke(id);
-            };
+                if (!_sessions.TryGetValue(id, out var session) || !session.IsAttached)
+                    return;
+                ctrl = session.Controller;
+                profile = _registry.Get(id);
+            }
+            ctrl?.ApplyProfile(profile);
         }
 
         private async Task CleanupLoopAsync(CancellationToken ct)
@@ -212,6 +231,10 @@ namespace OmniMixPlayer.Backend.Audio
                     var expired = _sessions.Values
                         .Where(s => !s.IsAttached && s.DetachedAt.HasValue && (now - s.DetachedAt.Value).TotalSeconds > DetachedTtlSeconds).ToList();
                     foreach (var s in expired) { _sessions.Remove(s.Id); s.Dispose(); }
+                    if (timedOut.Count > 0 || expired.Count > 0)
+                    {
+                        OnSessionsChanged?.Invoke();
+                    }
                 }
             }
         }
@@ -220,6 +243,8 @@ namespace OmniMixPlayer.Backend.Audio
         {
             if (_disposed) return;
             _disposed = true;
+            _timeline.OnTimelineChanged -= _timelineChangedHandler;
+            _registry.OnProfileChanged -= _profileChangedHandler;
             _cleanupCts.Cancel(); _cleanupCts.Dispose();
             lock (_lock) { foreach (var s in _sessions.Values) s.Dispose(); _sessions.Clear(); }
         }

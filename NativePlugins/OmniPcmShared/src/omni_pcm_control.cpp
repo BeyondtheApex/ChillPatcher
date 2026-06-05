@@ -262,6 +262,9 @@ void fill_profile(const omni_mix_player::InstanceProfile& profile, OmniPcmInstan
     out->capability_flags = capability_flags(profile.capabilities());
     out->volume = profile.volume();
     out->target_latency = profile.target_latency();
+    out->mode = static_cast<int32_t>(profile.mode());
+    out->created_at = profile.has_created_at() ? profile.created_at().seconds() : 0;
+    out->updated_at = profile.has_updated_at() ? profile.updated_at().seconds() : 0;
 }
 
 void fill_summary(const omni_mix_player::InstanceSummary& summary, OmniPcmInstanceSummaryInfo* out) {
@@ -275,6 +278,8 @@ void fill_summary(const omni_mix_player::InstanceSummary& summary, OmniPcmInstan
     out->kind = static_cast<int32_t>(summary.kind());
     out->is_online = summary.is_online() ? 1 : 0;
     out->queue_count = summary.queue_count();
+    out->mode = static_cast<int32_t>(summary.mode());
+    out->connected_at = summary.has_connected_at() ? summary.connected_at().seconds() : 0;
 }
 
 void fill_queue_track(const omni_mix_player::QueueTrack& track, OmniPcmQueueTrackInfo* out) {

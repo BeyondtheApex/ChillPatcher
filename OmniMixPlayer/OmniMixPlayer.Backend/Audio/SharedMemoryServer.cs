@@ -365,15 +365,15 @@ namespace OmniMixPlayer.Backend.Audio
         public long BeginStream(string uuid, long totalFramesHint)
         {
             if (_ptr == null) return 0;
-            var streamId = Interlocked.Increment(ref *(long*)(_ptr + SharedMemoryProtocol.StreamId));
+            WriteU32(SharedMemoryProtocol.Flags, 0);
             SetCurrentUuid(uuid);
             ResetCursors();
             WriteI64(SharedMemoryProtocol.TotalFramesHint, Math.Max(0, totalFramesHint));
             WriteI64(SharedMemoryProtocol.DecodedTotalFrames, 0);
             WriteI64(SharedMemoryProtocol.FinalWriteCursor, 0);
             WriteI32(SharedMemoryProtocol.ErrorCode, (int)SharedMemoryStreamError.None);
-            WriteU32(SharedMemoryProtocol.Flags, 0);
             SetStreamState(SharedMemoryStreamState.Preparing);
+            var streamId = Interlocked.Increment(ref *(long*)(_ptr + SharedMemoryProtocol.StreamId));
             Touch();
             return streamId;
         }

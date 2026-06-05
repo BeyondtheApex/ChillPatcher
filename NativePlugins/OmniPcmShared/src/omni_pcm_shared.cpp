@@ -353,7 +353,7 @@ OMNI_PCM_API int64_t OmniPcm_ReadFrames(OmniPcmHandle handle, float* buffer, int
     OmniPcmSnapshot s{};
     snapshot_internal(c, &s);
     if (!same_stream(c, s)) return OMNI_PCM_WRONG_STREAM;
-    if (!OmniPcm_IsFormatReady(handle)) return OMNI_PCM_NOT_READY;
+    if (s.version >= OMNI_PCM_VERSION_2 && (s.flags & OMNI_PCM_FLAG_FORMAT_READY) == 0) return OMNI_PCM_NOT_READY;
     int channels = s.channels > 0 ? s.channels : 2;
     int64_t available = s.write_cursor - s.read_cursor;
     if (available <= 0) return 0;

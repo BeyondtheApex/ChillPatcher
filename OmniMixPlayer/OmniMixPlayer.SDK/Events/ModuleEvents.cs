@@ -166,24 +166,6 @@ namespace OmniMixPlayer.SDK.Events
 
     #endregion
 
-    #region 队列事件
-
-    public class QueueChangedEvent : ModuleEventBase
-    {
-        public QueueChangeType ChangeType { get; set; }
-        public int QueueLength { get; set; }
-    }
-
-    public enum QueueChangeType
-    {
-        Added,
-        Removed,
-        Cleared,
-        Reordered
-    }
-
-    #endregion
-
     #region 增长列表事件
 
     public class GrowableListBottomOutEvent : ModuleEventBase

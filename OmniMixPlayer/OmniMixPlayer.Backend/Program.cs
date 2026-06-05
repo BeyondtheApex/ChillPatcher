@@ -213,12 +213,14 @@ namespace OmniMixPlayer.Backend
             // 9. Instance registry + playback session manager
             var profileStore = new InstanceProfileStore(configDir, loggerFactory.CreateLogger("InstanceProfileStore"));
             var instanceRegistry = new InstanceRegistry(profileStore, loggerFactory.CreateLogger("InstanceRegistry"));
+            var timelineStore = new PlaybackTimelineStore(instanceRegistry, libraryRegistry, EventBus.Instance);
             var sessionManager = new PlaybackSessionManager(
                 loggerFactory,
                 EventBus.Instance,
                 libraryRegistry,
                 streamingService,
-                instanceRegistry);
+                instanceRegistry,
+                timelineStore);
 
             // 10. Create ApiServer (WS only)
             var apiServer = new ApiServer(instanceRegistry, sessionManager, libraryRegistry, loggerFactory.CreateLogger("ApiServer"));
@@ -234,6 +236,7 @@ namespace OmniMixPlayer.Backend
             builder.Services.AddGrpc();
             builder.Services.AddSingleton<ILibraryRegistry>(libraryRegistry);
             builder.Services.AddSingleton(instanceRegistry);
+            builder.Services.AddSingleton(timelineStore);
             builder.Services.AddSingleton(sessionManager);
 
             var app = builder.Build();

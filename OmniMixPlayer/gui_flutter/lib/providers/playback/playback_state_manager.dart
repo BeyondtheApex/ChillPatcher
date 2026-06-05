@@ -76,12 +76,14 @@ class PlaybackStateManager extends ChangeNotifier {
   bool get canControlActiveInstance {
     final id = _activeInstanceId;
     if (id == null) return false;
-    return _capabilities[id]?.serverControlledPlayback == true;
+    return isInstanceOnline(id) &&
+        _capabilities[id]?.serverControlledPlayback == true;
   }
 
   /// Check if a specific instance can be controlled (playback, queue, etc.).
   bool canControlInstance(String instanceId) {
-    return _capabilities[instanceId]?.serverControlledPlayback == true;
+    return isInstanceOnline(instanceId) &&
+        _capabilities[instanceId]?.serverControlledPlayback == true;
   }
 
   bool get canManageActiveLibrary {
@@ -94,6 +96,10 @@ class PlaybackStateManager extends ChangeNotifier {
     final caps = _capabilities[instanceId];
     return caps?.serverControlledPlayback == true ||
         caps?.playlistManagement == true;
+  }
+
+  bool canManageInstanceQueue(String instanceId) {
+    return _capabilities[instanceId]?.queueManagement == true;
   }
 
   /// Whether the active instance supports a specific capability.
@@ -183,22 +189,22 @@ class PlaybackStateManager extends ChangeNotifier {
       }
       _lastVolume = profile.volume;
       _lastTargetLatency = profile.targetLatency;
-      final pq = profile.playbackQueue;
+      final timeline = profile.playbackTimeline;
       try {
         _activeQueue = await api.getInstanceQueue(_activeInstanceId!);
       } catch (_) {
-        _activeQueue = pq.queueUuids
+        _activeQueue = timeline.manualQueueUuids
             .map((u) => QueueTrack()..uuid = u)
             .toList();
       }
       try {
         _activeHistory = await api.getInstanceHistory(_activeInstanceId!);
       } catch (_) {
-        _activeHistory = pq.historyUuids
+        _activeHistory = timeline.historyUuids
             .map((u) => QueueTrack()..uuid = u)
             .toList();
       }
-      _playlistSources = pq.playlistSources.toList();
+      _playlistSources = timeline.playlistSources.toList();
       await _rebuildActivePlaylistFromSources();
       notifyListeners();
     } catch (e) {
@@ -290,11 +296,11 @@ class PlaybackStateManager extends ChangeNotifier {
       _instances = list;
       _syncMediaControls();
 
+      final active = activeInstance;
       if (_activeInstanceId == nextActiveId && _activeInstanceId != null) {
         await loadActiveProfile();
       }
 
-      final active = activeInstance;
       if (active != null) {
         try {
           final prof = await api.getInstanceProfile(active.id);
@@ -432,7 +438,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> setVolumeActive(double volume) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !hasCapability((c) => c.volumeControl)) return;
     _lastVolume = volume;
     notifyListeners();
     await api.setVolume(instance.id, volume);
@@ -441,7 +447,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> setTargetLatencyActive(double latency) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !hasCapability((c) => c.audioPlayback)) return;
     _lastTargetLatency = latency;
     notifyListeners();
     await api.setLatency(instance.id, latency);
@@ -459,14 +465,14 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> addSongToActiveQueue(String uuid) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canManageInstanceQueue(instance.id)) return;
     await api.addToQueue(instance.id, uuid);
     await refreshPlayback();
   }
 
   Future<void> removeQueueItem(int index) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canManageInstanceQueue(instance.id)) return;
     if (index < 0 || index >= _activeQueue.length) return;
     await api.removeQueueAt(instance.id, index);
     await refreshPlayback();
@@ -474,21 +480,21 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> clearActiveQueue() async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canManageInstanceQueue(instance.id)) return;
     await api.clearQueue(instance.id);
     await refreshPlayback();
   }
 
   Future<void> clearActiveHistory() async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canManageInstanceQueue(instance.id)) return;
     await api.clearHistory(instance.id);
     await refreshPlayback();
   }
 
   Future<void> moveQueueItem(int from, int to) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canManageInstanceQueue(instance.id)) return;
     if (from < 0 || from >= _activeQueue.length) return;
     if (to < 0 || to >= _activeQueue.length) return;
     await api.moveQueue(instance.id, from, to);
@@ -497,21 +503,21 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> removeHistoryItem(int index) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canManageInstanceQueue(instance.id)) return;
     await api.removeHistoryAt(instance.id, index);
     await refreshPlayback();
   }
 
   Future<void> moveHistoryItem(int from, int to) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canManageInstanceQueue(instance.id)) return;
     await api.moveHistory(instance.id, from, to);
     await refreshPlayback();
   }
 
   Future<void> addSongNextOnActive(String uuid) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canManageInstanceQueue(instance.id)) return;
     await api.insertQueueAt(instance.id, uuids: [uuid], index: 0);
     await refreshPlayback();
   }
@@ -524,14 +530,14 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> setShuffle(bool enabled) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !hasCapability((c) => c.shuffle)) return;
     await api.setShuffle(instance.id, enabled);
     await refreshPlayback();
   }
 
   Future<void> setRepeatMode(String mode) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !hasCapability((c) => c.repeat)) return;
     await api.setRepeatMode(instance.id, mode);
     await refreshPlayback();
   }

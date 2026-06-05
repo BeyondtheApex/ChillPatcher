@@ -199,6 +199,8 @@ typedef struct OmniPcmInstanceSummaryInfo {
     int32_t kind;
     int32_t is_online;
     int32_t queue_count;
+    int32_t mode;
+    int64_t connected_at;
 } OmniPcmInstanceSummaryInfo;
 
 typedef struct OmniPcmInstanceProfileInfo {
@@ -211,6 +213,9 @@ typedef struct OmniPcmInstanceProfileInfo {
     uint32_t capability_flags;
     float volume;
     float target_latency;
+    int32_t mode;
+    int64_t created_at;
+    int64_t updated_at;
 } OmniPcmInstanceProfileInfo;
 
 typedef struct OmniPcmQueueTrackInfo {

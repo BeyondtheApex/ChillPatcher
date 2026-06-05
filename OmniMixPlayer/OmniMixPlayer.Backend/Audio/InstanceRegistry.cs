@@ -19,6 +19,7 @@ namespace OmniMixPlayer.Backend.Audio
         public InstanceProfileStore ProfileStore => _store;
 
         public event Action OnChanged;
+        public event Action<string> OnProfileChanged;
 
         public InstanceRegistry(InstanceProfileStore store, ILogger logger)
         {
@@ -49,7 +50,7 @@ namespace OmniMixPlayer.Backend.Audio
                 TargetLatency = existing.TargetLatency,
                 Equalizer = existing.Equalizer ?? new SDK.Protos.Models.EqualizerState { SoftClipEnabled = true },
                 ActiveQueueId = existing.ActiveQueueId ?? "default",
-                PlaybackQueue = existing.PlaybackQueue ?? new PlaybackQueueState { ActiveQueueId = existing.ActiveQueueId ?? "default" },
+                PlaybackTimeline = EnsureTimeline(existing.PlaybackTimeline),
                 CreatedAt = existing.CreatedAt ?? new OmniTimestamp { Seconds = now }
             };
             merged.ImportedPlaylistIds.AddRange(existing.ImportedPlaylistIds);
@@ -70,6 +71,7 @@ namespace OmniMixPlayer.Backend.Audio
             profile.Id = SanitizeId(profile.Id);
             _store.Upsert(profile);
             OnChanged?.Invoke();
+            OnProfileChanged?.Invoke(profile.Id);
         }
 
         public bool Delete(string id)
@@ -102,25 +104,43 @@ namespace OmniMixPlayer.Backend.Audio
             return profile;
         }
 
-        public void SaveVolume(string id, float volume) { _store.SaveVolume(SanitizeId(id), volume); }
-        public void SaveTargetLatency(string id, float latency) { _store.SaveTargetLatency(SanitizeId(id), latency); }
-        public void SaveEqualizer(string id, SDK.Protos.Models.EqualizerState eq) { _store.SaveEqualizer(SanitizeId(id), eq); }
-        public void SavePlaybackQueue(string id, PlaybackQueueState queue)
+        public void SaveVolume(string id, float volume)
+        {
+            id = SanitizeId(id);
+            _store.SaveVolume(id, volume);
+            OnChanged?.Invoke();
+            OnProfileChanged?.Invoke(id);
+        }
+
+        public void SaveTargetLatency(string id, float latency)
+        {
+            id = SanitizeId(id);
+            _store.SaveTargetLatency(id, latency);
+            OnChanged?.Invoke();
+            OnProfileChanged?.Invoke(id);
+        }
+
+        public void SaveEqualizer(string id, SDK.Protos.Models.EqualizerState eq)
+        {
+            id = SanitizeId(id);
+            _store.SaveEqualizer(id, eq);
+            OnChanged?.Invoke();
+            OnProfileChanged?.Invoke(id);
+        }
+        public void SavePlaybackTimeline(string id, PlaybackTimelineState timeline)
         {
             var profile = _store.Get(SanitizeId(id));
-            profile.PlaybackQueue = queue ?? new PlaybackQueueState { ActiveQueueId = profile.ActiveQueueId ?? "default" };
-            profile.ActiveQueueId = profile.PlaybackQueue.ActiveQueueId;
+            profile.PlaybackTimeline = EnsureTimeline(timeline);
             profile.ImportedPlaylistIds.Clear();
-            profile.ImportedPlaylistIds.AddRange(profile.PlaybackQueue.PlaylistSources.Select(s => s.Id));
+            profile.ImportedPlaylistIds.AddRange(profile.PlaybackTimeline.PlaylistSources.Select(s => s.Id));
             profile.Queues.Clear();
             profile.Queues.Add(new QueueInfo
             {
-                Id = profile.PlaybackQueue.ActiveQueueId ?? "default",
+                Id = profile.ActiveQueueId ?? "default",
                 Name = "Default",
-                SongCount = profile.PlaybackQueue.QueueUuids.Count
+                SongCount = profile.PlaybackTimeline.ManualQueueUuids.Count
             });
             _store.Upsert(profile);
-            OnChanged?.Invoke();
         }
 
         public List<InstanceSummary> ListSummaries(PlaybackSessionManager sessions = null)
@@ -130,20 +150,40 @@ namespace OmniMixPlayer.Backend.Audio
             foreach (var p in allProfiles)
             {
                 var online = sessions?.IsOnline(p.Id) ?? false;
+                var session = sessions?.Get(p.Id);
+                var connectedAt = (session != null && online)
+                    ? new OmniTimestamp { Seconds = new DateTimeOffset(session.CreatedAt).ToUnixTimeSeconds() }
+                    : null;
+
                 summaries.Add(new InstanceSummary
                 {
                     Id = p.Id,
                     DisplayName = p.DisplayName,
                     Kind = p.Kind,
                     IsOnline = online,
-                    CurrentTrackUuid = sessions?.GetCurrentTrackUuid(p.Id) ?? "",
-                    QueueCount = sessions?.GetQueueCount(p.Id) ?? 0
+                    CurrentTrackUuid = p.PlaybackTimeline?.CurrentUuid ?? "",
+                    QueueCount = p.PlaybackTimeline?.ManualQueueUuids.Count ?? 0,
+                    ModId = p.ModId ?? "",
+                    GameName = p.GameName ?? "",
+                    Mode = p.Mode,
+                    ConnectedAt = connectedAt
                 });
             }
             return summaries;
         }
 
         private static string SanitizeId(string id) => (id ?? "").Replace("..", "").Replace("/", "").Replace("\\", "").Trim();
+
+        private static PlaybackTimelineState EnsureTimeline(PlaybackTimelineState timeline)
+        {
+            timeline ??= new PlaybackTimelineState();
+            timeline.Version = 2;
+            if (timeline.SourceCursor == 0 && timeline.SourceUuids.Count == 0)
+                timeline.SourceCursor = -1;
+            if (timeline.CurrentSourceIndex == 0 && string.IsNullOrWhiteSpace(timeline.CurrentUuid))
+                timeline.CurrentSourceIndex = -1;
+            return timeline;
+        }
 
         public void Dispose() => _store?.Dispose();
     }
