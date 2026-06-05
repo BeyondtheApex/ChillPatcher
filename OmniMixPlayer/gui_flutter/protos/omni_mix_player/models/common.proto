@@ -30,13 +30,6 @@ enum TrackSortField {
   TRACK_SORT_FIELD_CREATED_AT = 6;
 }
 
-// 播放模式（客户端声明）
-enum PlaybackModeType {
-  PLAYBACK_MODE_UNSPECIFIED = 0;
-  PLAYBACK_MODE_CLIENT_MANAGED = 1;
-  PLAYBACK_MODE_SERVER_MANAGED = 2;
-}
-
 // 重复模式
 enum RepeatMode {
   REPEAT_MODE_UNSPECIFIED = 0;

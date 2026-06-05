@@ -555,7 +555,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        inst.mode.name,
+                        inst.kind.name,
                         style: TextStyle(
                           fontSize: 11,
                           color: st.canControlInstance(inst.id)

@@ -2,17 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
-using System.Net.Sockets;
-using System.Net.WebSockets;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
+using ChillPatcher.SDK.Native;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace ChillPatcher.SDK.Ipc
 {
-    #region Event Args
+    #region Event Args (keep existing signatures)
 
     public class TrackChangedEventArgs : EventArgs
     {
@@ -29,14 +27,8 @@ namespace ChillPatcher.SDK.Ipc
         public float Volume { get; set; }
     }
 
-    public class QueueChangedEventArgs : EventArgs
-    {
-    }
-
-    public class PositionEventArgs : EventArgs
-    {
-        public float Position { get; set; }
-    }
+    public class QueueChangedEventArgs : EventArgs { }
+    public class PositionEventArgs : EventArgs { public float Position { get; set; } }
 
     public class ModuleChangedEventArgs : EventArgs
     {
@@ -65,9 +57,7 @@ namespace ChillPatcher.SDK.Ipc
         public float TimeMs { get; set; }
     }
 
-    public class PlaylistUpdatedEventArgs : EventArgs
-    {
-    }
+    public class PlaylistUpdatedEventArgs : EventArgs { }
 
     public class ExcludeChangedEventArgs : EventArgs
     {
@@ -78,27 +68,15 @@ namespace ChillPatcher.SDK.Ipc
     #endregion
 
     /// <summary>
-    /// HTTP + WebSocket client that communicates with the OmniMixPlayer backend.
-    /// Supports TCP (primary) and Unix Domain Socket (fallback).
-    /// Discovery: port file → default port (17890) → socket.
+    /// Backend communication client using the native OmniPcmShared DLL via P/Invoke.
+    /// All gRPC-Web, HTTP, and WebSocket communication goes through the C++ SDK.
     /// </summary>
     public class OmniMixPlayerClient : IDisposable
     {
         private const int DefaultPort = 17890;
-        private const string DummyHost = "http://unix";
-        private const string ApiPath = "/api";
-        private const string WsPath = "/ws";
-        private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
 
-        private readonly int _port;
-        private readonly string _socketPath;
-        private readonly bool _useSocket;
-        private readonly HttpClient _http;
-        private Socket _wsSocket;
-        private ClientWebSocket _ws;
-        private CancellationTokenSource _wsCts;
-        private Task _wsTask;
-        private readonly object _wsLock = new object();
+        private readonly OmniPcmClient _native;
+        private readonly HttpClient _http; // for library queries (tracks/albums/tags) not yet in native SDK
         private string _instanceId;
         private bool _disposed;
 
@@ -113,540 +91,318 @@ namespace ChillPatcher.SDK.Ipc
         public event EventHandler<LyricPositionEventArgs> OnLyricPosition;
         public event EventHandler<ExcludeChangedEventArgs> OnExcludeChanged;
 
-        public bool IsConnected => _ws?.State == WebSocketState.Open;
-
-        /// <summary>TCP mode.</summary>
-        public OmniMixPlayerClient(int port)
-        {
-            _port = port;
-            _useSocket = false;
-            _http = new HttpClient { Timeout = RequestTimeout };
-        }
-
-        /// <summary>Unix socket mode.</summary>
-        public OmniMixPlayerClient(string socketPath, bool useSocket)
-        {
-            _socketPath = socketPath;
-            _useSocket = useSocket;
-            if (useSocket)
-            {
-                throw new PlatformNotSupportedException("Unix domain sockets are not supported under .NET Framework.");
-            }
-            else
-            {
-                _http = new HttpClient { Timeout = RequestTimeout };
-            }
-        }
-
-        private string TcpBaseUrl => $"http://127.0.0.1:{_port}/api";
-        private string TcpWsUrl => $"ws://127.0.0.1:{_port}/ws";
-
-        private string ApiUrl(string path) => _useSocket
-            ? $"{DummyHost}{ApiPath}{path}"
-            : $"{TcpBaseUrl}{path}";
-
+        public bool IsConnected => !_disposed && !string.IsNullOrEmpty(_instanceId);
         public string InstanceId => _instanceId;
 
-        private string InstancePath(string path)
+        private static readonly OmniPcmCapabilityFlags ChillCaps =
+            OmniPcmCapabilityFlags.ServerControlledPlayback |
+            OmniPcmCapabilityFlags.QueueManagement |
+            OmniPcmCapabilityFlags.PlaylistManagement |
+            OmniPcmCapabilityFlags.MultiplePlaylists |
+            OmniPcmCapabilityFlags.TagFiltering |
+            OmniPcmCapabilityFlags.AlbumFiltering |
+            OmniPcmCapabilityFlags.Shuffle |
+            OmniPcmCapabilityFlags.Repeat |
+            OmniPcmCapabilityFlags.Seek |
+            OmniPcmCapabilityFlags.VolumeControl |
+            OmniPcmCapabilityFlags.AudioPlayback |
+            OmniPcmCapabilityFlags.CustomSystemMediaService;
+
+        public OmniMixPlayerClient(int port)
         {
-            if (string.IsNullOrEmpty(_instanceId))
-                throw new InvalidOperationException("No playback instance is connected.");
-            return $"/instances/{Uri.EscapeDataString(_instanceId)}{path}";
+            _native = new OmniPcmClient(port: port > 0 ? port : 0);
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         }
 
+        public OmniMixPlayerClient(string socketPath, bool useSocket)
+        {
+            if (useSocket)
+                throw new PlatformNotSupportedException("Unix sockets not supported by native SDK; use TCP mode.");
+            _native = new OmniPcmClient();
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        }
 
-#region Connection
+        private string BaseUrl => $"http://127.0.0.1:{_native.Port}/api";
 
-public async Task ConnectAsync()
-{
-    await ConnectAsync(CancellationToken.None);
-}
+        public async Task ConnectAsync()
+        {
+            // Native SDK auto-discovers port from omnimix_port.txt
+            await Task.CompletedTask;
+        }
 
-public async Task ConnectAsync(CancellationToken cancellationToken)
-{
-    lock (_wsLock)
-    {
-        if (_ws?.State == WebSocketState.Open)
-            return;
+        public async Task DisconnectAsync()
+        {
+            _native.StopEvents();
+            if (!string.IsNullOrEmpty(_instanceId))
+            {
+                try { _native.DisconnectInstance(_instanceId); } catch { }
+                _instanceId = null;
+            }
+            await Task.CompletedTask;
+        }
 
-        _wsCts?.Cancel();
-        _wsCts?.Dispose();
-        _ws?.Dispose();
-        _wsSocket?.Dispose();
+        public async Task<JObject> ConnectInstance(string clientId, string role, string mode)
+        {
+            var info = _native.ConnectInstance(clientId, ChillCaps);
+            _instanceId = info.instanceId;
 
-        _wsSocket = null;
-        _ws = null;
-        _wsCts = new CancellationTokenSource();
-    }
+            // Start WebSocket events
+            _native.StartEvents(HandleNativeEvent);
 
-    if (_useSocket)
-    {
-        await ConnectUnixWsAsync(cancellationToken);
-    }
-    else
-    {
-        _ws = new ClientWebSocket();
-        await _ws.ConnectAsync(new Uri(TcpWsUrl), cancellationToken);
-    }
-    _wsTask = Task.Run(() => ReceiveLoop(_wsCts.Token));
-}
+            return new JObject
+            {
+                ["instanceId"] = info.instanceId,
+                ["isNew"] = info.isNew != 0,
+                ["sharedMemoryName"] = $"Global\\OmniMixPlayer_PCM_{_instanceId}",
+                ["noInstance"] = false
+            };
+        }
 
-private Task ConnectUnixWsAsync(CancellationToken ct)
-{
-    throw new PlatformNotSupportedException("Unix domain sockets are not supported under .NET Framework.");
-}
+        public async Task DisconnectInstance()
+        {
+            if (!string.IsNullOrEmpty(_instanceId))
+            {
+                try { _native.DisconnectInstance(_instanceId); } catch { }
+                _instanceId = null;
+            }
+            await Task.CompletedTask;
+        }
 
-public async Task DisconnectAsync()
-{
-    lock (_wsLock)
-    {
-        _wsCts?.Cancel();
-    }
+        public async Task<bool> HeartbeatInstance()
+        {
+            if (string.IsNullOrEmpty(_instanceId)) return false;
+            try { return _native.Heartbeat(_instanceId); }
+            catch { return false; }
+        }
 
-    if (_wsTask != null)
-    {
-        try { await _wsTask; }
-        catch (OperationCanceledException) { }
-        catch (Exception) { }
-    }
+        #region Playback Control
 
-    lock (_wsLock)
-    {
-        if (_ws?.State == WebSocketState.Open || _ws?.State == WebSocketState.CloseReceived)
+        public async Task Play(string uuid) => _native.Play(_instanceId, uuid);
+        public async Task Pause() => _native.PlaybackCommand(_instanceId, OmniPcmCommand.Pause);
+        public async Task Resume() => _native.PlaybackCommand(_instanceId, OmniPcmCommand.Resume);
+        public async Task Toggle() => _native.PlaybackCommand(_instanceId, OmniPcmCommand.Toggle);
+        public async Task Next() => _native.PlaybackCommand(_instanceId, OmniPcmCommand.Next);
+        public async Task Prev() => _native.PlaybackCommand(_instanceId, OmniPcmCommand.Prev);
+        public async Task Seek(float position) => _native.Seek(_instanceId, position);
+        public async Task SetVolume(float volume) => _native.SetVolume(_instanceId, volume);
+        public async Task SetShuffle(bool enabled) => _native.SetShuffle(_instanceId, enabled);
+        public async Task SetRepeat(string mode)
+        {
+            int m = mode switch { "one" => 2, "all" => 3, _ => 1 };
+            _native.SetRepeat(_instanceId, m);
+        }
+
+        #endregion
+
+        #region Playlist Query (HTTP fallback for library)
+
+        public async Task<JObject> GetStatus()
+        {
+            var s = _native.GetStatus(_instanceId);
+            return JObject.FromObject(new
+            {
+                isPlaying = s.isPlaying != 0,
+                position = s.position,
+                volume = s.volume,
+                shuffle = s.shuffle != 0,
+                repeatMode = s.repeatMode,
+                trackUuid = s.trackUuid,
+                title = s.title,
+                artist = s.artist,
+                duration = s.duration
+            });
+        }
+
+        public async Task<JToken> GetQueue()
+        {
+            var tracks = _native.GetQueue(_instanceId);
+            var arr = new JArray();
+            foreach (var t in tracks)
+                arr.Add(new JObject { ["uuid"] = t.uuid, ["title"] = t.title, ["artist"] = t.artist, ["duration"] = t.duration });
+            return arr;
+        }
+
+        public async Task AddToQueue(string uuid) => _native.AddToQueue(_instanceId, uuid);
+        public async Task ClearQueue() => _native.ClearQueue(_instanceId);
+
+        public async Task InsertIntoQueue(int index, System.Collections.Generic.IEnumerable<string> uuids)
+        {
+            await PostAsync($"/instances/{Uri.EscapeDataString(_instanceId)}/queue/insert", new { index, uuids });
+        }
+
+        public async Task RemoveFromQueue(int index)
+        {
+            await _http.DeleteAsync($"{BaseUrl}/instances/{Uri.EscapeDataString(_instanceId)}/queue/{index}");
+        }
+
+        public async Task RemoveFromQueue(string uuid)
+        {
+            await PostAsync($"/instances/{Uri.EscapeDataString(_instanceId)}/queue/remove", new { uuid });
+        }
+
+        public async Task MoveInQueue(int from, int to)
+        {
+            await PostAsync($"/instances/{Uri.EscapeDataString(_instanceId)}/queue/move", new { from, to });
+        }
+
+        public async Task<JToken> GetTags()
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/tags");
+            return JToken.Parse(json);
+        }
+
+        public async Task<JToken> GetAlbums(string tagId = null)
+        {
+            var url = $"{BaseUrl}/albums";
+            if (!string.IsNullOrEmpty(tagId)) url += $"?tagId={Uri.EscapeDataString(tagId)}";
+            return JToken.Parse(await _http.GetStringAsync(url));
+        }
+
+        public async Task<JToken> GetSongs(string albumId = null, string tagId = null)
+        {
+            var url = $"{BaseUrl}/songs";
+            var sep = "?";
+            if (!string.IsNullOrEmpty(albumId)) { url += $"{sep}albumId={Uri.EscapeDataString(albumId)}"; sep = "&"; }
+            if (!string.IsNullOrEmpty(tagId)) { url += $"{sep}tagId={Uri.EscapeDataString(tagId)}"; }
+            return JToken.Parse(await _http.GetStringAsync(url));
+        }
+
+        public async Task<JToken> GetHistory()
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/instances/{Uri.EscapeDataString(_instanceId)}/history");
+            return JToken.Parse(json);
+        }
+
+        public async Task ClearHistory()
+        {
+            await _http.PostAsync($"{BaseUrl}/instances/{Uri.EscapeDataString(_instanceId)}/history/clear", null);
+        }
+
+        public async Task SetFavorite(string uuid, bool fav)
+        {
+            await PostAsync("/favorite", new { uuid, isFavorite = fav });
+        }
+
+        public async Task SetExcluded(string uuid, bool excluded)
+        {
+            await PostAsync("/exclude", new { uuid, isFavorite = excluded });
+        }
+
+        #endregion
+
+        #region Cover & Lyrics
+
+        public async Task<(byte[] data, string mimeType)> GetTrackCover(string uuid)
+        {
+            var resp = await _http.GetAsync($"{BaseUrl}/track/cover?uuid={Uri.EscapeDataString(uuid)}");
+            resp.EnsureSuccessStatusCode();
+            return (await resp.Content.ReadAsByteArrayAsync(), resp.Content.Headers.ContentType?.MediaType ?? "image/jpeg");
+        }
+
+        public async Task<(byte[] data, string mimeType)> GetBytesAsync(string path)
+        {
+            var resp = await _http.GetAsync($"{BaseUrl}/{path.TrimStart('/')}");
+            resp.EnsureSuccessStatusCode();
+            return (await resp.Content.ReadAsByteArrayAsync(), resp.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
+        }
+
+        public async Task<JObject> GetSong(string uuid)
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/song/{Uri.EscapeDataString(uuid)}");
+            return JObject.Parse(json);
+        }
+
+        public async Task<JObject> GetLyric(string uuid)
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/lyric/{Uri.EscapeDataString(uuid)}");
+            return JObject.Parse(json);
+        }
+
+        public async Task<string> GetAsync(string path)
+        {
+            return await _http.GetStringAsync($"{BaseUrl}{path}");
+        }
+
+        public async Task<string> PostAsync(string path, object body)
+        {
+            var json = JsonConvert.SerializeObject(body);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync($"{BaseUrl}{path}", content);
+            resp.EnsureSuccessStatusCode();
+            return await resp.Content.ReadAsStringAsync();
+        }
+
+        public async Task<JObject> GetVersion()
+        {
+            var json = await _http.GetStringAsync($"{BaseUrl}/version");
+            return JObject.Parse(json);
+        }
+
+        #endregion
+
+        #region Events Dispatch
+
+        private void HandleNativeEvent(OmniPcmEventInfo e)
         {
             try
             {
-                _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None).GetAwaiter().GetResult();
+                switch (e.type)
+                {
+                    case "track.changed":
+                        OnTrackChanged?.Invoke(this, new TrackChangedEventArgs
+                        {
+                            Uuid = e.trackUuid,
+                            Title = e.title,
+                            Artist = e.artist,
+                            Duration = e.duration
+                        });
+                        break;
+                    case "state.changed":
+                        OnStateChanged?.Invoke(this, new StateChangedEventArgs
+                        {
+                            IsPlaying = e.state == 1,
+                            Position = e.position
+                        });
+                        break;
+                    case "position":
+                        OnPosition?.Invoke(this, new PositionEventArgs { Position = e.position });
+                        break;
+                    case "queue.changed":
+                        OnQueueChanged?.Invoke(this, new QueueChangedEventArgs());
+                        break;
+                    case "playlist.updated":
+                        OnPlaylistUpdated?.Invoke(this, new PlaylistUpdatedEventArgs());
+                        break;
+                    case "module.changed":
+                        OnModuleChanged?.Invoke(this, new ModuleChangedEventArgs
+                        {
+                            ModuleId = e.moduleId,
+                            Enabled = e.boolValue != 0
+                        });
+                        break;
+                    case "exclude.changed":
+                        OnExcludeChanged?.Invoke(this, new ExcludeChangedEventArgs
+                        {
+                            Uuid = e.trackUuid,
+                            IsExcluded = e.boolValue != 0
+                        });
+                        break;
+                    case "error":
+                        OnError?.Invoke(this, new ErrorEventArgs { Code = "", Message = e.changeType });
+                        break;
+                }
             }
             catch { }
         }
-        _ws?.Dispose();
-        _ws = null;
-        _wsSocket?.Dispose();
-        _wsSocket = null;
-        _wsCts?.Dispose();
-        _wsCts = null;
-    }
-}
-
-private async Task ReceiveLoop(CancellationToken cancellationToken)
-{
-    var buffer = new byte[4096];
-    var messageBuffer = new StringBuilder();
-
-    try
-    {
-        while (!cancellationToken.IsCancellationRequested && _ws?.State == WebSocketState.Open)
-        {
-            messageBuffer.Clear();
-            WebSocketReceiveResult result;
-            do
-            {
-                result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
-                    return;
-                }
-                messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
-            }
-            while (!result.EndOfMessage);
-
-            ProcessMessage(messageBuffer.ToString());
-        }
-    }
-    catch (OperationCanceledException) { }
-    catch (WebSocketException) { }
-    catch (Exception) { }
-}
-
-private void ProcessMessage(string json)
-{
-    try
-    {
-        var obj = JObject.Parse(json);
-        var eventName = obj.GetStringIgnoreCase("event");
-        var data = obj.GetIgnoreCase("data") as JObject;
-
-        if (eventName == null) return;
-
-        switch (eventName)
-        {
-            case "track.changed":
-                OnTrackChanged?.Invoke(this, new TrackChangedEventArgs
-                {
-                    Uuid = data?.GetStringIgnoreCase("uuid"),
-                    Title = data?.GetStringIgnoreCase("title"),
-                    Artist = data?.GetStringIgnoreCase("artist"),
-                    Duration = data?.GetValueIgnoreCase<float>("duration") ?? 0f
-                });
-                break;
-
-            case "state.changed":
-                OnStateChanged?.Invoke(this, new StateChangedEventArgs
-                {
-                    IsPlaying = data?.GetValueIgnoreCase<bool>("isPlaying") ?? false,
-                    Position = data?.GetValueIgnoreCase<float>("position") ?? 0f,
-                    Volume = data?.GetValueIgnoreCase<float>("volume") ?? 0f
-                });
-                break;
-
-            case "queue.changed":
-                OnQueueChanged?.Invoke(this, new QueueChangedEventArgs());
-                break;
-
-            case "position":
-                OnPosition?.Invoke(this, new PositionEventArgs
-                {
-                    Position = data?.GetValueIgnoreCase<float>("position") ?? 0f
-                });
-                break;
-
-            case "module.changed":
-                OnModuleChanged?.Invoke(this, new ModuleChangedEventArgs
-                {
-                    ModuleId = data?.GetStringIgnoreCase("moduleId"),
-                    Enabled = data?.GetValueIgnoreCase<bool>("enabled") ?? false
-                });
-                break;
-
-            case "error":
-                OnError?.Invoke(this, new ErrorEventArgs
-                {
-                    Code = data?.GetStringIgnoreCase("code"),
-                    Message = data?.GetStringIgnoreCase("message")
-                });
-                break;
-
-            case "lyric.fetched":
-                OnLyricFetched?.Invoke(this, new LyricFetchedEventArgs
-                {
-                    Uuid = data?.GetStringIgnoreCase("uuid"),
-                    Lrc = data?.GetStringIgnoreCase("lrc"),
-                    Tlyric = data?.GetStringIgnoreCase("tlyric"),
-                    Rlyric = data?.GetStringIgnoreCase("rlyric")
-                });
-                break;
-
-            case "lyric.position":
-                OnLyricPosition?.Invoke(this, new LyricPositionEventArgs
-                {
-                    Uuid = data?.GetStringIgnoreCase("uuid"),
-                    LineIndex = data?.GetValueIgnoreCase<int>("lineIndex") ?? 0,
-                    TimeMs = data?.GetValueIgnoreCase<float>("timeMs") ?? 0f
-                });
-                break;
-
-            case "playlist.updated":
-                OnPlaylistUpdated?.Invoke(this, new PlaylistUpdatedEventArgs());
-                break;
-
-            case "exclude.changed":
-                OnExcludeChanged?.Invoke(this, new ExcludeChangedEventArgs
-                {
-                    Uuid = data?.GetStringIgnoreCase("uuid"),
-                    IsExcluded = data?.GetValueIgnoreCase<bool>("isExcluded") ?? false
-                });
-                break;
-        }
-    }
-    catch { }
-}
-
-#endregion
-
-#region Playback Control
-
-public async Task Play(string uuid)
-{
-    var content = JsonContent(new { uuid });
-    await _http.PostAsync(ApiUrl(InstancePath("/play")), content);
-}
-
-public async Task Pause()
-{
-    await _http.PostAsync(ApiUrl(InstancePath("/pause")), null);
-}
-
-public async Task Resume()
-{
-    await _http.PostAsync(ApiUrl(InstancePath("/resume")), null);
-}
-
-public async Task Toggle()
-{
-    await _http.PostAsync(ApiUrl(InstancePath("/toggle")), null);
-}
-
-public async Task Next()
-{
-    await _http.PostAsync(ApiUrl(InstancePath("/next")), null);
-}
-
-public async Task Prev()
-{
-    await _http.PostAsync(ApiUrl(InstancePath("/prev")), null);
-}
-
-public async Task Seek(float position)
-{
-    var content = JsonContent(new { position });
-    await _http.PostAsync(ApiUrl(InstancePath("/seek")), content);
-}
-
-public async Task SetVolume(float volume)
-{
-    var content = JsonContent(new { volume });
-    var request = new HttpRequestMessage(HttpMethod.Put, ApiUrl(InstancePath("/volume")))
-    {
-        Content = content
-    };
-    await _http.SendAsync(request);
-}
-
-public async Task SetShuffle(bool enabled)
-{
-    var content = JsonContent(new { enabled });
-    await _http.PostAsync(ApiUrl(InstancePath("/shuffle")), content);
-}
-
-public async Task SetRepeat(string mode)
-{
-    var content = JsonContent(new { mode });
-    await _http.PostAsync(ApiUrl(InstancePath("/repeat")), content);
-}
-
-#endregion
-
-#region Playlist Query
-
-public async Task<JObject> GetStatus()
-{
-    var json = await _http.GetStringAsync(ApiUrl(InstancePath("/status")));
-    return JObject.Parse(json);
-}
-
-public async Task<JObject> GetPlaylist()
-{
-    var json = await _http.GetStringAsync(ApiUrl("/playlist"));
-    return JObject.Parse(json);
-}
-
-public async Task<JToken> GetTags()
-{
-    var json = await _http.GetStringAsync(ApiUrl("/tags"));
-    return JToken.Parse(json);
-}
-
-public async Task<JToken> GetAlbums(string tagId = null)
-{
-    var url = ApiUrl("/albums");
-    if (!string.IsNullOrEmpty(tagId))
-        url += $"?tagId={Uri.EscapeDataString(tagId)}";
-    var json = await _http.GetStringAsync(url);
-    return JToken.Parse(json);
-}
-
-public async Task<JToken> GetSongs(string albumId = null, string tagId = null)
-{
-    var url = ApiUrl("/songs");
-    var separator = "?";
-    if (!string.IsNullOrEmpty(albumId))
-    {
-        url += $"{separator}albumId={Uri.EscapeDataString(albumId)}";
-        separator = "&";
-    }
-    if (!string.IsNullOrEmpty(tagId))
-    {
-        url += $"{separator}tagId={Uri.EscapeDataString(tagId)}";
-    }
-    var json = await _http.GetStringAsync(url);
-    return JToken.Parse(json);
-}
-
-#endregion
-
-#region Queue Management
-
-public async Task<JToken> GetQueue()
-{
-    var json = await _http.GetStringAsync(ApiUrl(InstancePath("/queue")));
-    return JToken.Parse(json);
-}
-
-public async Task AddToQueue(string uuid)
-{
-    var content = JsonContent(new { uuid });
-    await _http.PostAsync(ApiUrl(InstancePath("/queue")), content);
-}
-
-public async Task RemoveFromQueue(int index)
-{
-    await _http.DeleteAsync(ApiUrl(InstancePath($"/queue/{index}")));
-}
-
-public async Task MoveInQueue(int from, int to)
-{
-    var content = JsonContent(new { from, to });
-    await _http.PostAsync(ApiUrl(InstancePath("/queue/move")), content);
-}
-
-public async Task ClearQueue()
-{
-    await _http.PostAsync(ApiUrl(InstancePath("/queue/clear")), null);
-}
-
-#endregion
-
-#region Client Connection
-
-public async Task<JObject> ConnectInstance(string clientId, string role, string mode)
-{
-    var content = JsonContent(new { clientId, role, mode });
-    var response = await _http.PostAsync(ApiUrl("/instances/connect"), content);
-    response.EnsureSuccessStatusCode();
-    var json = await response.Content.ReadAsStringAsync();
-    var obj = JObject.Parse(json);
-    _instanceId = obj.GetStringIgnoreCase("instanceId");
-    return obj;
-}
-
-public async Task DisconnectInstance()
-{
-    try
-    {
-        if (!string.IsNullOrEmpty(_instanceId))
-            await _http.PostAsync(ApiUrl(InstancePath("/disconnect")), null);
-        _instanceId = null;
-    }
-    catch { }
-}
-
-public async Task<bool> HeartbeatInstance()
-{
-    try
-    {
-        var response = await _http.PostAsync(ApiUrl(InstancePath("/heartbeat")), null);
-        return response.IsSuccessStatusCode;
-    }
-    catch { return false; }
-}
-
-public async Task<JArray> GetInstances()
-{
-    var json = await _http.GetStringAsync(ApiUrl("/instances"));
-    return JArray.Parse(json);
-}
-
-public async Task<JObject> GetInstanceStats()
-{
-    var json = await _http.GetStringAsync(ApiUrl("/instances/stats"));
-    return JObject.Parse(json);
-}
-
-#endregion
-
-#region Song
-
-public async Task<JObject> GetSong(string uuid)
-{
-    var json = await _http.GetStringAsync(ApiUrl("/song/" + Uri.EscapeDataString(uuid)));
-    return JObject.Parse(json);
-}
-
-public async Task<JObject> GetLyric(string uuid)
-{
-    var json = await _http.GetStringAsync(ApiUrl("/lyric/" + Uri.EscapeDataString(uuid)));
-    return JObject.Parse(json);
-}
-
-public async Task<(byte[] data, string mimeType)> GetTrackCover(string uuid)
-{
-    var response = await _http.GetAsync(ApiUrl("/track/cover?uuid=" + Uri.EscapeDataString(uuid)));
-    response.EnsureSuccessStatusCode();
-    var data = await response.Content.ReadAsByteArrayAsync();
-    var mimeType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
-    return (data, mimeType);
-}
-
-#endregion
-
-#region Modules
-
-public async Task<JArray> GetModules()
-{
-    var json = await _http.GetStringAsync(ApiUrl("/modules"));
-    return JArray.Parse(json);
-}
-
-public async Task SetModuleEnabled(string id, bool enabled)
-{
-    var content = JsonContent(new { enabled });
-    await _http.PostAsync(ApiUrl("/modules/" + Uri.EscapeDataString(id)), content);
-}
-
-#endregion
-
-#region Version
-
-public async Task<JObject> GetVersion()
-{
-    var json = await _http.GetStringAsync(ApiUrl("/version"));
-    return JObject.Parse(json);
-}
-
-#endregion
-
-#region General
-
-public async Task<string> PostAsync(string path, object body)
-{
-    var content = JsonContent(body);
-    var response = await _http.PostAsync(ApiUrl(path), content);
-    response.EnsureSuccessStatusCode();
-    return await response.Content.ReadAsStringAsync();
-}
-
-public async Task<string> GetAsync(string path)
-{
-    return await _http.GetStringAsync(ApiUrl(path));
-}
-
-public async Task<(byte[] data, string mimeType)> GetBytesAsync(string path)
-{
-    var response = await _http.GetAsync(ApiUrl(path));
-    response.EnsureSuccessStatusCode();
-    var data = await response.Content.ReadAsByteArrayAsync();
-    var mimeType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
-    return (data, mimeType);
-}
-
-#endregion
-
-#region Helpers
-
-private static StringContent JsonContent(object obj)
-{
-    var json = JsonConvert.SerializeObject(obj);
-    return new StringContent(json, Encoding.UTF8, "application/json");
-}
-
-#endregion
-
-#region IDisposable
-
-public void Dispose()
-{
-    if (_disposed) return;
-    _disposed = true;
-    _wsCts?.Cancel();
-    _wsCts?.Dispose();
-    _ws?.Dispose();
-    _wsSocket?.Dispose();
-    _http?.Dispose();
-    _wsTask?.Dispose();
-}
 
         #endregion
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _native?.Dispose();
+            _http?.Dispose();
+        }
     }
 }

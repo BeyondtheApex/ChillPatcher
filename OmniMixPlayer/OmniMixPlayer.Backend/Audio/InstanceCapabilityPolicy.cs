@@ -76,7 +76,6 @@ namespace OmniMixPlayer.Backend.Audio
             return profile?.Capabilities ?? new InstanceCapabilities
             {
                 ServerControlledPlayback = true,
-                ClientManagedPlayback = true,
                 QueueManagement = true,
                 PlaylistManagement = true,
                 TagFiltering = true,

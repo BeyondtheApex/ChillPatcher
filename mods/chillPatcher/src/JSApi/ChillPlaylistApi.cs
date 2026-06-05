@@ -25,25 +25,14 @@ namespace ChillPatcher.JSApi
             _logger = logger;
         }
 
-        #region Tag 查询 (from OmniMixPlayer)
+        #region 能力声明 / 数据查询 (from OmniMixPlayer)
 
-        public async Task<string> getAllTags()
+        /// <summary>
+        /// 获取后端分配的能力声明（Tag 位映射等）
+        /// </summary>
+        public async Task<string> getCapabilities()
         {
-            return await OmniMixIntegration.Instance.GetTagsJson();
-        }
-
-        #endregion
-
-        #region 专辑查询
-
-        public async Task<string> getAllAlbums()
-        {
-            return await OmniMixIntegration.Instance.GetAlbumsJson();
-        }
-
-        public async Task<string> getAlbumsByTag(string tagId)
-        {
-            return await OmniMixIntegration.Instance.GetAlbumsJson(tagId);
+            try { return await OmniMixIntegration.Instance.GetTagsJson(); } catch { return "[]"; }
         }
 
         #endregion
@@ -65,14 +54,9 @@ namespace ChillPatcher.JSApi
             return await OmniMixIntegration.Instance.GetSongsJson(null, tagId);
         }
 
-        public async Task<string> getSongsByModule(string moduleId)
-        {
-            return await OmniMixIntegration.Instance.GetSongsJson();
-        }
-
         #endregion
 
-        #region 播放队列 (游戏内部 PlayQueueManager)
+        #region 播放队列 (后端 Profile 权威，游戏侧只读镜像)
 
         public string getQueue()
         {

@@ -1171,7 +1171,7 @@ class _InstanceManagementCardState extends State<_InstanceManagementCard> {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              inst.mode.name,
+              inst.kind.name,
               style: TextStyle(
                 fontSize: 11,
                 color: widget.state.canControlInstance(inst.id)

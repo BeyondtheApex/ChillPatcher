@@ -46,7 +46,6 @@ options.game_name = "Forza Horizon 6";
 options.display_name = "Forza Horizon 6";
 options.kind = OMNI_PCM_INSTANCE_KIND_GAME_MOD;
 options.capability_flags =
-    OMNI_PCM_CAP_CLIENT_MANAGED_PLAYBACK |
     OMNI_PCM_CAP_SEEK |
     OMNI_PCM_CAP_VOLUME_CONTROL;
 

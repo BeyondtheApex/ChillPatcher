@@ -98,31 +98,6 @@ class TrackSortField extends $pb.ProtobufEnum {
   const TrackSortField._(super.value, super.name);
 }
 
-/// 播放模式（客户端声明）
-class PlaybackModeType extends $pb.ProtobufEnum {
-  static const PlaybackModeType PLAYBACK_MODE_UNSPECIFIED =
-      PlaybackModeType._(0, _omitEnumNames ? '' : 'PLAYBACK_MODE_UNSPECIFIED');
-  static const PlaybackModeType PLAYBACK_MODE_CLIENT_MANAGED =
-      PlaybackModeType._(
-          1, _omitEnumNames ? '' : 'PLAYBACK_MODE_CLIENT_MANAGED');
-  static const PlaybackModeType PLAYBACK_MODE_SERVER_MANAGED =
-      PlaybackModeType._(
-          2, _omitEnumNames ? '' : 'PLAYBACK_MODE_SERVER_MANAGED');
-
-  static const $core.List<PlaybackModeType> values = <PlaybackModeType>[
-    PLAYBACK_MODE_UNSPECIFIED,
-    PLAYBACK_MODE_CLIENT_MANAGED,
-    PLAYBACK_MODE_SERVER_MANAGED,
-  ];
-
-  static final $core.List<PlaybackModeType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 2);
-  static PlaybackModeType? valueOf($core.int value) =>
-      value < 0 || value >= _byValue.length ? null : _byValue[value];
-
-  const PlaybackModeType._(super.value, super.name);
-}
-
 /// 重复模式
 class RepeatMode extends $pb.ProtobufEnum {
   static const RepeatMode REPEAT_MODE_UNSPECIFIED =

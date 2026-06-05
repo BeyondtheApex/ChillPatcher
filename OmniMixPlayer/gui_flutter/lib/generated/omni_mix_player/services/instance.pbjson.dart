@@ -15,6 +15,9 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+import '../models/common.pbjson.dart' as $1;
+import '../models/instance.pbjson.dart' as $0;
+
 @$core.Deprecated('Use deleteInstanceRequestDescriptor instead')
 const DeleteInstanceRequest$json = {
   '1': 'DeleteInstanceRequest',
@@ -251,3 +254,141 @@ final $typed_data.Uint8List inheritFromArchiveResponseDescriptor =
         'ChpJbmhlcml0RnJvbUFyY2hpdmVSZXNwb25zZRIcCglpbmhlcml0ZWQYASABKAhSCWluaGVyaX'
         'RlZBI6Cgdwcm9maWxlGAIgASgLMiAub21uaV9taXhfcGxheWVyLkluc3RhbmNlUHJvZmlsZVIH'
         'cHJvZmlsZQ==');
+
+const $core.Map<$core.String, $core.dynamic> InstanceServiceBase$json = {
+  '1': 'InstanceService',
+  '2': [
+    {
+      '1': 'Connect',
+      '2': '.omni_mix_player.InstanceConnectRequest',
+      '3': '.omni_mix_player.InstanceConnectResponse'
+    },
+    {
+      '1': 'Heartbeat',
+      '2': '.omni_mix_player.InstanceHeartbeatRequest',
+      '3': '.omni_mix_player.InstanceHeartbeatResponse'
+    },
+    {
+      '1': 'Disconnect',
+      '2': '.omni_mix_player.InstanceDisconnectRequest',
+      '3': '.omni_mix_player.InstanceDisconnectResponse'
+    },
+    {
+      '1': 'DeleteInstance',
+      '2': '.omni_mix_player.DeleteInstanceRequest',
+      '3': '.omni_mix_player.DeleteInstanceResponse'
+    },
+    {
+      '1': 'ListInstances',
+      '2': '.omni_mix_player.ListInstancesRequest',
+      '3': '.omni_mix_player.ListInstancesResponse'
+    },
+    {
+      '1': 'GetProfile',
+      '2': '.omni_mix_player.GetProfileRequest',
+      '3': '.omni_mix_player.InstanceProfile'
+    },
+    {
+      '1': 'UpdateProfile',
+      '2': '.omni_mix_player.UpdateProfileRequest',
+      '3': '.omni_mix_player.UpdateProfileResponse'
+    },
+    {
+      '1': 'GetStatus',
+      '2': '.omni_mix_player.GetInstanceStatusRequest',
+      '3': '.omni_mix_player.PlaybackStatus'
+    },
+    {
+      '1': 'ArchiveInstance',
+      '2': '.omni_mix_player.ArchiveInstanceRequest',
+      '3': '.omni_mix_player.ArchiveInstanceResponse'
+    },
+    {
+      '1': 'ListArchives',
+      '2': '.omni_mix_player.ListArchivesRequest',
+      '3': '.omni_mix_player.ListArchivesResponse'
+    },
+    {
+      '1': 'GetArchive',
+      '2': '.omni_mix_player.GetArchiveRequest',
+      '3': '.omni_mix_player.InstanceProfile'
+    },
+    {
+      '1': 'DeleteArchive',
+      '2': '.omni_mix_player.DeleteArchiveRequest',
+      '3': '.omni_mix_player.DeleteArchiveResponse'
+    },
+    {
+      '1': 'InheritFromArchive',
+      '2': '.omni_mix_player.InheritFromArchiveRequest',
+      '3': '.omni_mix_player.InheritFromArchiveResponse'
+    },
+  ],
+};
+
+@$core.Deprecated('Use instanceServiceDescriptor instead')
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    InstanceServiceBase$messageJson = {
+  '.omni_mix_player.InstanceConnectRequest': $0.InstanceConnectRequest$json,
+  '.omni_mix_player.InstanceCapabilities': $0.InstanceCapabilities$json,
+  '.omni_mix_player.InstanceConnectResponse': $0.InstanceConnectResponse$json,
+  '.omni_mix_player.InstanceProfile': $0.InstanceProfile$json,
+  '.omni_mix_player.EqualizerState': $0.EqualizerState$json,
+  '.omni_mix_player.EqualizerPoint': $0.EqualizerPoint$json,
+  '.omni_mix_player.OmniTimestamp': $1.OmniTimestamp$json,
+  '.omni_mix_player.PlaybackTimelineState': $0.PlaybackTimelineState$json,
+  '.omni_mix_player.PlaylistSourceState': $0.PlaylistSourceState$json,
+  '.omni_mix_player.InstanceHeartbeatRequest': $0.InstanceHeartbeatRequest$json,
+  '.omni_mix_player.InstanceHeartbeatResponse':
+      $0.InstanceHeartbeatResponse$json,
+  '.omni_mix_player.InstanceDisconnectRequest':
+      $0.InstanceDisconnectRequest$json,
+  '.omni_mix_player.InstanceDisconnectResponse':
+      $0.InstanceDisconnectResponse$json,
+  '.omni_mix_player.DeleteInstanceRequest': DeleteInstanceRequest$json,
+  '.omni_mix_player.DeleteInstanceResponse': DeleteInstanceResponse$json,
+  '.omni_mix_player.ListInstancesRequest': ListInstancesRequest$json,
+  '.omni_mix_player.ListInstancesResponse': $0.ListInstancesResponse$json,
+  '.omni_mix_player.InstanceSummary': $0.InstanceSummary$json,
+  '.omni_mix_player.GetProfileRequest': GetProfileRequest$json,
+  '.omni_mix_player.UpdateProfileRequest': UpdateProfileRequest$json,
+  '.omni_mix_player.UpdateProfileResponse': UpdateProfileResponse$json,
+  '.omni_mix_player.GetInstanceStatusRequest': GetInstanceStatusRequest$json,
+  '.omni_mix_player.PlaybackStatus': $0.PlaybackStatus$json,
+  '.omni_mix_player.ArchiveInstanceRequest': ArchiveInstanceRequest$json,
+  '.omni_mix_player.ArchiveInstanceResponse': ArchiveInstanceResponse$json,
+  '.omni_mix_player.ListArchivesRequest': ListArchivesRequest$json,
+  '.omni_mix_player.ListArchivesResponse': ListArchivesResponse$json,
+  '.omni_mix_player.GetArchiveRequest': GetArchiveRequest$json,
+  '.omni_mix_player.DeleteArchiveRequest': DeleteArchiveRequest$json,
+  '.omni_mix_player.DeleteArchiveResponse': DeleteArchiveResponse$json,
+  '.omni_mix_player.InheritFromArchiveRequest': InheritFromArchiveRequest$json,
+  '.omni_mix_player.InheritFromArchiveResponse':
+      InheritFromArchiveResponse$json,
+};
+
+/// Descriptor for `InstanceService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
+final $typed_data.Uint8List instanceServiceDescriptor = $convert.base64Decode(
+    'Cg9JbnN0YW5jZVNlcnZpY2USXAoHQ29ubmVjdBInLm9tbmlfbWl4X3BsYXllci5JbnN0YW5jZU'
+    'Nvbm5lY3RSZXF1ZXN0Gigub21uaV9taXhfcGxheWVyLkluc3RhbmNlQ29ubmVjdFJlc3BvbnNl'
+    'EmIKCUhlYXJ0YmVhdBIpLm9tbmlfbWl4X3BsYXllci5JbnN0YW5jZUhlYXJ0YmVhdFJlcXVlc3'
+    'QaKi5vbW5pX21peF9wbGF5ZXIuSW5zdGFuY2VIZWFydGJlYXRSZXNwb25zZRJlCgpEaXNjb25u'
+    'ZWN0Eioub21uaV9taXhfcGxheWVyLkluc3RhbmNlRGlzY29ubmVjdFJlcXVlc3QaKy5vbW5pX2'
+    '1peF9wbGF5ZXIuSW5zdGFuY2VEaXNjb25uZWN0UmVzcG9uc2USYQoORGVsZXRlSW5zdGFuY2US'
+    'Ji5vbW5pX21peF9wbGF5ZXIuRGVsZXRlSW5zdGFuY2VSZXF1ZXN0Gicub21uaV9taXhfcGxheW'
+    'VyLkRlbGV0ZUluc3RhbmNlUmVzcG9uc2USXgoNTGlzdEluc3RhbmNlcxIlLm9tbmlfbWl4X3Bs'
+    'YXllci5MaXN0SW5zdGFuY2VzUmVxdWVzdBomLm9tbmlfbWl4X3BsYXllci5MaXN0SW5zdGFuY2'
+    'VzUmVzcG9uc2USUgoKR2V0UHJvZmlsZRIiLm9tbmlfbWl4X3BsYXllci5HZXRQcm9maWxlUmVx'
+    'dWVzdBogLm9tbmlfbWl4X3BsYXllci5JbnN0YW5jZVByb2ZpbGUSXgoNVXBkYXRlUHJvZmlsZR'
+    'IlLm9tbmlfbWl4X3BsYXllci5VcGRhdGVQcm9maWxlUmVxdWVzdBomLm9tbmlfbWl4X3BsYXll'
+    'ci5VcGRhdGVQcm9maWxlUmVzcG9uc2USVwoJR2V0U3RhdHVzEikub21uaV9taXhfcGxheWVyLk'
+    'dldEluc3RhbmNlU3RhdHVzUmVxdWVzdBofLm9tbmlfbWl4X3BsYXllci5QbGF5YmFja1N0YXR1'
+    'cxJkCg9BcmNoaXZlSW5zdGFuY2USJy5vbW5pX21peF9wbGF5ZXIuQXJjaGl2ZUluc3RhbmNlUm'
+    'VxdWVzdBooLm9tbmlfbWl4X3BsYXllci5BcmNoaXZlSW5zdGFuY2VSZXNwb25zZRJbCgxMaXN0'
+    'QXJjaGl2ZXMSJC5vbW5pX21peF9wbGF5ZXIuTGlzdEFyY2hpdmVzUmVxdWVzdBolLm9tbmlfbW'
+    'l4X3BsYXllci5MaXN0QXJjaGl2ZXNSZXNwb25zZRJSCgpHZXRBcmNoaXZlEiIub21uaV9taXhf'
+    'cGxheWVyLkdldEFyY2hpdmVSZXF1ZXN0GiAub21uaV9taXhfcGxheWVyLkluc3RhbmNlUHJvZm'
+    'lsZRJeCg1EZWxldGVBcmNoaXZlEiUub21uaV9taXhfcGxheWVyLkRlbGV0ZUFyY2hpdmVSZXF1'
+    'ZXN0GiYub21uaV9taXhfcGxheWVyLkRlbGV0ZUFyY2hpdmVSZXNwb25zZRJtChJJbmhlcml0Rn'
+    'JvbUFyY2hpdmUSKi5vbW5pX21peF9wbGF5ZXIuSW5oZXJpdEZyb21BcmNoaXZlUmVxdWVzdBor'
+    'Lm9tbmlfbWl4X3BsYXllci5Jbmhlcml0RnJvbUFyY2hpdmVSZXNwb25zZQ==');

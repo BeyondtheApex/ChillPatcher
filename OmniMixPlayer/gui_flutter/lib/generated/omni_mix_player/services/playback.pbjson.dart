@@ -15,6 +15,8 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+import '../models/instance.pbjson.dart' as $0;
+
 @$core.Deprecated('Use playRequestDescriptor instead')
 const PlayRequest$json = {
   '1': 'PlayRequest',
@@ -819,3 +821,281 @@ const SetEqualizerResponse$json = {
 final $typed_data.Uint8List setEqualizerResponseDescriptor =
     $convert.base64Decode(
         'ChRTZXRFcXVhbGl6ZXJSZXNwb25zZRIUCgVzYXZlZBgBIAEoCFIFc2F2ZWQ=');
+
+const $core.Map<$core.String, $core.dynamic> PlaybackServiceBase$json = {
+  '1': 'PlaybackService',
+  '2': [
+    {
+      '1': 'Play',
+      '2': '.omni_mix_player.PlayRequest',
+      '3': '.omni_mix_player.PlayResponse'
+    },
+    {
+      '1': 'Pause',
+      '2': '.omni_mix_player.PauseRequest',
+      '3': '.omni_mix_player.PauseResponse'
+    },
+    {
+      '1': 'Resume',
+      '2': '.omni_mix_player.ResumeRequest',
+      '3': '.omni_mix_player.ResumeResponse'
+    },
+    {
+      '1': 'Toggle',
+      '2': '.omni_mix_player.ToggleRequest',
+      '3': '.omni_mix_player.ToggleResponse'
+    },
+    {
+      '1': 'Next',
+      '2': '.omni_mix_player.NextRequest',
+      '3': '.omni_mix_player.NextResponse'
+    },
+    {
+      '1': 'Prev',
+      '2': '.omni_mix_player.PrevRequest',
+      '3': '.omni_mix_player.PrevResponse'
+    },
+    {
+      '1': 'Seek',
+      '2': '.omni_mix_player.SeekRequest',
+      '3': '.omni_mix_player.SeekResponse'
+    },
+    {
+      '1': 'Stop',
+      '2': '.omni_mix_player.StopRequest',
+      '3': '.omni_mix_player.StopResponse'
+    },
+    {
+      '1': 'SetVolume',
+      '2': '.omni_mix_player.SetVolumeRequest',
+      '3': '.omni_mix_player.SetVolumeResponse'
+    },
+    {
+      '1': 'GetVolume',
+      '2': '.omni_mix_player.GetVolumeRequest',
+      '3': '.omni_mix_player.GetVolumeResponse'
+    },
+    {
+      '1': 'SetTargetLatency',
+      '2': '.omni_mix_player.SetTargetLatencyRequest',
+      '3': '.omni_mix_player.SetTargetLatencyResponse'
+    },
+    {
+      '1': 'GetTargetLatency',
+      '2': '.omni_mix_player.GetTargetLatencyRequest',
+      '3': '.omni_mix_player.GetTargetLatencyResponse'
+    },
+    {
+      '1': 'SetShuffle',
+      '2': '.omni_mix_player.SetShuffleRequest',
+      '3': '.omni_mix_player.SetShuffleResponse'
+    },
+    {
+      '1': 'SetRepeatMode',
+      '2': '.omni_mix_player.SetRepeatModeRequest',
+      '3': '.omni_mix_player.SetRepeatModeResponse'
+    },
+    {
+      '1': 'GetQueue',
+      '2': '.omni_mix_player.GetQueueRequest',
+      '3': '.omni_mix_player.GetQueueResponse'
+    },
+    {
+      '1': 'AddToQueue',
+      '2': '.omni_mix_player.AddToQueueRequest',
+      '3': '.omni_mix_player.AddToQueueResponse'
+    },
+    {
+      '1': 'InsertIntoQueue',
+      '2': '.omni_mix_player.InsertIntoQueueRequest',
+      '3': '.omni_mix_player.InsertIntoQueueResponse'
+    },
+    {
+      '1': 'SetQueue',
+      '2': '.omni_mix_player.SetQueueRequest',
+      '3': '.omni_mix_player.SetQueueResponse'
+    },
+    {
+      '1': 'RemoveFromQueue',
+      '2': '.omni_mix_player.RemoveFromQueueRequest',
+      '3': '.omni_mix_player.RemoveFromQueueResponse'
+    },
+    {
+      '1': 'MoveInQueue',
+      '2': '.omni_mix_player.MoveInQueueRequest',
+      '3': '.omni_mix_player.MoveInQueueResponse'
+    },
+    {
+      '1': 'ClearQueue',
+      '2': '.omni_mix_player.ClearQueueRequest',
+      '3': '.omni_mix_player.ClearQueueResponse'
+    },
+    {
+      '1': 'GetHistory',
+      '2': '.omni_mix_player.GetHistoryRequest',
+      '3': '.omni_mix_player.GetHistoryResponse'
+    },
+    {
+      '1': 'RemoveFromHistory',
+      '2': '.omni_mix_player.RemoveFromHistoryRequest',
+      '3': '.omni_mix_player.RemoveFromHistoryResponse'
+    },
+    {
+      '1': 'MoveInHistory',
+      '2': '.omni_mix_player.MoveInHistoryRequest',
+      '3': '.omni_mix_player.MoveInHistoryResponse'
+    },
+    {
+      '1': 'ClearHistory',
+      '2': '.omni_mix_player.ClearHistoryRequest',
+      '3': '.omni_mix_player.ClearHistoryResponse'
+    },
+    {
+      '1': 'GetPlaylistSources',
+      '2': '.omni_mix_player.GetPlaylistSourcesRequest',
+      '3': '.omni_mix_player.GetPlaylistSourcesResponse'
+    },
+    {
+      '1': 'SetPlaylistSources',
+      '2': '.omni_mix_player.SetPlaylistSourcesRequest',
+      '3': '.omni_mix_player.SetPlaylistSourcesResponse'
+    },
+    {
+      '1': 'GetStatus',
+      '2': '.omni_mix_player.GetStatusRequest',
+      '3': '.omni_mix_player.PlaybackStatus'
+    },
+    {
+      '1': 'GetEqualizer',
+      '2': '.omni_mix_player.GetEqualizerRequest',
+      '3': '.omni_mix_player.EqualizerState'
+    },
+    {
+      '1': 'SetEqualizer',
+      '2': '.omni_mix_player.SetEqualizerRequest',
+      '3': '.omni_mix_player.SetEqualizerResponse'
+    },
+  ],
+};
+
+@$core.Deprecated('Use playbackServiceDescriptor instead')
+const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
+    PlaybackServiceBase$messageJson = {
+  '.omni_mix_player.PlayRequest': PlayRequest$json,
+  '.omni_mix_player.PlayResponse': PlayResponse$json,
+  '.omni_mix_player.PauseRequest': PauseRequest$json,
+  '.omni_mix_player.PauseResponse': PauseResponse$json,
+  '.omni_mix_player.ResumeRequest': ResumeRequest$json,
+  '.omni_mix_player.ResumeResponse': ResumeResponse$json,
+  '.omni_mix_player.ToggleRequest': ToggleRequest$json,
+  '.omni_mix_player.ToggleResponse': ToggleResponse$json,
+  '.omni_mix_player.NextRequest': NextRequest$json,
+  '.omni_mix_player.NextResponse': NextResponse$json,
+  '.omni_mix_player.PrevRequest': PrevRequest$json,
+  '.omni_mix_player.PrevResponse': PrevResponse$json,
+  '.omni_mix_player.SeekRequest': SeekRequest$json,
+  '.omni_mix_player.SeekResponse': SeekResponse$json,
+  '.omni_mix_player.StopRequest': StopRequest$json,
+  '.omni_mix_player.StopResponse': StopResponse$json,
+  '.omni_mix_player.SetVolumeRequest': SetVolumeRequest$json,
+  '.omni_mix_player.SetVolumeResponse': SetVolumeResponse$json,
+  '.omni_mix_player.GetVolumeRequest': GetVolumeRequest$json,
+  '.omni_mix_player.GetVolumeResponse': GetVolumeResponse$json,
+  '.omni_mix_player.SetTargetLatencyRequest': SetTargetLatencyRequest$json,
+  '.omni_mix_player.SetTargetLatencyResponse': SetTargetLatencyResponse$json,
+  '.omni_mix_player.GetTargetLatencyRequest': GetTargetLatencyRequest$json,
+  '.omni_mix_player.GetTargetLatencyResponse': GetTargetLatencyResponse$json,
+  '.omni_mix_player.SetShuffleRequest': SetShuffleRequest$json,
+  '.omni_mix_player.SetShuffleResponse': SetShuffleResponse$json,
+  '.omni_mix_player.SetRepeatModeRequest': SetRepeatModeRequest$json,
+  '.omni_mix_player.SetRepeatModeResponse': SetRepeatModeResponse$json,
+  '.omni_mix_player.GetQueueRequest': GetQueueRequest$json,
+  '.omni_mix_player.GetQueueResponse': GetQueueResponse$json,
+  '.omni_mix_player.QueueTrack': QueueTrack$json,
+  '.omni_mix_player.AddToQueueRequest': AddToQueueRequest$json,
+  '.omni_mix_player.AddToQueueResponse': AddToQueueResponse$json,
+  '.omni_mix_player.InsertIntoQueueRequest': InsertIntoQueueRequest$json,
+  '.omni_mix_player.InsertIntoQueueResponse': InsertIntoQueueResponse$json,
+  '.omni_mix_player.SetQueueRequest': SetQueueRequest$json,
+  '.omni_mix_player.SetQueueResponse': SetQueueResponse$json,
+  '.omni_mix_player.RemoveFromQueueRequest': RemoveFromQueueRequest$json,
+  '.omni_mix_player.RemoveFromQueueResponse': RemoveFromQueueResponse$json,
+  '.omni_mix_player.MoveInQueueRequest': MoveInQueueRequest$json,
+  '.omni_mix_player.MoveInQueueResponse': MoveInQueueResponse$json,
+  '.omni_mix_player.ClearQueueRequest': ClearQueueRequest$json,
+  '.omni_mix_player.ClearQueueResponse': ClearQueueResponse$json,
+  '.omni_mix_player.GetHistoryRequest': GetHistoryRequest$json,
+  '.omni_mix_player.GetHistoryResponse': GetHistoryResponse$json,
+  '.omni_mix_player.RemoveFromHistoryRequest': RemoveFromHistoryRequest$json,
+  '.omni_mix_player.RemoveFromHistoryResponse': RemoveFromHistoryResponse$json,
+  '.omni_mix_player.MoveInHistoryRequest': MoveInHistoryRequest$json,
+  '.omni_mix_player.MoveInHistoryResponse': MoveInHistoryResponse$json,
+  '.omni_mix_player.ClearHistoryRequest': ClearHistoryRequest$json,
+  '.omni_mix_player.ClearHistoryResponse': ClearHistoryResponse$json,
+  '.omni_mix_player.GetPlaylistSourcesRequest': GetPlaylistSourcesRequest$json,
+  '.omni_mix_player.GetPlaylistSourcesResponse':
+      GetPlaylistSourcesResponse$json,
+  '.omni_mix_player.PlaylistSourceInfo': PlaylistSourceInfo$json,
+  '.omni_mix_player.SetPlaylistSourcesRequest': SetPlaylistSourcesRequest$json,
+  '.omni_mix_player.PlaylistSourceSpec': PlaylistSourceSpec$json,
+  '.omni_mix_player.SetPlaylistSourcesResponse':
+      SetPlaylistSourcesResponse$json,
+  '.omni_mix_player.GetStatusRequest': GetStatusRequest$json,
+  '.omni_mix_player.PlaybackStatus': $0.PlaybackStatus$json,
+  '.omni_mix_player.GetEqualizerRequest': GetEqualizerRequest$json,
+  '.omni_mix_player.EqualizerState': $0.EqualizerState$json,
+  '.omni_mix_player.EqualizerPoint': $0.EqualizerPoint$json,
+  '.omni_mix_player.SetEqualizerRequest': SetEqualizerRequest$json,
+  '.omni_mix_player.SetEqualizerResponse': SetEqualizerResponse$json,
+};
+
+/// Descriptor for `PlaybackService`. Decode as a `google.protobuf.ServiceDescriptorProto`.
+final $typed_data.Uint8List playbackServiceDescriptor = $convert.base64Decode(
+    'Cg9QbGF5YmFja1NlcnZpY2USQwoEUGxheRIcLm9tbmlfbWl4X3BsYXllci5QbGF5UmVxdWVzdB'
+    'odLm9tbmlfbWl4X3BsYXllci5QbGF5UmVzcG9uc2USRgoFUGF1c2USHS5vbW5pX21peF9wbGF5'
+    'ZXIuUGF1c2VSZXF1ZXN0Gh4ub21uaV9taXhfcGxheWVyLlBhdXNlUmVzcG9uc2USSQoGUmVzdW'
+    '1lEh4ub21uaV9taXhfcGxheWVyLlJlc3VtZVJlcXVlc3QaHy5vbW5pX21peF9wbGF5ZXIuUmVz'
+    'dW1lUmVzcG9uc2USSQoGVG9nZ2xlEh4ub21uaV9taXhfcGxheWVyLlRvZ2dsZVJlcXVlc3QaHy'
+    '5vbW5pX21peF9wbGF5ZXIuVG9nZ2xlUmVzcG9uc2USQwoETmV4dBIcLm9tbmlfbWl4X3BsYXll'
+    'ci5OZXh0UmVxdWVzdBodLm9tbmlfbWl4X3BsYXllci5OZXh0UmVzcG9uc2USQwoEUHJldhIcLm'
+    '9tbmlfbWl4X3BsYXllci5QcmV2UmVxdWVzdBodLm9tbmlfbWl4X3BsYXllci5QcmV2UmVzcG9u'
+    'c2USQwoEU2VlaxIcLm9tbmlfbWl4X3BsYXllci5TZWVrUmVxdWVzdBodLm9tbmlfbWl4X3BsYX'
+    'llci5TZWVrUmVzcG9uc2USQwoEU3RvcBIcLm9tbmlfbWl4X3BsYXllci5TdG9wUmVxdWVzdBod'
+    'Lm9tbmlfbWl4X3BsYXllci5TdG9wUmVzcG9uc2USUgoJU2V0Vm9sdW1lEiEub21uaV9taXhfcG'
+    'xheWVyLlNldFZvbHVtZVJlcXVlc3QaIi5vbW5pX21peF9wbGF5ZXIuU2V0Vm9sdW1lUmVzcG9u'
+    'c2USUgoJR2V0Vm9sdW1lEiEub21uaV9taXhfcGxheWVyLkdldFZvbHVtZVJlcXVlc3QaIi5vbW'
+    '5pX21peF9wbGF5ZXIuR2V0Vm9sdW1lUmVzcG9uc2USZwoQU2V0VGFyZ2V0TGF0ZW5jeRIoLm9t'
+    'bmlfbWl4X3BsYXllci5TZXRUYXJnZXRMYXRlbmN5UmVxdWVzdBopLm9tbmlfbWl4X3BsYXllci'
+    '5TZXRUYXJnZXRMYXRlbmN5UmVzcG9uc2USZwoQR2V0VGFyZ2V0TGF0ZW5jeRIoLm9tbmlfbWl4'
+    'X3BsYXllci5HZXRUYXJnZXRMYXRlbmN5UmVxdWVzdBopLm9tbmlfbWl4X3BsYXllci5HZXRUYX'
+    'JnZXRMYXRlbmN5UmVzcG9uc2USVQoKU2V0U2h1ZmZsZRIiLm9tbmlfbWl4X3BsYXllci5TZXRT'
+    'aHVmZmxlUmVxdWVzdBojLm9tbmlfbWl4X3BsYXllci5TZXRTaHVmZmxlUmVzcG9uc2USXgoNU2'
+    'V0UmVwZWF0TW9kZRIlLm9tbmlfbWl4X3BsYXllci5TZXRSZXBlYXRNb2RlUmVxdWVzdBomLm9t'
+    'bmlfbWl4X3BsYXllci5TZXRSZXBlYXRNb2RlUmVzcG9uc2USTwoIR2V0UXVldWUSIC5vbW5pX2'
+    '1peF9wbGF5ZXIuR2V0UXVldWVSZXF1ZXN0GiEub21uaV9taXhfcGxheWVyLkdldFF1ZXVlUmVz'
+    'cG9uc2USVQoKQWRkVG9RdWV1ZRIiLm9tbmlfbWl4X3BsYXllci5BZGRUb1F1ZXVlUmVxdWVzdB'
+    'ojLm9tbmlfbWl4X3BsYXllci5BZGRUb1F1ZXVlUmVzcG9uc2USZAoPSW5zZXJ0SW50b1F1ZXVl'
+    'Eicub21uaV9taXhfcGxheWVyLkluc2VydEludG9RdWV1ZVJlcXVlc3QaKC5vbW5pX21peF9wbG'
+    'F5ZXIuSW5zZXJ0SW50b1F1ZXVlUmVzcG9uc2USTwoIU2V0UXVldWUSIC5vbW5pX21peF9wbGF5'
+    'ZXIuU2V0UXVldWVSZXF1ZXN0GiEub21uaV9taXhfcGxheWVyLlNldFF1ZXVlUmVzcG9uc2USZA'
+    'oPUmVtb3ZlRnJvbVF1ZXVlEicub21uaV9taXhfcGxheWVyLlJlbW92ZUZyb21RdWV1ZVJlcXVl'
+    'c3QaKC5vbW5pX21peF9wbGF5ZXIuUmVtb3ZlRnJvbVF1ZXVlUmVzcG9uc2USWAoLTW92ZUluUX'
+    'VldWUSIy5vbW5pX21peF9wbGF5ZXIuTW92ZUluUXVldWVSZXF1ZXN0GiQub21uaV9taXhfcGxh'
+    'eWVyLk1vdmVJblF1ZXVlUmVzcG9uc2USVQoKQ2xlYXJRdWV1ZRIiLm9tbmlfbWl4X3BsYXllci'
+    '5DbGVhclF1ZXVlUmVxdWVzdBojLm9tbmlfbWl4X3BsYXllci5DbGVhclF1ZXVlUmVzcG9uc2US'
+    'VQoKR2V0SGlzdG9yeRIiLm9tbmlfbWl4X3BsYXllci5HZXRIaXN0b3J5UmVxdWVzdBojLm9tbm'
+    'lfbWl4X3BsYXllci5HZXRIaXN0b3J5UmVzcG9uc2USagoRUmVtb3ZlRnJvbUhpc3RvcnkSKS5v'
+    'bW5pX21peF9wbGF5ZXIuUmVtb3ZlRnJvbUhpc3RvcnlSZXF1ZXN0Gioub21uaV9taXhfcGxheW'
+    'VyLlJlbW92ZUZyb21IaXN0b3J5UmVzcG9uc2USXgoNTW92ZUluSGlzdG9yeRIlLm9tbmlfbWl4'
+    'X3BsYXllci5Nb3ZlSW5IaXN0b3J5UmVxdWVzdBomLm9tbmlfbWl4X3BsYXllci5Nb3ZlSW5IaX'
+    'N0b3J5UmVzcG9uc2USWwoMQ2xlYXJIaXN0b3J5EiQub21uaV9taXhfcGxheWVyLkNsZWFySGlz'
+    'dG9yeVJlcXVlc3QaJS5vbW5pX21peF9wbGF5ZXIuQ2xlYXJIaXN0b3J5UmVzcG9uc2USbQoSR2'
+    'V0UGxheWxpc3RTb3VyY2VzEioub21uaV9taXhfcGxheWVyLkdldFBsYXlsaXN0U291cmNlc1Jl'
+    'cXVlc3QaKy5vbW5pX21peF9wbGF5ZXIuR2V0UGxheWxpc3RTb3VyY2VzUmVzcG9uc2USbQoSU2'
+    'V0UGxheWxpc3RTb3VyY2VzEioub21uaV9taXhfcGxheWVyLlNldFBsYXlsaXN0U291cmNlc1Jl'
+    'cXVlc3QaKy5vbW5pX21peF9wbGF5ZXIuU2V0UGxheWxpc3RTb3VyY2VzUmVzcG9uc2USTwoJR2'
+    'V0U3RhdHVzEiEub21uaV9taXhfcGxheWVyLkdldFN0YXR1c1JlcXVlc3QaHy5vbW5pX21peF9w'
+    'bGF5ZXIuUGxheWJhY2tTdGF0dXMSVQoMR2V0RXF1YWxpemVyEiQub21uaV9taXhfcGxheWVyLk'
+    'dldEVxdWFsaXplclJlcXVlc3QaHy5vbW5pX21peF9wbGF5ZXIuRXF1YWxpemVyU3RhdGUSWwoM'
+    'U2V0RXF1YWxpemVyEiQub21uaV9taXhfcGxheWVyLlNldEVxdWFsaXplclJlcXVlc3QaJS5vbW'
+    '5pX21peF9wbGF5ZXIuU2V0RXF1YWxpemVyUmVzcG9uc2U=');

@@ -189,23 +189,23 @@ class ApiClient {
   // ── Library: Tags, Albums, Tracks (gRPC) ──
 
   Future<List<Tag>> getTags({String? moduleId}) async {
-    final resp = await _grpc.library.queryTags(
-      TagQuery(moduleId: moduleId ?? ''),
-    ).timeout(_libraryTimeout);
+    final resp = await _grpc.library
+        .queryTags(TagQuery(moduleId: moduleId ?? ''))
+        .timeout(_libraryTimeout);
     return resp.tags;
   }
 
   Future<List<Album>> getAlbums({String? tagId}) async {
-    final resp = await _grpc.library.queryAlbums(
-      AlbumQuery(tagId: tagId ?? ''),
-    ).timeout(_libraryTimeout);
+    final resp = await _grpc.library
+        .queryAlbums(AlbumQuery(tagId: tagId ?? ''))
+        .timeout(_libraryTimeout);
     return resp.albums;
   }
 
   Future<List<Playlist>> getPlaylists({String? moduleId}) async {
-    final resp = await _grpc.library.queryPlaylists(
-      PlaylistQuery(moduleId: moduleId ?? ''),
-    ).timeout(_libraryTimeout);
+    final resp = await _grpc.library
+        .queryPlaylists(PlaylistQuery(moduleId: moduleId ?? ''))
+        .timeout(_libraryTimeout);
     return resp.playlists;
   }
 
@@ -214,14 +214,16 @@ class ApiClient {
     String? tagId,
     String? playlistId,
   }) async {
-    final resp = await _grpc.library.queryTracks(
-      TrackQuery(
-        albumId: albumId ?? '',
-        playlistId: playlistId ?? '',
-        tagIds: tagId != null ? [tagId] : [],
-        isExcluded: false,
-      ),
-    ).timeout(_libraryTimeout);
+    final resp = await _grpc.library
+        .queryTracks(
+          TrackQuery(
+            albumId: albumId ?? '',
+            playlistId: playlistId ?? '',
+            tagIds: tagId != null ? [tagId] : [],
+            isExcluded: false,
+          ),
+        )
+        .timeout(_libraryTimeout);
     return resp.tracks;
   }
 
@@ -391,7 +393,6 @@ class ApiClient {
 
   InstanceCapabilities _fullGuiCapabilities() => InstanceCapabilities()
     ..serverControlledPlayback = true
-    ..clientManagedPlayback = true
     ..queueManagement = true
     ..playlistManagement = true
     ..multiplePlaylists = true

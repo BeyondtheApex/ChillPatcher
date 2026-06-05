@@ -28,7 +28,6 @@ const omniPcmInstanceKindGameMod = 1;
 const omniPcmInstanceKindGui = 2;
 
 const omniPcmCapServerControlledPlayback = 1 << 0;
-const omniPcmCapClientManagedPlayback = 1 << 1;
 const omniPcmCapQueueManagement = 1 << 2;
 const omniPcmCapPlaylistManagement = 1 << 3;
 const omniPcmCapShuffle = 1 << 4;
@@ -41,6 +40,7 @@ const omniPcmCapTagFiltering = 1 << 10;
 const omniPcmCapUnlimitedTags = 1 << 11;
 const omniPcmCapAlbumFiltering = 1 << 12;
 const omniPcmCapAudioPlayback = 1 << 13;
+const omniPcmCapCustomSystemMediaService = 1 << 14;
 
 final class OmniPcmInfo extends Struct {
   @Int32()
@@ -408,15 +408,18 @@ final class OmniPcmLibraryQuery extends Struct {
 }
 
 final class OmniPcmClientHandle extends Opaque {}
+
 final class OmniPcmHandle extends Opaque {}
 
 typedef ClientHandle = Pointer<OmniPcmClientHandle>;
 typedef PcmHandle = Pointer<OmniPcmHandle>;
-typedef OmniPcmEventCallback = Pointer<
-    NativeFunction<Void Function(Pointer<OmniPcmEventInfo>, Pointer<Void>)>>;
+typedef OmniPcmEventCallback =
+    Pointer<
+      NativeFunction<Void Function(Pointer<OmniPcmEventInfo>, Pointer<Void>)>
+    >;
 
-typedef _CreateClientNative = Pointer<OmniPcmClientHandle> Function(
-    Pointer<OmniPcmClientConfig>);
+typedef _CreateClientNative =
+    Pointer<OmniPcmClientHandle> Function(Pointer<OmniPcmClientConfig>);
 typedef _CreateClientDart = ClientHandle Function(Pointer<OmniPcmClientConfig>);
 typedef _DestroyClientNative = Void Function(Pointer<OmniPcmClientHandle>);
 typedef _DestroyClientDart = void Function(ClientHandle);
@@ -425,293 +428,543 @@ typedef _GetErrorDart = Pointer<Utf8> Function(ClientHandle);
 typedef _GetPortNative = Int32 Function(Pointer<OmniPcmClientHandle>);
 typedef _GetPortDart = int Function(ClientHandle);
 
-typedef _ConnectInstanceNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>,
-    Pointer<OmniPcmConnectOptions>,
-    Pointer<OmniPcmConnectionInfo>);
-typedef _ConnectInstanceDart = int Function(
-    ClientHandle, Pointer<OmniPcmConnectOptions>, Pointer<OmniPcmConnectionInfo>);
-typedef _HeartbeatNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Int32>);
-typedef _HeartbeatDart = int Function(ClientHandle, Pointer<Utf8>, Pointer<Int32>);
-typedef _DisconnectNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>);
+typedef _ConnectInstanceNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<OmniPcmConnectOptions>,
+      Pointer<OmniPcmConnectionInfo>,
+    );
+typedef _ConnectInstanceDart =
+    int Function(
+      ClientHandle,
+      Pointer<OmniPcmConnectOptions>,
+      Pointer<OmniPcmConnectionInfo>,
+    );
+typedef _HeartbeatNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Int32>);
+typedef _HeartbeatDart =
+    int Function(ClientHandle, Pointer<Utf8>, Pointer<Int32>);
+typedef _DisconnectNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>);
 typedef _DisconnectDart = int Function(ClientHandle, Pointer<Utf8>);
-typedef _DeleteInstanceNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Int32>);
-typedef _DeleteInstanceDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<Int32>);
-typedef _ListInstancesNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<OmniPcmInstanceSummaryInfo>, Pointer<Int32>);
-typedef _ListInstancesDart = int Function(
-    ClientHandle, Pointer<OmniPcmInstanceSummaryInfo>, Pointer<Int32>);
-typedef _GetProfileNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<OmniPcmInstanceProfileInfo>);
-typedef _GetProfileDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<OmniPcmInstanceProfileInfo>);
-typedef _UpdateProfileNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<OmniPcmInstanceProfileInfo>, Pointer<Int32>);
-typedef _UpdateProfileDart = int Function(
-    ClientHandle, Pointer<OmniPcmInstanceProfileInfo>, Pointer<Int32>);
-typedef _ArchiveInstanceNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<Utf8>, Pointer<OmniPcmInstanceProfileInfo>);
-typedef _ArchiveInstanceDart = int Function(ClientHandle, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<OmniPcmInstanceProfileInfo>);
-typedef _ListArchivesNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<OmniPcmInstanceProfileInfo>, Pointer<Int32>);
-typedef _ListArchivesDart = int Function(
-    ClientHandle, Pointer<OmniPcmInstanceProfileInfo>, Pointer<Int32>);
-typedef _GetArchiveNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<OmniPcmInstanceProfileInfo>);
-typedef _GetArchiveDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<OmniPcmInstanceProfileInfo>);
-typedef _DeleteArchiveNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Int32>);
-typedef _DeleteArchiveDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<Int32>);
-typedef _InheritFromArchiveNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>,
-    Pointer<Utf8>,
-    Pointer<OmniPcmInstanceProfileInfo>);
-typedef _InheritFromArchiveDart = int Function(ClientHandle, Pointer<Utf8>,
-    Pointer<Utf8>, Pointer<OmniPcmInstanceProfileInfo>);
+typedef _DeleteInstanceNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Int32>);
+typedef _DeleteInstanceDart =
+    int Function(ClientHandle, Pointer<Utf8>, Pointer<Int32>);
+typedef _ListInstancesNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<OmniPcmInstanceSummaryInfo>,
+      Pointer<Int32>,
+    );
+typedef _ListInstancesDart =
+    int Function(
+      ClientHandle,
+      Pointer<OmniPcmInstanceSummaryInfo>,
+      Pointer<Int32>,
+    );
+typedef _GetProfileNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+    );
+typedef _GetProfileDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+    );
+typedef _UpdateProfileNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+      Pointer<Int32>,
+    );
+typedef _UpdateProfileDart =
+    int Function(
+      ClientHandle,
+      Pointer<OmniPcmInstanceProfileInfo>,
+      Pointer<Int32>,
+    );
+typedef _ArchiveInstanceNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+    );
+typedef _ArchiveInstanceDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+    );
+typedef _ListArchivesNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+      Pointer<Int32>,
+    );
+typedef _ListArchivesDart =
+    int Function(
+      ClientHandle,
+      Pointer<OmniPcmInstanceProfileInfo>,
+      Pointer<Int32>,
+    );
+typedef _GetArchiveNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+    );
+typedef _GetArchiveDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+    );
+typedef _DeleteArchiveNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Int32>);
+typedef _DeleteArchiveDart =
+    int Function(ClientHandle, Pointer<Utf8>, Pointer<Int32>);
+typedef _InheritFromArchiveNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+    );
+typedef _InheritFromArchiveDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmInstanceProfileInfo>,
+    );
 
-typedef _GetStatusNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<OmniPcmPlaybackStatusInfo>);
-typedef _GetStatusDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<OmniPcmPlaybackStatusInfo>);
-typedef _PlaybackCommandNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32);
+typedef _GetStatusNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmPlaybackStatusInfo>,
+    );
+typedef _GetStatusDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<OmniPcmPlaybackStatusInfo>,
+    );
+typedef _PlaybackCommandNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32);
 typedef _PlaybackCommandDart = int Function(ClientHandle, Pointer<Utf8>, int);
-typedef _PlayNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _PlayNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _PlayDart = int Function(ClientHandle, Pointer<Utf8>, Pointer<Utf8>);
-typedef _SeekNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Float);
+typedef _SeekNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Float);
 typedef _SeekDart = int Function(ClientHandle, Pointer<Utf8>, double);
-typedef _SetFloatNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Float);
+typedef _SetFloatNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Float);
 typedef _SetFloatDart = int Function(ClientHandle, Pointer<Utf8>, double);
-typedef _GetFloatNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Float>);
-typedef _GetFloatDart = int Function(ClientHandle, Pointer<Utf8>, Pointer<Float>);
-typedef _SetBoolNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32);
+typedef _GetFloatNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Float>);
+typedef _GetFloatDart =
+    int Function(ClientHandle, Pointer<Utf8>, Pointer<Float>);
+typedef _SetBoolNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32);
 typedef _SetBoolDart = int Function(ClientHandle, Pointer<Utf8>, int);
 
-typedef _GetQueueNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<OmniPcmQueueTrackInfo>, Pointer<Int32>);
-typedef _GetQueueDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<OmniPcmQueueTrackInfo>, Pointer<Int32>);
-typedef _AddToQueueNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Utf8>);
-typedef _AddToQueueDart = int Function(ClientHandle, Pointer<Utf8>, Pointer<Utf8>);
-typedef _InsertIntoQueueNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<Pointer<Utf8>>, Int32, Int32);
-typedef _InsertIntoQueueDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<Pointer<Utf8>>, int, int);
-typedef _SetQueueNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<Pointer<Utf8>>, Int32);
-typedef _SetQueueDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<Pointer<Utf8>>, int);
-typedef _RemoveIndexNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32);
+typedef _GetQueueNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmQueueTrackInfo>,
+      Pointer<Int32>,
+    );
+typedef _GetQueueDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<OmniPcmQueueTrackInfo>,
+      Pointer<Int32>,
+    );
+typedef _AddToQueueNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _AddToQueueDart =
+    int Function(ClientHandle, Pointer<Utf8>, Pointer<Utf8>);
+typedef _InsertIntoQueueNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<Pointer<Utf8>>,
+      Int32,
+      Int32,
+    );
+typedef _InsertIntoQueueDart =
+    int Function(ClientHandle, Pointer<Utf8>, Pointer<Pointer<Utf8>>, int, int);
+typedef _SetQueueNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<Pointer<Utf8>>,
+      Int32,
+    );
+typedef _SetQueueDart =
+    int Function(ClientHandle, Pointer<Utf8>, Pointer<Pointer<Utf8>>, int);
+typedef _RemoveIndexNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32);
 typedef _RemoveIndexDart = int Function(ClientHandle, Pointer<Utf8>, int);
-typedef _MoveNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32, Int32);
+typedef _MoveNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32, Int32);
 typedef _MoveDart = int Function(ClientHandle, Pointer<Utf8>, int, int);
-typedef _ClearNative = Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>);
+typedef _ClearNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>);
 typedef _ClearDart = int Function(ClientHandle, Pointer<Utf8>);
 
-typedef _GetPlaylistSourcesNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<OmniPcmPlaylistSourceInfo>, Pointer<Int32>);
-typedef _GetPlaylistSourcesDart = int Function(ClientHandle, Pointer<Utf8>,
-    Pointer<OmniPcmPlaylistSourceInfo>, Pointer<Int32>);
-typedef _SetPlaylistSourcesNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>, Pointer<OmniPcmPlaylistSourceSpec>, Int32);
-typedef _SetPlaylistSourcesDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<OmniPcmPlaylistSourceSpec>, int);
+typedef _GetPlaylistSourcesNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmPlaylistSourceInfo>,
+      Pointer<Int32>,
+    );
+typedef _GetPlaylistSourcesDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<OmniPcmPlaylistSourceInfo>,
+      Pointer<Int32>,
+    );
+typedef _SetPlaylistSourcesNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmPlaylistSourceSpec>,
+      Int32,
+    );
+typedef _SetPlaylistSourcesDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<OmniPcmPlaylistSourceSpec>,
+      int,
+    );
 
-typedef _GetEqualizerNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>,
-    Pointer<OmniPcmEqualizerStateInfo>,
-    Pointer<OmniPcmEqualizerPointInfo>,
-    Pointer<Int32>);
-typedef _GetEqualizerDart = int Function(
-    ClientHandle,
-    Pointer<Utf8>,
-    Pointer<OmniPcmEqualizerStateInfo>,
-    Pointer<OmniPcmEqualizerPointInfo>,
-    Pointer<Int32>);
-typedef _SetEqualizerNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>,
-    Pointer<Utf8>,
-    Pointer<OmniPcmEqualizerStateInfo>,
-    Pointer<OmniPcmEqualizerPointInfo>,
-    Int32);
-typedef _SetEqualizerDart = int Function(
-    ClientHandle,
-    Pointer<Utf8>,
-    Pointer<OmniPcmEqualizerStateInfo>,
-    Pointer<OmniPcmEqualizerPointInfo>,
-    int);
+typedef _GetEqualizerNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmEqualizerStateInfo>,
+      Pointer<OmniPcmEqualizerPointInfo>,
+      Pointer<Int32>,
+    );
+typedef _GetEqualizerDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<OmniPcmEqualizerStateInfo>,
+      Pointer<OmniPcmEqualizerPointInfo>,
+      Pointer<Int32>,
+    );
+typedef _SetEqualizerNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmEqualizerStateInfo>,
+      Pointer<OmniPcmEqualizerPointInfo>,
+      Int32,
+    );
+typedef _SetEqualizerDart =
+    int Function(
+      ClientHandle,
+      Pointer<Utf8>,
+      Pointer<OmniPcmEqualizerStateInfo>,
+      Pointer<OmniPcmEqualizerPointInfo>,
+      int,
+    );
 
-typedef _QueryTracksNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<OmniPcmTrackQuery>, Pointer<OmniPcmTrackInfo>, Pointer<Int32>);
-typedef _QueryTracksDart = int Function(
-    ClientHandle, Pointer<OmniPcmTrackQuery>, Pointer<OmniPcmTrackInfo>, Pointer<Int32>);
-typedef _QueryAlbumsNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<OmniPcmLibraryQuery>, Pointer<OmniPcmAlbumInfo>, Pointer<Int32>);
-typedef _QueryAlbumsDart = int Function(
-    ClientHandle, Pointer<OmniPcmLibraryQuery>, Pointer<OmniPcmAlbumInfo>, Pointer<Int32>);
-typedef _QueryTagsNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<OmniPcmLibraryQuery>, Pointer<OmniPcmTagInfo>, Pointer<Int32>);
-typedef _QueryTagsDart = int Function(
-    ClientHandle, Pointer<OmniPcmLibraryQuery>, Pointer<OmniPcmTagInfo>, Pointer<Int32>);
-typedef _QueryPlaylistsNative = Int32 Function(Pointer<OmniPcmClientHandle>,
-    Pointer<OmniPcmLibraryQuery>, Pointer<OmniPcmPlaylistInfo>, Pointer<Int32>);
-typedef _QueryPlaylistsDart = int Function(ClientHandle,
-    Pointer<OmniPcmLibraryQuery>, Pointer<OmniPcmPlaylistInfo>, Pointer<Int32>);
-typedef _GetTrackNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Pointer<OmniPcmTrackInfo>);
-typedef _GetTrackDart = int Function(
-    ClientHandle, Pointer<Utf8>, Pointer<OmniPcmTrackInfo>);
-typedef _SetTrackExcludedNative = Int32 Function(
-    Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32);
+typedef _QueryTracksNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<OmniPcmTrackQuery>,
+      Pointer<OmniPcmTrackInfo>,
+      Pointer<Int32>,
+    );
+typedef _QueryTracksDart =
+    int Function(
+      ClientHandle,
+      Pointer<OmniPcmTrackQuery>,
+      Pointer<OmniPcmTrackInfo>,
+      Pointer<Int32>,
+    );
+typedef _QueryAlbumsNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<OmniPcmLibraryQuery>,
+      Pointer<OmniPcmAlbumInfo>,
+      Pointer<Int32>,
+    );
+typedef _QueryAlbumsDart =
+    int Function(
+      ClientHandle,
+      Pointer<OmniPcmLibraryQuery>,
+      Pointer<OmniPcmAlbumInfo>,
+      Pointer<Int32>,
+    );
+typedef _QueryTagsNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<OmniPcmLibraryQuery>,
+      Pointer<OmniPcmTagInfo>,
+      Pointer<Int32>,
+    );
+typedef _QueryTagsDart =
+    int Function(
+      ClientHandle,
+      Pointer<OmniPcmLibraryQuery>,
+      Pointer<OmniPcmTagInfo>,
+      Pointer<Int32>,
+    );
+typedef _QueryPlaylistsNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<OmniPcmLibraryQuery>,
+      Pointer<OmniPcmPlaylistInfo>,
+      Pointer<Int32>,
+    );
+typedef _QueryPlaylistsDart =
+    int Function(
+      ClientHandle,
+      Pointer<OmniPcmLibraryQuery>,
+      Pointer<OmniPcmPlaylistInfo>,
+      Pointer<Int32>,
+    );
+typedef _GetTrackNative =
+    Int32 Function(
+      Pointer<OmniPcmClientHandle>,
+      Pointer<Utf8>,
+      Pointer<OmniPcmTrackInfo>,
+    );
+typedef _GetTrackDart =
+    int Function(ClientHandle, Pointer<Utf8>, Pointer<OmniPcmTrackInfo>);
+typedef _SetTrackExcludedNative =
+    Int32 Function(Pointer<OmniPcmClientHandle>, Pointer<Utf8>, Int32);
 typedef _SetTrackExcludedDart = int Function(ClientHandle, Pointer<Utf8>, int);
 
 typedef _OpenUtf8Native = Pointer<OmniPcmHandle> Function(Pointer<Utf8>);
 typedef _OpenUtf8Dart = PcmHandle Function(Pointer<Utf8>);
 typedef _ClosePcmNative = Void Function(Pointer<OmniPcmHandle>);
 typedef _ClosePcmDart = void Function(PcmHandle);
-typedef _GetInfoNative = Int32 Function(Pointer<OmniPcmHandle>, Pointer<OmniPcmInfo>);
+typedef _GetInfoNative =
+    Int32 Function(Pointer<OmniPcmHandle>, Pointer<OmniPcmInfo>);
 typedef _GetInfoDart = int Function(PcmHandle, Pointer<OmniPcmInfo>);
-typedef _GetSnapshotNative = Int32 Function(
-    Pointer<OmniPcmHandle>, Pointer<OmniPcmSnapshot>);
-typedef _GetSnapshotDart = int Function(
-    PcmHandle, Pointer<OmniPcmSnapshot>);
+typedef _GetSnapshotNative =
+    Int32 Function(Pointer<OmniPcmHandle>, Pointer<OmniPcmSnapshot>);
+typedef _GetSnapshotDart = int Function(PcmHandle, Pointer<OmniPcmSnapshot>);
 typedef _NoArgPcmNative = Int32 Function(Pointer<OmniPcmHandle>);
 typedef _NoArgPcmDart = int Function(PcmHandle);
-typedef _WaitFormatNative = Int32 Function(
-    Pointer<OmniPcmHandle>, Pointer<Utf8>, Int32);
+typedef _WaitFormatNative =
+    Int32 Function(Pointer<OmniPcmHandle>, Pointer<Utf8>, Int32);
 typedef _WaitFormatDart = int Function(PcmHandle, Pointer<Utf8>, int);
-typedef _ReadFramesNative = Int64 Function(
-    Pointer<OmniPcmHandle>, Pointer<Float>, Int32);
+typedef _ReadFramesNative =
+    Int64 Function(Pointer<OmniPcmHandle>, Pointer<Float>, Int32);
 typedef _ReadFramesDart = int Function(PcmHandle, Pointer<Float>, int);
 
-final omniClientCreate =
-    omniDll.lookupFunction<_CreateClientNative, _CreateClientDart>('OmniPcmClient_Create');
-final omniClientDestroy =
-    omniDll.lookupFunction<_DestroyClientNative, _DestroyClientDart>('OmniPcmClient_Destroy');
-final omniClientLastError =
-    omniDll.lookupFunction<_GetErrorNative, _GetErrorDart>('OmniPcmClient_GetLastError');
-final omniClientGetPort =
-    omniDll.lookupFunction<_GetPortNative, _GetPortDart>('OmniPcmClient_GetPort');
-final omniClientConnect = omniDll.lookupFunction<_ConnectInstanceNative,
-    _ConnectInstanceDart>('OmniPcmClient_ConnectInstance');
-final omniClientHeartbeat =
-    omniDll.lookupFunction<_HeartbeatNative, _HeartbeatDart>('OmniPcmClient_Heartbeat');
-final omniClientDisconnect =
-    omniDll.lookupFunction<_DisconnectNative, _DisconnectDart>('OmniPcmClient_DisconnectInstance');
-final omniClientDeleteInstance = omniDll.lookupFunction<_DeleteInstanceNative,
-    _DeleteInstanceDart>('OmniPcmClient_DeleteInstance');
-final omniClientListInstances = omniDll.lookupFunction<_ListInstancesNative,
-    _ListInstancesDart>('OmniPcmClient_ListInstances');
-final omniClientGetProfile =
-    omniDll.lookupFunction<_GetProfileNative, _GetProfileDart>('OmniPcmClient_GetProfile');
-final omniClientUpdateProfile =
-    omniDll.lookupFunction<_UpdateProfileNative, _UpdateProfileDart>('OmniPcmClient_UpdateProfile');
-final omniClientArchiveInstance = omniDll.lookupFunction<_ArchiveInstanceNative,
-    _ArchiveInstanceDart>('OmniPcmClient_ArchiveInstance');
-final omniClientListArchives =
-    omniDll.lookupFunction<_ListArchivesNative, _ListArchivesDart>('OmniPcmClient_ListArchives');
-final omniClientGetArchive =
-    omniDll.lookupFunction<_GetArchiveNative, _GetArchiveDart>('OmniPcmClient_GetArchive');
-final omniClientDeleteArchive =
-    omniDll.lookupFunction<_DeleteArchiveNative, _DeleteArchiveDart>('OmniPcmClient_DeleteArchive');
-final omniClientInheritFromArchive = omniDll.lookupFunction<
-    _InheritFromArchiveNative,
-    _InheritFromArchiveDart>('OmniPcmClient_InheritFromArchive');
-final omniClientGetStatus =
-    omniDll.lookupFunction<_GetStatusNative, _GetStatusDart>('OmniPcmClient_GetStatus');
-final omniClientPlaybackCommand = omniDll.lookupFunction<_PlaybackCommandNative,
-    _PlaybackCommandDart>('OmniPcmClient_PlaybackCommand');
-final omniClientPlay = omniDll.lookupFunction<_PlayNative, _PlayDart>('OmniPcmClient_Play');
-final omniClientSeek = omniDll.lookupFunction<_SeekNative, _SeekDart>('OmniPcmClient_Seek');
-final omniClientSetVolume =
-    omniDll.lookupFunction<_SetFloatNative, _SetFloatDart>('OmniPcmClient_SetVolume');
-final omniClientGetVolume =
-    omniDll.lookupFunction<_GetFloatNative, _GetFloatDart>('OmniPcmClient_GetVolume');
-final omniClientSetTargetLatency = omniDll.lookupFunction<_SetFloatNative,
-    _SetFloatDart>('OmniPcmClient_SetTargetLatency');
-final omniClientGetTargetLatency = omniDll.lookupFunction<_GetFloatNative,
-    _GetFloatDart>('OmniPcmClient_GetTargetLatency');
-final omniClientSetShuffle =
-    omniDll.lookupFunction<_SetBoolNative, _SetBoolDart>('OmniPcmClient_SetShuffle');
-final omniClientSetRepeatMode =
-    omniDll.lookupFunction<_SetBoolNative, _SetBoolDart>('OmniPcmClient_SetRepeatMode');
-final omniClientGetQueue =
-    omniDll.lookupFunction<_GetQueueNative, _GetQueueDart>('OmniPcmClient_GetQueue');
-final omniClientAddToQueue =
-    omniDll.lookupFunction<_AddToQueueNative, _AddToQueueDart>('OmniPcmClient_AddToQueue');
-final omniClientInsertIntoQueue = omniDll.lookupFunction<_InsertIntoQueueNative,
-    _InsertIntoQueueDart>('OmniPcmClient_InsertIntoQueue');
-final omniClientSetQueue =
-    omniDll.lookupFunction<_SetQueueNative, _SetQueueDart>('OmniPcmClient_SetQueue');
-final omniClientRemoveFromQueueIndex = omniDll.lookupFunction<_RemoveIndexNative,
-    _RemoveIndexDart>('OmniPcmClient_RemoveFromQueueIndex');
-final omniClientMoveInQueue =
-    omniDll.lookupFunction<_MoveNative, _MoveDart>('OmniPcmClient_MoveInQueue');
-final omniClientClearQueue =
-    omniDll.lookupFunction<_ClearNative, _ClearDart>('OmniPcmClient_ClearQueue');
-final omniClientGetHistory =
-    omniDll.lookupFunction<_GetQueueNative, _GetQueueDart>('OmniPcmClient_GetHistory');
-final omniClientRemoveFromHistory =
-    omniDll.lookupFunction<_RemoveIndexNative, _RemoveIndexDart>('OmniPcmClient_RemoveFromHistory');
-final omniClientMoveInHistory =
-    omniDll.lookupFunction<_MoveNative, _MoveDart>('OmniPcmClient_MoveInHistory');
-final omniClientClearHistory =
-    omniDll.lookupFunction<_ClearNative, _ClearDart>('OmniPcmClient_ClearHistory');
-final omniClientGetPlaylistSources = omniDll.lookupFunction<
-    _GetPlaylistSourcesNative,
-    _GetPlaylistSourcesDart>('OmniPcmClient_GetPlaylistSources');
-final omniClientSetPlaylistSources = omniDll.lookupFunction<
-    _SetPlaylistSourcesNative,
-    _SetPlaylistSourcesDart>('OmniPcmClient_SetPlaylistSources');
-final omniClientGetEqualizer =
-    omniDll.lookupFunction<_GetEqualizerNative, _GetEqualizerDart>('OmniPcmClient_GetEqualizer');
-final omniClientSetEqualizer =
-    omniDll.lookupFunction<_SetEqualizerNative, _SetEqualizerDart>('OmniPcmClient_SetEqualizer');
-final omniClientQueryTracks =
-    omniDll.lookupFunction<_QueryTracksNative, _QueryTracksDart>('OmniPcmClient_QueryTracks');
-final omniClientQueryAlbums =
-    omniDll.lookupFunction<_QueryAlbumsNative, _QueryAlbumsDart>('OmniPcmClient_QueryAlbums');
-final omniClientQueryTags =
-    omniDll.lookupFunction<_QueryTagsNative, _QueryTagsDart>('OmniPcmClient_QueryTags');
-final omniClientQueryPlaylists = omniDll.lookupFunction<_QueryPlaylistsNative,
-    _QueryPlaylistsDart>('OmniPcmClient_QueryPlaylists');
-final omniClientGetTrack =
-    omniDll.lookupFunction<_GetTrackNative, _GetTrackDart>('OmniPcmClient_GetTrack');
-final omniClientSetTrackExcluded = omniDll.lookupFunction<_SetTrackExcludedNative,
-    _SetTrackExcludedDart>('OmniPcmClient_SetTrackExcluded');
+final omniClientCreate = omniDll
+    .lookupFunction<_CreateClientNative, _CreateClientDart>(
+      'OmniPcmClient_Create',
+    );
+final omniClientDestroy = omniDll
+    .lookupFunction<_DestroyClientNative, _DestroyClientDart>(
+      'OmniPcmClient_Destroy',
+    );
+final omniClientLastError = omniDll
+    .lookupFunction<_GetErrorNative, _GetErrorDart>(
+      'OmniPcmClient_GetLastError',
+    );
+final omniClientGetPort = omniDll.lookupFunction<_GetPortNative, _GetPortDart>(
+  'OmniPcmClient_GetPort',
+);
+final omniClientConnect = omniDll
+    .lookupFunction<_ConnectInstanceNative, _ConnectInstanceDart>(
+      'OmniPcmClient_ConnectInstance',
+    );
+final omniClientHeartbeat = omniDll
+    .lookupFunction<_HeartbeatNative, _HeartbeatDart>(
+      'OmniPcmClient_Heartbeat',
+    );
+final omniClientDisconnect = omniDll
+    .lookupFunction<_DisconnectNative, _DisconnectDart>(
+      'OmniPcmClient_DisconnectInstance',
+    );
+final omniClientDeleteInstance = omniDll
+    .lookupFunction<_DeleteInstanceNative, _DeleteInstanceDart>(
+      'OmniPcmClient_DeleteInstance',
+    );
+final omniClientListInstances = omniDll
+    .lookupFunction<_ListInstancesNative, _ListInstancesDart>(
+      'OmniPcmClient_ListInstances',
+    );
+final omniClientGetProfile = omniDll
+    .lookupFunction<_GetProfileNative, _GetProfileDart>(
+      'OmniPcmClient_GetProfile',
+    );
+final omniClientUpdateProfile = omniDll
+    .lookupFunction<_UpdateProfileNative, _UpdateProfileDart>(
+      'OmniPcmClient_UpdateProfile',
+    );
+final omniClientArchiveInstance = omniDll
+    .lookupFunction<_ArchiveInstanceNative, _ArchiveInstanceDart>(
+      'OmniPcmClient_ArchiveInstance',
+    );
+final omniClientListArchives = omniDll
+    .lookupFunction<_ListArchivesNative, _ListArchivesDart>(
+      'OmniPcmClient_ListArchives',
+    );
+final omniClientGetArchive = omniDll
+    .lookupFunction<_GetArchiveNative, _GetArchiveDart>(
+      'OmniPcmClient_GetArchive',
+    );
+final omniClientDeleteArchive = omniDll
+    .lookupFunction<_DeleteArchiveNative, _DeleteArchiveDart>(
+      'OmniPcmClient_DeleteArchive',
+    );
+final omniClientInheritFromArchive = omniDll
+    .lookupFunction<_InheritFromArchiveNative, _InheritFromArchiveDart>(
+      'OmniPcmClient_InheritFromArchive',
+    );
+final omniClientGetStatus = omniDll
+    .lookupFunction<_GetStatusNative, _GetStatusDart>(
+      'OmniPcmClient_GetStatus',
+    );
+final omniClientPlaybackCommand = omniDll
+    .lookupFunction<_PlaybackCommandNative, _PlaybackCommandDart>(
+      'OmniPcmClient_PlaybackCommand',
+    );
+final omniClientPlay = omniDll.lookupFunction<_PlayNative, _PlayDart>(
+  'OmniPcmClient_Play',
+);
+final omniClientSeek = omniDll.lookupFunction<_SeekNative, _SeekDart>(
+  'OmniPcmClient_Seek',
+);
+final omniClientSetVolume = omniDll
+    .lookupFunction<_SetFloatNative, _SetFloatDart>('OmniPcmClient_SetVolume');
+final omniClientGetVolume = omniDll
+    .lookupFunction<_GetFloatNative, _GetFloatDart>('OmniPcmClient_GetVolume');
+final omniClientSetTargetLatency = omniDll
+    .lookupFunction<_SetFloatNative, _SetFloatDart>(
+      'OmniPcmClient_SetTargetLatency',
+    );
+final omniClientGetTargetLatency = omniDll
+    .lookupFunction<_GetFloatNative, _GetFloatDart>(
+      'OmniPcmClient_GetTargetLatency',
+    );
+final omniClientSetShuffle = omniDll
+    .lookupFunction<_SetBoolNative, _SetBoolDart>('OmniPcmClient_SetShuffle');
+final omniClientSetRepeatMode = omniDll
+    .lookupFunction<_SetBoolNative, _SetBoolDart>(
+      'OmniPcmClient_SetRepeatMode',
+    );
+final omniClientGetQueue = omniDll
+    .lookupFunction<_GetQueueNative, _GetQueueDart>('OmniPcmClient_GetQueue');
+final omniClientAddToQueue = omniDll
+    .lookupFunction<_AddToQueueNative, _AddToQueueDart>(
+      'OmniPcmClient_AddToQueue',
+    );
+final omniClientInsertIntoQueue = omniDll
+    .lookupFunction<_InsertIntoQueueNative, _InsertIntoQueueDart>(
+      'OmniPcmClient_InsertIntoQueue',
+    );
+final omniClientSetQueue = omniDll
+    .lookupFunction<_SetQueueNative, _SetQueueDart>('OmniPcmClient_SetQueue');
+final omniClientRemoveFromQueueIndex = omniDll
+    .lookupFunction<_RemoveIndexNative, _RemoveIndexDart>(
+      'OmniPcmClient_RemoveFromQueueIndex',
+    );
+final omniClientMoveInQueue = omniDll.lookupFunction<_MoveNative, _MoveDart>(
+  'OmniPcmClient_MoveInQueue',
+);
+final omniClientClearQueue = omniDll.lookupFunction<_ClearNative, _ClearDart>(
+  'OmniPcmClient_ClearQueue',
+);
+final omniClientGetHistory = omniDll
+    .lookupFunction<_GetQueueNative, _GetQueueDart>('OmniPcmClient_GetHistory');
+final omniClientRemoveFromHistory = omniDll
+    .lookupFunction<_RemoveIndexNative, _RemoveIndexDart>(
+      'OmniPcmClient_RemoveFromHistory',
+    );
+final omniClientMoveInHistory = omniDll.lookupFunction<_MoveNative, _MoveDart>(
+  'OmniPcmClient_MoveInHistory',
+);
+final omniClientClearHistory = omniDll.lookupFunction<_ClearNative, _ClearDart>(
+  'OmniPcmClient_ClearHistory',
+);
+final omniClientGetPlaylistSources = omniDll
+    .lookupFunction<_GetPlaylistSourcesNative, _GetPlaylistSourcesDart>(
+      'OmniPcmClient_GetPlaylistSources',
+    );
+final omniClientSetPlaylistSources = omniDll
+    .lookupFunction<_SetPlaylistSourcesNative, _SetPlaylistSourcesDart>(
+      'OmniPcmClient_SetPlaylistSources',
+    );
+final omniClientGetEqualizer = omniDll
+    .lookupFunction<_GetEqualizerNative, _GetEqualizerDart>(
+      'OmniPcmClient_GetEqualizer',
+    );
+final omniClientSetEqualizer = omniDll
+    .lookupFunction<_SetEqualizerNative, _SetEqualizerDart>(
+      'OmniPcmClient_SetEqualizer',
+    );
+final omniClientQueryTracks = omniDll
+    .lookupFunction<_QueryTracksNative, _QueryTracksDart>(
+      'OmniPcmClient_QueryTracks',
+    );
+final omniClientQueryAlbums = omniDll
+    .lookupFunction<_QueryAlbumsNative, _QueryAlbumsDart>(
+      'OmniPcmClient_QueryAlbums',
+    );
+final omniClientQueryTags = omniDll
+    .lookupFunction<_QueryTagsNative, _QueryTagsDart>(
+      'OmniPcmClient_QueryTags',
+    );
+final omniClientQueryPlaylists = omniDll
+    .lookupFunction<_QueryPlaylistsNative, _QueryPlaylistsDart>(
+      'OmniPcmClient_QueryPlaylists',
+    );
+final omniClientGetTrack = omniDll
+    .lookupFunction<_GetTrackNative, _GetTrackDart>('OmniPcmClient_GetTrack');
+final omniClientSetTrackExcluded = omniDll
+    .lookupFunction<_SetTrackExcludedNative, _SetTrackExcludedDart>(
+      'OmniPcmClient_SetTrackExcluded',
+    );
 
-final omniPcmOpenUtf8 =
-    omniDll.lookupFunction<_OpenUtf8Native, _OpenUtf8Dart>('OmniPcm_OpenUtf8');
-final omniPcmClose =
-    omniDll.lookupFunction<_ClosePcmNative, _ClosePcmDart>('OmniPcm_Close');
-final omniPcmGetInfo =
-    omniDll.lookupFunction<_GetInfoNative, _GetInfoDart>('OmniPcm_GetInfo');
-final omniPcmGetSnapshot = omniDll.lookupFunction<_GetSnapshotNative,
-    _GetSnapshotDart>('OmniPcm_GetSnapshot');
-final omniPcmBindCurrentStream =
-    omniDll.lookupFunction<_NoArgPcmNative, _NoArgPcmDart>('OmniPcm_BindCurrentStream');
-final omniPcmIsFormatReady =
-    omniDll.lookupFunction<_NoArgPcmNative, _NoArgPcmDart>('OmniPcm_IsFormatReady');
-final omniPcmHasError =
-    omniDll.lookupFunction<_NoArgPcmNative, _NoArgPcmDart>('OmniPcm_HasError');
-final omniPcmWaitForFormatReady =
-    omniDll.lookupFunction<_WaitFormatNative, _WaitFormatDart>('OmniPcm_WaitForFormatReady');
-final omniPcmReadFrames =
-    omniDll.lookupFunction<_ReadFramesNative, _ReadFramesDart>('OmniPcm_ReadFrames');
+final omniPcmOpenUtf8 = omniDll.lookupFunction<_OpenUtf8Native, _OpenUtf8Dart>(
+  'OmniPcm_OpenUtf8',
+);
+final omniPcmClose = omniDll.lookupFunction<_ClosePcmNative, _ClosePcmDart>(
+  'OmniPcm_Close',
+);
+final omniPcmGetInfo = omniDll.lookupFunction<_GetInfoNative, _GetInfoDart>(
+  'OmniPcm_GetInfo',
+);
+final omniPcmGetSnapshot = omniDll
+    .lookupFunction<_GetSnapshotNative, _GetSnapshotDart>(
+      'OmniPcm_GetSnapshot',
+    );
+final omniPcmBindCurrentStream = omniDll
+    .lookupFunction<_NoArgPcmNative, _NoArgPcmDart>(
+      'OmniPcm_BindCurrentStream',
+    );
+final omniPcmIsFormatReady = omniDll
+    .lookupFunction<_NoArgPcmNative, _NoArgPcmDart>('OmniPcm_IsFormatReady');
+final omniPcmHasError = omniDll.lookupFunction<_NoArgPcmNative, _NoArgPcmDart>(
+  'OmniPcm_HasError',
+);
+final omniPcmWaitForFormatReady = omniDll
+    .lookupFunction<_WaitFormatNative, _WaitFormatDart>(
+      'OmniPcm_WaitForFormatReady',
+    );
+final omniPcmReadFrames = omniDll
+    .lookupFunction<_ReadFramesNative, _ReadFramesDart>('OmniPcm_ReadFrames');

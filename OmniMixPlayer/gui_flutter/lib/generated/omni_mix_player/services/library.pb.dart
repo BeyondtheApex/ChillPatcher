@@ -10,9 +10,16 @@
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
 // ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
+import 'dart:async' as $async;
 import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
+
+import '../models/album.pb.dart' as $2;
+import '../models/playlist.pb.dart' as $4;
+import '../models/query.pb.dart' as $1;
+import '../models/tag.pb.dart' as $3;
+import '../models/track.pb.dart' as $0;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
@@ -1010,6 +1017,146 @@ class UnregisterModuleResponse extends $pb.GeneratedMessage {
   $core.bool hasPlaylistsRemoved() => $_has(4);
   @$pb.TagNumber(5)
   void clearPlaylistsRemoved() => $_clearField(5);
+}
+
+/// 音乐库服务 — 平台级别 upsert + 查询
+class LibraryServiceApi {
+  final $pb.RpcClient _client;
+
+  LibraryServiceApi(this._client);
+
+  /// ── Track ──
+  $async.Future<$0.UpsertTrackResponse> upsertTrack(
+          $pb.ClientContext? ctx, $0.UpsertTrackRequest request) =>
+      _client.invoke<$0.UpsertTrackResponse>(ctx, 'LibraryService',
+          'UpsertTrack', request, $0.UpsertTrackResponse());
+  $async.Future<$0.UpsertTracksResponse> upsertTracks(
+          $pb.ClientContext? ctx, $0.UpsertTracksRequest request) =>
+      _client.invoke<$0.UpsertTracksResponse>(ctx, 'LibraryService',
+          'UpsertTracks', request, $0.UpsertTracksResponse());
+  $async.Future<$0.Track> getTrack(
+          $pb.ClientContext? ctx, GetTrackRequest request) =>
+      _client.invoke<$0.Track>(
+          ctx, 'LibraryService', 'GetTrack', request, $0.Track());
+  $async.Future<$1.QueryTracksResponse> queryTracks(
+          $pb.ClientContext? ctx, $1.TrackQuery request) =>
+      _client.invoke<$1.QueryTracksResponse>(ctx, 'LibraryService',
+          'QueryTracks', request, $1.QueryTracksResponse());
+  $async.Future<DeleteTrackResponse> deleteTrack(
+          $pb.ClientContext? ctx, DeleteTrackRequest request) =>
+      _client.invoke<DeleteTrackResponse>(
+          ctx, 'LibraryService', 'DeleteTrack', request, DeleteTrackResponse());
+
+  /// ── Track Tags (多对多) ──
+  $async.Future<$0.SetTrackTagsResponse> setTrackTags(
+          $pb.ClientContext? ctx, $0.SetTrackTagsRequest request) =>
+      _client.invoke<$0.SetTrackTagsResponse>(ctx, 'LibraryService',
+          'SetTrackTags', request, $0.SetTrackTagsResponse());
+  $async.Future<$0.ModifyTrackTagResponse> addTrackTag(
+          $pb.ClientContext? ctx, $0.ModifyTrackTagRequest request) =>
+      _client.invoke<$0.ModifyTrackTagResponse>(ctx, 'LibraryService',
+          'AddTrackTag', request, $0.ModifyTrackTagResponse());
+  $async.Future<$0.ModifyTrackTagResponse> removeTrackTag(
+          $pb.ClientContext? ctx, $0.ModifyTrackTagRequest request) =>
+      _client.invoke<$0.ModifyTrackTagResponse>(ctx, 'LibraryService',
+          'RemoveTrackTag', request, $0.ModifyTrackTagResponse());
+  $async.Future<GetTrackTagsResponse> getTrackTags(
+          $pb.ClientContext? ctx, GetTrackTagsRequest request) =>
+      _client.invoke<GetTrackTagsResponse>(ctx, 'LibraryService',
+          'GetTrackTags', request, GetTrackTagsResponse());
+
+  /// ── Album ──
+  $async.Future<$2.UpsertAlbumResponse> upsertAlbum(
+          $pb.ClientContext? ctx, $2.UpsertAlbumRequest request) =>
+      _client.invoke<$2.UpsertAlbumResponse>(ctx, 'LibraryService',
+          'UpsertAlbum', request, $2.UpsertAlbumResponse());
+  $async.Future<$2.UpsertAlbumsResponse> upsertAlbums(
+          $pb.ClientContext? ctx, $2.UpsertAlbumsRequest request) =>
+      _client.invoke<$2.UpsertAlbumsResponse>(ctx, 'LibraryService',
+          'UpsertAlbums', request, $2.UpsertAlbumsResponse());
+  $async.Future<$2.Album> getAlbum(
+          $pb.ClientContext? ctx, GetAlbumRequest request) =>
+      _client.invoke<$2.Album>(
+          ctx, 'LibraryService', 'GetAlbum', request, $2.Album());
+  $async.Future<$1.QueryAlbumsResponse> queryAlbums(
+          $pb.ClientContext? ctx, $1.AlbumQuery request) =>
+      _client.invoke<$1.QueryAlbumsResponse>(ctx, 'LibraryService',
+          'QueryAlbums', request, $1.QueryAlbumsResponse());
+  $async.Future<DeleteAlbumResponse> deleteAlbum(
+          $pb.ClientContext? ctx, DeleteAlbumRequest request) =>
+      _client.invoke<DeleteAlbumResponse>(
+          ctx, 'LibraryService', 'DeleteAlbum', request, DeleteAlbumResponse());
+
+  /// ── Tag ──
+  $async.Future<$3.UpsertTagResponse> upsertTag(
+          $pb.ClientContext? ctx, $3.UpsertTagRequest request) =>
+      _client.invoke<$3.UpsertTagResponse>(
+          ctx, 'LibraryService', 'UpsertTag', request, $3.UpsertTagResponse());
+  $async.Future<$3.UpsertTagsResponse> upsertTags(
+          $pb.ClientContext? ctx, $3.UpsertTagsRequest request) =>
+      _client.invoke<$3.UpsertTagsResponse>(ctx, 'LibraryService', 'UpsertTags',
+          request, $3.UpsertTagsResponse());
+  $async.Future<$3.Tag> getTag($pb.ClientContext? ctx, GetTagRequest request) =>
+      _client.invoke<$3.Tag>(
+          ctx, 'LibraryService', 'GetTag', request, $3.Tag());
+  $async.Future<$1.QueryTagsResponse> queryTags(
+          $pb.ClientContext? ctx, $1.TagQuery request) =>
+      _client.invoke<$1.QueryTagsResponse>(
+          ctx, 'LibraryService', 'QueryTags', request, $1.QueryTagsResponse());
+  $async.Future<DeleteTagResponse> deleteTag(
+          $pb.ClientContext? ctx, DeleteTagRequest request) =>
+      _client.invoke<DeleteTagResponse>(
+          ctx, 'LibraryService', 'DeleteTag', request, DeleteTagResponse());
+
+  /// ── Playlist ──
+  $async.Future<$4.UpsertPlaylistResponse> upsertPlaylist(
+          $pb.ClientContext? ctx, $4.UpsertPlaylistRequest request) =>
+      _client.invoke<$4.UpsertPlaylistResponse>(ctx, 'LibraryService',
+          'UpsertPlaylist', request, $4.UpsertPlaylistResponse());
+  $async.Future<$4.Playlist> getPlaylist(
+          $pb.ClientContext? ctx, GetPlaylistRequest request) =>
+      _client.invoke<$4.Playlist>(
+          ctx, 'LibraryService', 'GetPlaylist', request, $4.Playlist());
+  $async.Future<$1.QueryPlaylistsResponse> queryPlaylists(
+          $pb.ClientContext? ctx, $1.PlaylistQuery request) =>
+      _client.invoke<$1.QueryPlaylistsResponse>(ctx, 'LibraryService',
+          'QueryPlaylists', request, $1.QueryPlaylistsResponse());
+  $async.Future<DeletePlaylistResponse> deletePlaylist(
+          $pb.ClientContext? ctx, DeletePlaylistRequest request) =>
+      _client.invoke<DeletePlaylistResponse>(ctx, 'LibraryService',
+          'DeletePlaylist', request, DeletePlaylistResponse());
+
+  /// ── Playlist Entries ──
+  $async.Future<$4.ReplacePlaylistEntriesResponse> replacePlaylistEntries(
+          $pb.ClientContext? ctx, $4.ReplacePlaylistEntriesRequest request) =>
+      _client.invoke<$4.ReplacePlaylistEntriesResponse>(
+          ctx,
+          'LibraryService',
+          'ReplacePlaylistEntries',
+          request,
+          $4.ReplacePlaylistEntriesResponse());
+  $async.Future<$4.InsertPlaylistEntryResponse> insertPlaylistEntry(
+          $pb.ClientContext? ctx, $4.InsertPlaylistEntryRequest request) =>
+      _client.invoke<$4.InsertPlaylistEntryResponse>(ctx, 'LibraryService',
+          'InsertPlaylistEntry', request, $4.InsertPlaylistEntryResponse());
+  $async.Future<$4.RemovePlaylistEntryResponse> removePlaylistEntry(
+          $pb.ClientContext? ctx, $4.RemovePlaylistEntryRequest request) =>
+      _client.invoke<$4.RemovePlaylistEntryResponse>(ctx, 'LibraryService',
+          'RemovePlaylistEntry', request, $4.RemovePlaylistEntryResponse());
+  $async.Future<$4.MovePlaylistEntryResponse> movePlaylistEntry(
+          $pb.ClientContext? ctx, $4.MovePlaylistEntryRequest request) =>
+      _client.invoke<$4.MovePlaylistEntryResponse>(ctx, 'LibraryService',
+          'MovePlaylistEntry', request, $4.MovePlaylistEntryResponse());
+  $async.Future<$4.PlaylistWithEntries> getPlaylistWithEntries(
+          $pb.ClientContext? ctx, GetPlaylistWithEntriesRequest request) =>
+      _client.invoke<$4.PlaylistWithEntries>(ctx, 'LibraryService',
+          'GetPlaylistWithEntries', request, $4.PlaylistWithEntries());
+
+  /// ── Module cleanup ──
+  $async.Future<UnregisterModuleResponse> unregisterModule(
+          $pb.ClientContext? ctx, UnregisterModuleRequest request) =>
+      _client.invoke<UnregisterModuleResponse>(ctx, 'LibraryService',
+          'UnregisterModule', request, UnregisterModuleResponse());
 }
 
 const $core.bool _omitFieldNames =

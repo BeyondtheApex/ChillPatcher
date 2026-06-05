@@ -168,7 +168,10 @@ namespace ChillPatcher.UIFramework.Audio
         /// </summary>
         private string GetAlbumName(GameAudioInfo audioInfo)
         {
-            // IPC bridge: MusicRegistry/AlbumRegistry removed. Always return default.
+            var song = OmniMixIntegration.Instance?.GetCachedSong(audioInfo?.UUID);
+            var album = OmniMixIntegration.Instance?.GetCachedAlbum(song?.AlbumId);
+            if (!string.IsNullOrEmpty(album?.DisplayName))
+                return album.DisplayName;
             return "Chill With You";
         }
 

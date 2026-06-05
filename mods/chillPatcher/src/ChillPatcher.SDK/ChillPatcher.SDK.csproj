@@ -32,6 +32,13 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
+  <!-- 原生 SDK DLL (复制到输出) -->
+  <ItemGroup>
+    <Content Include="..\..\..\..\bin\native\x64\OmniPcmShared.dll" Link="OmniPcmShared.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <!-- SDK 不依赖游戏 DLL，只依赖基础 Unity 类型 -->
   <ItemGroup>
     <!-- Unity Engine (基础类型) -->

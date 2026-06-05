@@ -156,7 +156,6 @@ namespace OmniMixPlayer.Backend.Audio
                     QueueCount = p.PlaybackTimeline?.ManualQueueUuids.Count ?? 0,
                     ModId = p.ModId ?? "",
                     GameName = p.GameName ?? "",
-                    Mode = p.Mode,
                     ConnectedAt = connectedAt
                 });
             }

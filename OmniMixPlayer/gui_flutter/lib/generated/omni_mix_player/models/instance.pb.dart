@@ -26,7 +26,6 @@ export 'instance.pbenum.dart';
 class InstanceCapabilities extends $pb.GeneratedMessage {
   factory InstanceCapabilities({
     $core.bool? serverControlledPlayback,
-    $core.bool? clientManagedPlayback,
     $core.bool? queueManagement,
     $core.bool? playlistManagement,
     $core.bool? multiplePlaylists,
@@ -39,6 +38,7 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
     $core.bool? volumeControl,
     $core.bool? equalizer,
     $core.bool? audioPlayback,
+    $core.bool? customSystemMediaService,
     $core.int? maxImportedPlaylists,
     $core.int? maxTags,
     $core.int? maxPlaylistEntries,
@@ -46,8 +46,6 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
     final result = create();
     if (serverControlledPlayback != null)
       result.serverControlledPlayback = serverControlledPlayback;
-    if (clientManagedPlayback != null)
-      result.clientManagedPlayback = clientManagedPlayback;
     if (queueManagement != null) result.queueManagement = queueManagement;
     if (playlistManagement != null)
       result.playlistManagement = playlistManagement;
@@ -61,6 +59,8 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
     if (volumeControl != null) result.volumeControl = volumeControl;
     if (equalizer != null) result.equalizer = equalizer;
     if (audioPlayback != null) result.audioPlayback = audioPlayback;
+    if (customSystemMediaService != null)
+      result.customSystemMediaService = customSystemMediaService;
     if (maxImportedPlaylists != null)
       result.maxImportedPlaylists = maxImportedPlaylists;
     if (maxTags != null) result.maxTags = maxTags;
@@ -84,7 +84,6 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
           const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
       createEmptyInstance: create)
     ..aOB(1, _omitFieldNames ? '' : 'serverControlledPlayback')
-    ..aOB(2, _omitFieldNames ? '' : 'clientManagedPlayback')
     ..aOB(3, _omitFieldNames ? '' : 'queueManagement')
     ..aOB(4, _omitFieldNames ? '' : 'playlistManagement')
     ..aOB(5, _omitFieldNames ? '' : 'multiplePlaylists')
@@ -97,6 +96,7 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
     ..aOB(12, _omitFieldNames ? '' : 'volumeControl')
     ..aOB(13, _omitFieldNames ? '' : 'equalizer')
     ..aOB(14, _omitFieldNames ? '' : 'audioPlayback')
+    ..aOB(15, _omitFieldNames ? '' : 'customSystemMediaService')
     ..aI(20, _omitFieldNames ? '' : 'maxImportedPlaylists')
     ..aI(21, _omitFieldNames ? '' : 'maxTags')
     ..aI(22, _omitFieldNames ? '' : 'maxPlaylistEntries')
@@ -130,122 +130,122 @@ class InstanceCapabilities extends $pb.GeneratedMessage {
   @$pb.TagNumber(1)
   void clearServerControlledPlayback() => $_clearField(1);
 
-  @$pb.TagNumber(2)
-  $core.bool get clientManagedPlayback => $_getBF(1);
-  @$pb.TagNumber(2)
-  set clientManagedPlayback($core.bool value) => $_setBool(1, value);
-  @$pb.TagNumber(2)
-  $core.bool hasClientManagedPlayback() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearClientManagedPlayback() => $_clearField(2);
-
   @$pb.TagNumber(3)
-  $core.bool get queueManagement => $_getBF(2);
+  $core.bool get queueManagement => $_getBF(1);
   @$pb.TagNumber(3)
-  set queueManagement($core.bool value) => $_setBool(2, value);
+  set queueManagement($core.bool value) => $_setBool(1, value);
   @$pb.TagNumber(3)
-  $core.bool hasQueueManagement() => $_has(2);
+  $core.bool hasQueueManagement() => $_has(1);
   @$pb.TagNumber(3)
   void clearQueueManagement() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $core.bool get playlistManagement => $_getBF(3);
+  $core.bool get playlistManagement => $_getBF(2);
   @$pb.TagNumber(4)
-  set playlistManagement($core.bool value) => $_setBool(3, value);
+  set playlistManagement($core.bool value) => $_setBool(2, value);
   @$pb.TagNumber(4)
-  $core.bool hasPlaylistManagement() => $_has(3);
+  $core.bool hasPlaylistManagement() => $_has(2);
   @$pb.TagNumber(4)
   void clearPlaylistManagement() => $_clearField(4);
 
   @$pb.TagNumber(5)
-  $core.bool get multiplePlaylists => $_getBF(4);
+  $core.bool get multiplePlaylists => $_getBF(3);
   @$pb.TagNumber(5)
-  set multiplePlaylists($core.bool value) => $_setBool(4, value);
+  set multiplePlaylists($core.bool value) => $_setBool(3, value);
   @$pb.TagNumber(5)
-  $core.bool hasMultiplePlaylists() => $_has(4);
+  $core.bool hasMultiplePlaylists() => $_has(3);
   @$pb.TagNumber(5)
   void clearMultiplePlaylists() => $_clearField(5);
 
   @$pb.TagNumber(6)
-  $core.bool get tagFiltering => $_getBF(5);
+  $core.bool get tagFiltering => $_getBF(4);
   @$pb.TagNumber(6)
-  set tagFiltering($core.bool value) => $_setBool(5, value);
+  set tagFiltering($core.bool value) => $_setBool(4, value);
   @$pb.TagNumber(6)
-  $core.bool hasTagFiltering() => $_has(5);
+  $core.bool hasTagFiltering() => $_has(4);
   @$pb.TagNumber(6)
   void clearTagFiltering() => $_clearField(6);
 
   @$pb.TagNumber(7)
-  $core.bool get unlimitedTags => $_getBF(6);
+  $core.bool get unlimitedTags => $_getBF(5);
   @$pb.TagNumber(7)
-  set unlimitedTags($core.bool value) => $_setBool(6, value);
+  set unlimitedTags($core.bool value) => $_setBool(5, value);
   @$pb.TagNumber(7)
-  $core.bool hasUnlimitedTags() => $_has(6);
+  $core.bool hasUnlimitedTags() => $_has(5);
   @$pb.TagNumber(7)
   void clearUnlimitedTags() => $_clearField(7);
 
   @$pb.TagNumber(8)
-  $core.bool get albumFiltering => $_getBF(7);
+  $core.bool get albumFiltering => $_getBF(6);
   @$pb.TagNumber(8)
-  set albumFiltering($core.bool value) => $_setBool(7, value);
+  set albumFiltering($core.bool value) => $_setBool(6, value);
   @$pb.TagNumber(8)
-  $core.bool hasAlbumFiltering() => $_has(7);
+  $core.bool hasAlbumFiltering() => $_has(6);
   @$pb.TagNumber(8)
   void clearAlbumFiltering() => $_clearField(8);
 
   @$pb.TagNumber(9)
-  $core.bool get shuffle => $_getBF(8);
+  $core.bool get shuffle => $_getBF(7);
   @$pb.TagNumber(9)
-  set shuffle($core.bool value) => $_setBool(8, value);
+  set shuffle($core.bool value) => $_setBool(7, value);
   @$pb.TagNumber(9)
-  $core.bool hasShuffle() => $_has(8);
+  $core.bool hasShuffle() => $_has(7);
   @$pb.TagNumber(9)
   void clearShuffle() => $_clearField(9);
 
   @$pb.TagNumber(10)
-  $core.bool get repeat => $_getBF(9);
+  $core.bool get repeat => $_getBF(8);
   @$pb.TagNumber(10)
-  set repeat($core.bool value) => $_setBool(9, value);
+  set repeat($core.bool value) => $_setBool(8, value);
   @$pb.TagNumber(10)
-  $core.bool hasRepeat() => $_has(9);
+  $core.bool hasRepeat() => $_has(8);
   @$pb.TagNumber(10)
   void clearRepeat() => $_clearField(10);
 
   @$pb.TagNumber(11)
-  $core.bool get seek => $_getBF(10);
+  $core.bool get seek => $_getBF(9);
   @$pb.TagNumber(11)
-  set seek($core.bool value) => $_setBool(10, value);
+  set seek($core.bool value) => $_setBool(9, value);
   @$pb.TagNumber(11)
-  $core.bool hasSeek() => $_has(10);
+  $core.bool hasSeek() => $_has(9);
   @$pb.TagNumber(11)
   void clearSeek() => $_clearField(11);
 
   @$pb.TagNumber(12)
-  $core.bool get volumeControl => $_getBF(11);
+  $core.bool get volumeControl => $_getBF(10);
   @$pb.TagNumber(12)
-  set volumeControl($core.bool value) => $_setBool(11, value);
+  set volumeControl($core.bool value) => $_setBool(10, value);
   @$pb.TagNumber(12)
-  $core.bool hasVolumeControl() => $_has(11);
+  $core.bool hasVolumeControl() => $_has(10);
   @$pb.TagNumber(12)
   void clearVolumeControl() => $_clearField(12);
 
   @$pb.TagNumber(13)
-  $core.bool get equalizer => $_getBF(12);
+  $core.bool get equalizer => $_getBF(11);
   @$pb.TagNumber(13)
-  set equalizer($core.bool value) => $_setBool(12, value);
+  set equalizer($core.bool value) => $_setBool(11, value);
   @$pb.TagNumber(13)
-  $core.bool hasEqualizer() => $_has(12);
+  $core.bool hasEqualizer() => $_has(11);
   @$pb.TagNumber(13)
   void clearEqualizer() => $_clearField(13);
 
   @$pb.TagNumber(14)
-  $core.bool get audioPlayback => $_getBF(13);
+  $core.bool get audioPlayback => $_getBF(12);
   @$pb.TagNumber(14)
-  set audioPlayback($core.bool value) => $_setBool(13, value);
+  set audioPlayback($core.bool value) => $_setBool(12, value);
   @$pb.TagNumber(14)
-  $core.bool hasAudioPlayback() => $_has(13);
+  $core.bool hasAudioPlayback() => $_has(12);
   @$pb.TagNumber(14)
   void clearAudioPlayback() => $_clearField(14);
+
+  @$pb.TagNumber(15)
+  $core.bool get customSystemMediaService => $_getBF(13);
+  @$pb.TagNumber(15)
+  set customSystemMediaService($core.bool value) => $_setBool(13, value);
+  @$pb.TagNumber(15)
+  $core.bool hasCustomSystemMediaService() => $_has(13);
+  @$pb.TagNumber(15)
+  void clearCustomSystemMediaService() => $_clearField(15);
 
   /// 限制（null 表示无限制，proto3 用 0 表示未设置 / wrapper types）
   @$pb.TagNumber(20)
@@ -740,7 +740,6 @@ class InstanceProfile extends $pb.GeneratedMessage {
     $0.InstanceKind? kind,
     $core.String? modId,
     $core.String? gameName,
-    $0.PlaybackModeType? mode,
     InstanceCapabilities? capabilities,
     $core.double? volume,
     $core.double? targetLatency,
@@ -757,7 +756,6 @@ class InstanceProfile extends $pb.GeneratedMessage {
     if (kind != null) result.kind = kind;
     if (modId != null) result.modId = modId;
     if (gameName != null) result.gameName = gameName;
-    if (mode != null) result.mode = mode;
     if (capabilities != null) result.capabilities = capabilities;
     if (volume != null) result.volume = volume;
     if (targetLatency != null) result.targetLatency = targetLatency;
@@ -791,8 +789,6 @@ class InstanceProfile extends $pb.GeneratedMessage {
         enumValues: $0.InstanceKind.values)
     ..aOS(4, _omitFieldNames ? '' : 'modId')
     ..aOS(5, _omitFieldNames ? '' : 'gameName')
-    ..aE<$0.PlaybackModeType>(6, _omitFieldNames ? '' : 'mode',
-        enumValues: $0.PlaybackModeType.values)
     ..aOM<InstanceCapabilities>(7, _omitFieldNames ? '' : 'capabilities',
         subBuilder: InstanceCapabilities.create)
     ..aD(8, _omitFieldNames ? '' : 'volume', fieldType: $pb.PbFieldType.OF)
@@ -874,93 +870,84 @@ class InstanceProfile extends $pb.GeneratedMessage {
   @$pb.TagNumber(5)
   void clearGameName() => $_clearField(5);
 
-  @$pb.TagNumber(6)
-  $0.PlaybackModeType get mode => $_getN(5);
-  @$pb.TagNumber(6)
-  set mode($0.PlaybackModeType value) => $_setField(6, value);
-  @$pb.TagNumber(6)
-  $core.bool hasMode() => $_has(5);
-  @$pb.TagNumber(6)
-  void clearMode() => $_clearField(6);
-
   @$pb.TagNumber(7)
-  InstanceCapabilities get capabilities => $_getN(6);
+  InstanceCapabilities get capabilities => $_getN(5);
   @$pb.TagNumber(7)
   set capabilities(InstanceCapabilities value) => $_setField(7, value);
   @$pb.TagNumber(7)
-  $core.bool hasCapabilities() => $_has(6);
+  $core.bool hasCapabilities() => $_has(5);
   @$pb.TagNumber(7)
   void clearCapabilities() => $_clearField(7);
   @$pb.TagNumber(7)
-  InstanceCapabilities ensureCapabilities() => $_ensure(6);
+  InstanceCapabilities ensureCapabilities() => $_ensure(5);
 
   @$pb.TagNumber(8)
-  $core.double get volume => $_getN(7);
+  $core.double get volume => $_getN(6);
   @$pb.TagNumber(8)
-  set volume($core.double value) => $_setFloat(7, value);
+  set volume($core.double value) => $_setFloat(6, value);
   @$pb.TagNumber(8)
-  $core.bool hasVolume() => $_has(7);
+  $core.bool hasVolume() => $_has(6);
   @$pb.TagNumber(8)
   void clearVolume() => $_clearField(8);
 
   @$pb.TagNumber(9)
-  $core.double get targetLatency => $_getN(8);
+  $core.double get targetLatency => $_getN(7);
   @$pb.TagNumber(9)
-  set targetLatency($core.double value) => $_setFloat(8, value);
+  set targetLatency($core.double value) => $_setFloat(7, value);
   @$pb.TagNumber(9)
-  $core.bool hasTargetLatency() => $_has(8);
+  $core.bool hasTargetLatency() => $_has(7);
   @$pb.TagNumber(9)
   void clearTargetLatency() => $_clearField(9);
 
   @$pb.TagNumber(10)
-  EqualizerState get equalizer => $_getN(9);
+  EqualizerState get equalizer => $_getN(8);
   @$pb.TagNumber(10)
   set equalizer(EqualizerState value) => $_setField(10, value);
   @$pb.TagNumber(10)
-  $core.bool hasEqualizer() => $_has(9);
+  $core.bool hasEqualizer() => $_has(8);
   @$pb.TagNumber(10)
   void clearEqualizer() => $_clearField(10);
   @$pb.TagNumber(10)
-  EqualizerState ensureEqualizer() => $_ensure(9);
+  EqualizerState ensureEqualizer() => $_ensure(8);
 
   @$pb.TagNumber(13)
-  $pb.PbList<$core.String> get importedPlaylistIds => $_getList(10);
+  $pb.PbList<$core.String> get importedPlaylistIds => $_getList(9);
 
   @$pb.TagNumber(14)
-  $pb.PbList<$core.String> get pinnedTagIds => $_getList(11);
+  $pb.PbList<$core.String> get pinnedTagIds => $_getList(10);
 
   @$pb.TagNumber(15)
-  $0.OmniTimestamp get createdAt => $_getN(12);
+  $0.OmniTimestamp get createdAt => $_getN(11);
   @$pb.TagNumber(15)
   set createdAt($0.OmniTimestamp value) => $_setField(15, value);
   @$pb.TagNumber(15)
-  $core.bool hasCreatedAt() => $_has(12);
+  $core.bool hasCreatedAt() => $_has(11);
   @$pb.TagNumber(15)
   void clearCreatedAt() => $_clearField(15);
   @$pb.TagNumber(15)
-  $0.OmniTimestamp ensureCreatedAt() => $_ensure(12);
+  $0.OmniTimestamp ensureCreatedAt() => $_ensure(11);
 
   @$pb.TagNumber(16)
-  $0.OmniTimestamp get updatedAt => $_getN(13);
+  $0.OmniTimestamp get updatedAt => $_getN(12);
   @$pb.TagNumber(16)
   set updatedAt($0.OmniTimestamp value) => $_setField(16, value);
   @$pb.TagNumber(16)
-  $core.bool hasUpdatedAt() => $_has(13);
+  $core.bool hasUpdatedAt() => $_has(12);
   @$pb.TagNumber(16)
   void clearUpdatedAt() => $_clearField(16);
   @$pb.TagNumber(16)
-  $0.OmniTimestamp ensureUpdatedAt() => $_ensure(13);
+  $0.OmniTimestamp ensureUpdatedAt() => $_ensure(12);
 
   @$pb.TagNumber(17)
-  PlaybackTimelineState get playbackTimeline => $_getN(14);
+  PlaybackTimelineState get playbackTimeline => $_getN(13);
   @$pb.TagNumber(17)
   set playbackTimeline(PlaybackTimelineState value) => $_setField(17, value);
   @$pb.TagNumber(17)
-  $core.bool hasPlaybackTimeline() => $_has(14);
+  $core.bool hasPlaybackTimeline() => $_has(13);
   @$pb.TagNumber(17)
   void clearPlaybackTimeline() => $_clearField(17);
   @$pb.TagNumber(17)
-  PlaybackTimelineState ensurePlaybackTimeline() => $_ensure(14);
+  PlaybackTimelineState ensurePlaybackTimeline() => $_ensure(13);
 }
 
 /// 连接请求
@@ -968,7 +955,6 @@ class InstanceConnectRequest extends $pb.GeneratedMessage {
   factory InstanceConnectRequest({
     $core.String? clientId,
     $0.InstanceKind? kind,
-    $0.PlaybackModeType? mode,
     InstanceCapabilities? capabilities,
     $core.String? modId,
     $core.String? gameName,
@@ -978,7 +964,6 @@ class InstanceConnectRequest extends $pb.GeneratedMessage {
     final result = create();
     if (clientId != null) result.clientId = clientId;
     if (kind != null) result.kind = kind;
-    if (mode != null) result.mode = mode;
     if (capabilities != null) result.capabilities = capabilities;
     if (modId != null) result.modId = modId;
     if (gameName != null) result.gameName = gameName;
@@ -1004,8 +989,6 @@ class InstanceConnectRequest extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'clientId')
     ..aE<$0.InstanceKind>(2, _omitFieldNames ? '' : 'kind',
         enumValues: $0.InstanceKind.values)
-    ..aE<$0.PlaybackModeType>(3, _omitFieldNames ? '' : 'mode',
-        enumValues: $0.PlaybackModeType.values)
     ..aOM<InstanceCapabilities>(4, _omitFieldNames ? '' : 'capabilities',
         subBuilder: InstanceCapabilities.create)
     ..aOS(5, _omitFieldNames ? '' : 'modId')
@@ -1052,59 +1035,50 @@ class InstanceConnectRequest extends $pb.GeneratedMessage {
   @$pb.TagNumber(2)
   void clearKind() => $_clearField(2);
 
-  @$pb.TagNumber(3)
-  $0.PlaybackModeType get mode => $_getN(2);
-  @$pb.TagNumber(3)
-  set mode($0.PlaybackModeType value) => $_setField(3, value);
-  @$pb.TagNumber(3)
-  $core.bool hasMode() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearMode() => $_clearField(3);
-
   @$pb.TagNumber(4)
-  InstanceCapabilities get capabilities => $_getN(3);
+  InstanceCapabilities get capabilities => $_getN(2);
   @$pb.TagNumber(4)
   set capabilities(InstanceCapabilities value) => $_setField(4, value);
   @$pb.TagNumber(4)
-  $core.bool hasCapabilities() => $_has(3);
+  $core.bool hasCapabilities() => $_has(2);
   @$pb.TagNumber(4)
   void clearCapabilities() => $_clearField(4);
   @$pb.TagNumber(4)
-  InstanceCapabilities ensureCapabilities() => $_ensure(3);
+  InstanceCapabilities ensureCapabilities() => $_ensure(2);
 
   @$pb.TagNumber(5)
-  $core.String get modId => $_getSZ(4);
+  $core.String get modId => $_getSZ(3);
   @$pb.TagNumber(5)
-  set modId($core.String value) => $_setString(4, value);
+  set modId($core.String value) => $_setString(3, value);
   @$pb.TagNumber(5)
-  $core.bool hasModId() => $_has(4);
+  $core.bool hasModId() => $_has(3);
   @$pb.TagNumber(5)
   void clearModId() => $_clearField(5);
 
   @$pb.TagNumber(6)
-  $core.String get gameName => $_getSZ(5);
+  $core.String get gameName => $_getSZ(4);
   @$pb.TagNumber(6)
-  set gameName($core.String value) => $_setString(5, value);
+  set gameName($core.String value) => $_setString(4, value);
   @$pb.TagNumber(6)
-  $core.bool hasGameName() => $_has(5);
+  $core.bool hasGameName() => $_has(4);
   @$pb.TagNumber(6)
   void clearGameName() => $_clearField(6);
 
   @$pb.TagNumber(7)
-  $core.String get displayName => $_getSZ(6);
+  $core.String get displayName => $_getSZ(5);
   @$pb.TagNumber(7)
-  set displayName($core.String value) => $_setString(6, value);
+  set displayName($core.String value) => $_setString(5, value);
   @$pb.TagNumber(7)
-  $core.bool hasDisplayName() => $_has(6);
+  $core.bool hasDisplayName() => $_has(5);
   @$pb.TagNumber(7)
   void clearDisplayName() => $_clearField(7);
 
   @$pb.TagNumber(8)
-  $core.bool get noInstance => $_getBF(7);
+  $core.bool get noInstance => $_getBF(6);
   @$pb.TagNumber(8)
-  set noInstance($core.bool value) => $_setBool(7, value);
+  set noInstance($core.bool value) => $_setBool(6, value);
   @$pb.TagNumber(8)
-  $core.bool hasNoInstance() => $_has(7);
+  $core.bool hasNoInstance() => $_has(6);
   @$pb.TagNumber(8)
   void clearNoInstance() => $_clearField(8);
 }
@@ -1438,7 +1412,6 @@ class InstanceSummary extends $pb.GeneratedMessage {
     $core.String? id,
     $core.String? displayName,
     $0.InstanceKind? kind,
-    $0.PlaybackModeType? mode,
     $core.bool? isOnline,
     $core.String? currentTrackUuid,
     $core.int? queueCount,
@@ -1450,7 +1423,6 @@ class InstanceSummary extends $pb.GeneratedMessage {
     if (id != null) result.id = id;
     if (displayName != null) result.displayName = displayName;
     if (kind != null) result.kind = kind;
-    if (mode != null) result.mode = mode;
     if (isOnline != null) result.isOnline = isOnline;
     if (currentTrackUuid != null) result.currentTrackUuid = currentTrackUuid;
     if (queueCount != null) result.queueCount = queueCount;
@@ -1478,8 +1450,6 @@ class InstanceSummary extends $pb.GeneratedMessage {
     ..aOS(2, _omitFieldNames ? '' : 'displayName')
     ..aE<$0.InstanceKind>(3, _omitFieldNames ? '' : 'kind',
         enumValues: $0.InstanceKind.values)
-    ..aE<$0.PlaybackModeType>(4, _omitFieldNames ? '' : 'mode',
-        enumValues: $0.PlaybackModeType.values)
     ..aOB(5, _omitFieldNames ? '' : 'isOnline')
     ..aOS(6, _omitFieldNames ? '' : 'currentTrackUuid')
     ..aI(7, _omitFieldNames ? '' : 'queueCount')
@@ -1535,68 +1505,59 @@ class InstanceSummary extends $pb.GeneratedMessage {
   @$pb.TagNumber(3)
   void clearKind() => $_clearField(3);
 
-  @$pb.TagNumber(4)
-  $0.PlaybackModeType get mode => $_getN(3);
-  @$pb.TagNumber(4)
-  set mode($0.PlaybackModeType value) => $_setField(4, value);
-  @$pb.TagNumber(4)
-  $core.bool hasMode() => $_has(3);
-  @$pb.TagNumber(4)
-  void clearMode() => $_clearField(4);
-
   @$pb.TagNumber(5)
-  $core.bool get isOnline => $_getBF(4);
+  $core.bool get isOnline => $_getBF(3);
   @$pb.TagNumber(5)
-  set isOnline($core.bool value) => $_setBool(4, value);
+  set isOnline($core.bool value) => $_setBool(3, value);
   @$pb.TagNumber(5)
-  $core.bool hasIsOnline() => $_has(4);
+  $core.bool hasIsOnline() => $_has(3);
   @$pb.TagNumber(5)
   void clearIsOnline() => $_clearField(5);
 
   @$pb.TagNumber(6)
-  $core.String get currentTrackUuid => $_getSZ(5);
+  $core.String get currentTrackUuid => $_getSZ(4);
   @$pb.TagNumber(6)
-  set currentTrackUuid($core.String value) => $_setString(5, value);
+  set currentTrackUuid($core.String value) => $_setString(4, value);
   @$pb.TagNumber(6)
-  $core.bool hasCurrentTrackUuid() => $_has(5);
+  $core.bool hasCurrentTrackUuid() => $_has(4);
   @$pb.TagNumber(6)
   void clearCurrentTrackUuid() => $_clearField(6);
 
   @$pb.TagNumber(7)
-  $core.int get queueCount => $_getIZ(6);
+  $core.int get queueCount => $_getIZ(5);
   @$pb.TagNumber(7)
-  set queueCount($core.int value) => $_setSignedInt32(6, value);
+  set queueCount($core.int value) => $_setSignedInt32(5, value);
   @$pb.TagNumber(7)
-  $core.bool hasQueueCount() => $_has(6);
+  $core.bool hasQueueCount() => $_has(5);
   @$pb.TagNumber(7)
   void clearQueueCount() => $_clearField(7);
 
   @$pb.TagNumber(8)
-  $0.OmniTimestamp get connectedAt => $_getN(7);
+  $0.OmniTimestamp get connectedAt => $_getN(6);
   @$pb.TagNumber(8)
   set connectedAt($0.OmniTimestamp value) => $_setField(8, value);
   @$pb.TagNumber(8)
-  $core.bool hasConnectedAt() => $_has(7);
+  $core.bool hasConnectedAt() => $_has(6);
   @$pb.TagNumber(8)
   void clearConnectedAt() => $_clearField(8);
   @$pb.TagNumber(8)
-  $0.OmniTimestamp ensureConnectedAt() => $_ensure(7);
+  $0.OmniTimestamp ensureConnectedAt() => $_ensure(6);
 
   @$pb.TagNumber(9)
-  $core.String get modId => $_getSZ(8);
+  $core.String get modId => $_getSZ(7);
   @$pb.TagNumber(9)
-  set modId($core.String value) => $_setString(8, value);
+  set modId($core.String value) => $_setString(7, value);
   @$pb.TagNumber(9)
-  $core.bool hasModId() => $_has(8);
+  $core.bool hasModId() => $_has(7);
   @$pb.TagNumber(9)
   void clearModId() => $_clearField(9);
 
   @$pb.TagNumber(10)
-  $core.String get gameName => $_getSZ(9);
+  $core.String get gameName => $_getSZ(8);
   @$pb.TagNumber(10)
-  set gameName($core.String value) => $_setString(9, value);
+  set gameName($core.String value) => $_setString(8, value);
   @$pb.TagNumber(10)
-  $core.bool hasGameName() => $_has(9);
+  $core.bool hasGameName() => $_has(8);
   @$pb.TagNumber(10)
   void clearGameName() => $_clearField(10);
 }

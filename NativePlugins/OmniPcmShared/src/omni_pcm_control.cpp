@@ -216,7 +216,6 @@ int grpc_web_unary(
 void fill_capabilities(uint32_t flags, omni_mix_player::InstanceCapabilities* caps) {
     if (!caps) return;
     caps->set_server_controlled_playback((flags & OMNI_PCM_CAP_SERVER_CONTROLLED_PLAYBACK) != 0);
-    caps->set_client_managed_playback((flags & OMNI_PCM_CAP_CLIENT_MANAGED_PLAYBACK) != 0);
     caps->set_queue_management((flags & OMNI_PCM_CAP_QUEUE_MANAGEMENT) != 0);
     caps->set_playlist_management((flags & OMNI_PCM_CAP_PLAYLIST_MANAGEMENT) != 0);
     caps->set_shuffle((flags & OMNI_PCM_CAP_SHUFFLE) != 0);
@@ -229,12 +228,12 @@ void fill_capabilities(uint32_t flags, omni_mix_player::InstanceCapabilities* ca
     caps->set_unlimited_tags((flags & OMNI_PCM_CAP_UNLIMITED_TAGS) != 0);
     caps->set_album_filtering((flags & OMNI_PCM_CAP_ALBUM_FILTERING) != 0);
     caps->set_audio_playback((flags & OMNI_PCM_CAP_AUDIO_PLAYBACK) != 0);
+    caps->set_custom_system_media_service((flags & OMNI_PCM_CAP_CUSTOM_SYSTEM_MEDIA_SERVICE) != 0);
 }
 
 uint32_t capability_flags(const omni_mix_player::InstanceCapabilities& caps) {
     uint32_t flags = 0;
     if (caps.server_controlled_playback()) flags |= OMNI_PCM_CAP_SERVER_CONTROLLED_PLAYBACK;
-    if (caps.client_managed_playback()) flags |= OMNI_PCM_CAP_CLIENT_MANAGED_PLAYBACK;
     if (caps.queue_management()) flags |= OMNI_PCM_CAP_QUEUE_MANAGEMENT;
     if (caps.playlist_management()) flags |= OMNI_PCM_CAP_PLAYLIST_MANAGEMENT;
     if (caps.shuffle()) flags |= OMNI_PCM_CAP_SHUFFLE;
@@ -247,6 +246,7 @@ uint32_t capability_flags(const omni_mix_player::InstanceCapabilities& caps) {
     if (caps.unlimited_tags()) flags |= OMNI_PCM_CAP_UNLIMITED_TAGS;
     if (caps.album_filtering()) flags |= OMNI_PCM_CAP_ALBUM_FILTERING;
     if (caps.audio_playback()) flags |= OMNI_PCM_CAP_AUDIO_PLAYBACK;
+    if (caps.custom_system_media_service()) flags |= OMNI_PCM_CAP_CUSTOM_SYSTEM_MEDIA_SERVICE;
     return flags;
 }
 
@@ -261,7 +261,6 @@ void fill_profile(const omni_mix_player::InstanceProfile& profile, OmniPcmInstan
     out->capability_flags = capability_flags(profile.capabilities());
     out->volume = profile.volume();
     out->target_latency = profile.target_latency();
-    out->mode = static_cast<int32_t>(profile.mode());
     out->created_at = profile.has_created_at() ? profile.created_at().seconds() : 0;
     out->updated_at = profile.has_updated_at() ? profile.updated_at().seconds() : 0;
 }
@@ -277,7 +276,6 @@ void fill_summary(const omni_mix_player::InstanceSummary& summary, OmniPcmInstan
     out->kind = static_cast<int32_t>(summary.kind());
     out->is_online = summary.is_online() ? 1 : 0;
     out->queue_count = summary.queue_count();
-    out->mode = static_cast<int32_t>(summary.mode());
     out->connected_at = summary.has_connected_at() ? summary.connected_at().seconds() : 0;
 }
 
