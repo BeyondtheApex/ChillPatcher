@@ -7,6 +7,13 @@ namespace ChillPatcher.Patches.UIFramework
 {
     /// <summary>
     /// 在 MusicService.Load 之后通过 IPC 从 OmniMixPlayer 导入歌曲
+    /// 
+    /// 新架构：
+    /// 1. 连接后端
+    /// 2. 声明能力（32-bit AudioTag 布局）
+    /// 3. 后端根据能力声明自动注册 Tag/Album/Song
+    /// 4. 全量导入歌曲到游戏 MusicService
+    /// 后续增量更新通过 WebSocket playlist.updated 事件
     /// </summary>
     [HarmonyPatch(typeof(MusicService), "Load")]
     public static class MusicService_Load_Patch
@@ -24,7 +31,6 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 try
                 {
-                    // Connect to OmniMixPlayer
                     if (!OmniMixIntegration.Instance.IsConnected)
                     {
                         logger.LogInfo("Connecting to OmniMixPlayer backend...");
@@ -36,7 +42,6 @@ namespace ChillPatcher.Patches.UIFramework
                         }
                     }
 
-                    // Import songs
                     var replaceOnlyFirstTime = !_songsImported;
                     _songsImported = true;
 

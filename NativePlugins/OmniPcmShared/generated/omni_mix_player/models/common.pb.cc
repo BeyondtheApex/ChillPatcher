@@ -215,56 +215,6 @@ bool TrackSortField_Parse(absl::string_view name, TrackSortField* value) {
   }
   return success;
 }
-PROTOBUF_CONSTINIT const uint32_t PlaybackModeType_internal_data_[] = {
-    196608u, 0u, };
-bool PlaybackModeType_IsValid(int value) {
-  return 0 <= value && value <= 2;
-}
-static ::google::protobuf::internal::ExplicitlyConstructed<std::string>
-    PlaybackModeType_strings[3] = {};
-
-static const char PlaybackModeType_names[] = {
-    "PLAYBACK_MODE_CLIENT_MANAGED"
-    "PLAYBACK_MODE_SERVER_MANAGED"
-    "PLAYBACK_MODE_UNSPECIFIED"
-};
-
-static const ::google::protobuf::internal::EnumEntry PlaybackModeType_entries[] =
-    {
-        {{&PlaybackModeType_names[0], 28}, 1},
-        {{&PlaybackModeType_names[28], 28}, 2},
-        {{&PlaybackModeType_names[56], 25}, 0},
-};
-
-static const int PlaybackModeType_entries_by_number[] = {
-    2,  // 0 -> PLAYBACK_MODE_UNSPECIFIED
-    0,  // 1 -> PLAYBACK_MODE_CLIENT_MANAGED
-    1,  // 2 -> PLAYBACK_MODE_SERVER_MANAGED
-};
-
-const std::string& PlaybackModeType_Name(PlaybackModeType value) {
-  static const bool kDummy =
-      ::google::protobuf::internal::InitializeEnumStrings(
-          PlaybackModeType_entries, PlaybackModeType_entries_by_number,
-          3, PlaybackModeType_strings);
-  (void)kDummy;
-
-  int idx = ::google::protobuf::internal::LookUpEnumName(
-      PlaybackModeType_entries, PlaybackModeType_entries_by_number, 3,
-      value);
-  return idx == -1 ? ::google::protobuf::internal::GetEmptyString()
-                   : PlaybackModeType_strings[idx].get();
-}
-
-bool PlaybackModeType_Parse(absl::string_view name, PlaybackModeType* value) {
-  int int_value;
-  bool success = ::google::protobuf::internal::LookUpEnumValue(
-      PlaybackModeType_entries, 3, name, &int_value);
-  if (success) {
-    *value = static_cast<PlaybackModeType>(int_value);
-  }
-  return success;
-}
 PROTOBUF_CONSTINIT const uint32_t RepeatMode_internal_data_[] = {
     262144u, 0u, };
 bool RepeatMode_IsValid(int value) {

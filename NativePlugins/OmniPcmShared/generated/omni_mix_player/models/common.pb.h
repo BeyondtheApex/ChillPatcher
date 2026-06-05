@@ -135,30 +135,6 @@ const std::string& TrackSortField_Name(T value) {
   return TrackSortField_Name(static_cast<TrackSortField>(value));
 }
 bool TrackSortField_Parse(absl::string_view name, TrackSortField* value);
-enum PlaybackModeType : int {
-  PLAYBACK_MODE_UNSPECIFIED = 0,
-  PLAYBACK_MODE_CLIENT_MANAGED = 1,
-  PLAYBACK_MODE_SERVER_MANAGED = 2,
-  PlaybackModeType_INT_MIN_SENTINEL_DO_NOT_USE_ =
-      std::numeric_limits<::int32_t>::min(),
-  PlaybackModeType_INT_MAX_SENTINEL_DO_NOT_USE_ =
-      std::numeric_limits<::int32_t>::max(),
-};
-
-bool PlaybackModeType_IsValid(int value);
-extern const uint32_t PlaybackModeType_internal_data_[];
-constexpr PlaybackModeType PlaybackModeType_MIN = static_cast<PlaybackModeType>(0);
-constexpr PlaybackModeType PlaybackModeType_MAX = static_cast<PlaybackModeType>(2);
-constexpr int PlaybackModeType_ARRAYSIZE = 2 + 1;
-const std::string& PlaybackModeType_Name(PlaybackModeType value);
-template <typename T>
-const std::string& PlaybackModeType_Name(T value) {
-  static_assert(std::is_same<T, PlaybackModeType>::value ||
-                    std::is_integral<T>::value,
-                "Incorrect type passed to PlaybackModeType_Name().");
-  return PlaybackModeType_Name(static_cast<PlaybackModeType>(value));
-}
-bool PlaybackModeType_Parse(absl::string_view name, PlaybackModeType* value);
 enum RepeatMode : int {
   REPEAT_MODE_UNSPECIFIED = 0,
   REPEAT_MODE_NONE = 1,
@@ -584,8 +560,6 @@ template <>
 struct is_proto_enum<::omni_mix_player::SortDirection> : std::true_type {};
 template <>
 struct is_proto_enum<::omni_mix_player::TrackSortField> : std::true_type {};
-template <>
-struct is_proto_enum<::omni_mix_player::PlaybackModeType> : std::true_type {};
 template <>
 struct is_proto_enum<::omni_mix_player::RepeatMode> : std::true_type {};
 template <>

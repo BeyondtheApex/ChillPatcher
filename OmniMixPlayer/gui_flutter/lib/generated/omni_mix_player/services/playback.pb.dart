@@ -10,12 +10,13 @@
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
 // ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
+import 'dart:async' as $async;
 import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
-import '../models/common.pbenum.dart' as $2;
-import '../models/instance.pb.dart' as $1;
+import '../models/common.pbenum.dart' as $1;
+import '../models/instance.pb.dart' as $0;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
@@ -1372,7 +1373,7 @@ class SetShuffleResponse extends $pb.GeneratedMessage {
 class SetRepeatModeRequest extends $pb.GeneratedMessage {
   factory SetRepeatModeRequest({
     $core.String? instanceId,
-    $2.RepeatMode? mode,
+    $1.RepeatMode? mode,
   }) {
     final result = create();
     if (instanceId != null) result.instanceId = instanceId;
@@ -1395,8 +1396,8 @@ class SetRepeatModeRequest extends $pb.GeneratedMessage {
           const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'instanceId')
-    ..aE<$2.RepeatMode>(2, _omitFieldNames ? '' : 'mode',
-        enumValues: $2.RepeatMode.values)
+    ..aE<$1.RepeatMode>(2, _omitFieldNames ? '' : 'mode',
+        enumValues: $1.RepeatMode.values)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1428,9 +1429,9 @@ class SetRepeatModeRequest extends $pb.GeneratedMessage {
   void clearInstanceId() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  $2.RepeatMode get mode => $_getN(1);
+  $1.RepeatMode get mode => $_getN(1);
   @$pb.TagNumber(2)
-  set mode($2.RepeatMode value) => $_setField(2, value);
+  set mode($1.RepeatMode value) => $_setField(2, value);
   @$pb.TagNumber(2)
   $core.bool hasMode() => $_has(1);
   @$pb.TagNumber(2)
@@ -2820,7 +2821,7 @@ class PlaylistSourceInfo extends $pb.GeneratedMessage {
     $core.String? id,
     $core.String? name,
     $core.int? songCount,
-    $1.PlaylistSourceKind? kind,
+    $0.PlaylistSourceKind? kind,
     $core.String? refId,
   }) {
     final result = create();
@@ -2849,8 +2850,8 @@ class PlaylistSourceInfo extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOS(2, _omitFieldNames ? '' : 'name')
     ..aI(3, _omitFieldNames ? '' : 'songCount')
-    ..aE<$1.PlaylistSourceKind>(4, _omitFieldNames ? '' : 'kind',
-        enumValues: $1.PlaylistSourceKind.values)
+    ..aE<$0.PlaylistSourceKind>(4, _omitFieldNames ? '' : 'kind',
+        enumValues: $0.PlaylistSourceKind.values)
     ..aOS(5, _omitFieldNames ? '' : 'refId')
     ..hasRequiredFields = false;
 
@@ -2901,9 +2902,9 @@ class PlaylistSourceInfo extends $pb.GeneratedMessage {
   void clearSongCount() => $_clearField(3);
 
   @$pb.TagNumber(4)
-  $1.PlaylistSourceKind get kind => $_getN(3);
+  $0.PlaylistSourceKind get kind => $_getN(3);
   @$pb.TagNumber(4)
-  set kind($1.PlaylistSourceKind value) => $_setField(4, value);
+  set kind($0.PlaylistSourceKind value) => $_setField(4, value);
   @$pb.TagNumber(4)
   $core.bool hasKind() => $_has(3);
   @$pb.TagNumber(4)
@@ -2924,7 +2925,7 @@ class PlaylistSourceSpec extends $pb.GeneratedMessage {
     $core.String? id,
     $core.String? name,
     $core.Iterable<$core.String>? uuids,
-    $1.PlaylistSourceKind? kind,
+    $0.PlaylistSourceKind? kind,
     $core.String? refId,
   }) {
     final result = create();
@@ -2953,8 +2954,8 @@ class PlaylistSourceSpec extends $pb.GeneratedMessage {
     ..aOS(1, _omitFieldNames ? '' : 'id')
     ..aOS(2, _omitFieldNames ? '' : 'name')
     ..pPS(3, _omitFieldNames ? '' : 'uuids')
-    ..aE<$1.PlaylistSourceKind>(4, _omitFieldNames ? '' : 'kind',
-        enumValues: $1.PlaylistSourceKind.values)
+    ..aE<$0.PlaylistSourceKind>(4, _omitFieldNames ? '' : 'kind',
+        enumValues: $0.PlaylistSourceKind.values)
     ..aOS(5, _omitFieldNames ? '' : 'refId')
     ..hasRequiredFields = false;
 
@@ -2999,9 +3000,9 @@ class PlaylistSourceSpec extends $pb.GeneratedMessage {
   $pb.PbList<$core.String> get uuids => $_getList(2);
 
   @$pb.TagNumber(4)
-  $1.PlaylistSourceKind get kind => $_getN(3);
+  $0.PlaylistSourceKind get kind => $_getN(3);
   @$pb.TagNumber(4)
-  set kind($1.PlaylistSourceKind value) => $_setField(4, value);
+  set kind($0.PlaylistSourceKind value) => $_setField(4, value);
   @$pb.TagNumber(4)
   $core.bool hasKind() => $_has(3);
   @$pb.TagNumber(4)
@@ -3342,7 +3343,7 @@ class GetEqualizerRequest extends $pb.GeneratedMessage {
 class SetEqualizerRequest extends $pb.GeneratedMessage {
   factory SetEqualizerRequest({
     $core.String? instanceId,
-    $1.EqualizerState? state,
+    $0.EqualizerState? state,
   }) {
     final result = create();
     if (instanceId != null) result.instanceId = instanceId;
@@ -3365,8 +3366,8 @@ class SetEqualizerRequest extends $pb.GeneratedMessage {
           const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'instanceId')
-    ..aOM<$1.EqualizerState>(2, _omitFieldNames ? '' : 'state',
-        subBuilder: $1.EqualizerState.create)
+    ..aOM<$0.EqualizerState>(2, _omitFieldNames ? '' : 'state',
+        subBuilder: $0.EqualizerState.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -3398,15 +3399,15 @@ class SetEqualizerRequest extends $pb.GeneratedMessage {
   void clearInstanceId() => $_clearField(1);
 
   @$pb.TagNumber(2)
-  $1.EqualizerState get state => $_getN(1);
+  $0.EqualizerState get state => $_getN(1);
   @$pb.TagNumber(2)
-  set state($1.EqualizerState value) => $_setField(2, value);
+  set state($0.EqualizerState value) => $_setField(2, value);
   @$pb.TagNumber(2)
   $core.bool hasState() => $_has(1);
   @$pb.TagNumber(2)
   void clearState() => $_clearField(2);
   @$pb.TagNumber(2)
-  $1.EqualizerState ensureState() => $_ensure(1);
+  $0.EqualizerState ensureState() => $_ensure(1);
 }
 
 class SetEqualizerResponse extends $pb.GeneratedMessage {
@@ -3462,6 +3463,149 @@ class SetEqualizerResponse extends $pb.GeneratedMessage {
   $core.bool hasSaved() => $_has(0);
   @$pb.TagNumber(1)
   void clearSaved() => $_clearField(1);
+}
+
+/// 播放控制服务 — 实例级别
+class PlaybackServiceApi {
+  final $pb.RpcClient _client;
+
+  PlaybackServiceApi(this._client);
+
+  /// 播放控制
+  $async.Future<PlayResponse> play(
+          $pb.ClientContext? ctx, PlayRequest request) =>
+      _client.invoke<PlayResponse>(
+          ctx, 'PlaybackService', 'Play', request, PlayResponse());
+  $async.Future<PauseResponse> pause(
+          $pb.ClientContext? ctx, PauseRequest request) =>
+      _client.invoke<PauseResponse>(
+          ctx, 'PlaybackService', 'Pause', request, PauseResponse());
+  $async.Future<ResumeResponse> resume(
+          $pb.ClientContext? ctx, ResumeRequest request) =>
+      _client.invoke<ResumeResponse>(
+          ctx, 'PlaybackService', 'Resume', request, ResumeResponse());
+  $async.Future<ToggleResponse> toggle(
+          $pb.ClientContext? ctx, ToggleRequest request) =>
+      _client.invoke<ToggleResponse>(
+          ctx, 'PlaybackService', 'Toggle', request, ToggleResponse());
+  $async.Future<NextResponse> next(
+          $pb.ClientContext? ctx, NextRequest request) =>
+      _client.invoke<NextResponse>(
+          ctx, 'PlaybackService', 'Next', request, NextResponse());
+  $async.Future<PrevResponse> prev(
+          $pb.ClientContext? ctx, PrevRequest request) =>
+      _client.invoke<PrevResponse>(
+          ctx, 'PlaybackService', 'Prev', request, PrevResponse());
+  $async.Future<SeekResponse> seek(
+          $pb.ClientContext? ctx, SeekRequest request) =>
+      _client.invoke<SeekResponse>(
+          ctx, 'PlaybackService', 'Seek', request, SeekResponse());
+  $async.Future<StopResponse> stop(
+          $pb.ClientContext? ctx, StopRequest request) =>
+      _client.invoke<StopResponse>(
+          ctx, 'PlaybackService', 'Stop', request, StopResponse());
+
+  /// 音量 / 延迟
+  $async.Future<SetVolumeResponse> setVolume(
+          $pb.ClientContext? ctx, SetVolumeRequest request) =>
+      _client.invoke<SetVolumeResponse>(
+          ctx, 'PlaybackService', 'SetVolume', request, SetVolumeResponse());
+  $async.Future<GetVolumeResponse> getVolume(
+          $pb.ClientContext? ctx, GetVolumeRequest request) =>
+      _client.invoke<GetVolumeResponse>(
+          ctx, 'PlaybackService', 'GetVolume', request, GetVolumeResponse());
+  $async.Future<SetTargetLatencyResponse> setTargetLatency(
+          $pb.ClientContext? ctx, SetTargetLatencyRequest request) =>
+      _client.invoke<SetTargetLatencyResponse>(ctx, 'PlaybackService',
+          'SetTargetLatency', request, SetTargetLatencyResponse());
+  $async.Future<GetTargetLatencyResponse> getTargetLatency(
+          $pb.ClientContext? ctx, GetTargetLatencyRequest request) =>
+      _client.invoke<GetTargetLatencyResponse>(ctx, 'PlaybackService',
+          'GetTargetLatency', request, GetTargetLatencyResponse());
+
+  /// 随机 / 重复
+  $async.Future<SetShuffleResponse> setShuffle(
+          $pb.ClientContext? ctx, SetShuffleRequest request) =>
+      _client.invoke<SetShuffleResponse>(
+          ctx, 'PlaybackService', 'SetShuffle', request, SetShuffleResponse());
+  $async.Future<SetRepeatModeResponse> setRepeatMode(
+          $pb.ClientContext? ctx, SetRepeatModeRequest request) =>
+      _client.invoke<SetRepeatModeResponse>(ctx, 'PlaybackService',
+          'SetRepeatMode', request, SetRepeatModeResponse());
+
+  /// 队列管理
+  $async.Future<GetQueueResponse> getQueue(
+          $pb.ClientContext? ctx, GetQueueRequest request) =>
+      _client.invoke<GetQueueResponse>(
+          ctx, 'PlaybackService', 'GetQueue', request, GetQueueResponse());
+  $async.Future<AddToQueueResponse> addToQueue(
+          $pb.ClientContext? ctx, AddToQueueRequest request) =>
+      _client.invoke<AddToQueueResponse>(
+          ctx, 'PlaybackService', 'AddToQueue', request, AddToQueueResponse());
+  $async.Future<InsertIntoQueueResponse> insertIntoQueue(
+          $pb.ClientContext? ctx, InsertIntoQueueRequest request) =>
+      _client.invoke<InsertIntoQueueResponse>(ctx, 'PlaybackService',
+          'InsertIntoQueue', request, InsertIntoQueueResponse());
+  $async.Future<SetQueueResponse> setQueue(
+          $pb.ClientContext? ctx, SetQueueRequest request) =>
+      _client.invoke<SetQueueResponse>(
+          ctx, 'PlaybackService', 'SetQueue', request, SetQueueResponse());
+  $async.Future<RemoveFromQueueResponse> removeFromQueue(
+          $pb.ClientContext? ctx, RemoveFromQueueRequest request) =>
+      _client.invoke<RemoveFromQueueResponse>(ctx, 'PlaybackService',
+          'RemoveFromQueue', request, RemoveFromQueueResponse());
+  $async.Future<MoveInQueueResponse> moveInQueue(
+          $pb.ClientContext? ctx, MoveInQueueRequest request) =>
+      _client.invoke<MoveInQueueResponse>(ctx, 'PlaybackService', 'MoveInQueue',
+          request, MoveInQueueResponse());
+  $async.Future<ClearQueueResponse> clearQueue(
+          $pb.ClientContext? ctx, ClearQueueRequest request) =>
+      _client.invoke<ClearQueueResponse>(
+          ctx, 'PlaybackService', 'ClearQueue', request, ClearQueueResponse());
+
+  /// 历史
+  $async.Future<GetHistoryResponse> getHistory(
+          $pb.ClientContext? ctx, GetHistoryRequest request) =>
+      _client.invoke<GetHistoryResponse>(
+          ctx, 'PlaybackService', 'GetHistory', request, GetHistoryResponse());
+  $async.Future<RemoveFromHistoryResponse> removeFromHistory(
+          $pb.ClientContext? ctx, RemoveFromHistoryRequest request) =>
+      _client.invoke<RemoveFromHistoryResponse>(ctx, 'PlaybackService',
+          'RemoveFromHistory', request, RemoveFromHistoryResponse());
+  $async.Future<MoveInHistoryResponse> moveInHistory(
+          $pb.ClientContext? ctx, MoveInHistoryRequest request) =>
+      _client.invoke<MoveInHistoryResponse>(ctx, 'PlaybackService',
+          'MoveInHistory', request, MoveInHistoryResponse());
+  $async.Future<ClearHistoryResponse> clearHistory(
+          $pb.ClientContext? ctx, ClearHistoryRequest request) =>
+      _client.invoke<ClearHistoryResponse>(ctx, 'PlaybackService',
+          'ClearHistory', request, ClearHistoryResponse());
+
+  /// 歌单源
+  $async.Future<GetPlaylistSourcesResponse> getPlaylistSources(
+          $pb.ClientContext? ctx, GetPlaylistSourcesRequest request) =>
+      _client.invoke<GetPlaylistSourcesResponse>(ctx, 'PlaybackService',
+          'GetPlaylistSources', request, GetPlaylistSourcesResponse());
+  $async.Future<SetPlaylistSourcesResponse> setPlaylistSources(
+          $pb.ClientContext? ctx, SetPlaylistSourcesRequest request) =>
+      _client.invoke<SetPlaylistSourcesResponse>(ctx, 'PlaybackService',
+          'SetPlaylistSources', request, SetPlaylistSourcesResponse());
+
+  /// 状态
+  $async.Future<$0.PlaybackStatus> getStatus(
+          $pb.ClientContext? ctx, GetStatusRequest request) =>
+      _client.invoke<$0.PlaybackStatus>(
+          ctx, 'PlaybackService', 'GetStatus', request, $0.PlaybackStatus());
+
+  /// 均衡器
+  $async.Future<$0.EqualizerState> getEqualizer(
+          $pb.ClientContext? ctx, GetEqualizerRequest request) =>
+      _client.invoke<$0.EqualizerState>(
+          ctx, 'PlaybackService', 'GetEqualizer', request, $0.EqualizerState());
+  $async.Future<SetEqualizerResponse> setEqualizer(
+          $pb.ClientContext? ctx, SetEqualizerRequest request) =>
+      _client.invoke<SetEqualizerResponse>(ctx, 'PlaybackService',
+          'SetEqualizer', request, SetEqualizerResponse());
 }
 
 const $core.bool _omitFieldNames =

@@ -9,7 +9,7 @@ option csharp_namespace = "OmniMixPlayer.SDK.Protos.Models";
 // 实例能力声明
 message InstanceCapabilities {
   bool server_controlled_playback = 1;
-  bool client_managed_playback = 2;
+  reserved 2;  // was client_managed_playback, removed
   bool queue_management = 3;
   bool playlist_management = 4;
   bool multiple_playlists = 5;
@@ -22,6 +22,7 @@ message InstanceCapabilities {
   bool volume_control = 12;
   bool equalizer = 13;
   bool audio_playback = 14;
+  bool custom_system_media_service = 15;  // true=实例自己处理SMTC, Flutter不要同步
 
   // 限制（null 表示无限制，proto3 用 0 表示未设置 / wrapper types）
   optional int32 max_imported_playlists = 20;
@@ -92,7 +93,6 @@ message InstanceProfile {
   string mod_id = 4;
   string game_name = 5;
 
-  PlaybackModeType mode = 6;
   InstanceCapabilities capabilities = 7;
 
   float volume = 8;
@@ -114,7 +114,6 @@ message InstanceProfile {
 message InstanceConnectRequest {
   string client_id = 1;
   InstanceKind kind = 2;
-  PlaybackModeType mode = 3;
   InstanceCapabilities capabilities = 4;
   string mod_id = 5;
   string game_name = 6;
@@ -153,7 +152,6 @@ message InstanceSummary {
   string id = 1;
   string display_name = 2;
   InstanceKind kind = 3;
-  PlaybackModeType mode = 4;
   bool is_online = 5;
   string current_track_uuid = 6;
   int32 queue_count = 7;

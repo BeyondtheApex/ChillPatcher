@@ -10,6 +10,7 @@
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
 // ignore_for_file: non_constant_identifier_names, prefer_relative_imports
 
+import 'dart:async' as $async;
 import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
@@ -938,6 +939,66 @@ class InheritFromArchiveResponse extends $pb.GeneratedMessage {
   void clearProfile() => $_clearField(2);
   @$pb.TagNumber(2)
   $0.InstanceProfile ensureProfile() => $_ensure(1);
+}
+
+/// 实例管理服务 — 平台级别
+class InstanceServiceApi {
+  final $pb.RpcClient _client;
+
+  InstanceServiceApi(this._client);
+
+  $async.Future<$0.InstanceConnectResponse> connect(
+          $pb.ClientContext? ctx, $0.InstanceConnectRequest request) =>
+      _client.invoke<$0.InstanceConnectResponse>(ctx, 'InstanceService',
+          'Connect', request, $0.InstanceConnectResponse());
+  $async.Future<$0.InstanceHeartbeatResponse> heartbeat(
+          $pb.ClientContext? ctx, $0.InstanceHeartbeatRequest request) =>
+      _client.invoke<$0.InstanceHeartbeatResponse>(ctx, 'InstanceService',
+          'Heartbeat', request, $0.InstanceHeartbeatResponse());
+  $async.Future<$0.InstanceDisconnectResponse> disconnect(
+          $pb.ClientContext? ctx, $0.InstanceDisconnectRequest request) =>
+      _client.invoke<$0.InstanceDisconnectResponse>(ctx, 'InstanceService',
+          'Disconnect', request, $0.InstanceDisconnectResponse());
+  $async.Future<DeleteInstanceResponse> deleteInstance(
+          $pb.ClientContext? ctx, DeleteInstanceRequest request) =>
+      _client.invoke<DeleteInstanceResponse>(ctx, 'InstanceService',
+          'DeleteInstance', request, DeleteInstanceResponse());
+  $async.Future<$0.ListInstancesResponse> listInstances(
+          $pb.ClientContext? ctx, ListInstancesRequest request) =>
+      _client.invoke<$0.ListInstancesResponse>(ctx, 'InstanceService',
+          'ListInstances', request, $0.ListInstancesResponse());
+  $async.Future<$0.InstanceProfile> getProfile(
+          $pb.ClientContext? ctx, GetProfileRequest request) =>
+      _client.invoke<$0.InstanceProfile>(
+          ctx, 'InstanceService', 'GetProfile', request, $0.InstanceProfile());
+  $async.Future<UpdateProfileResponse> updateProfile(
+          $pb.ClientContext? ctx, UpdateProfileRequest request) =>
+      _client.invoke<UpdateProfileResponse>(ctx, 'InstanceService',
+          'UpdateProfile', request, UpdateProfileResponse());
+  $async.Future<$0.PlaybackStatus> getStatus(
+          $pb.ClientContext? ctx, GetInstanceStatusRequest request) =>
+      _client.invoke<$0.PlaybackStatus>(
+          ctx, 'InstanceService', 'GetStatus', request, $0.PlaybackStatus());
+  $async.Future<ArchiveInstanceResponse> archiveInstance(
+          $pb.ClientContext? ctx, ArchiveInstanceRequest request) =>
+      _client.invoke<ArchiveInstanceResponse>(ctx, 'InstanceService',
+          'ArchiveInstance', request, ArchiveInstanceResponse());
+  $async.Future<ListArchivesResponse> listArchives(
+          $pb.ClientContext? ctx, ListArchivesRequest request) =>
+      _client.invoke<ListArchivesResponse>(ctx, 'InstanceService',
+          'ListArchives', request, ListArchivesResponse());
+  $async.Future<$0.InstanceProfile> getArchive(
+          $pb.ClientContext? ctx, GetArchiveRequest request) =>
+      _client.invoke<$0.InstanceProfile>(
+          ctx, 'InstanceService', 'GetArchive', request, $0.InstanceProfile());
+  $async.Future<DeleteArchiveResponse> deleteArchive(
+          $pb.ClientContext? ctx, DeleteArchiveRequest request) =>
+      _client.invoke<DeleteArchiveResponse>(ctx, 'InstanceService',
+          'DeleteArchive', request, DeleteArchiveResponse());
+  $async.Future<InheritFromArchiveResponse> inheritFromArchive(
+          $pb.ClientContext? ctx, InheritFromArchiveRequest request) =>
+      _client.invoke<InheritFromArchiveResponse>(ctx, 'InstanceService',
+          'InheritFromArchive', request, InheritFromArchiveResponse());
 }
 
 const $core.bool _omitFieldNames =

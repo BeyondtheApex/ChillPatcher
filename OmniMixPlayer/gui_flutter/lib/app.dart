@@ -485,7 +485,7 @@ class _GlobalInstanceDropdown extends ConsumerWidget {
                     ),
                   ),
                   Text(
-                    inst.mode.name,
+                    inst.kind.name,
                     style: TextStyle(fontSize: 11, color: cs.outline),
                   ),
                 ],

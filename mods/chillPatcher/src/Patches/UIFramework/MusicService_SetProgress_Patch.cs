@@ -160,16 +160,6 @@ namespace ChillPatcher.Patches.UIFramework
         }
 
         /// <summary>
-        /// 非流媒体歌曲 Seek 完成后发布事件
-        /// </summary>
-        [HarmonyPatch(typeof(MusicService), nameof(MusicService.SetMusicProgress))]
-        [HarmonyPostfix]
-        public static void SetMusicProgress_Postfix(MusicService __instance, float progress)
-        {
-            // TODO: IPC bridge needed - EventBus/MusicRegistry removed for seek events
-        }
-
-        /// <summary>
         /// 执行实际的 Seek 操作
         /// </summary>
         private static bool ExecuteSeek(MusicService musicService, AudioPlayer player, AudioClip clip, float progress, ulong targetFrame)
@@ -216,40 +206,6 @@ namespace ChillPatcher.Patches.UIFramework
             return false;
         }
 
-        // TODO: IPC bridge needed - MusicRegistry removed for GetCurrentMusicInfo
-        /*
-        private static MusicInfo GetCurrentMusicInfo(MusicService musicService)
-        {
-            var audio = musicService?.PlayingMusic;
-            if (audio == null) return null;
-            MusicInfo info = null;
-            if (!string.IsNullOrEmpty(audio.UUID))
-                info = MusicRegistry.Instance?.GetMusic(audio.UUID);
-            return info;
-        }
-
-        private static void PublishSeekEvent(MusicInfo musicInfo, float progress, float targetTime, bool isPending, bool isCompleted)
-        {
-            try
-            {
-                var eventBus = EventBus.Instance;
-                if (eventBus == null) return;
-                eventBus.Publish(new PlaySeekEvent
-                {
-                    Music = musicInfo,
-                    Progress = progress,
-                    TargetTime = targetTime,
-                    IsPending = isPending,
-                    IsCompleted = isCompleted
-                });
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log.LogWarning($"[SetProgress_Patch] PlaySeekEvent publish failed: {ex.Message}");
-            }
-        }
-        */
-
         /// <summary>
         /// 获取 MusicUI 的拖动状态
         /// </summary>
@@ -279,7 +235,6 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 FacilityMusic_UpdateFacility_Patch.IsWaitingForSeek = false;
                 Plugin.Log.LogInfo("[SetProgress_Patch] Pending seek completed, resuming progress updates");
-                // TODO: IPC bridge needed - EventBus removed for seek completion events
             }
         }
     }

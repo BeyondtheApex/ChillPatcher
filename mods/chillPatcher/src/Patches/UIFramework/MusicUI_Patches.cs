@@ -276,21 +276,6 @@ namespace ChillPatcher.Patches.UIFramework
         }
 
         /// <summary>
-        /// 获取当前选中的歌单ID
-        /// </summary>
-        private static string GetCurrentPlaylistId()
-        {
-            // 使用 TagRegistry 检查是否有自定义 Tag (removed - IPC bridge)
-            var tagRegistry = default(TagInfo); // null
-            if (tagRegistry == null)
-                return null;
-
-            // TODO: 需要跟踪当前选中的歌单
-            // 暂时返回null，使用简单列表
-            return null;
-        }
-
-        /// <summary>
         /// 专辑切换事件处理器
         /// 切换专辑下所有歌曲的排除状态
         /// </summary>
@@ -353,9 +338,6 @@ namespace ChillPatcher.Patches.UIFramework
                 Plugin.Log.LogDebug("[GrowableList] Already loading more, skipping duplicate request");
                 return 0;
             }
-            
-            var tagRegistry = (object)null; // IPC: replaced by OmniMixIntegration
-
             var growableTag = OmniMixIntegration.Instance?.GetCurrentGrowableTag();
 
             if (growableTag == null)
@@ -435,9 +417,7 @@ namespace ChillPatcher.Patches.UIFramework
 
         /// <summary>
         /// 滚动到底部事件处理器 - 用于增长列表加载更多
-        /// 同时支持两种模式：
-        /// 1. 回调模式：如果 Tag 有 LoadMoreCallback，直接调用
-        /// 2. 事件模式：总是发布 GrowableListBottomOutEvent，模块可以订阅处理
+        /// 当前由 OmniMixIntegration 同步后端 playlist.updated 事件。
         /// </summary>
         private static async void OnScrollToBottomHandler()
         {
@@ -449,8 +429,6 @@ namespace ChillPatcher.Patches.UIFramework
                     return;
 
                 // 获取当前选中的增长列表 Tag
-                var tagRegistry = (object)null; // removed: IPCPatch
-                
                 var growableTag = OmniMixIntegration.Instance?.GetCurrentGrowableTag();
                 
                 if (growableTag == null)

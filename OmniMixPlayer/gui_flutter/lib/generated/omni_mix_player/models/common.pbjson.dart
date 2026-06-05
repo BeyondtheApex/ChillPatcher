@@ -68,22 +68,6 @@ final $typed_data.Uint8List trackSortFieldDescriptor = $convert.base64Decode(
     'VOVBAEEiAKHFRSQUNLX1NPUlRfRklFTERfTEFTVF9QTEFZRUQQBRIfChtUUkFDS19TT1JUX0ZJ'
     'RUxEX0NSRUFURURfQVQQBg==');
 
-@$core.Deprecated('Use playbackModeTypeDescriptor instead')
-const PlaybackModeType$json = {
-  '1': 'PlaybackModeType',
-  '2': [
-    {'1': 'PLAYBACK_MODE_UNSPECIFIED', '2': 0},
-    {'1': 'PLAYBACK_MODE_CLIENT_MANAGED', '2': 1},
-    {'1': 'PLAYBACK_MODE_SERVER_MANAGED', '2': 2},
-  ],
-};
-
-/// Descriptor for `PlaybackModeType`. Decode as a `google.protobuf.EnumDescriptorProto`.
-final $typed_data.Uint8List playbackModeTypeDescriptor = $convert.base64Decode(
-    'ChBQbGF5YmFja01vZGVUeXBlEh0KGVBMQVlCQUNLX01PREVfVU5TUEVDSUZJRUQQABIgChxQTE'
-    'FZQkFDS19NT0RFX0NMSUVOVF9NQU5BR0VEEAESIAocUExBWUJBQ0tfTU9ERV9TRVJWRVJfTUFO'
-    'QUdFRBAC');
-
 @$core.Deprecated('Use repeatModeDescriptor instead')
 const RepeatMode$json = {
   '1': 'RepeatMode',

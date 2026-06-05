@@ -375,7 +375,7 @@ namespace ChillPatcher
                 // Sync growable tags
                 await RefreshGrowableTags();
 
-                Plugin.Log?.LogInfo($"[OmniMix] Connected to OmniMixPlayer backend instance {_client.InstanceId} (ClientManaged mode)");
+                Plugin.Log?.LogInfo($"[OmniMix] Connected to OmniMixPlayer backend instance {_client.InstanceId} (ServerManaged mode)");
                 return true;
             }
             catch (Exception ex)
@@ -635,7 +635,6 @@ namespace ChillPatcher
                 // Switch to main thread for modifying game collections
                 await UniTask.SwitchToMainThread();
 
-                var allGameAudios = new List<GameAudioInfo>();
                 var moduleSongs = new List<MusicInfo>();
 
                 // Parse tags to map tagId -> bitValue
@@ -746,7 +745,6 @@ namespace ChillPatcher
                         {
                             moduleSongs.Add(song);
                         }
-                        allGameAudios.Add(ConvertToGameAudio(song, tagBitValues));
                     }
                 }
 
@@ -772,37 +770,46 @@ namespace ChillPatcher
 
                 if (replace)
                 {
-                    // Remove previously synced module songs (those without LocalPath)
-                    allMusicList.RemoveAll(a => string.IsNullOrEmpty(a.LocalPath));
+                    // Remove previously synced module songs. Native game songs can also have no LocalPath,
+                    // so only remove tracks carrying custom AudioTag bits.
+                    allMusicList.RemoveAll(IsImportedOmniMixSong);
                 }
 
+                var importedGameAudios = new List<GameAudioInfo>();
                 foreach (var ms in moduleSongs)
                 {
-                    if (!allMusicList.Any(a => a.UUID == ms.UUID))
+                    var existing = allMusicList.FirstOrDefault(a => a.UUID == ms.UUID);
+                    if (existing == null)
                     {
                         var ga = ConvertToGameAudio(ms, tagBitValues);
                         allMusicList.Add(ga);
+                        importedGameAudios.Add(ga);
+                    }
+                    else
+                    {
+                        importedGameAudios.Add(existing);
                     }
                 }
 
                 // Sync to current playlist
                 var currentPlayList = musicService.CurrentPlayList;
-                if (currentPlayList != null && allGameAudios.Count > 0)
+                if (currentPlayList != null && importedGameAudios.Count > 0)
                 {
                     if (replace)
                     {
                         for (int i = currentPlayList.Count - 1; i >= 0; i--)
                         {
-                            if (string.IsNullOrEmpty(currentPlayList[i].LocalPath))
+                            if (IsImportedOmniMixSong(currentPlayList[i]))
                             {
                                 currentPlayList.RemoveAt(i);
                             }
                         }
                     }
 
-                    foreach (var ga in allGameAudios)
+                    var currentTag = SaveDataManager.Instance?.MusicSetting?.CurrentAudioTag?.CurrentValue ?? AudioTag.All;
+                    foreach (var ga in importedGameAudios)
                     {
-                        if (!currentPlayList.Any(a => a.UUID == ga.UUID))
+                        if (currentTag.HasFlagFast(ga.Tag) && !currentPlayList.Any(a => a.UUID == ga.UUID))
                             currentPlayList.Add(ga);
                     }
                 }
@@ -876,6 +883,12 @@ namespace ChillPatcher
             };
         }
 
+        private static bool IsImportedOmniMixSong(GameAudioInfo audio)
+        {
+            if (audio == null) return false;
+            return ((ulong)audio.Tag & ~31UL) != 0;
+        }
+
         #endregion
 
         #region Playlist query (for JSApi)
@@ -923,13 +936,18 @@ namespace ChillPatcher
         public async UniTask Prev() { try { await _client.Prev(); } catch { } }
 
         public async UniTask AddToQueue(string uuid) { try { await _client.AddToQueue(uuid); } catch { } }
+        public async UniTask InsertIntoQueue(int index, IEnumerable<string> uuids) { try { await _client.InsertIntoQueue(index, uuids); } catch { } }
+        public async UniTask RemoveFromQueue(int index) { try { await _client.RemoveFromQueue(index); } catch { } }
+        public async UniTask RemoveFromQueue(string uuid) { try { await _client.RemoveFromQueue(uuid); } catch { } }
+        public async UniTask MoveInQueue(int from, int to) { try { await _client.MoveInQueue(from, to); } catch { } }
+        public async UniTask ClearHistoryAsync() { try { await _client.ClearHistory(); } catch { } }
         public async UniTask SetFavorite(string uuid, bool fav)
         {
-            try { await _client.PostAsync($"/favorite", new { uuid, isFavorite = fav }); } catch { }
+            try { await _client.SetFavorite(uuid, fav); } catch { }
         }
         public async UniTask SetExcluded(string uuid, bool excluded)
         {
-            try { await _client.PostAsync($"/exclude", new { uuid, isFavorite = excluded }); } catch { }
+            try { await _client.SetExcluded(uuid, excluded); } catch { }
         }
 
         #endregion
@@ -960,12 +978,12 @@ namespace ChillPatcher
             if (!string.IsNullOrEmpty(tagId))
             {
                 _currentGrowableTag = _growableTags.FirstOrDefault(t => t.TagId == tagId);
-                try { await _client.PostAsync($"/tags/{Uri.EscapeDataString(tagId)}/activate", new { }); } catch { }
             }
             else
             {
                 _currentGrowableTag = null;
             }
+            await UniTask.CompletedTask;
         }
 
         /// <summary>
@@ -973,17 +991,8 @@ namespace ChillPatcher
         /// </summary>
         public async UniTask<int> TriggerGrowableLoadMore(string tagId)
         {
-            try
-            {
-                var json = await _client.PostAsync($"/tags/{Uri.EscapeDataString(tagId)}/load-more", new { });
-                var obj = JObject.Parse(json);
-                return obj.GetValueIgnoreCase<int>("loadedCount");
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log?.LogWarning($"[OmniMix] Growable load-more failed for {tagId}: {ex.Message}");
-                return 0;
-            }
+            await UniTask.CompletedTask;
+            return 0;
         }
 
         /// <summary>
@@ -993,8 +1002,8 @@ namespace ChillPatcher
         {
             try
             {
-                var json = await _client.GetAsync("/tags");
-                var arr = JArray.Parse(json);
+                var token = await _client.GetTags();
+                var arr = token as JArray ?? new JArray();
                 _allTags = arr.Select(j => new TagInfo
                 {
                     TagId = j.GetStringIgnoreCase("id"),
@@ -1002,7 +1011,9 @@ namespace ChillPatcher
                     ModuleId = j.GetStringIgnoreCase("moduleId"),
                     BitValue = (ulong)j.GetValueIgnoreCase<long>("bitValue"),
                     IsGrowableList = j.GetValueIgnoreCase<bool>("isGrowable")
-                }).ToList();
+                })
+                .Where(t => t.BitValue != 0)
+                .ToList();
 
                 _growableTags = _allTags.Where(t => t.IsGrowableList).ToList();
                 Plugin.Log?.LogInfo($"[OmniMix] Refreshed {_allTags.Count} custom tags ({_growableTags.Count} growable)");
@@ -1084,6 +1095,9 @@ namespace ChillPatcher
             {
                 Plugin.Log?.LogInfo($"[OmniMix] Syncing track change from backend: {targetAudio.AudioClipName}");
                 musicService.PlayArugumentMusic(targetAudio, MusicChangeKind.Manual);
+
+                // 同步到 PlayQueueManager 本地镜像
+                PlayQueueManager.Instance.UpdateCurrentTrack(targetAudio.UUID);
             }
         }
 
@@ -1098,6 +1112,47 @@ namespace ChillPatcher
         private void OnQueueChanged(object sender, QueueChangedEventArgs e)
         {
             OnQueueUpdated?.Invoke();
+
+            // 同步到 PlayQueueManager 本地镜像
+            _ = SyncQueueToPlayQueueManagerAsync();
+        }
+
+        private async UniTaskVoid SyncQueueToPlayQueueManagerAsync()
+        {
+            try
+            {
+                if (_client == null || !_connected) return;
+                var queueJson = await _client.GetQueue();
+                var historyJson = await _client.GetHistory();
+
+                await UniTask.SwitchToMainThread();
+
+                var queueUuids = new List<string>();
+                if (queueJson is JArray qArr)
+                {
+                    foreach (var item in qArr)
+                    {
+                        var uuid = item.GetStringIgnoreCase("uuid");
+                        if (!string.IsNullOrEmpty(uuid)) queueUuids.Add(uuid);
+                    }
+                }
+
+                var historyUuids = new List<string>();
+                if (historyJson is JArray historyArr)
+                {
+                    foreach (var item in historyArr)
+                    {
+                        var uuid = item is JObject jo ? jo.GetStringIgnoreCase("uuid") : item?.ToString();
+                        if (!string.IsNullOrEmpty(uuid)) historyUuids.Add(uuid);
+                    }
+                }
+
+                PlayQueueManager.Instance.UpdateFromBackendQueue(queueUuids, historyUuids, 0);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogDebug($"[OmniMix] SyncQueueToPlayQueueManagerAsync: {ex.Message}");
+            }
         }
 
         private void OnPosition(object sender, PositionEventArgs e)
@@ -1131,6 +1186,26 @@ namespace ChillPatcher
             catch (Exception ex)
             {
                 Plugin.Log?.LogError($"[OmniMix] Failed to raise UI exclusion change event: {ex}");
+            }
+        }
+
+        #endregion
+
+        #region 队列控制
+
+        /// <summary>
+        /// 清空后端播放队列
+        /// </summary>
+        public async UniTask ClearQueueAsync()
+        {
+            try
+            {
+                if (_client != null && _connected)
+                    await _client.ClearQueue();
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.LogWarning($"[OmniMix] ClearQueueAsync failed: {ex.Message}");
             }
         }
 

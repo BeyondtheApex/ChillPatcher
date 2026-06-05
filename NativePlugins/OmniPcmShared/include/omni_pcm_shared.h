@@ -140,7 +140,6 @@ typedef enum OmniPcmInstanceKind {
 
 typedef enum OmniPcmCapabilityFlags {
     OMNI_PCM_CAP_SERVER_CONTROLLED_PLAYBACK = 1u << 0,
-    OMNI_PCM_CAP_CLIENT_MANAGED_PLAYBACK = 1u << 1,
     OMNI_PCM_CAP_QUEUE_MANAGEMENT = 1u << 2,
     OMNI_PCM_CAP_PLAYLIST_MANAGEMENT = 1u << 3,
     OMNI_PCM_CAP_SHUFFLE = 1u << 4,
@@ -152,7 +151,8 @@ typedef enum OmniPcmCapabilityFlags {
     OMNI_PCM_CAP_TAG_FILTERING = 1u << 10,
     OMNI_PCM_CAP_UNLIMITED_TAGS = 1u << 11,
     OMNI_PCM_CAP_ALBUM_FILTERING = 1u << 12,
-    OMNI_PCM_CAP_AUDIO_PLAYBACK = 1u << 13
+    OMNI_PCM_CAP_AUDIO_PLAYBACK = 1u << 13,
+    OMNI_PCM_CAP_CUSTOM_SYSTEM_MEDIA_SERVICE = 1u << 14
 } OmniPcmCapabilityFlags;
 
 typedef struct OmniPcmClientConfig {

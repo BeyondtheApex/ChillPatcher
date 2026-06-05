@@ -208,7 +208,6 @@ inline constexpr InstanceCapabilities::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
         server_controlled_playback_{false},
-        client_managed_playback_{false},
         queue_management_{false},
         playlist_management_{false},
         multiple_playlists_{false},
@@ -221,6 +220,7 @@ inline constexpr InstanceCapabilities::Impl_::Impl_(
         volume_control_{false},
         equalizer_{false},
         audio_playback_{false},
+        custom_system_media_service_{false},
         max_imported_playlists_{0},
         max_tags_{0},
         max_playlist_entries_{0} {}
@@ -334,7 +334,6 @@ inline constexpr InstanceSummary::Impl_::Impl_(
             ::_pbi::ConstantInitialized()),
         connected_at_{nullptr},
         kind_{static_cast< ::omni_mix_player::InstanceKind >(0)},
-        mode_{static_cast< ::omni_mix_player::PlaybackModeType >(0)},
         is_online_{false},
         queue_count_{0} {}
 
@@ -375,7 +374,6 @@ inline constexpr InstanceConnectRequest::Impl_::Impl_(
             ::_pbi::ConstantInitialized()),
         capabilities_{nullptr},
         kind_{static_cast< ::omni_mix_player::InstanceKind >(0)},
-        mode_{static_cast< ::omni_mix_player::PlaybackModeType >(0)},
         no_instance_{false} {}
 
 template <typename>
@@ -474,7 +472,6 @@ inline constexpr InstanceProfile::Impl_::Impl_(
         updated_at_{nullptr},
         playback_timeline_{nullptr},
         kind_{static_cast< ::omni_mix_player::InstanceKind >(0)},
-        mode_{static_cast< ::omni_mix_player::PlaybackModeType >(0)},
         volume_{0},
         target_latency_{0} {}
 
@@ -672,7 +669,7 @@ const ::_pbi::TcParseTable<5, 17, 0, 0, 2> InstanceCapabilities::_table_ = {
     0, // no _extensions_
     22, 248,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4291280896,  // skipmap
+    4291264514,  // skipmap
     offsetof(decltype(_table_), field_entries),
     17,  // num_field_entries
     0,  // num_aux_entries
@@ -688,9 +685,7 @@ const ::_pbi::TcParseTable<5, 17, 0, 0, 2> InstanceCapabilities::_table_ = {
     // bool server_controlled_playback = 1;
     {::_pbi::TcParser::FastV8S1,
      {8, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.server_controlled_playback_)}},
-    // bool client_managed_playback = 2;
-    {::_pbi::TcParser::FastV8S1,
-     {16, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.client_managed_playback_)}},
+    {::_pbi::TcParser::MiniParse, {}},
     // bool queue_management = 3;
     {::_pbi::TcParser::FastV8S1,
      {24, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.queue_management_)}},
@@ -727,7 +722,9 @@ const ::_pbi::TcParseTable<5, 17, 0, 0, 2> InstanceCapabilities::_table_ = {
     // bool audio_playback = 14;
     {::_pbi::TcParser::FastV8S1,
      {112, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.audio_playback_)}},
-    {::_pbi::TcParser::MiniParse, {}},
+    // bool custom_system_media_service = 15;
+    {::_pbi::TcParser::FastV8S1,
+     {120, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.custom_system_media_service_)}},
     {::_pbi::TcParser::MiniParse, {}},
     {::_pbi::TcParser::MiniParse, {}},
     {::_pbi::TcParser::MiniParse, {}},
@@ -755,9 +752,6 @@ const ::_pbi::TcParseTable<5, 17, 0, 0, 2> InstanceCapabilities::_table_ = {
   }}, {{
     // bool server_controlled_playback = 1;
     {PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.server_controlled_playback_), -1, 0,
-    (0 | ::_fl::kFcSingular | ::_fl::kBool)},
-    // bool client_managed_playback = 2;
-    {PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.client_managed_playback_), -1, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kBool)},
     // bool queue_management = 3;
     {PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.queue_management_), -1, 0,
@@ -795,6 +789,9 @@ const ::_pbi::TcParseTable<5, 17, 0, 0, 2> InstanceCapabilities::_table_ = {
     // bool audio_playback = 14;
     {PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.audio_playback_), -1, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kBool)},
+    // bool custom_system_media_service = 15;
+    {PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.custom_system_media_service_), -1, 0,
+    (0 | ::_fl::kFcSingular | ::_fl::kBool)},
     // optional int32 max_imported_playlists = 20;
     {PROTOBUF_FIELD_OFFSET(InstanceCapabilities, _impl_.max_imported_playlists_), _Internal::kHasBitsOffset + 0, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kInt32)},
@@ -818,8 +815,8 @@ PROTOBUF_NOINLINE void InstanceCapabilities::Clear() {
   (void) cached_has_bits;
 
   ::memset(&_impl_.server_controlled_playback_, 0, static_cast<::size_t>(
-      reinterpret_cast<char*>(&_impl_.audio_playback_) -
-      reinterpret_cast<char*>(&_impl_.server_controlled_playback_)) + sizeof(_impl_.audio_playback_));
+      reinterpret_cast<char*>(&_impl_.custom_system_media_service_) -
+      reinterpret_cast<char*>(&_impl_.server_controlled_playback_)) + sizeof(_impl_.custom_system_media_service_));
   cached_has_bits = _impl_._has_bits_[0];
   if (cached_has_bits & 0x00000007u) {
     ::memset(&_impl_.max_imported_playlists_, 0, static_cast<::size_t>(
@@ -850,13 +847,6 @@ PROTOBUF_NOINLINE void InstanceCapabilities::Clear() {
             target = stream->EnsureSpace(target);
             target = ::_pbi::WireFormatLite::WriteBoolToArray(
                 1, this_._internal_server_controlled_playback(), target);
-          }
-
-          // bool client_managed_playback = 2;
-          if (this_._internal_client_managed_playback() != 0) {
-            target = stream->EnsureSpace(target);
-            target = ::_pbi::WireFormatLite::WriteBoolToArray(
-                2, this_._internal_client_managed_playback(), target);
           }
 
           // bool queue_management = 3;
@@ -943,6 +933,13 @@ PROTOBUF_NOINLINE void InstanceCapabilities::Clear() {
                 14, this_._internal_audio_playback(), target);
           }
 
+          // bool custom_system_media_service = 15;
+          if (this_._internal_custom_system_media_service() != 0) {
+            target = stream->EnsureSpace(target);
+            target = ::_pbi::WireFormatLite::WriteBoolToArray(
+                15, this_._internal_custom_system_media_service(), target);
+          }
+
           cached_has_bits = this_._impl_._has_bits_[0];
           // optional int32 max_imported_playlists = 20;
           if (cached_has_bits & 0x00000001u) {
@@ -994,10 +991,6 @@ PROTOBUF_NOINLINE void InstanceCapabilities::Clear() {
             if (this_._internal_server_controlled_playback() != 0) {
               total_size += 2;
             }
-            // bool client_managed_playback = 2;
-            if (this_._internal_client_managed_playback() != 0) {
-              total_size += 2;
-            }
             // bool queue_management = 3;
             if (this_._internal_queue_management() != 0) {
               total_size += 2;
@@ -1046,6 +1039,10 @@ PROTOBUF_NOINLINE void InstanceCapabilities::Clear() {
             if (this_._internal_audio_playback() != 0) {
               total_size += 2;
             }
+            // bool custom_system_media_service = 15;
+            if (this_._internal_custom_system_media_service() != 0) {
+              total_size += 2;
+            }
           }
           cached_has_bits = this_._impl_._has_bits_[0];
           if (cached_has_bits & 0x00000007u) {
@@ -1083,9 +1080,6 @@ void InstanceCapabilities::MergeImpl(::google::protobuf::MessageLite& to_msg, co
   if (from._internal_server_controlled_playback() != 0) {
     _this->_impl_.server_controlled_playback_ = from._impl_.server_controlled_playback_;
   }
-  if (from._internal_client_managed_playback() != 0) {
-    _this->_impl_.client_managed_playback_ = from._impl_.client_managed_playback_;
-  }
   if (from._internal_queue_management() != 0) {
     _this->_impl_.queue_management_ = from._impl_.queue_management_;
   }
@@ -1121,6 +1115,9 @@ void InstanceCapabilities::MergeImpl(::google::protobuf::MessageLite& to_msg, co
   }
   if (from._internal_audio_playback() != 0) {
     _this->_impl_.audio_playback_ = from._impl_.audio_playback_;
+  }
+  if (from._internal_custom_system_media_service() != 0) {
+    _this->_impl_.custom_system_media_service_ = from._impl_.custom_system_media_service_;
   }
   cached_has_bits = from._impl_._has_bits_[0];
   if (cached_has_bits & 0x00000007u) {
@@ -2892,15 +2889,15 @@ const ::google::protobuf::internal::ClassData* InstanceProfile::GetClassData() c
   return _class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<4, 15, 5, 112, 2> InstanceProfile::_table_ = {
+const ::_pbi::TcParseTable<4, 14, 5, 112, 2> InstanceProfile::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_._has_bits_),
     0, // no _extensions_
     17, 120,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294839296,  // skipmap
+    4294839328,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    15,  // num_field_entries
+    14,  // num_field_entries
     5,  // num_aux_entries
     offsetof(decltype(_table_), aux_entries),
     _class_data_.base(),
@@ -2928,9 +2925,7 @@ const ::_pbi::TcParseTable<4, 15, 5, 112, 2> InstanceProfile::_table_ = {
     // string game_name = 5;
     {::_pbi::TcParser::FastUS1,
      {42, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.game_name_)}},
-    // .omni_mix_player.PlaybackModeType mode = 6;
-    {::_pbi::TcParser::FastV32S1,
-     {48, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.mode_)}},
+    {::_pbi::TcParser::MiniParse, {}},
     // .omni_mix_player.InstanceCapabilities capabilities = 7;
     {::_pbi::TcParser::FastMtS1,
      {58, 0, 0, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.capabilities_)}},
@@ -2972,9 +2967,6 @@ const ::_pbi::TcParseTable<4, 15, 5, 112, 2> InstanceProfile::_table_ = {
     // string game_name = 5;
     {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.game_name_), -1, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
-    // .omni_mix_player.PlaybackModeType mode = 6;
-    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.mode_), -1, 0,
-    (0 | ::_fl::kFcSingular | ::_fl::kOpenEnum)},
     // .omni_mix_player.InstanceCapabilities capabilities = 7;
     {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.capabilities_), _Internal::kHasBitsOffset + 0, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
@@ -3009,7 +3001,7 @@ const ::_pbi::TcParseTable<4, 15, 5, 112, 2> InstanceProfile::_table_ = {
     {::_pbi::TcParser::GetTable<::omni_mix_player::OmniTimestamp>()},
     {::_pbi::TcParser::GetTable<::omni_mix_player::PlaybackTimelineState>()},
   }}, {{
-    "\37\2\14\0\6\11\0\0\0\0\0\25\16\0\0\0"
+    "\37\2\14\0\6\11\0\0\0\0\25\16\0\0\0\0"
     "omni_mix_player.InstanceProfile"
     "id"
     "display_name"
@@ -3115,13 +3107,6 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
             ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
                 _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.InstanceProfile.game_name");
             target = stream->WriteStringMaybeAliased(5, _s, target);
-          }
-
-          // .omni_mix_player.PlaybackModeType mode = 6;
-          if (this_._internal_mode() != 0) {
-            target = stream->EnsureSpace(target);
-            target = ::_pbi::WireFormatLite::WriteEnumToArray(
-                6, this_._internal_mode(), target);
           }
 
           cached_has_bits = this_._impl_._has_bits_[0];
@@ -3290,11 +3275,6 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
               total_size += 1 +
                             ::_pbi::WireFormatLite::EnumSize(this_._internal_kind());
             }
-            // .omni_mix_player.PlaybackModeType mode = 6;
-            if (this_._internal_mode() != 0) {
-              total_size += 1 +
-                            ::_pbi::WireFormatLite::EnumSize(this_._internal_mode());
-            }
             // float volume = 8;
             if (::absl::bit_cast<::uint32_t>(this_._internal_volume()) != 0) {
               total_size += 5;
@@ -3384,9 +3364,6 @@ void InstanceProfile::MergeImpl(::google::protobuf::MessageLite& to_msg, const :
   }
   if (from._internal_kind() != 0) {
     _this->_impl_.kind_ = from._impl_.kind_;
-  }
-  if (from._internal_mode() != 0) {
-    _this->_impl_.mode_ = from._impl_.mode_;
   }
   if (::absl::bit_cast<::uint32_t>(from._internal_volume()) != 0) {
     _this->_impl_.volume_ = from._impl_.volume_;
@@ -3548,15 +3525,15 @@ const ::google::protobuf::internal::ClassData* InstanceConnectRequest::GetClassD
   return _class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<3, 8, 1, 91, 2> InstanceConnectRequest::_table_ = {
+const ::_pbi::TcParseTable<3, 7, 1, 83, 2> InstanceConnectRequest::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(InstanceConnectRequest, _impl_._has_bits_),
     0, // no _extensions_
     8, 56,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294967040,  // skipmap
+    4294967044,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    8,  // num_field_entries
+    7,  // num_field_entries
     1,  // num_aux_entries
     offsetof(decltype(_table_), aux_entries),
     _class_data_.base(),
@@ -3575,9 +3552,7 @@ const ::_pbi::TcParseTable<3, 8, 1, 91, 2> InstanceConnectRequest::_table_ = {
     // .omni_mix_player.InstanceKind kind = 2;
     {::_pbi::TcParser::FastV32S1,
      {16, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceConnectRequest, _impl_.kind_)}},
-    // .omni_mix_player.PlaybackModeType mode = 3;
-    {::_pbi::TcParser::FastV32S1,
-     {24, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceConnectRequest, _impl_.mode_)}},
+    {::_pbi::TcParser::MiniParse, {}},
     // .omni_mix_player.InstanceCapabilities capabilities = 4;
     {::_pbi::TcParser::FastMtS1,
      {34, 0, 0, PROTOBUF_FIELD_OFFSET(InstanceConnectRequest, _impl_.capabilities_)}},
@@ -3599,9 +3574,6 @@ const ::_pbi::TcParseTable<3, 8, 1, 91, 2> InstanceConnectRequest::_table_ = {
     // .omni_mix_player.InstanceKind kind = 2;
     {PROTOBUF_FIELD_OFFSET(InstanceConnectRequest, _impl_.kind_), -1, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kOpenEnum)},
-    // .omni_mix_player.PlaybackModeType mode = 3;
-    {PROTOBUF_FIELD_OFFSET(InstanceConnectRequest, _impl_.mode_), -1, 0,
-    (0 | ::_fl::kFcSingular | ::_fl::kOpenEnum)},
     // .omni_mix_player.InstanceCapabilities capabilities = 4;
     {PROTOBUF_FIELD_OFFSET(InstanceConnectRequest, _impl_.capabilities_), _Internal::kHasBitsOffset + 0, 0,
     (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
@@ -3620,7 +3592,7 @@ const ::_pbi::TcParseTable<3, 8, 1, 91, 2> InstanceConnectRequest::_table_ = {
   }}, {{
     {::_pbi::TcParser::GetTable<::omni_mix_player::InstanceCapabilities>()},
   }}, {{
-    "\46\11\0\0\0\6\11\14\0\0\0\0\0\0\0\0"
+    "\46\11\0\0\6\11\14\0"
     "omni_mix_player.InstanceConnectRequest"
     "client_id"
     "mod_id"
@@ -3680,13 +3652,6 @@ PROTOBUF_NOINLINE void InstanceConnectRequest::Clear() {
             target = stream->EnsureSpace(target);
             target = ::_pbi::WireFormatLite::WriteEnumToArray(
                 2, this_._internal_kind(), target);
-          }
-
-          // .omni_mix_player.PlaybackModeType mode = 3;
-          if (this_._internal_mode() != 0) {
-            target = stream->EnsureSpace(target);
-            target = ::_pbi::WireFormatLite::WriteEnumToArray(
-                3, this_._internal_mode(), target);
           }
 
           cached_has_bits = this_._impl_._has_bits_[0];
@@ -3788,11 +3753,6 @@ PROTOBUF_NOINLINE void InstanceConnectRequest::Clear() {
               total_size += 1 +
                             ::_pbi::WireFormatLite::EnumSize(this_._internal_kind());
             }
-            // .omni_mix_player.PlaybackModeType mode = 3;
-            if (this_._internal_mode() != 0) {
-              total_size += 1 +
-                            ::_pbi::WireFormatLite::EnumSize(this_._internal_mode());
-            }
             // bool no_instance = 8;
             if (this_._internal_no_instance() != 0) {
               total_size += 2;
@@ -3838,9 +3798,6 @@ void InstanceConnectRequest::MergeImpl(::google::protobuf::MessageLite& to_msg, 
   }
   if (from._internal_kind() != 0) {
     _this->_impl_.kind_ = from._impl_.kind_;
-  }
-  if (from._internal_mode() != 0) {
-    _this->_impl_.mode_ = from._impl_.mode_;
   }
   if (from._internal_no_instance() != 0) {
     _this->_impl_.no_instance_ = from._impl_.no_instance_;
@@ -5206,15 +5163,15 @@ const ::google::protobuf::internal::ClassData* InstanceSummary::GetClassData() c
   return _class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<4, 10, 1, 95, 2> InstanceSummary::_table_ = {
+const ::_pbi::TcParseTable<4, 9, 1, 95, 2> InstanceSummary::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(InstanceSummary, _impl_._has_bits_),
     0, // no _extensions_
     10, 120,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294966272,  // skipmap
+    4294966280,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    10,  // num_field_entries
+    9,  // num_field_entries
     1,  // num_aux_entries
     offsetof(decltype(_table_), aux_entries),
     _class_data_.base(),
@@ -5234,9 +5191,7 @@ const ::_pbi::TcParseTable<4, 10, 1, 95, 2> InstanceSummary::_table_ = {
     // .omni_mix_player.InstanceKind kind = 3;
     {::_pbi::TcParser::FastV32S1,
      {24, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceSummary, _impl_.kind_)}},
-    // .omni_mix_player.PlaybackModeType mode = 4;
-    {::_pbi::TcParser::FastV32S1,
-     {32, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceSummary, _impl_.mode_)}},
+    {::_pbi::TcParser::MiniParse, {}},
     // bool is_online = 5;
     {::_pbi::TcParser::FastV8S1,
      {40, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceSummary, _impl_.is_online_)}},
@@ -5272,9 +5227,6 @@ const ::_pbi::TcParseTable<4, 10, 1, 95, 2> InstanceSummary::_table_ = {
     // .omni_mix_player.InstanceKind kind = 3;
     {PROTOBUF_FIELD_OFFSET(InstanceSummary, _impl_.kind_), -1, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kOpenEnum)},
-    // .omni_mix_player.PlaybackModeType mode = 4;
-    {PROTOBUF_FIELD_OFFSET(InstanceSummary, _impl_.mode_), -1, 0,
-    (0 | ::_fl::kFcSingular | ::_fl::kOpenEnum)},
     // bool is_online = 5;
     {PROTOBUF_FIELD_OFFSET(InstanceSummary, _impl_.is_online_), -1, 0,
     (0 | ::_fl::kFcSingular | ::_fl::kBool)},
@@ -5296,7 +5248,7 @@ const ::_pbi::TcParseTable<4, 10, 1, 95, 2> InstanceSummary::_table_ = {
   }}, {{
     {::_pbi::TcParser::GetTable<::omni_mix_player::OmniTimestamp>()},
   }}, {{
-    "\37\2\14\0\0\0\22\0\0\6\11\0\0\0\0\0"
+    "\37\2\14\0\0\22\0\0\6\11\0\0\0\0\0\0"
     "omni_mix_player.InstanceSummary"
     "id"
     "display_name"
@@ -5366,13 +5318,6 @@ PROTOBUF_NOINLINE void InstanceSummary::Clear() {
             target = stream->EnsureSpace(target);
             target = ::_pbi::WireFormatLite::WriteEnumToArray(
                 3, this_._internal_kind(), target);
-          }
-
-          // .omni_mix_player.PlaybackModeType mode = 4;
-          if (this_._internal_mode() != 0) {
-            target = stream->EnsureSpace(target);
-            target = ::_pbi::WireFormatLite::WriteEnumToArray(
-                4, this_._internal_mode(), target);
           }
 
           // bool is_online = 5;
@@ -5486,11 +5431,6 @@ PROTOBUF_NOINLINE void InstanceSummary::Clear() {
               total_size += 1 +
                             ::_pbi::WireFormatLite::EnumSize(this_._internal_kind());
             }
-            // .omni_mix_player.PlaybackModeType mode = 4;
-            if (this_._internal_mode() != 0) {
-              total_size += 1 +
-                            ::_pbi::WireFormatLite::EnumSize(this_._internal_mode());
-            }
             // bool is_online = 5;
             if (this_._internal_is_online() != 0) {
               total_size += 2;
@@ -5544,9 +5484,6 @@ void InstanceSummary::MergeImpl(::google::protobuf::MessageLite& to_msg, const :
   }
   if (from._internal_kind() != 0) {
     _this->_impl_.kind_ = from._impl_.kind_;
-  }
-  if (from._internal_mode() != 0) {
-    _this->_impl_.mode_ = from._impl_.mode_;
   }
   if (from._internal_is_online() != 0) {
     _this->_impl_.is_online_ = from._impl_.is_online_;

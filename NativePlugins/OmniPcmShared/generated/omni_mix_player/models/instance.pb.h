@@ -1558,7 +1558,6 @@ class InstanceCapabilities final
   // accessors -------------------------------------------------------
   enum : int {
     kServerControlledPlaybackFieldNumber = 1,
-    kClientManagedPlaybackFieldNumber = 2,
     kQueueManagementFieldNumber = 3,
     kPlaylistManagementFieldNumber = 4,
     kMultiplePlaylistsFieldNumber = 5,
@@ -1571,6 +1570,7 @@ class InstanceCapabilities final
     kVolumeControlFieldNumber = 12,
     kEqualizerFieldNumber = 13,
     kAudioPlaybackFieldNumber = 14,
+    kCustomSystemMediaServiceFieldNumber = 15,
     kMaxImportedPlaylistsFieldNumber = 20,
     kMaxTagsFieldNumber = 21,
     kMaxPlaylistEntriesFieldNumber = 22,
@@ -1583,16 +1583,6 @@ class InstanceCapabilities final
   private:
   bool _internal_server_controlled_playback() const;
   void _internal_set_server_controlled_playback(bool value);
-
-  public:
-  // bool client_managed_playback = 2;
-  void clear_client_managed_playback() ;
-  bool client_managed_playback() const;
-  void set_client_managed_playback(bool value);
-
-  private:
-  bool _internal_client_managed_playback() const;
-  void _internal_set_client_managed_playback(bool value);
 
   public:
   // bool queue_management = 3;
@@ -1715,6 +1705,16 @@ class InstanceCapabilities final
   void _internal_set_audio_playback(bool value);
 
   public:
+  // bool custom_system_media_service = 15;
+  void clear_custom_system_media_service() ;
+  bool custom_system_media_service() const;
+  void set_custom_system_media_service(bool value);
+
+  private:
+  bool _internal_custom_system_media_service() const;
+  void _internal_set_custom_system_media_service(bool value);
+
+  public:
   // optional int32 max_imported_playlists = 20;
   bool has_max_imported_playlists() const;
   void clear_max_imported_playlists() ;
@@ -1774,7 +1774,6 @@ class InstanceCapabilities final
     ::google::protobuf::internal::HasBits<1> _has_bits_;
     ::google::protobuf::internal::CachedSize _cached_size_;
     bool server_controlled_playback_;
-    bool client_managed_playback_;
     bool queue_management_;
     bool playlist_management_;
     bool multiple_playlists_;
@@ -1787,6 +1786,7 @@ class InstanceCapabilities final
     bool volume_control_;
     bool equalizer_;
     bool audio_playback_;
+    bool custom_system_media_service_;
     ::int32_t max_imported_playlists_;
     ::int32_t max_tags_;
     ::int32_t max_playlist_entries_;
@@ -2541,7 +2541,6 @@ class InstanceSummary final
     kGameNameFieldNumber = 10,
     kConnectedAtFieldNumber = 8,
     kKindFieldNumber = 3,
-    kModeFieldNumber = 4,
     kIsOnlineFieldNumber = 5,
     kQueueCountFieldNumber = 7,
   };
@@ -2650,16 +2649,6 @@ class InstanceSummary final
   void _internal_set_kind(::omni_mix_player::InstanceKind value);
 
   public:
-  // .omni_mix_player.PlaybackModeType mode = 4;
-  void clear_mode() ;
-  ::omni_mix_player::PlaybackModeType mode() const;
-  void set_mode(::omni_mix_player::PlaybackModeType value);
-
-  private:
-  ::omni_mix_player::PlaybackModeType _internal_mode() const;
-  void _internal_set_mode(::omni_mix_player::PlaybackModeType value);
-
-  public:
   // bool is_online = 5;
   void clear_is_online() ;
   bool is_online() const;
@@ -2685,7 +2674,7 @@ class InstanceSummary final
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
   static const ::google::protobuf::internal::TcParseTable<
-      4, 10, 1,
+      4, 9, 1,
       95, 2>
       _table_;
 
@@ -2712,7 +2701,6 @@ class InstanceSummary final
     ::google::protobuf::internal::ArenaStringPtr game_name_;
     ::omni_mix_player::OmniTimestamp* connected_at_;
     int kind_;
-    int mode_;
     bool is_online_;
     ::int32_t queue_count_;
     PROTOBUF_TSAN_DECLARE_MEMBER
@@ -2862,7 +2850,6 @@ class InstanceConnectRequest final
     kDisplayNameFieldNumber = 7,
     kCapabilitiesFieldNumber = 4,
     kKindFieldNumber = 2,
-    kModeFieldNumber = 3,
     kNoInstanceFieldNumber = 8,
   };
   // string client_id = 1;
@@ -2954,16 +2941,6 @@ class InstanceConnectRequest final
   void _internal_set_kind(::omni_mix_player::InstanceKind value);
 
   public:
-  // .omni_mix_player.PlaybackModeType mode = 3;
-  void clear_mode() ;
-  ::omni_mix_player::PlaybackModeType mode() const;
-  void set_mode(::omni_mix_player::PlaybackModeType value);
-
-  private:
-  ::omni_mix_player::PlaybackModeType _internal_mode() const;
-  void _internal_set_mode(::omni_mix_player::PlaybackModeType value);
-
-  public:
   // bool no_instance = 8;
   void clear_no_instance() ;
   bool no_instance() const;
@@ -2979,8 +2956,8 @@ class InstanceConnectRequest final
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
   static const ::google::protobuf::internal::TcParseTable<
-      3, 8, 1,
-      91, 2>
+      3, 7, 1,
+      83, 2>
       _table_;
 
   friend class ::google::protobuf::MessageLite;
@@ -3005,7 +2982,6 @@ class InstanceConnectRequest final
     ::google::protobuf::internal::ArenaStringPtr display_name_;
     ::omni_mix_player::InstanceCapabilities* capabilities_;
     int kind_;
-    int mode_;
     bool no_instance_;
     PROTOBUF_TSAN_DECLARE_MEMBER
   };
@@ -3566,7 +3542,6 @@ class InstanceProfile final
     kUpdatedAtFieldNumber = 16,
     kPlaybackTimelineFieldNumber = 17,
     kKindFieldNumber = 3,
-    kModeFieldNumber = 6,
     kVolumeFieldNumber = 8,
     kTargetLatencyFieldNumber = 9,
   };
@@ -3763,16 +3738,6 @@ class InstanceProfile final
   void _internal_set_kind(::omni_mix_player::InstanceKind value);
 
   public:
-  // .omni_mix_player.PlaybackModeType mode = 6;
-  void clear_mode() ;
-  ::omni_mix_player::PlaybackModeType mode() const;
-  void set_mode(::omni_mix_player::PlaybackModeType value);
-
-  private:
-  ::omni_mix_player::PlaybackModeType _internal_mode() const;
-  void _internal_set_mode(::omni_mix_player::PlaybackModeType value);
-
-  public:
   // float volume = 8;
   void clear_volume() ;
   float volume() const;
@@ -3798,7 +3763,7 @@ class InstanceProfile final
   class _Internal;
   friend class ::google::protobuf::internal::TcParser;
   static const ::google::protobuf::internal::TcParseTable<
-      4, 15, 5,
+      4, 14, 5,
       112, 2>
       _table_;
 
@@ -3830,7 +3795,6 @@ class InstanceProfile final
     ::omni_mix_player::OmniTimestamp* updated_at_;
     ::omni_mix_player::PlaybackTimelineState* playback_timeline_;
     int kind_;
-    int mode_;
     float volume_;
     float target_latency_;
     PROTOBUF_TSAN_DECLARE_MEMBER
@@ -4103,28 +4067,6 @@ inline void InstanceCapabilities::_internal_set_server_controlled_playback(bool 
   _impl_.server_controlled_playback_ = value;
 }
 
-// bool client_managed_playback = 2;
-inline void InstanceCapabilities::clear_client_managed_playback() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.client_managed_playback_ = false;
-}
-inline bool InstanceCapabilities::client_managed_playback() const {
-  // @@protoc_insertion_point(field_get:omni_mix_player.InstanceCapabilities.client_managed_playback)
-  return _internal_client_managed_playback();
-}
-inline void InstanceCapabilities::set_client_managed_playback(bool value) {
-  _internal_set_client_managed_playback(value);
-  // @@protoc_insertion_point(field_set:omni_mix_player.InstanceCapabilities.client_managed_playback)
-}
-inline bool InstanceCapabilities::_internal_client_managed_playback() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return _impl_.client_managed_playback_;
-}
-inline void InstanceCapabilities::_internal_set_client_managed_playback(bool value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.client_managed_playback_ = value;
-}
-
 // bool queue_management = 3;
 inline void InstanceCapabilities::clear_queue_management() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
@@ -4387,6 +4329,28 @@ inline bool InstanceCapabilities::_internal_audio_playback() const {
 inline void InstanceCapabilities::_internal_set_audio_playback(bool value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.audio_playback_ = value;
+}
+
+// bool custom_system_media_service = 15;
+inline void InstanceCapabilities::clear_custom_system_media_service() {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.custom_system_media_service_ = false;
+}
+inline bool InstanceCapabilities::custom_system_media_service() const {
+  // @@protoc_insertion_point(field_get:omni_mix_player.InstanceCapabilities.custom_system_media_service)
+  return _internal_custom_system_media_service();
+}
+inline void InstanceCapabilities::set_custom_system_media_service(bool value) {
+  _internal_set_custom_system_media_service(value);
+  // @@protoc_insertion_point(field_set:omni_mix_player.InstanceCapabilities.custom_system_media_service)
+}
+inline bool InstanceCapabilities::_internal_custom_system_media_service() const {
+  ::google::protobuf::internal::TSanRead(&_impl_);
+  return _impl_.custom_system_media_service_;
+}
+inline void InstanceCapabilities::_internal_set_custom_system_media_service(bool value) {
+  ::google::protobuf::internal::TSanWrite(&_impl_);
+  _impl_.custom_system_media_service_ = value;
 }
 
 // optional int32 max_imported_playlists = 20;
@@ -5673,28 +5637,6 @@ inline void InstanceProfile::set_allocated_game_name(std::string* value) {
   // @@protoc_insertion_point(field_set_allocated:omni_mix_player.InstanceProfile.game_name)
 }
 
-// .omni_mix_player.PlaybackModeType mode = 6;
-inline void InstanceProfile::clear_mode() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.mode_ = 0;
-}
-inline ::omni_mix_player::PlaybackModeType InstanceProfile::mode() const {
-  // @@protoc_insertion_point(field_get:omni_mix_player.InstanceProfile.mode)
-  return _internal_mode();
-}
-inline void InstanceProfile::set_mode(::omni_mix_player::PlaybackModeType value) {
-  _internal_set_mode(value);
-  // @@protoc_insertion_point(field_set:omni_mix_player.InstanceProfile.mode)
-}
-inline ::omni_mix_player::PlaybackModeType InstanceProfile::_internal_mode() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return static_cast<::omni_mix_player::PlaybackModeType>(_impl_.mode_);
-}
-inline void InstanceProfile::_internal_set_mode(::omni_mix_player::PlaybackModeType value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.mode_ = value;
-}
-
 // .omni_mix_player.InstanceCapabilities capabilities = 7;
 inline bool InstanceProfile::has_capabilities() const {
   bool value = (_impl_._has_bits_[0] & 0x00000001u) != 0;
@@ -6409,28 +6351,6 @@ inline ::omni_mix_player::InstanceKind InstanceConnectRequest::_internal_kind() 
 inline void InstanceConnectRequest::_internal_set_kind(::omni_mix_player::InstanceKind value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.kind_ = value;
-}
-
-// .omni_mix_player.PlaybackModeType mode = 3;
-inline void InstanceConnectRequest::clear_mode() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.mode_ = 0;
-}
-inline ::omni_mix_player::PlaybackModeType InstanceConnectRequest::mode() const {
-  // @@protoc_insertion_point(field_get:omni_mix_player.InstanceConnectRequest.mode)
-  return _internal_mode();
-}
-inline void InstanceConnectRequest::set_mode(::omni_mix_player::PlaybackModeType value) {
-  _internal_set_mode(value);
-  // @@protoc_insertion_point(field_set:omni_mix_player.InstanceConnectRequest.mode)
-}
-inline ::omni_mix_player::PlaybackModeType InstanceConnectRequest::_internal_mode() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return static_cast<::omni_mix_player::PlaybackModeType>(_impl_.mode_);
-}
-inline void InstanceConnectRequest::_internal_set_mode(::omni_mix_player::PlaybackModeType value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.mode_ = value;
 }
 
 // .omni_mix_player.InstanceCapabilities capabilities = 4;
@@ -7163,28 +7083,6 @@ inline ::omni_mix_player::InstanceKind InstanceSummary::_internal_kind() const {
 inline void InstanceSummary::_internal_set_kind(::omni_mix_player::InstanceKind value) {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.kind_ = value;
-}
-
-// .omni_mix_player.PlaybackModeType mode = 4;
-inline void InstanceSummary::clear_mode() {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.mode_ = 0;
-}
-inline ::omni_mix_player::PlaybackModeType InstanceSummary::mode() const {
-  // @@protoc_insertion_point(field_get:omni_mix_player.InstanceSummary.mode)
-  return _internal_mode();
-}
-inline void InstanceSummary::set_mode(::omni_mix_player::PlaybackModeType value) {
-  _internal_set_mode(value);
-  // @@protoc_insertion_point(field_set:omni_mix_player.InstanceSummary.mode)
-}
-inline ::omni_mix_player::PlaybackModeType InstanceSummary::_internal_mode() const {
-  ::google::protobuf::internal::TSanRead(&_impl_);
-  return static_cast<::omni_mix_player::PlaybackModeType>(_impl_.mode_);
-}
-inline void InstanceSummary::_internal_set_mode(::omni_mix_player::PlaybackModeType value) {
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  _impl_.mode_ = value;
 }
 
 // bool is_online = 5;
