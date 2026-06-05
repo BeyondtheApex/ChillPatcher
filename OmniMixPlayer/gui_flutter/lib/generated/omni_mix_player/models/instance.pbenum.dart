@@ -14,6 +14,7 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
+/// 队列信息
 class PlaylistSourceKind extends $pb.ProtobufEnum {
   static const PlaylistSourceKind PLAYLIST_SOURCE_KIND_UNSPECIFIED =
       PlaylistSourceKind._(

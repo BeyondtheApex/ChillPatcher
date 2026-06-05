@@ -17,8 +17,7 @@ namespace OmniMixPlayer.Module.Bilibili
         private BilibiliSession _session;
         private readonly string _sessionPath;
 
-        // [新增] 存储延迟时间
-        private readonly int _pageDelay;
+        public int PageDelay { get; set; }
 
         public bool IsLoggedIn => _session != null && _session.IsValid;
         public string CurrentUserId => _session?.DedeUserID;
@@ -36,7 +35,7 @@ namespace OmniMixPlayer.Module.Bilibili
         {
             _logger = logger;
             _sessionPath = Path.Combine(dataDir, "bilibili_session.json");
-            _pageDelay = pageDelay; // 保存配置
+            PageDelay = pageDelay;
 
             var handler = new HttpClientHandler
             {
@@ -116,28 +115,37 @@ namespace OmniMixPlayer.Module.Bilibili
             return code;
         }
 
-        public async Task<List<BiliFolder>> GetMyFoldersAsync()
+        public async Task<BiliFolderListResult> GetMyFoldersAsync()
         {
-            if (!IsLoggedIn) return new List<BiliFolder>();
+            if (!IsLoggedIn) return BiliFolderListResult.Failed("Not logged in");
             UpdateHeader();
             try
             {
                 await Task.Delay(100);
                 var url = $"https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid={_session.DedeUserID}&type=2";
                 var data = JObject.Parse(await _client.GetStringAsync(url));
-                if (data["code"]?.ToString() != "0") return new List<BiliFolder>();
-                return data["data"]["list"].ToObject<List<BiliFolder>>();
+                if (data["code"]?.ToString() != "0")
+                {
+                    var message = data["message"]?.ToString() ?? "";
+                    _logger.LogWarning("[Sync] 获取收藏夹列表失败: code={Code}, message={Message}",
+                        data["code"]?.ToString(), message);
+                    return BiliFolderListResult.Failed(message);
+                }
+
+                var folders = data["data"]?["list"]?.ToObject<List<BiliFolder>>() ?? new List<BiliFolder>();
+                _logger.LogInformation("[Sync] 获取收藏夹列表成功: {Count} 个", folders.Count);
+                return BiliFolderListResult.Ok(folders);
             }
             catch (Exception ex)
             {
                 _logger.LogError($"[Sync] 获取收藏夹列表失败: {ex.Message}");
-                return new List<BiliFolder>();
+                return BiliFolderListResult.Failed(ex.Message);
             }
         }
 
-        public async Task<List<BiliVideoInfo>> GetFolderVideosAsync(long folderId)
+        public async Task<BiliFolderVideosResult> GetFolderVideosAsync(long folderId)
         {
-            if (!IsLoggedIn) return new List<BiliVideoInfo>();
+            if (!IsLoggedIn) return BiliFolderVideosResult.Failed(message: "Not logged in");
             UpdateHeader();
 
             var result = new List<BiliVideoInfo>();
@@ -153,7 +161,7 @@ namespace OmniMixPlayer.Module.Bilibili
                     {
                         if (page % 5 == 0) _logger.LogInformation($"[Sync] 正在加载收藏夹 {folderId} 第 {page}/50 页...");
 
-                        var url = $"https://api.bilibili.com/x/v3/fav/resource/list?media_id={folderId}&ps=20&pn={page}";
+                        var url = $"https://api.bilibili.com/x/v3/fav/resource/list?media_id={folderId}&ps=20&pn={page}&keyword=&order=mtime&type=0&tid=0&platform=web";
 
                         var request = new HttpRequestMessage(HttpMethod.Get, url);
                         var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -162,12 +170,21 @@ namespace OmniMixPlayer.Module.Bilibili
                             throw new HttpRequestException($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
 
                         var jsonStr = await response.Content.ReadAsStringAsync();
-                        var data = JObject.Parse(jsonStr)["data"];
+                        var root = JObject.Parse(jsonStr);
+                        if (root["code"]?.ToString() != "0")
+                        {
+                            var message = root["message"]?.ToString() ?? "";
+                            _logger.LogWarning("[Sync] 收藏夹 {FolderId} 第 {Page} 页返回错误: code={Code}, message={Message}",
+                                folderId, page, root["code"]?.ToString(), message);
+                            return BiliFolderVideosResult.Failed(result, message);
+                        }
+
+                        var data = root["data"];
 
                         if (data == null || data["medias"] == null)
                         {
-                            if (page == 1) _logger.LogWarning($"[Sync] 第1页无数据 (Code: {JObject.Parse(jsonStr)["code"]})");
-                            return result;
+                            if (page == 1) _logger.LogInformation("[Sync] 收藏夹 {FolderId} 为空", folderId);
+                            return BiliFolderVideosResult.Ok(result);
                         }
 
                         foreach (var item in data["medias"])
@@ -179,9 +196,12 @@ namespace OmniMixPlayer.Module.Bilibili
                                 string cover = item["cover"]?.ToString();
                                 if (cover != null && cover.StartsWith("http://")) cover = cover.Replace("http://", "https://");
 
+                                var bvid = item["bvid"]?.ToString();
+                                if (string.IsNullOrWhiteSpace(bvid)) continue;
+
                                 result.Add(new BiliVideoInfo
                                 {
-                                    Bvid = item["bvid"]?.ToString(),
+                                    Bvid = bvid,
                                     Title = item["title"]?.ToString(),
                                     Artist = item["upper"]?["name"]?.ToString(),
                                     CoverUrl = cover,
@@ -192,12 +212,12 @@ namespace OmniMixPlayer.Module.Bilibili
                         }
 
                         bool hasMore = (bool?)data["has_more"] ?? false;
-                        if (!hasMore) return result;
+                        if (!hasMore) return BiliFolderVideosResult.Ok(result);
 
                         success = true;
 
                         // [核心修改] 使用配置的延迟
-                        await Task.Delay(_pageDelay);
+                        await Task.Delay(PageDelay);
                     }
                     catch (Exception ex)
                     {
@@ -205,20 +225,20 @@ namespace OmniMixPlayer.Module.Bilibili
                         _logger.LogWarning($"[Sync] 加载第 {page} 页失败 (尝试 {retryCount}/3): {ex.Message}");
 
                         // 遇到412时延迟增加，普通错误也根据配置延迟增加
-                        int waitTime = ex.Message.Contains("412") ? _pageDelay * 5 : _pageDelay * 3;
+                        int waitTime = ex.Message.Contains("412") ? PageDelay * 5 : PageDelay * 3;
                         await Task.Delay(waitTime);
 
                         if (retryCount >= 3)
                         {
                             _logger.LogError($"[Sync] 放弃加载第 {page} 页。已获取 {result.Count} 首。");
-                            return result;
+                            return BiliFolderVideosResult.Failed(result, ex.Message);
                         }
                     }
                 }
             }
 
             _logger.LogInformation($"[Sync] 收藏夹 {folderId} 同步完成，共 {result.Count} 首");
-            return result;
+            return BiliFolderVideosResult.Ok(result);
         }
 
         public async Task<string> GetPlayUrlAsync(string bvid)

@@ -42,6 +42,7 @@ class _AudioServiceMediaControlService implements MediaControlService {
 
   @override
   Future<void> dispose() async {
+    _handler?.update(null);
     await _handler?.stop();
     _handler = null;
   }
@@ -51,6 +52,8 @@ class _OmniMixAudioHandler extends BaseAudioHandler {
   final MediaControlCallbacks _callbacks;
   String? _instanceId;
   bool _canSeek = false;
+  String? _lastMediaKey;
+  String? _lastPlaybackKey;
 
   _OmniMixAudioHandler(this._callbacks);
 
@@ -58,22 +61,33 @@ class _OmniMixAudioHandler extends BaseAudioHandler {
     if (snapshot == null) {
       _instanceId = null;
       _canSeek = false;
-      mediaItem.add(null);
-      playbackState.add(_state(playing: false, position: Duration.zero));
+      if (_lastMediaKey != null) {
+        mediaItem.add(null);
+        _lastMediaKey = null;
+      }
+      _addPlaybackState(playing: false);
       return;
     }
 
     final instance = snapshot.instance;
     _instanceId = instance.id;
     _canSeek = snapshot.canSeek;
-    mediaItem.add(_mediaItem(instance, snapshot.baseUrl));
-    playbackState.add(
-      _state(
-        playing: instance.isOnline,
-        position: Duration.zero,
-        duration: Duration.zero,
-      ),
-    );
+    final mediaKey = _mediaKey(instance, snapshot.baseUrl);
+    if (mediaKey != _lastMediaKey) {
+      mediaItem.add(_mediaItem(instance, snapshot.baseUrl));
+      _lastMediaKey = mediaKey;
+    }
+    _addPlaybackState(playing: instance.isOnline);
+  }
+
+  String _mediaKey(InstanceSummary instance, String baseUrl) {
+    final uuid = instance.currentTrackUuid;
+    return [
+      instance.id,
+      uuid.isEmpty ? instance.id : uuid,
+      instance.displayName,
+      uuid.isEmpty ? '' : '$baseUrl/api/track/cover?uuid=$uuid',
+    ].join('|');
   }
 
   MediaItem _mediaItem(InstanceSummary instance, String baseUrl) {
@@ -112,8 +126,12 @@ class _OmniMixAudioHandler extends BaseAudioHandler {
     );
   }
 
-  Duration _seconds(double value) =>
-      Duration(milliseconds: (value * 1000).round().clamp(0, 1 << 53).toInt());
+  void _addPlaybackState({required bool playing}) {
+    final playbackKey = '$playing|$_canSeek';
+    if (playbackKey == _lastPlaybackKey) return;
+    playbackState.add(_state(playing: playing, position: Duration.zero));
+    _lastPlaybackKey = playbackKey;
+  }
 
   @override
   Future<void> play() async {

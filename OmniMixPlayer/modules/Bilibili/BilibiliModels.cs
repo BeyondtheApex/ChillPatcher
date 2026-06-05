@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Newtonsoft.Json;
 
 namespace OmniMixPlayer.Module.Bilibili
@@ -31,6 +32,45 @@ namespace OmniMixPlayer.Module.Bilibili
         [JsonProperty("id")] public long Id { get; set; }
         [JsonProperty("title")] public string Title { get; set; }
         [JsonProperty("media_count")] public int MediaCount { get; set; }
+    }
+
+    public class BiliFolderListResult
+    {
+        public bool Success { get; set; }
+        public List<BiliFolder> Folders { get; set; } = new();
+        public string ErrorMessage { get; set; }
+
+        public static BiliFolderListResult Ok(List<BiliFolder> folders) => new()
+        {
+            Success = true,
+            Folders = folders ?? new List<BiliFolder>()
+        };
+
+        public static BiliFolderListResult Failed(string message = null) => new()
+        {
+            Success = false,
+            ErrorMessage = message ?? ""
+        };
+    }
+
+    public class BiliFolderVideosResult
+    {
+        public bool Success { get; set; }
+        public List<BiliVideoInfo> Videos { get; set; } = new();
+        public string ErrorMessage { get; set; }
+
+        public static BiliFolderVideosResult Ok(List<BiliVideoInfo> videos) => new()
+        {
+            Success = true,
+            Videos = videos ?? new List<BiliVideoInfo>()
+        };
+
+        public static BiliFolderVideosResult Failed(List<BiliVideoInfo> partialVideos = null, string message = null) => new()
+        {
+            Success = false,
+            Videos = partialVideos ?? new List<BiliVideoInfo>(),
+            ErrorMessage = message ?? ""
+        };
     }
 
     public class BiliQrCodeData

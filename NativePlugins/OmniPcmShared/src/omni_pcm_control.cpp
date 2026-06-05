@@ -257,7 +257,6 @@ void fill_profile(const omni_mix_player::InstanceProfile& profile, OmniPcmInstan
     copy_text(out->display_name, sizeof(out->display_name), profile.display_name());
     copy_text(out->mod_id, sizeof(out->mod_id), profile.mod_id());
     copy_text(out->game_name, sizeof(out->game_name), profile.game_name());
-    copy_text(out->active_queue_id, sizeof(out->active_queue_id), profile.active_queue_id());
     out->kind = static_cast<int32_t>(profile.kind());
     out->capability_flags = capability_flags(profile.capabilities());
     out->volume = profile.volume();
@@ -641,7 +640,6 @@ OMNI_PCM_API int OmniPcmClient_UpdateProfile(
     existing.set_display_name(profile->display_name);
     existing.set_mod_id(profile->mod_id);
     existing.set_game_name(profile->game_name);
-    existing.set_active_queue_id(profile->active_queue_id);
     existing.set_kind(static_cast<omni_mix_player::InstanceKind>(profile->kind));
     existing.set_volume(profile->volume);
     existing.set_target_latency(profile->target_latency);

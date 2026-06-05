@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
 using OmniMixPlayer.SDK.Protos.Models;
 
@@ -11,6 +12,7 @@ namespace OmniMixPlayer.Backend.Audio
         private readonly object _lock = new();
         private readonly InstanceRegistry _registry;
         private readonly ILibraryRegistry _library;
+        private readonly IEventBus _eventBus;
         private readonly Random _rng = new();
 
         public event Action<string> OnTimelineChanged;
@@ -19,6 +21,7 @@ namespace OmniMixPlayer.Backend.Audio
         {
             _registry = registry;
             _library = library;
+            _eventBus = eventBus;
         }
 
         public PlaybackTimelineState Get(string instanceId)
@@ -212,6 +215,7 @@ namespace OmniMixPlayer.Backend.Audio
         private TimelineAdvanceResult Mutate(string instanceId, Func<PlaybackTimelineState, TimelineAdvanceResult> mutation)
         {
             TimelineAdvanceResult result;
+            PlaybackTimelineState changed;
             lock (_lock)
             {
                 var profile = _registry.GetOrDefault(instanceId);
@@ -219,8 +223,18 @@ namespace OmniMixPlayer.Backend.Audio
                 result = mutation(timeline);
                 profile.PlaybackTimeline = timeline;
                 _registry.SavePlaybackTimeline(instanceId, timeline);
+                changed = timeline.Clone();
             }
 
+            _eventBus?.Publish(new PlaybackTimelineChangedEvent
+            {
+                InstanceId = instanceId,
+                CurrentUuid = changed.CurrentUuid ?? "",
+                ManualQueueLength = changed.ManualQueueUuids.Count,
+                HistoryLength = changed.HistoryUuids.Count,
+                SourceLength = changed.SourceUuids.Count,
+                Revision = changed.Revision
+            });
             OnTimelineChanged?.Invoke(instanceId);
             return result;
         }

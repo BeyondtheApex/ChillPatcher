@@ -166,6 +166,20 @@ namespace OmniMixPlayer.SDK.Events
 
     #endregion
 
+    #region Queue timeline events
+
+    public class PlaybackTimelineChangedEvent : ModuleEventBase
+    {
+        public string InstanceId { get; set; }
+        public string CurrentUuid { get; set; }
+        public int ManualQueueLength { get; set; }
+        public int HistoryLength { get; set; }
+        public int SourceLength { get; set; }
+        public long Revision { get; set; }
+    }
+
+    #endregion
+
     #region 增长列表事件
 
     public class GrowableListBottomOutEvent : ModuleEventBase

@@ -23,37 +23,6 @@ namespace _pbi = ::google::protobuf::internal;
 namespace _fl = ::google::protobuf::internal::field_layout;
 namespace omni_mix_player {
 
-inline constexpr QueueInfo::Impl_::Impl_(
-    ::_pbi::ConstantInitialized) noexcept
-      : id_(
-            &::google::protobuf::internal::fixed_address_empty_string,
-            ::_pbi::ConstantInitialized()),
-        name_(
-            &::google::protobuf::internal::fixed_address_empty_string,
-            ::_pbi::ConstantInitialized()),
-        song_count_{0},
-        _cached_size_{0} {}
-
-template <typename>
-PROTOBUF_CONSTEXPR QueueInfo::QueueInfo(::_pbi::ConstantInitialized)
-#if defined(PROTOBUF_CUSTOM_VTABLE)
-    : ::google::protobuf::MessageLite(_class_data_.base()),
-#else   // PROTOBUF_CUSTOM_VTABLE
-    : ::google::protobuf::MessageLite(),
-#endif  // PROTOBUF_CUSTOM_VTABLE
-      _impl_(::_pbi::ConstantInitialized()) {
-}
-struct QueueInfoDefaultTypeInternal {
-  PROTOBUF_CONSTEXPR QueueInfoDefaultTypeInternal() : _instance(::_pbi::ConstantInitialized{}) {}
-  ~QueueInfoDefaultTypeInternal() {}
-  union {
-    QueueInfo _instance;
-  };
-};
-
-PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
-    PROTOBUF_ATTRIBUTE_INIT_PRIORITY1 QueueInfoDefaultTypeInternal _QueueInfo_default_instance_;
-
 inline constexpr PlaylistSourceState::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
       : uuids_{},
@@ -485,7 +454,6 @@ PROTOBUF_ATTRIBUTE_NO_DESTROY PROTOBUF_CONSTINIT
 inline constexpr InstanceProfile::Impl_::Impl_(
     ::_pbi::ConstantInitialized) noexcept
       : _cached_size_{0},
-        queues_{},
         imported_playlist_ids_{},
         pinned_tag_ids_{},
         id_(
@@ -498,9 +466,6 @@ inline constexpr InstanceProfile::Impl_::Impl_(
             &::google::protobuf::internal::fixed_address_empty_string,
             ::_pbi::ConstantInitialized()),
         game_name_(
-            &::google::protobuf::internal::fixed_address_empty_string,
-            ::_pbi::ConstantInitialized()),
-        active_queue_id_(
             &::google::protobuf::internal::fixed_address_empty_string,
             ::_pbi::ConstantInitialized()),
         capabilities_{nullptr},
@@ -1851,288 +1816,6 @@ void EqualizerState::InternalSwap(EqualizerState* PROTOBUF_RESTRICT other) {
 
 // ===================================================================
 
-class QueueInfo::_Internal {
- public:
-};
-
-QueueInfo::QueueInfo(::google::protobuf::Arena* arena)
-#if defined(PROTOBUF_CUSTOM_VTABLE)
-    : ::google::protobuf::MessageLite(arena, _class_data_.base()) {
-#else   // PROTOBUF_CUSTOM_VTABLE
-    : ::google::protobuf::MessageLite(arena) {
-#endif  // PROTOBUF_CUSTOM_VTABLE
-  SharedCtor(arena);
-  // @@protoc_insertion_point(arena_constructor:omni_mix_player.QueueInfo)
-}
-inline PROTOBUF_NDEBUG_INLINE QueueInfo::Impl_::Impl_(
-    ::google::protobuf::internal::InternalVisibility visibility, ::google::protobuf::Arena* arena,
-    const Impl_& from, const ::omni_mix_player::QueueInfo& from_msg)
-      : id_(arena, from.id_),
-        name_(arena, from.name_),
-        _cached_size_{0} {}
-
-QueueInfo::QueueInfo(
-    ::google::protobuf::Arena* arena,
-    const QueueInfo& from)
-#if defined(PROTOBUF_CUSTOM_VTABLE)
-    : ::google::protobuf::MessageLite(arena, _class_data_.base()) {
-#else   // PROTOBUF_CUSTOM_VTABLE
-    : ::google::protobuf::MessageLite(arena) {
-#endif  // PROTOBUF_CUSTOM_VTABLE
-  QueueInfo* const _this = this;
-  (void)_this;
-  _internal_metadata_.MergeFrom<std::string>(
-      from._internal_metadata_);
-  new (&_impl_) Impl_(internal_visibility(), arena, from._impl_, from);
-  _impl_.song_count_ = from._impl_.song_count_;
-
-  // @@protoc_insertion_point(copy_constructor:omni_mix_player.QueueInfo)
-}
-inline PROTOBUF_NDEBUG_INLINE QueueInfo::Impl_::Impl_(
-    ::google::protobuf::internal::InternalVisibility visibility,
-    ::google::protobuf::Arena* arena)
-      : id_(arena),
-        name_(arena),
-        _cached_size_{0} {}
-
-inline void QueueInfo::SharedCtor(::_pb::Arena* arena) {
-  new (&_impl_) Impl_(internal_visibility(), arena);
-  _impl_.song_count_ = {};
-}
-QueueInfo::~QueueInfo() {
-  // @@protoc_insertion_point(destructor:omni_mix_player.QueueInfo)
-  SharedDtor(*this);
-}
-inline void QueueInfo::SharedDtor(MessageLite& self) {
-  QueueInfo& this_ = static_cast<QueueInfo&>(self);
-  this_._internal_metadata_.Delete<std::string>();
-  ABSL_DCHECK(this_.GetArena() == nullptr);
-  this_._impl_.id_.Destroy();
-  this_._impl_.name_.Destroy();
-  this_._impl_.~Impl_();
-}
-
-inline void* QueueInfo::PlacementNew_(const void*, void* mem,
-                                        ::google::protobuf::Arena* arena) {
-  return ::new (mem) QueueInfo(arena);
-}
-constexpr auto QueueInfo::InternalNewImpl_() {
-  return ::google::protobuf::internal::MessageCreator::CopyInit(sizeof(QueueInfo),
-                                            alignof(QueueInfo));
-}
-PROTOBUF_CONSTINIT
-PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::google::protobuf::internal::ClassDataLite<26> QueueInfo::_class_data_ = {
-    {
-        &_QueueInfo_default_instance_._instance,
-        &_table_.header,
-        nullptr,  // OnDemandRegisterArenaDtor
-        nullptr,  // IsInitialized
-        &QueueInfo::MergeImpl,
-        ::google::protobuf::MessageLite::GetNewImpl<QueueInfo>(),
-#if defined(PROTOBUF_CUSTOM_VTABLE)
-        &QueueInfo::SharedDtor,
-        ::google::protobuf::MessageLite::GetClearImpl<QueueInfo>(), &QueueInfo::ByteSizeLong,
-            &QueueInfo::_InternalSerialize,
-#endif  // PROTOBUF_CUSTOM_VTABLE
-        PROTOBUF_FIELD_OFFSET(QueueInfo, _impl_._cached_size_),
-        true,
-    },
-    "omni_mix_player.QueueInfo",
-};
-const ::google::protobuf::internal::ClassData* QueueInfo::GetClassData() const {
-  return _class_data_.base();
-}
-PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<2, 3, 0, 40, 2> QueueInfo::_table_ = {
-  {
-    0,  // no _has_bits_
-    0, // no _extensions_
-    3, 24,  // max_field_number, fast_idx_mask
-    offsetof(decltype(_table_), field_lookup_table),
-    4294967288,  // skipmap
-    offsetof(decltype(_table_), field_entries),
-    3,  // num_field_entries
-    0,  // num_aux_entries
-    offsetof(decltype(_table_), field_names),  // no aux_entries
-    _class_data_.base(),
-    nullptr,  // post_loop_handler
-    ::_pbi::TcParser::GenericFallbackLite,  // fallback
-    #ifdef PROTOBUF_PREFETCH_PARSE_TABLE
-    ::_pbi::TcParser::GetTable<::omni_mix_player::QueueInfo>(),  // to_prefetch
-    #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
-  }, {{
-    {::_pbi::TcParser::MiniParse, {}},
-    // string id = 1;
-    {::_pbi::TcParser::FastUS1,
-     {10, 63, 0, PROTOBUF_FIELD_OFFSET(QueueInfo, _impl_.id_)}},
-    // string name = 2;
-    {::_pbi::TcParser::FastUS1,
-     {18, 63, 0, PROTOBUF_FIELD_OFFSET(QueueInfo, _impl_.name_)}},
-    // int32 song_count = 3;
-    {::_pbi::TcParser::FastV32S1,
-     {24, 63, 0, PROTOBUF_FIELD_OFFSET(QueueInfo, _impl_.song_count_)}},
-  }}, {{
-    65535, 65535
-  }}, {{
-    // string id = 1;
-    {PROTOBUF_FIELD_OFFSET(QueueInfo, _impl_.id_), 0, 0,
-    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
-    // string name = 2;
-    {PROTOBUF_FIELD_OFFSET(QueueInfo, _impl_.name_), 0, 0,
-    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
-    // int32 song_count = 3;
-    {PROTOBUF_FIELD_OFFSET(QueueInfo, _impl_.song_count_), 0, 0,
-    (0 | ::_fl::kFcSingular | ::_fl::kInt32)},
-  }},
-  // no aux_entries
-  {{
-    "\31\2\4\0\0\0\0\0"
-    "omni_mix_player.QueueInfo"
-    "id"
-    "name"
-  }},
-};
-
-PROTOBUF_NOINLINE void QueueInfo::Clear() {
-// @@protoc_insertion_point(message_clear_start:omni_mix_player.QueueInfo)
-  ::google::protobuf::internal::TSanWrite(&_impl_);
-  ::uint32_t cached_has_bits = 0;
-  // Prevent compiler warnings about cached_has_bits being unused
-  (void) cached_has_bits;
-
-  _impl_.id_.ClearToEmpty();
-  _impl_.name_.ClearToEmpty();
-  _impl_.song_count_ = 0;
-  _internal_metadata_.Clear<std::string>();
-}
-
-#if defined(PROTOBUF_CUSTOM_VTABLE)
-        ::uint8_t* QueueInfo::_InternalSerialize(
-            const MessageLite& base, ::uint8_t* target,
-            ::google::protobuf::io::EpsCopyOutputStream* stream) {
-          const QueueInfo& this_ = static_cast<const QueueInfo&>(base);
-#else   // PROTOBUF_CUSTOM_VTABLE
-        ::uint8_t* QueueInfo::_InternalSerialize(
-            ::uint8_t* target,
-            ::google::protobuf::io::EpsCopyOutputStream* stream) const {
-          const QueueInfo& this_ = *this;
-#endif  // PROTOBUF_CUSTOM_VTABLE
-          // @@protoc_insertion_point(serialize_to_array_start:omni_mix_player.QueueInfo)
-          ::uint32_t cached_has_bits = 0;
-          (void)cached_has_bits;
-
-          // string id = 1;
-          if (!this_._internal_id().empty()) {
-            const std::string& _s = this_._internal_id();
-            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
-                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.QueueInfo.id");
-            target = stream->WriteStringMaybeAliased(1, _s, target);
-          }
-
-          // string name = 2;
-          if (!this_._internal_name().empty()) {
-            const std::string& _s = this_._internal_name();
-            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
-                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.QueueInfo.name");
-            target = stream->WriteStringMaybeAliased(2, _s, target);
-          }
-
-          // int32 song_count = 3;
-          if (this_._internal_song_count() != 0) {
-            target = ::google::protobuf::internal::WireFormatLite::
-                WriteInt32ToArrayWithField<3>(
-                    stream, this_._internal_song_count(), target);
-          }
-
-          if (PROTOBUF_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
-            target = stream->WriteRaw(
-                this_._internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString).data(),
-                static_cast<int>(this_._internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString).size()), target);
-          }
-          // @@protoc_insertion_point(serialize_to_array_end:omni_mix_player.QueueInfo)
-          return target;
-        }
-
-#if defined(PROTOBUF_CUSTOM_VTABLE)
-        ::size_t QueueInfo::ByteSizeLong(const MessageLite& base) {
-          const QueueInfo& this_ = static_cast<const QueueInfo&>(base);
-#else   // PROTOBUF_CUSTOM_VTABLE
-        ::size_t QueueInfo::ByteSizeLong() const {
-          const QueueInfo& this_ = *this;
-#endif  // PROTOBUF_CUSTOM_VTABLE
-          // @@protoc_insertion_point(message_byte_size_start:omni_mix_player.QueueInfo)
-          ::size_t total_size = 0;
-
-          ::uint32_t cached_has_bits = 0;
-          // Prevent compiler warnings about cached_has_bits being unused
-          (void)cached_has_bits;
-
-          ::_pbi::Prefetch5LinesFrom7Lines(&this_);
-           {
-            // string id = 1;
-            if (!this_._internal_id().empty()) {
-              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
-                                              this_._internal_id());
-            }
-            // string name = 2;
-            if (!this_._internal_name().empty()) {
-              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
-                                              this_._internal_name());
-            }
-            // int32 song_count = 3;
-            if (this_._internal_song_count() != 0) {
-              total_size += ::_pbi::WireFormatLite::Int32SizePlusOne(
-                  this_._internal_song_count());
-            }
-          }
-          if (PROTOBUF_PREDICT_FALSE(this_._internal_metadata_.have_unknown_fields())) {
-            total_size += this_._internal_metadata_.unknown_fields<std::string>(::google::protobuf::internal::GetEmptyString).size();
-          }
-          this_._impl_._cached_size_.Set(::_pbi::ToCachedSize(total_size));
-          return total_size;
-        }
-
-void QueueInfo::MergeImpl(::google::protobuf::MessageLite& to_msg, const ::google::protobuf::MessageLite& from_msg) {
-  auto* const _this = static_cast<QueueInfo*>(&to_msg);
-  auto& from = static_cast<const QueueInfo&>(from_msg);
-  // @@protoc_insertion_point(class_specific_merge_from_start:omni_mix_player.QueueInfo)
-  ABSL_DCHECK_NE(&from, _this);
-  ::uint32_t cached_has_bits = 0;
-  (void) cached_has_bits;
-
-  if (!from._internal_id().empty()) {
-    _this->_internal_set_id(from._internal_id());
-  }
-  if (!from._internal_name().empty()) {
-    _this->_internal_set_name(from._internal_name());
-  }
-  if (from._internal_song_count() != 0) {
-    _this->_impl_.song_count_ = from._impl_.song_count_;
-  }
-  _this->_internal_metadata_.MergeFrom<std::string>(from._internal_metadata_);
-}
-
-void QueueInfo::CopyFrom(const QueueInfo& from) {
-// @@protoc_insertion_point(class_specific_copy_from_start:omni_mix_player.QueueInfo)
-  if (&from == this) return;
-  Clear();
-  MergeFrom(from);
-}
-
-
-void QueueInfo::InternalSwap(QueueInfo* PROTOBUF_RESTRICT other) {
-  using std::swap;
-  auto* arena = GetArena();
-  ABSL_DCHECK_EQ(arena, other->GetArena());
-  _internal_metadata_.InternalSwap(&other->_internal_metadata_);
-  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.id_, &other->_impl_.id_, arena);
-  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.name_, &other->_impl_.name_, arena);
-        swap(_impl_.song_count_, other->_impl_.song_count_);
-}
-
-// ===================================================================
-
 class PlaylistSourceState::_Internal {
  public:
 };
@@ -3075,14 +2758,12 @@ inline PROTOBUF_NDEBUG_INLINE InstanceProfile::Impl_::Impl_(
     const Impl_& from, const ::omni_mix_player::InstanceProfile& from_msg)
       : _has_bits_{from._has_bits_},
         _cached_size_{0},
-        queues_{visibility, arena, from.queues_},
         imported_playlist_ids_{visibility, arena, from.imported_playlist_ids_},
         pinned_tag_ids_{visibility, arena, from.pinned_tag_ids_},
         id_(arena, from.id_),
         display_name_(arena, from.display_name_),
         mod_id_(arena, from.mod_id_),
-        game_name_(arena, from.game_name_),
-        active_queue_id_(arena, from.active_queue_id_) {}
+        game_name_(arena, from.game_name_) {}
 
 InstanceProfile::InstanceProfile(
     ::google::protobuf::Arena* arena,
@@ -3127,14 +2808,12 @@ inline PROTOBUF_NDEBUG_INLINE InstanceProfile::Impl_::Impl_(
     ::google::protobuf::internal::InternalVisibility visibility,
     ::google::protobuf::Arena* arena)
       : _cached_size_{0},
-        queues_{visibility, arena},
         imported_playlist_ids_{visibility, arena},
         pinned_tag_ids_{visibility, arena},
         id_(arena),
         display_name_(arena),
         mod_id_(arena),
-        game_name_(arena),
-        active_queue_id_(arena) {}
+        game_name_(arena) {}
 
 inline void InstanceProfile::SharedCtor(::_pb::Arena* arena) {
   new (&_impl_) Impl_(internal_visibility(), arena);
@@ -3157,7 +2836,6 @@ inline void InstanceProfile::SharedDtor(MessageLite& self) {
   this_._impl_.display_name_.Destroy();
   this_._impl_.mod_id_.Destroy();
   this_._impl_.game_name_.Destroy();
-  this_._impl_.active_queue_id_.Destroy();
   delete this_._impl_.capabilities_;
   delete this_._impl_.equalizer_;
   delete this_._impl_.created_at_;
@@ -3172,10 +2850,6 @@ inline void* InstanceProfile::PlacementNew_(const void*, void* mem,
 }
 constexpr auto InstanceProfile::InternalNewImpl_() {
   constexpr auto arena_bits = ::google::protobuf::internal::EncodePlacementArenaOffsets({
-      PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.queues_) +
-          decltype(InstanceProfile::_impl_.queues_)::
-              InternalGetArenaOffset(
-                  ::google::protobuf::MessageLite::internal_visibility()),
       PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.imported_playlist_ids_) +
           decltype(InstanceProfile::_impl_.imported_playlist_ids_)::
               InternalGetArenaOffset(
@@ -3218,16 +2892,16 @@ const ::google::protobuf::internal::ClassData* InstanceProfile::GetClassData() c
   return _class_data_.base();
 }
 PROTOBUF_CONSTINIT PROTOBUF_ATTRIBUTE_INIT_PRIORITY1
-const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
+const ::_pbi::TcParseTable<4, 15, 5, 112, 2> InstanceProfile::_table_ = {
   {
     PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_._has_bits_),
     0, // no _extensions_
-    17, 248,  // max_field_number, fast_idx_mask
+    17, 120,  // max_field_number, fast_idx_mask
     offsetof(decltype(_table_), field_lookup_table),
-    4294836224,  // skipmap
+    4294839296,  // skipmap
     offsetof(decltype(_table_), field_entries),
-    17,  // num_field_entries
-    6,  // num_aux_entries
+    15,  // num_field_entries
+    5,  // num_aux_entries
     offsetof(decltype(_table_), aux_entries),
     _class_data_.base(),
     nullptr,  // post_loop_handler
@@ -3236,7 +2910,9 @@ const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
     ::_pbi::TcParser::GetTable<::omni_mix_player::InstanceProfile>(),  // to_prefetch
     #endif  // PROTOBUF_PREFETCH_PARSE_TABLE
   }, {{
-    {::_pbi::TcParser::MiniParse, {}},
+    // .omni_mix_player.OmniTimestamp updated_at = 16;
+    {::_pbi::TcParser::FastMtS2,
+     {386, 3, 3, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.updated_at_)}},
     // string id = 1;
     {::_pbi::TcParser::FastUS1,
      {10, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.id_)}},
@@ -3267,12 +2943,8 @@ const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
     // .omni_mix_player.EqualizerState equalizer = 10;
     {::_pbi::TcParser::FastMtS1,
      {82, 1, 1, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.equalizer_)}},
-    // string active_queue_id = 11;
-    {::_pbi::TcParser::FastUS1,
-     {90, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.active_queue_id_)}},
-    // repeated .omni_mix_player.QueueInfo queues = 12;
-    {::_pbi::TcParser::FastMtR1,
-     {98, 63, 2, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.queues_)}},
+    {::_pbi::TcParser::MiniParse, {}},
+    {::_pbi::TcParser::MiniParse, {}},
     // repeated string imported_playlist_ids = 13;
     {::_pbi::TcParser::FastUR1,
      {106, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.imported_playlist_ids_)}},
@@ -3281,27 +2953,7 @@ const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
      {114, 63, 0, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.pinned_tag_ids_)}},
     // .omni_mix_player.OmniTimestamp created_at = 15;
     {::_pbi::TcParser::FastMtS1,
-     {122, 2, 3, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.created_at_)}},
-    // .omni_mix_player.OmniTimestamp updated_at = 16;
-    {::_pbi::TcParser::FastMtS2,
-     {386, 3, 4, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.updated_at_)}},
-    // .omni_mix_player.PlaybackTimelineState playback_timeline = 17;
-    {::_pbi::TcParser::FastMtS2,
-     {394, 4, 5, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.playback_timeline_)}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
-    {::_pbi::TcParser::MiniParse, {}},
+     {122, 2, 2, PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.created_at_)}},
   }}, {{
     65535, 65535
   }}, {{
@@ -3335,12 +2987,6 @@ const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
     // .omni_mix_player.EqualizerState equalizer = 10;
     {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.equalizer_), _Internal::kHasBitsOffset + 1, 1,
     (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
-    // string active_queue_id = 11;
-    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.active_queue_id_), -1, 0,
-    (0 | ::_fl::kFcSingular | ::_fl::kUtf8String | ::_fl::kRepAString)},
-    // repeated .omni_mix_player.QueueInfo queues = 12;
-    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.queues_), -1, 2,
-    (0 | ::_fl::kFcRepeated | ::_fl::kMessage | ::_fl::kTvTable)},
     // repeated string imported_playlist_ids = 13;
     {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.imported_playlist_ids_), -1, 0,
     (0 | ::_fl::kFcRepeated | ::_fl::kUtf8String | ::_fl::kRepSString)},
@@ -3348,29 +2994,27 @@ const ::_pbi::TcParseTable<5, 17, 6, 135, 2> InstanceProfile::_table_ = {
     {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.pinned_tag_ids_), -1, 0,
     (0 | ::_fl::kFcRepeated | ::_fl::kUtf8String | ::_fl::kRepSString)},
     // .omni_mix_player.OmniTimestamp created_at = 15;
-    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.created_at_), _Internal::kHasBitsOffset + 2, 3,
+    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.created_at_), _Internal::kHasBitsOffset + 2, 2,
     (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
     // .omni_mix_player.OmniTimestamp updated_at = 16;
-    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.updated_at_), _Internal::kHasBitsOffset + 3, 4,
+    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.updated_at_), _Internal::kHasBitsOffset + 3, 3,
     (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
     // .omni_mix_player.PlaybackTimelineState playback_timeline = 17;
-    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.playback_timeline_), _Internal::kHasBitsOffset + 4, 5,
+    {PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.playback_timeline_), _Internal::kHasBitsOffset + 4, 4,
     (0 | ::_fl::kFcOptional | ::_fl::kMessage | ::_fl::kTvTable)},
   }}, {{
     {::_pbi::TcParser::GetTable<::omni_mix_player::InstanceCapabilities>()},
     {::_pbi::TcParser::GetTable<::omni_mix_player::EqualizerState>()},
-    {::_pbi::TcParser::GetTable<::omni_mix_player::QueueInfo>()},
     {::_pbi::TcParser::GetTable<::omni_mix_player::OmniTimestamp>()},
     {::_pbi::TcParser::GetTable<::omni_mix_player::OmniTimestamp>()},
     {::_pbi::TcParser::GetTable<::omni_mix_player::PlaybackTimelineState>()},
   }}, {{
-    "\37\2\14\0\6\11\0\0\0\0\0\17\0\25\16\0\0\0\0\0\0\0\0\0"
+    "\37\2\14\0\6\11\0\0\0\0\0\25\16\0\0\0"
     "omni_mix_player.InstanceProfile"
     "id"
     "display_name"
     "mod_id"
     "game_name"
-    "active_queue_id"
     "imported_playlist_ids"
     "pinned_tag_ids"
   }},
@@ -3383,14 +3027,12 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
 
-  _impl_.queues_.Clear();
   _impl_.imported_playlist_ids_.Clear();
   _impl_.pinned_tag_ids_.Clear();
   _impl_.id_.ClearToEmpty();
   _impl_.display_name_.ClearToEmpty();
   _impl_.mod_id_.ClearToEmpty();
   _impl_.game_name_.ClearToEmpty();
-  _impl_.active_queue_id_.ClearToEmpty();
   cached_has_bits = _impl_._has_bits_[0];
   if (cached_has_bits & 0x0000001fu) {
     if (cached_has_bits & 0x00000001u) {
@@ -3511,25 +3153,6 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
                 stream);
           }
 
-          // string active_queue_id = 11;
-          if (!this_._internal_active_queue_id().empty()) {
-            const std::string& _s = this_._internal_active_queue_id();
-            ::google::protobuf::internal::WireFormatLite::VerifyUtf8String(
-                _s.data(), static_cast<int>(_s.length()), ::google::protobuf::internal::WireFormatLite::SERIALIZE, "omni_mix_player.InstanceProfile.active_queue_id");
-            target = stream->WriteStringMaybeAliased(11, _s, target);
-          }
-
-          // repeated .omni_mix_player.QueueInfo queues = 12;
-          for (unsigned i = 0, n = static_cast<unsigned>(
-                                   this_._internal_queues_size());
-               i < n; i++) {
-            const auto& repfield = this_._internal_queues().Get(i);
-            target =
-                ::google::protobuf::internal::WireFormatLite::InternalWriteMessage(
-                    12, repfield, repfield.GetCachedSize(),
-                    target, stream);
-          }
-
           // repeated string imported_playlist_ids = 13;
           for (int i = 0, n = this_._internal_imported_playlist_ids_size(); i < n; ++i) {
             const auto& s = this_._internal_imported_playlist_ids().Get(i);
@@ -3592,13 +3215,6 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
 
           ::_pbi::Prefetch5LinesFrom7Lines(&this_);
            {
-            // repeated .omni_mix_player.QueueInfo queues = 12;
-            {
-              total_size += 1UL * this_._internal_queues_size();
-              for (const auto& msg : this_._internal_queues()) {
-                total_size += ::google::protobuf::internal::WireFormatLite::MessageSize(msg);
-              }
-            }
             // repeated string imported_playlist_ids = 13;
             {
               total_size +=
@@ -3638,11 +3254,6 @@ PROTOBUF_NOINLINE void InstanceProfile::Clear() {
             if (!this_._internal_game_name().empty()) {
               total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
                                               this_._internal_game_name());
-            }
-            // string active_queue_id = 11;
-            if (!this_._internal_active_queue_id().empty()) {
-              total_size += 1 + ::google::protobuf::internal::WireFormatLite::StringSize(
-                                              this_._internal_active_queue_id());
             }
           }
           cached_has_bits = this_._impl_._has_bits_[0];
@@ -3709,8 +3320,6 @@ void InstanceProfile::MergeImpl(::google::protobuf::MessageLite& to_msg, const :
   ::uint32_t cached_has_bits = 0;
   (void) cached_has_bits;
 
-  _this->_internal_mutable_queues()->MergeFrom(
-      from._internal_queues());
   _this->_internal_mutable_imported_playlist_ids()->MergeFrom(from._internal_imported_playlist_ids());
   _this->_internal_mutable_pinned_tag_ids()->MergeFrom(from._internal_pinned_tag_ids());
   if (!from._internal_id().empty()) {
@@ -3724,9 +3333,6 @@ void InstanceProfile::MergeImpl(::google::protobuf::MessageLite& to_msg, const :
   }
   if (!from._internal_game_name().empty()) {
     _this->_internal_set_game_name(from._internal_game_name());
-  }
-  if (!from._internal_active_queue_id().empty()) {
-    _this->_internal_set_active_queue_id(from._internal_active_queue_id());
   }
   cached_has_bits = from._impl_._has_bits_[0];
   if (cached_has_bits & 0x0000001fu) {
@@ -3806,14 +3412,12 @@ void InstanceProfile::InternalSwap(InstanceProfile* PROTOBUF_RESTRICT other) {
   ABSL_DCHECK_EQ(arena, other->GetArena());
   _internal_metadata_.InternalSwap(&other->_internal_metadata_);
   swap(_impl_._has_bits_[0], other->_impl_._has_bits_[0]);
-  _impl_.queues_.InternalSwap(&other->_impl_.queues_);
   _impl_.imported_playlist_ids_.InternalSwap(&other->_impl_.imported_playlist_ids_);
   _impl_.pinned_tag_ids_.InternalSwap(&other->_impl_.pinned_tag_ids_);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.id_, &other->_impl_.id_, arena);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.display_name_, &other->_impl_.display_name_, arena);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.mod_id_, &other->_impl_.mod_id_, arena);
   ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.game_name_, &other->_impl_.game_name_, arena);
-  ::_pbi::ArenaStringPtr::InternalSwap(&_impl_.active_queue_id_, &other->_impl_.active_queue_id_, arena);
   ::google::protobuf::internal::memswap<
       PROTOBUF_FIELD_OFFSET(InstanceProfile, _impl_.target_latency_)
       + sizeof(InstanceProfile::_impl_.target_latency_)

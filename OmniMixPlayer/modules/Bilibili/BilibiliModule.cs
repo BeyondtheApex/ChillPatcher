@@ -59,13 +59,6 @@ namespace OmniMixPlayer.Module.Bilibili
                 // 加载音乐
                 await RefreshAsync();
 
-                // 通知 UI 刷新
-                _context.EventBus.Publish(new PlaylistUpdatedEvent
-                {
-                    SourceRefId = "bili_login",
-                    UpdateType = PlaylistUpdateType.FullRefresh
-                });
-
                 // 推送 UI 更新
                 PushUI?.Invoke(BuildUI());
             };
@@ -204,21 +197,95 @@ namespace OmniMixPlayer.Module.Bilibili
             }
             return (null, null);
         }
-        public async Task RefreshAsync() => await RefreshMusicListAsync();
+        public async Task RefreshAsync()
+        {
+            await RefreshMusicListAsync();
+            PublishLibraryRefresh();
+        }
 
         private async Task RefreshMusicListAsync()
         {
             if (!_bridge.IsLoggedIn) return;
 
+            var folderResult = await _bridge.GetMyFoldersAsync();
+            if (!folderResult.Success)
+            {
+                _context.Logger.LogWarning("[{DisplayName}] 收藏夹列表获取失败，保留现有 Bilibili 曲库: {Message}",
+                    DisplayName, folderResult.ErrorMessage);
+                return;
+            }
+
+            var folders = ApplyFolderFilter(folderResult.Folders);
+            _context.Logger.LogInformation("[{DisplayName}] 准备同步收藏夹: {Filtered}/{Total}",
+                DisplayName, folders.Count, folderResult.Folders.Count);
+
             _context.Library.UnregisterModule(ModuleId);
             _spriteCache.Clear();
 
-            var folders = await _bridge.GetMyFoldersAsync();
+            int registeredFolders = 0;
+            int registeredTracks = 0;
             foreach (var f in folders)
             {
-                var videos = await _bridge.GetFolderVideosAsync(f.Id);
-                _registry.RegisterFolder(f, videos);
+                var videoResult = await _bridge.GetFolderVideosAsync(f.Id);
+                if (!videoResult.Success)
+                {
+                    _context.Logger.LogWarning("[{DisplayName}] 跳过收藏夹 {FolderTitle} ({FolderId})，内容获取失败: {Message}",
+                        DisplayName, f.Title, f.Id, videoResult.ErrorMessage);
+                    continue;
+                }
+
+                _registry.RegisterFolder(f, videoResult.Videos);
+                registeredFolders++;
+                registeredTracks += videoResult.Videos.Count;
             }
+
+            _context.Logger.LogInformation("[{DisplayName}] 同步完成: {FolderCount} 个收藏夹，{TrackCount} 首",
+                DisplayName, registeredFolders, registeredTracks);
+        }
+
+        private List<BiliFolder> ApplyFolderFilter(List<BiliFolder> folders)
+        {
+            folders ??= new List<BiliFolder>();
+
+            var enabled = _context.ConfigManager.GetValue<bool>("ImportFilterEnabled", false);
+            if (!enabled) return folders;
+
+            var mode = (_context.ConfigManager.GetValue<string>("ImportFilterMode", "allow") ?? "allow").Trim().ToLowerInvariant();
+            var ids = ParseFolderIds(_context.ConfigManager.GetValue<string>("ImportFolderIds", ""));
+
+            if (ids.Count == 0)
+            {
+                _context.Logger.LogWarning("[{DisplayName}] 已启用收藏夹名单，但没有填写有效 fid", DisplayName);
+                return mode == "deny" ? folders : new List<BiliFolder>();
+            }
+
+            return mode == "deny"
+                ? folders.Where(f => !ids.Contains(f.Id)).ToList()
+                : folders.Where(f => ids.Contains(f.Id)).ToList();
+        }
+
+        private static HashSet<long> ParseFolderIds(string raw)
+        {
+            var set = new HashSet<long>();
+            if (string.IsNullOrWhiteSpace(raw)) return set;
+
+            foreach (var part in raw.Split(new[] { ',', '，', ';', '；', '\n', '\r', '\t', ' ' },
+                         StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (long.TryParse(part.Trim(), out var id))
+                    set.Add(id);
+            }
+
+            return set;
+        }
+
+        private void PublishLibraryRefresh()
+        {
+            _context?.EventBus?.Publish(new PlaylistUpdatedEvent
+            {
+                SourceRefId = "bili_all",
+                UpdateType = PlaylistUpdateType.FullRefresh
+            });
         }
 
         #region IModuleUIProvider
@@ -235,6 +302,9 @@ namespace OmniMixPlayer.Module.Bilibili
             {
                 var userId = _bridge?.CurrentUserId ?? "";
                 var pageDelay = _context?.ConfigManager?.GetValue<int>("PageLoadDelay", 300) ?? 300;
+                var filterEnabled = _context?.ConfigManager?.GetValue<bool>("ImportFilterEnabled", false) ?? false;
+                var filterMode = _context?.ConfigManager?.GetValue<string>("ImportFilterMode", "allow") ?? "allow";
+                var filterIds = _context?.ConfigManager?.GetValue<string>("ImportFolderIds", "") ?? "";
 
                 return SlintUi.Column(spacing: 16, padding: 20)
                     .AddChild(
@@ -260,6 +330,24 @@ namespace OmniMixPlayer.Module.Bilibili
                             new SlintOption("500", "500ms"),
                             new SlintOption("1000", "1000ms"),
                         })
+                    )
+                    .AddChild(SlintUi.Text("收藏夹导入", fontSize: 16))
+                    .AddChild(
+                        SlintUi.Switch("folder_filter_enabled", "启用收藏夹名单", filterEnabled)
+                    )
+                    .AddChild(
+                        SlintUi.Select("folder_filter_mode", "名单模式", filterMode, new List<SlintOption>
+                        {
+                            new SlintOption("allow", "白名单"),
+                            new SlintOption("deny", "黑名单"),
+                        })
+                    )
+                    .AddChild(
+                        SlintUi.Column(spacing: 4)
+                            .AddChild(SlintUi.Text("收藏夹 fid (逗号分隔)", fontSize: 12, color: "#94a3b8"))
+                            .AddChild(
+                                SlintUi.Input("folder_filter_ids", "例如: 3945472809,123456789", filterIds)
+                            )
                     )
                     .AddChild(
                         SlintUi.Button("logout_btn", "退出登录", variant: "danger")
@@ -303,8 +391,35 @@ namespace OmniMixPlayer.Module.Bilibili
                     {
                         _context?.ConfigManager?.SetValue("PageLoadDelay", delay);
                         _context?.ConfigManager?.Save();
+                        if (_bridge != null) _bridge.PageDelay = delay;
                         _context?.Logger.LogInformation("[{DisplayName}] Page delay set to {Delay}ms", DisplayName, delay);
                     }
+                    PushUI?.Invoke(BuildUI());
+                    break;
+
+                case "folder_filter_enabled":
+                    var enabled = string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+                    _context?.ConfigManager?.SetValue("ImportFilterEnabled", enabled);
+                    _context?.ConfigManager?.Save();
+                    _context?.Logger.LogInformation("[{DisplayName}] Import folder filter enabled: {Enabled}", DisplayName, enabled);
+                    _ = RefreshAsync();
+                    PushUI?.Invoke(BuildUI());
+                    break;
+
+                case "folder_filter_mode":
+                    var mode = string.Equals(value, "deny", StringComparison.OrdinalIgnoreCase) ? "deny" : "allow";
+                    _context?.ConfigManager?.SetValue("ImportFilterMode", mode);
+                    _context?.ConfigManager?.Save();
+                    _context?.Logger.LogInformation("[{DisplayName}] Import folder filter mode: {Mode}", DisplayName, mode);
+                    _ = RefreshAsync();
+                    PushUI?.Invoke(BuildUI());
+                    break;
+
+                case "folder_filter_ids":
+                    _context?.ConfigManager?.SetValue("ImportFolderIds", value ?? "");
+                    _context?.ConfigManager?.Save();
+                    _context?.Logger.LogInformation("[{DisplayName}] Import folder filter IDs set", DisplayName);
+                    _ = RefreshAsync();
                     PushUI?.Invoke(BuildUI());
                     break;
 
@@ -378,11 +493,6 @@ namespace OmniMixPlayer.Module.Bilibili
                 {
                     _context?.Logger.LogInformation("[{DisplayName}] 扫码登录成功！", DisplayName);
                     await RefreshAsync();
-                    _context?.EventBus?.Publish(new PlaylistUpdatedEvent
-                    {
-                        SourceRefId = "bili_all",
-                        UpdateType = PlaylistUpdateType.FullRefresh
-                    });
                     PushUI?.Invoke(BuildUI());
                 };
                 _qrManager.OnStatusChanged += (msg) =>

@@ -469,85 +469,6 @@ class EqualizerState extends $pb.GeneratedMessage {
   $pb.PbList<EqualizerPoint> get points => $_getList(3);
 }
 
-/// 队列信息
-class QueueInfo extends $pb.GeneratedMessage {
-  factory QueueInfo({
-    $core.String? id,
-    $core.String? name,
-    $core.int? songCount,
-  }) {
-    final result = create();
-    if (id != null) result.id = id;
-    if (name != null) result.name = name;
-    if (songCount != null) result.songCount = songCount;
-    return result;
-  }
-
-  QueueInfo._();
-
-  factory QueueInfo.fromBuffer($core.List<$core.int> data,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromBuffer(data, registry);
-  factory QueueInfo.fromJson($core.String json,
-          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
-      create()..mergeFromJson(json, registry);
-
-  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
-      _omitMessageNames ? '' : 'QueueInfo',
-      package:
-          const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
-      createEmptyInstance: create)
-    ..aOS(1, _omitFieldNames ? '' : 'id')
-    ..aOS(2, _omitFieldNames ? '' : 'name')
-    ..aI(3, _omitFieldNames ? '' : 'songCount')
-    ..hasRequiredFields = false;
-
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  QueueInfo clone() => deepCopy();
-  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
-  QueueInfo copyWith(void Function(QueueInfo) updates) =>
-      super.copyWith((message) => updates(message as QueueInfo)) as QueueInfo;
-
-  @$core.override
-  $pb.BuilderInfo get info_ => _i;
-
-  @$core.pragma('dart2js:noInline')
-  static QueueInfo create() => QueueInfo._();
-  @$core.override
-  QueueInfo createEmptyInstance() => create();
-  @$core.pragma('dart2js:noInline')
-  static QueueInfo getDefault() =>
-      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<QueueInfo>(create);
-  static QueueInfo? _defaultInstance;
-
-  @$pb.TagNumber(1)
-  $core.String get id => $_getSZ(0);
-  @$pb.TagNumber(1)
-  set id($core.String value) => $_setString(0, value);
-  @$pb.TagNumber(1)
-  $core.bool hasId() => $_has(0);
-  @$pb.TagNumber(1)
-  void clearId() => $_clearField(1);
-
-  @$pb.TagNumber(2)
-  $core.String get name => $_getSZ(1);
-  @$pb.TagNumber(2)
-  set name($core.String value) => $_setString(1, value);
-  @$pb.TagNumber(2)
-  $core.bool hasName() => $_has(1);
-  @$pb.TagNumber(2)
-  void clearName() => $_clearField(2);
-
-  @$pb.TagNumber(3)
-  $core.int get songCount => $_getIZ(2);
-  @$pb.TagNumber(3)
-  set songCount($core.int value) => $_setSignedInt32(2, value);
-  @$pb.TagNumber(3)
-  $core.bool hasSongCount() => $_has(2);
-  @$pb.TagNumber(3)
-  void clearSongCount() => $_clearField(3);
-}
-
 /// Persisted playlist source used by an instance queue.
 class PlaylistSourceState extends $pb.GeneratedMessage {
   factory PlaylistSourceState({
@@ -824,8 +745,6 @@ class InstanceProfile extends $pb.GeneratedMessage {
     $core.double? volume,
     $core.double? targetLatency,
     EqualizerState? equalizer,
-    $core.String? activeQueueId,
-    $core.Iterable<QueueInfo>? queues,
     $core.Iterable<$core.String>? importedPlaylistIds,
     $core.Iterable<$core.String>? pinnedTagIds,
     $0.OmniTimestamp? createdAt,
@@ -843,8 +762,6 @@ class InstanceProfile extends $pb.GeneratedMessage {
     if (volume != null) result.volume = volume;
     if (targetLatency != null) result.targetLatency = targetLatency;
     if (equalizer != null) result.equalizer = equalizer;
-    if (activeQueueId != null) result.activeQueueId = activeQueueId;
-    if (queues != null) result.queues.addAll(queues);
     if (importedPlaylistIds != null)
       result.importedPlaylistIds.addAll(importedPlaylistIds);
     if (pinnedTagIds != null) result.pinnedTagIds.addAll(pinnedTagIds);
@@ -883,9 +800,6 @@ class InstanceProfile extends $pb.GeneratedMessage {
         fieldType: $pb.PbFieldType.OF)
     ..aOM<EqualizerState>(10, _omitFieldNames ? '' : 'equalizer',
         subBuilder: EqualizerState.create)
-    ..aOS(11, _omitFieldNames ? '' : 'activeQueueId')
-    ..pPM<QueueInfo>(12, _omitFieldNames ? '' : 'queues',
-        subBuilder: QueueInfo.create)
     ..pPS(13, _omitFieldNames ? '' : 'importedPlaylistIds')
     ..pPS(14, _omitFieldNames ? '' : 'pinnedTagIds')
     ..aOM<$0.OmniTimestamp>(15, _omitFieldNames ? '' : 'createdAt',
@@ -1009,56 +923,44 @@ class InstanceProfile extends $pb.GeneratedMessage {
   @$pb.TagNumber(10)
   EqualizerState ensureEqualizer() => $_ensure(9);
 
-  @$pb.TagNumber(11)
-  $core.String get activeQueueId => $_getSZ(10);
-  @$pb.TagNumber(11)
-  set activeQueueId($core.String value) => $_setString(10, value);
-  @$pb.TagNumber(11)
-  $core.bool hasActiveQueueId() => $_has(10);
-  @$pb.TagNumber(11)
-  void clearActiveQueueId() => $_clearField(11);
-
-  @$pb.TagNumber(12)
-  $pb.PbList<QueueInfo> get queues => $_getList(11);
-
   @$pb.TagNumber(13)
-  $pb.PbList<$core.String> get importedPlaylistIds => $_getList(12);
+  $pb.PbList<$core.String> get importedPlaylistIds => $_getList(10);
 
   @$pb.TagNumber(14)
-  $pb.PbList<$core.String> get pinnedTagIds => $_getList(13);
+  $pb.PbList<$core.String> get pinnedTagIds => $_getList(11);
 
   @$pb.TagNumber(15)
-  $0.OmniTimestamp get createdAt => $_getN(14);
+  $0.OmniTimestamp get createdAt => $_getN(12);
   @$pb.TagNumber(15)
   set createdAt($0.OmniTimestamp value) => $_setField(15, value);
   @$pb.TagNumber(15)
-  $core.bool hasCreatedAt() => $_has(14);
+  $core.bool hasCreatedAt() => $_has(12);
   @$pb.TagNumber(15)
   void clearCreatedAt() => $_clearField(15);
   @$pb.TagNumber(15)
-  $0.OmniTimestamp ensureCreatedAt() => $_ensure(14);
+  $0.OmniTimestamp ensureCreatedAt() => $_ensure(12);
 
   @$pb.TagNumber(16)
-  $0.OmniTimestamp get updatedAt => $_getN(15);
+  $0.OmniTimestamp get updatedAt => $_getN(13);
   @$pb.TagNumber(16)
   set updatedAt($0.OmniTimestamp value) => $_setField(16, value);
   @$pb.TagNumber(16)
-  $core.bool hasUpdatedAt() => $_has(15);
+  $core.bool hasUpdatedAt() => $_has(13);
   @$pb.TagNumber(16)
   void clearUpdatedAt() => $_clearField(16);
   @$pb.TagNumber(16)
-  $0.OmniTimestamp ensureUpdatedAt() => $_ensure(15);
+  $0.OmniTimestamp ensureUpdatedAt() => $_ensure(13);
 
   @$pb.TagNumber(17)
-  PlaybackTimelineState get playbackTimeline => $_getN(16);
+  PlaybackTimelineState get playbackTimeline => $_getN(14);
   @$pb.TagNumber(17)
   set playbackTimeline(PlaybackTimelineState value) => $_setField(17, value);
   @$pb.TagNumber(17)
-  $core.bool hasPlaybackTimeline() => $_has(16);
+  $core.bool hasPlaybackTimeline() => $_has(14);
   @$pb.TagNumber(17)
   void clearPlaybackTimeline() => $_clearField(17);
   @$pb.TagNumber(17)
-  PlaybackTimelineState ensurePlaybackTimeline() => $_ensure(16);
+  PlaybackTimelineState ensurePlaybackTimeline() => $_ensure(14);
 }
 
 /// 连接请求

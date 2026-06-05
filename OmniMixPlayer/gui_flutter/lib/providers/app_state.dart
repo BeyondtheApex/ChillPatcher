@@ -132,6 +132,9 @@ class AppState extends ChangeNotifier {
   List<QueueTrack> get activeHistory => _playback.activeHistory;
   List<QueueTrack> get activePlaylist => _playback.activePlaylist;
   List<PlaylistSourceState> get playlistSources => _playback.playlistSources;
+  int? get activePlaylistSourceLimit => _playback.activePlaylistSourceLimit;
+  bool get activePlaylistSourceLimitReached =>
+      _playback.activePlaylistSourceLimitReached;
   bool get playbackLoading => _playback.loading;
   double get lastVolume => _playback.lastVolume;
   double get lastTargetLatency => _playback.lastTargetLatency;
@@ -153,6 +156,8 @@ class AppState extends ChangeNotifier {
   bool canControlInstance(String id) => _playback.canControlInstance(id);
   bool canManageInstanceLibrary(String id) =>
       _playback.canManageInstanceLibrary(id);
+  bool canAddOrReplacePlaylistSource(String sourceId) =>
+      _playback.canAddOrReplacePlaylistSource(sourceId);
   bool hasCapability(bool Function(InstanceCapabilities c) check) =>
       _playback.hasCapability(check);
   Set<String> get backendInstanceIds => _playback.backendInstanceIds;
@@ -533,7 +538,8 @@ class AppState extends ChangeNotifier {
       m.addListener(() => notifyListeners());
     }
 
-    _backend.onNeedRefreshPlayback = () => _playback.refreshPlayback();
+    _backend.onNeedRefreshPlayback = () =>
+        _playback.refreshPlayback(syncMediaControls: true);
     _backend.onNeedRefreshArchives = () => _game.refreshBackendArchives();
     _backend.onNeedLoadModules = () => _modules.loadModules();
     _backend.onNeedLoadActiveProfile = () => _playback.loadActiveProfile();

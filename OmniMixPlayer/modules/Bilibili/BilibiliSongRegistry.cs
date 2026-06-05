@@ -62,19 +62,23 @@ namespace OmniMixPlayer.Module.Bilibili
         public void RegisterFolder(BiliFolder folder, List<BiliVideoInfo> videos)
         {
             string playlistId = $"bili_playlist_{folder.Id}";
+            var coverUri = videos?.Find(v => !string.IsNullOrWhiteSpace(v.CoverUrl))?.CoverUrl ?? "";
             _context.Library.UpsertPlaylist(new Playlist
             {
                 Id = playlistId,
                 Name = folder.Title,
                 ModuleId = _moduleId,
-                Kind = PlaylistKind.Imported
+                Kind = PlaylistKind.Imported,
+                CoverUri = coverUri
             });
 
             var entries = new List<PlaylistEntrySpec>();
             int position = 0;
 
-            foreach (var v in videos)
+            foreach (var v in videos ?? new List<BiliVideoInfo>())
             {
+                if (string.IsNullOrWhiteSpace(v.Bvid)) continue;
+
                 var uuid = GenerateUuid(v.Bvid);
 
                 var track = new Track

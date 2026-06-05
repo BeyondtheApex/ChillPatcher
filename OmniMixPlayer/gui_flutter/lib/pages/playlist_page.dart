@@ -31,9 +31,15 @@ class _AlbumNode {
 class _PlaylistNode {
   final Playlist playlist;
   final List<_AlbumNode> albums;
+  final List<Track> looseSongs;
   bool expanded;
 
-  _PlaylistNode(this.playlist, this.albums, {this.expanded = false});
+  _PlaylistNode(
+    this.playlist,
+    this.albums, {
+    this.looseSongs = const [],
+    this.expanded = false,
+  });
 }
 
 // ── 扁平列表条目（供 ListView.builder 虚拟滚动） ──
@@ -125,7 +131,10 @@ class _PlaylistPageState extends State<PlaylistPage> {
           playlistId: playlist.id,
         );
         if (!mounted || loadSerial != _loadSerial) return;
-        final tagAlbumIds = playlistSongs.map((s) => s.albumId).toSet();
+        final tagAlbumIds = playlistSongs
+            .map((s) => s.albumId)
+            .where((id) => id.trim().isNotEmpty)
+            .toSet();
         final filteredAlbums = allAlbums
             .where((a) => tagAlbumIds.contains(a.id))
             .toList();
@@ -137,7 +146,17 @@ class _PlaylistPageState extends State<PlaylistPage> {
           albumNodes.add(_AlbumNode(album, songs: albumSongs));
           total += albumSongs.length;
         }
-        nextTree.add(_PlaylistNode(playlist, albumNodes));
+        final albumIds = filteredAlbums.map((a) => a.id).toSet();
+        final looseSongs = playlistSongs
+            .where(
+              (s) =>
+                  s.albumId.trim().isEmpty || !albumIds.contains(s.albumId),
+            )
+            .toList();
+        total += looseSongs.length;
+        nextTree.add(
+          _PlaylistNode(playlist, albumNodes, looseSongs: looseSongs),
+        );
       }
       if (!mounted || loadSerial != _loadSerial) return;
       _tree
@@ -165,14 +184,23 @@ class _PlaylistPageState extends State<PlaylistPage> {
     final l10n = AppLocalizations.of(context)!;
     _flatItems.clear();
     for (final playlistNode in _tree) {
+      final subtitleParts = <String>[
+        playlistNode.playlist.moduleId,
+        l10n.albumCountLabel(playlistNode.albums.length),
+      ];
+      if (playlistNode.looseSongs.isNotEmpty) {
+        subtitleParts.add(l10n.songCountLabel(playlistNode.looseSongs.length));
+      }
+
       _flatItems.add(
         _FlatItem(
           kind: _ItemKind.playlist,
           label: playlistNode.playlist.name,
-          subtitle:
-              '${playlistNode.playlist.moduleId} • ${l10n.albumCountLabel(playlistNode.albums.length)}',
+          subtitle: subtitleParts.join(' • '),
           indentLevel: 0,
-          expandable: playlistNode.albums.isNotEmpty,
+          expandable:
+              playlistNode.albums.isNotEmpty ||
+              playlistNode.looseSongs.isNotEmpty,
           expanded: playlistNode.expanded,
           playlist: playlistNode.playlist,
         ),
@@ -204,6 +232,18 @@ class _PlaylistPageState extends State<PlaylistPage> {
             ),
           );
         }
+      }
+
+      for (final song in playlistNode.looseSongs) {
+        _flatItems.add(
+          _FlatItem(
+            kind: _ItemKind.song,
+            label: song.title,
+            subtitle: song.artist,
+            indentLevel: 1,
+            song: song,
+          ),
+        );
       }
     }
     setState(() {});
@@ -513,6 +553,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   Widget _buildSongRow(_FlatItem item, ColorScheme cs) {
     final uuid = item.song?.uuid ?? '';
     final duration = item.song?.duration ?? 0.0;
+    final leftPadding = item.indentLevel <= 1 ? 68.0 : 112.0;
 
     return InkWell(
       onTap: () {
@@ -521,7 +562,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
         }
       },
       child: Padding(
-        padding: const EdgeInsets.only(left: 112, right: 20, top: 0, bottom: 0),
+        padding: EdgeInsets.only(
+          left: leftPadding,
+          right: 20,
+          top: 0,
+          bottom: 0,
+        ),
         child: SizedBox(
           height: 48,
           child: Row(
