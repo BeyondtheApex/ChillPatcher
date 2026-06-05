@@ -23,6 +23,21 @@
 # Default value: 300
 PageLoadDelay = 300
 
+## 是否启用收藏夹名单。关闭时导入当前账号下全部创建的收藏夹。
+# Setting type: Boolean
+# Default value: false
+ImportFilterEnabled = false
+
+## 收藏夹名单模式：allow = 只导入名单中的 fid；deny = 排除名单中的 fid。
+# Setting type: String
+# Default value: allow
+ImportFilterMode = allow
+
+## 收藏夹 fid，使用英文逗号分隔。网页 favlist 链接里的 fid 参数就是这里的 ID。
+# Setting type: String
+# Default value:
+ImportFolderIds =
+
 `````
 
 ## 注意

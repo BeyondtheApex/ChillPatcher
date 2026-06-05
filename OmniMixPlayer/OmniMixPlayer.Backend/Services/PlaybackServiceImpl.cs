@@ -275,6 +275,7 @@ namespace OmniMixPlayer.Backend.Services
         {
             var caps = GetCapabilities(request.InstanceId);
             InstanceCapabilityPolicy.RequirePlaylistManagement(caps, "setPlaylistSources");
+            InstanceCapabilityPolicy.RequirePlaylistSourceLimit(caps, "setPlaylistSources", request.Sources.Count);
             _timeline.SetPlaylistSources(request.InstanceId, request.Sources.Select(s =>
                 new PlaylistSourceRequest { id = s.Id, name = s.Name, kind = s.Kind, refId = s.RefId, uuids = s.Uuids.ToArray() }));
             return Task.FromResult(new SetPlaylistSourcesResponse());

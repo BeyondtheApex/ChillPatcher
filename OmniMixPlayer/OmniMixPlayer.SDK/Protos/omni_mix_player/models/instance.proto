@@ -47,12 +47,6 @@ message EqualizerState {
 }
 
 // 队列信息
-message QueueInfo {
-  string id = 1;
-  string name = 2;
-  int32 song_count = 3;
-}
-
 enum PlaylistSourceKind {
   PLAYLIST_SOURCE_KIND_UNSPECIFIED = 0;
   PLAYLIST_SOURCE_KIND_TAG = 1;
@@ -105,8 +99,7 @@ message InstanceProfile {
   float target_latency = 9;
   EqualizerState equalizer = 10;
 
-  string active_queue_id = 11;
-  repeated QueueInfo queues = 12;
+  reserved 11, 12;
 
   repeated string imported_playlist_ids = 13;
   repeated string pinned_tag_ids = 14;

@@ -179,21 +179,6 @@ final $typed_data.Uint8List equalizerStateDescriptor = $convert.base64Decode(
     'ZnRDbGlwRW5hYmxlZBI3CgZwb2ludHMYBCADKAsyHy5vbW5pX21peF9wbGF5ZXIuRXF1YWxpem'
     'VyUG9pbnRSBnBvaW50cw==');
 
-@$core.Deprecated('Use queueInfoDescriptor instead')
-const QueueInfo$json = {
-  '1': 'QueueInfo',
-  '2': [
-    {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
-    {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
-    {'1': 'song_count', '3': 3, '4': 1, '5': 5, '10': 'songCount'},
-  ],
-};
-
-/// Descriptor for `QueueInfo`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List queueInfoDescriptor = $convert.base64Decode(
-    'CglRdWV1ZUluZm8SDgoCaWQYASABKAlSAmlkEhIKBG5hbWUYAiABKAlSBG5hbWUSHQoKc29uZ1'
-    '9jb3VudBgDIAEoBVIJc29uZ0NvdW50');
-
 @$core.Deprecated('Use playlistSourceStateDescriptor instead')
 const PlaylistSourceState$json = {
   '1': 'PlaylistSourceState',
@@ -319,15 +304,6 @@ const InstanceProfile$json = {
       '6': '.omni_mix_player.EqualizerState',
       '10': 'equalizer'
     },
-    {'1': 'active_queue_id', '3': 11, '4': 1, '5': 9, '10': 'activeQueueId'},
-    {
-      '1': 'queues',
-      '3': 12,
-      '4': 3,
-      '5': 11,
-      '6': '.omni_mix_player.QueueInfo',
-      '10': 'queues'
-    },
     {
       '1': 'imported_playlist_ids',
       '3': 13,
@@ -361,6 +337,10 @@ const InstanceProfile$json = {
       '10': 'playbackTimeline'
     },
   ],
+  '9': [
+    {'1': 11, '2': 12},
+    {'1': 12, '2': 13},
+  ],
 };
 
 /// Descriptor for `InstanceProfile`. Decode as a `google.protobuf.DescriptorProto`.
@@ -372,14 +352,13 @@ final $typed_data.Uint8List instanceProfileDescriptor = $convert.base64Decode(
     'bW9kZRJJCgxjYXBhYmlsaXRpZXMYByABKAsyJS5vbW5pX21peF9wbGF5ZXIuSW5zdGFuY2VDYX'
     'BhYmlsaXRpZXNSDGNhcGFiaWxpdGllcxIWCgZ2b2x1bWUYCCABKAJSBnZvbHVtZRIlCg50YXJn'
     'ZXRfbGF0ZW5jeRgJIAEoAlINdGFyZ2V0TGF0ZW5jeRI9CgllcXVhbGl6ZXIYCiABKAsyHy5vbW'
-    '5pX21peF9wbGF5ZXIuRXF1YWxpemVyU3RhdGVSCWVxdWFsaXplchImCg9hY3RpdmVfcXVldWVf'
-    'aWQYCyABKAlSDWFjdGl2ZVF1ZXVlSWQSMgoGcXVldWVzGAwgAygLMhoub21uaV9taXhfcGxheW'
-    'VyLlF1ZXVlSW5mb1IGcXVldWVzEjIKFWltcG9ydGVkX3BsYXlsaXN0X2lkcxgNIAMoCVITaW1w'
-    'b3J0ZWRQbGF5bGlzdElkcxIkCg5waW5uZWRfdGFnX2lkcxgOIAMoCVIMcGlubmVkVGFnSWRzEj'
-    '0KCmNyZWF0ZWRfYXQYDyABKAsyHi5vbW5pX21peF9wbGF5ZXIuT21uaVRpbWVzdGFtcFIJY3Jl'
-    'YXRlZEF0Ej0KCnVwZGF0ZWRfYXQYECABKAsyHi5vbW5pX21peF9wbGF5ZXIuT21uaVRpbWVzdG'
-    'FtcFIJdXBkYXRlZEF0ElMKEXBsYXliYWNrX3RpbWVsaW5lGBEgASgLMiYub21uaV9taXhfcGxh'
-    'eWVyLlBsYXliYWNrVGltZWxpbmVTdGF0ZVIQcGxheWJhY2tUaW1lbGluZQ==');
+    '5pX21peF9wbGF5ZXIuRXF1YWxpemVyU3RhdGVSCWVxdWFsaXplchIyChVpbXBvcnRlZF9wbGF5'
+    'bGlzdF9pZHMYDSADKAlSE2ltcG9ydGVkUGxheWxpc3RJZHMSJAoOcGlubmVkX3RhZ19pZHMYDi'
+    'ADKAlSDHBpbm5lZFRhZ0lkcxI9CgpjcmVhdGVkX2F0GA8gASgLMh4ub21uaV9taXhfcGxheWVy'
+    'Lk9tbmlUaW1lc3RhbXBSCWNyZWF0ZWRBdBI9Cgp1cGRhdGVkX2F0GBAgASgLMh4ub21uaV9taX'
+    'hfcGxheWVyLk9tbmlUaW1lc3RhbXBSCXVwZGF0ZWRBdBJTChFwbGF5YmFja190aW1lbGluZRgR'
+    'IAEoCzImLm9tbmlfbWl4X3BsYXllci5QbGF5YmFja1RpbWVsaW5lU3RhdGVSEHBsYXliYWNrVG'
+    'ltZWxpbmVKBAgLEAxKBAgMEA0=');
 
 @$core.Deprecated('Use instanceConnectRequestDescriptor instead')
 const InstanceConnectRequest$json = {

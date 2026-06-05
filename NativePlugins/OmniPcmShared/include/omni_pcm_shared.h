@@ -208,7 +208,6 @@ typedef struct OmniPcmInstanceProfileInfo {
     char display_name[256];
     char mod_id[128];
     char game_name[256];
-    char active_queue_id[128];
     int32_t kind;
     uint32_t capability_flags;
     float volume;

@@ -596,6 +596,11 @@ class _HomePageState extends State<HomePage> {
 
     final canManagePlaylist = widget.state.canManageActiveLibrary;
     final canAddSources = canManagePlaylist;
+    final sourceLimit = widget.state.activePlaylistSourceLimit;
+    final sourceCount = widget.state.playlistSources.length;
+    final sourceLimitLabel = sourceLimit == null
+        ? '$sourceCount'
+        : '$sourceCount/$sourceLimit';
     return _Panel(
       child: Column(
         children: [
@@ -621,6 +626,21 @@ class _HomePageState extends State<HomePage> {
                     setState(() => _libraryView = s.first),
               ),
               const Spacer(),
+              if (canManagePlaylist) ...[
+                Tooltip(
+                  message: l10n.selectedCount(sourceCount),
+                  child: Text(
+                    sourceLimitLabel,
+                    style: TextStyle(
+                      color: widget.state.activePlaylistSourceLimitReached
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
               if (canAddSources)
                 IconButton(
                   onPressed: _showAddSourceSheet,
@@ -659,6 +679,7 @@ class _HomePageState extends State<HomePage> {
         itemCount: songs.length,
         itemBuilder: (_, i) {
           final s = songs[i];
+          final trackSourceId = 'track_${s.uuid}';
           return _SongRow(
             song: s,
             canControl: canControl || canPlayback || canQueue,
@@ -676,7 +697,9 @@ class _HomePageState extends State<HomePage> {
                 ? () => widget.state.setSongExcluded(s.uuid, !(s.isExcluded))
                 : null,
             onAddToLibrary:
-                canControl && !selectedSourceIds.contains('track_${s.uuid}')
+                canControl &&
+                    !selectedSourceIds.contains(trackSourceId) &&
+                    widget.state.canAddOrReplacePlaylistSource(trackSourceId)
                 ? () => widget.state.addTrackToActivePlaylist(s)
                 : null,
             excluded: s.isExcluded,
@@ -891,6 +914,10 @@ class _HomePageState extends State<HomePage> {
               .map((s) => s.id)
               .toSet();
           final canUseSources = widget.state.canManageActiveLibrary;
+          final sourceLimit = widget.state.activePlaylistSourceLimit;
+          final selectedLabel = sourceLimit == null
+              ? l10n.selectedCount(selectedIds.length)
+              : '${selectedIds.length}/$sourceLimit';
           return SizedBox(
             height: MediaQuery.of(context).size.height * 0.82,
             child: DefaultTabController(
@@ -915,7 +942,7 @@ class _HomePageState extends State<HomePage> {
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
-                        Text(l10n.selectedCount(selectedIds.length)),
+                        Text(selectedLabel),
                       ],
                     ),
                   ),
@@ -935,13 +962,19 @@ class _HomePageState extends State<HomePage> {
                             final p = _playlists[i];
                             final sourceId = 'playlist_${p.id}';
                             final checked = selectedIds.contains(sourceId);
+                            final canToggle =
+                                canUseSources &&
+                                (checked ||
+                                    widget.state.canAddOrReplacePlaylistSource(
+                                      sourceId,
+                                    ));
                             return CheckboxListTile(
                               value: checked,
                               controlAffinity: ListTileControlAffinity.leading,
                               secondary: const Icon(Icons.queue_music_rounded),
                               title: Text(p.name),
                               subtitle: Text(p.moduleId),
-                              onChanged: canUseSources
+                              onChanged: canToggle
                                   ? (v) async {
                                       if (v == null) return;
                                       if (v) {
@@ -977,6 +1010,12 @@ class _HomePageState extends State<HomePage> {
                                 widget.state.activePlaylist.any(
                                   (s) => s.albumId == a.id,
                                 );
+                            final canToggle =
+                                canUseSources &&
+                                (selectedIds.contains(sourceId) ||
+                                    widget.state.canAddOrReplacePlaylistSource(
+                                      sourceId,
+                                    ));
                             return CheckboxListTile(
                               value: checked,
                               controlAffinity: ListTileControlAffinity.leading,
@@ -995,7 +1034,7 @@ class _HomePageState extends State<HomePage> {
                                   a.moduleId,
                                 ),
                               ),
-                              onChanged: canUseSources
+                              onChanged: canToggle
                                   ? (v) async {
                                       if (v == null) return;
                                       if (v) {
@@ -1019,13 +1058,19 @@ class _HomePageState extends State<HomePage> {
                             final t = _tags[i];
                             final sourceId = 'tag_${t.id}';
                             final checked = selectedIds.contains(sourceId);
+                            final canToggle =
+                                canUseSources &&
+                                (checked ||
+                                    widget.state.canAddOrReplacePlaylistSource(
+                                      sourceId,
+                                    ));
                             return CheckboxListTile(
                               value: checked,
                               controlAffinity: ListTileControlAffinity.leading,
                               secondary: const Icon(Icons.folder_rounded),
                               title: Text(t.name),
                               subtitle: Text(t.moduleId),
-                              onChanged: canUseSources
+                              onChanged: canToggle
                                   ? (v) async {
                                       if (v == null) return;
                                       if (v) {

@@ -30,8 +30,6 @@ namespace OmniMixPlayer.Backend.Audio
             public float Volume { get; set; } = 1.0f;
             public float TargetLatency { get; set; } = 0.1f;
             public string EqualizerJson { get; set; }
-            public string ActiveQueueId { get; set; }
-            public string QueuesJson { get; set; }
             public string PlaybackTimelineJson { get; set; }
             public List<string> ImportedPlaylistIds { get; set; } = new();
             public List<string> PinnedTagIds { get; set; } = new();
@@ -237,8 +235,6 @@ namespace OmniMixPlayer.Backend.Audio
             Volume = p.Volume,
             TargetLatency = p.TargetLatency,
             EqualizerJson = Google.Protobuf.JsonFormatter.Default.Format(p.Equalizer),
-            ActiveQueueId = p.ActiveQueueId,
-            QueuesJson = SerializeQueues(p.Queues),
             PlaybackTimelineJson = Google.Protobuf.JsonFormatter.Default.Format(p.PlaybackTimeline ?? CreateDefaultTimeline()),
             ImportedPlaylistIds = p.ImportedPlaylistIds?.ToList() ?? new(),
             PinnedTagIds = p.PinnedTagIds?.ToList() ?? new(),
@@ -257,7 +253,6 @@ namespace OmniMixPlayer.Backend.Audio
                 GameName = doc.GameName ?? "",
                 Volume = doc.Volume,
                 TargetLatency = doc.TargetLatency,
-                ActiveQueueId = doc.ActiveQueueId ?? "default",
                 CreatedAt = new OmniTimestamp { Seconds = doc.CreatedAt },
                 UpdatedAt = new OmniTimestamp { Seconds = doc.UpdatedAt }
             };
@@ -287,18 +282,6 @@ namespace OmniMixPlayer.Backend.Audio
                 catch { profile.Equalizer = new SDK.Protos.Models.EqualizerState(); }
             }
 
-            // Deserialize queues
-            if (!string.IsNullOrEmpty(doc.QueuesJson) && doc.QueuesJson != "[]")
-            {
-                try
-                {
-                    var queueList = System.Text.Json.JsonSerializer.Deserialize<List<QueueInfo>>(doc.QueuesJson);
-                    if (queueList != null)
-                        profile.Queues.AddRange(queueList);
-                }
-                catch { }
-            }
-
             if (!string.IsNullOrEmpty(doc.PlaybackTimelineJson))
             {
                 try
@@ -316,14 +299,6 @@ namespace OmniMixPlayer.Backend.Audio
             return profile;
         }
 
-        private static string SerializeQueues(IEnumerable<QueueInfo> queues)
-        {
-            if (queues == null) return "[]";
-            var list = queues.ToList();
-            if (list.Count == 0) return "[]";
-            return System.Text.Json.JsonSerializer.Serialize(list);
-        }
-
         private static InstanceProfile CreateDefault(string id) => new InstanceProfile
         {
             Id = id,
@@ -331,7 +306,6 @@ namespace OmniMixPlayer.Backend.Audio
             Kind = InstanceKind.GameMod,
             Volume = 1.0f,
             TargetLatency = 0.1f,
-            ActiveQueueId = "default",
             Capabilities = new InstanceCapabilities(),
             Equalizer = new SDK.Protos.Models.EqualizerState { SoftClipEnabled = true },
             PlaybackTimeline = CreateDefaultTimeline(),

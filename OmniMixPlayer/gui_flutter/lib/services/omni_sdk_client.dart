@@ -174,7 +174,6 @@ InstanceProfile _cProfileToProto(Pointer<OmniPcmInstanceProfileInfo> p) {
     ..displayName = _readArray(prof.displayName, 256)
     ..modId = _readArray(prof.modId, 128)
     ..gameName = _readArray(prof.gameName, 256)
-    ..activeQueueId = _readArray(prof.activeQueueId, 128)
     ..kind = InstanceKind.valueOf(prof.kind) ??
         InstanceKind.INSTANCE_KIND_UNSPECIFIED
     ..capabilities = caps
@@ -408,9 +407,6 @@ class _RawOmniSdkClient {
     }
     if (profile.gameName.isNotEmpty) {
       _writeFixedString(p.ref.gameName, 256, profile.gameName);
-    }
-    if (profile.activeQueueId.isNotEmpty) {
-      _writeFixedString(p.ref.activeQueueId, 128, profile.activeQueueId);
     }
     if (profile.kind != InstanceKind.INSTANCE_KIND_UNSPECIFIED) {
       p.ref.kind = profile.kind.value;

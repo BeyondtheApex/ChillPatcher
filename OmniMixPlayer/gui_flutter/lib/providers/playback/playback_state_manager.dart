@@ -102,6 +102,26 @@ class PlaybackStateManager extends ChangeNotifier {
     return _capabilities[instanceId]?.queueManagement == true;
   }
 
+  int? get activePlaylistSourceLimit {
+    final id = _activeInstanceId;
+    if (id == null) return null;
+    final caps = _capabilities[id];
+    if (caps == null) return null;
+    if (!caps.multiplePlaylists) return 1;
+    return caps.hasMaxImportedPlaylists() ? caps.maxImportedPlaylists : null;
+  }
+
+  bool get activePlaylistSourceLimitReached {
+    final limit = activePlaylistSourceLimit;
+    return limit != null && _playlistSources.length >= limit;
+  }
+
+  bool canAddOrReplacePlaylistSource(String sourceId) {
+    if (_playlistSources.any((s) => s.id == sourceId)) return true;
+    final limit = activePlaylistSourceLimit;
+    return limit == null || _playlistSources.length < limit;
+  }
+
   /// Whether the active instance supports a specific capability.
   bool hasCapability(bool Function(InstanceCapabilities c) check) {
     final id = _activeInstanceId;
@@ -260,13 +280,13 @@ class PlaybackStateManager extends ChangeNotifier {
     try {
       await api.setPlaylistSources(_activeInstanceId!, _playlistSources);
     } catch (e) {
-      // silently handle
+      await loadActiveProfile();
     }
   }
 
   // ── Refresh ──
 
-  Future<void> refreshPlayback() async {
+  Future<void> refreshPlayback({bool syncMediaControls = false}) async {
     if (_loading) return;
     _loading = true;
     try {
@@ -294,7 +314,6 @@ class PlaybackStateManager extends ChangeNotifier {
           .map((i) => i.id)
           .toSet();
       _instances = list;
-      _syncMediaControls();
 
       final active = activeInstance;
       if (_activeInstanceId == nextActiveId && _activeInstanceId != null) {
@@ -316,12 +335,17 @@ class PlaybackStateManager extends ChangeNotifier {
             _lastVolume = _status!.volume;
           }
         } catch (_) {}
+        if (syncMediaControls) {
+          _syncMediaControls();
+        }
         SharedPreferences.getInstance()
             .then((prefs) {
               prefs.setDouble('last_volume', _lastVolume);
               prefs.setDouble('last_target_latency', _lastTargetLatency);
             })
             .catchError((_) {});
+      } else if (syncMediaControls) {
+        _syncMediaControls();
       }
 
       notifyListeners();
@@ -352,14 +376,26 @@ class PlaybackStateManager extends ChangeNotifier {
     controlled ??= eligible.firstOrNull;
     _mediaControlInstanceId = controlled?.id;
 
-    final snapshot = controlled == null
+    final snapshotInstance = _snapshotInstance(controlled);
+    final snapshot = snapshotInstance == null
         ? null
         : MediaControlSnapshot(
-            instance: controlled,
+            instance: snapshotInstance,
             baseUrl: api.baseUrl,
-            canSeek: canControlInstance(controlled.id),
+            canSeek: canControlInstance(snapshotInstance.id),
           );
     _publishMediaControlSnapshot(snapshot);
+  }
+
+  InstanceSummary? _snapshotInstance(InstanceSummary? instance) {
+    if (instance == null) return null;
+    final status = _status;
+    if (status == null || instance.id != _activeInstanceId) return instance;
+    if (status.trackUuid.isEmpty ||
+        instance.currentTrackUuid == status.trackUuid) {
+      return instance;
+    }
+    return instance.deepCopy()..currentTrackUuid = status.trackUuid;
   }
 
   void _publishMediaControlSnapshot(MediaControlSnapshot? snapshot) {
@@ -546,12 +582,14 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> addTagToActivePlaylist(Tag tag) async {
     if (_activeInstanceId == null || !canManageActiveLibrary) return;
+    final sourceId = 'tag_${tag.id}';
+    if (!canAddOrReplacePlaylistSource(sourceId)) return;
     final songs = await api.getSongs(tagId: tag.id);
     final uuids = songs.map((s) => s.uuid).toList();
-    _playlistSources.removeWhere((s) => s.id == 'tag_${tag.id}');
+    _playlistSources.removeWhere((s) => s.id == sourceId);
     _playlistSources.add(
       PlaylistSourceState()
-        ..id = 'tag_${tag.id}'
+        ..id = sourceId
         ..name = tag.name
         ..kind = PlaylistSourceKind.PLAYLIST_SOURCE_KIND_TAG
         ..refId = tag.id
@@ -564,12 +602,14 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> addAlbumToActivePlaylist(Album album) async {
     if (_activeInstanceId == null || !canManageActiveLibrary) return;
+    final sourceId = 'album_${album.id}';
+    if (!canAddOrReplacePlaylistSource(sourceId)) return;
     final songs = await api.getSongs(albumId: album.id);
     final uuids = songs.map((s) => s.uuid).toList();
-    _playlistSources.removeWhere((s) => s.id == 'album_${album.id}');
+    _playlistSources.removeWhere((s) => s.id == sourceId);
     _playlistSources.add(
       PlaylistSourceState()
-        ..id = 'album_${album.id}'
+        ..id = sourceId
         ..name = album.title
         ..kind = PlaylistSourceKind.PLAYLIST_SOURCE_KIND_ALBUM
         ..refId = album.id
@@ -582,12 +622,14 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> addPlaylistToActivePlaylist(Playlist playlist) async {
     if (_activeInstanceId == null || !canManageActiveLibrary) return;
+    final sourceId = 'playlist_${playlist.id}';
+    if (!canAddOrReplacePlaylistSource(sourceId)) return;
     final songs = await api.getSongs(playlistId: playlist.id);
     final uuids = songs.map((s) => s.uuid).toList();
-    _playlistSources.removeWhere((s) => s.id == 'playlist_${playlist.id}');
+    _playlistSources.removeWhere((s) => s.id == sourceId);
     _playlistSources.add(
       PlaylistSourceState()
-        ..id = 'playlist_${playlist.id}'
+        ..id = sourceId
         ..name = playlist.name
         ..kind = PlaylistSourceKind.PLAYLIST_SOURCE_KIND_PLAYLIST
         ..refId = playlist.id
@@ -600,10 +642,12 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> addTrackToActivePlaylist(Track track) async {
     if (_activeInstanceId == null || !canManageActiveLibrary) return;
-    _playlistSources.removeWhere((s) => s.id == 'track_${track.uuid}');
+    final sourceId = 'track_${track.uuid}';
+    if (!canAddOrReplacePlaylistSource(sourceId)) return;
+    _playlistSources.removeWhere((s) => s.id == sourceId);
     _playlistSources.add(
       PlaylistSourceState()
-        ..id = 'track_${track.uuid}'
+        ..id = sourceId
         ..name = track.title
         ..kind = PlaylistSourceKind.PLAYLIST_SOURCE_KIND_TRACK
         ..refId = track.uuid
@@ -683,7 +727,6 @@ class PlaybackStateManager extends ChangeNotifier {
     if (_activeInstanceId != instanceId) return;
     final next = (_status ?? PlaybackStatus()).deepCopy()..position = position;
     _status = next;
-    _syncMediaControls();
     notifyListeners();
   }
 
@@ -707,6 +750,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
   void disposeManager() {
     stopPolling();
+    _publishMediaControlSnapshot(null);
     unawaited(_mediaControlService.dispose());
   }
 }

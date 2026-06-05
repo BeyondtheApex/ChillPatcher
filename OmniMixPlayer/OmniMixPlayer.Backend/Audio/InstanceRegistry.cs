@@ -49,13 +49,11 @@ namespace OmniMixPlayer.Backend.Audio
                 Volume = existing.Volume,
                 TargetLatency = existing.TargetLatency,
                 Equalizer = existing.Equalizer ?? new SDK.Protos.Models.EqualizerState { SoftClipEnabled = true },
-                ActiveQueueId = existing.ActiveQueueId ?? "default",
                 PlaybackTimeline = EnsureTimeline(existing.PlaybackTimeline),
                 CreatedAt = existing.CreatedAt ?? new OmniTimestamp { Seconds = now }
             };
             merged.ImportedPlaylistIds.AddRange(existing.ImportedPlaylistIds);
             merged.PinnedTagIds.AddRange(existing.PinnedTagIds);
-            merged.Queues.AddRange(existing.Queues);
 
             _store.Upsert(merged);
             OnChanged?.Invoke();
@@ -133,13 +131,6 @@ namespace OmniMixPlayer.Backend.Audio
             profile.PlaybackTimeline = EnsureTimeline(timeline);
             profile.ImportedPlaylistIds.Clear();
             profile.ImportedPlaylistIds.AddRange(profile.PlaybackTimeline.PlaylistSources.Select(s => s.Id));
-            profile.Queues.Clear();
-            profile.Queues.Add(new QueueInfo
-            {
-                Id = profile.ActiveQueueId ?? "default",
-                Name = "Default",
-                SongCount = profile.PlaybackTimeline.ManualQueueUuids.Count
-            });
             _store.Upsert(profile);
         }
 

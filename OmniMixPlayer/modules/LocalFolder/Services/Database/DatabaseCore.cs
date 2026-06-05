@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace OmniMixPlayer.Module.LocalFolder.Services.Database
 {
     /// <summary>
-    /// 鏁版嵁搴撴牳蹇?- 杩炴帴绠＄悊鍜岃〃鍒涘缓
+    /// 数据库核心类 - 连接管理和表创建
     /// </summary>
     public class DatabaseCore : IDisposable
     {
@@ -41,11 +41,11 @@ namespace OmniMixPlayer.Module.LocalFolder.Services.Database
                 CreateTables();
                 MigrateIfNeeded();
 
-                _logger.LogInformation($"鏁版嵁搴撳垵濮嬪寲鎴愬姛: {_dbPath}");
+                _logger.LogInformation($"数据库初始化成功: {_dbPath}");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"鏁版嵁搴撳垵濮嬪寲澶辫触: {ex}");
+                _logger.LogError($"数据库初始化失败: {ex}");
                 throw;
             }
         }

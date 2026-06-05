@@ -374,22 +374,7 @@ class GameIntegrationManager extends ChangeNotifier {
               mod.mode,
             );
             final defaultProfile = {
-              'ActiveQueueId': 'default',
-              'Volume': 1.0,
-              'Queues': [
-                {
-                  'Id': 'default',
-                  'Name': 'Default',
-                  'PlaylistSources': [],
-                  'SongUuids': [],
-                  'HistoryUuids': [],
-                  'Index': -1,
-                  'HistoryPosition': -1,
-                  'PlaylistPosition': 0,
-                  'Shuffle': false,
-                  'RepeatMode': 'none',
-                },
-              ],
+              'volume': 1.0,
             };
             await api.updateInstanceProfile(inst.instanceId, defaultProfile);
           } catch (e) {

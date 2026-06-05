@@ -189,8 +189,6 @@ final class OmniPcmInstanceProfileInfo extends Struct {
   external Array<Uint8> modId;
   @Array(256)
   external Array<Uint8> gameName;
-  @Array(128)
-  external Array<Uint8> activeQueueId;
   @Int32()
   external int kind;
   @Uint32()
