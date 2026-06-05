@@ -244,7 +244,7 @@ class AppConfig {
 //    import '../generated/omni_mix_player/models/track.pb.dart';   → Track
 //    import '../generated/omni_mix_player/models/album.pb.dart';   → Album
 //    import '../generated/omni_mix_player/models/tag.pb.dart';     → Tag
-//    import '../generated/omni_mix_player/models/instance.pb.dart';→ InstanceSummary, InstanceProfile, PlaybackQueueState, PlaylistSourceState
+//    import '../generated/omni_mix_player/models/instance.pb.dart';→ InstanceSummary, InstanceProfile, PlaybackTimelineState, PlaylistSourceState
 //    import '../generated/omni_mix_player/services/playback.pb.dart'; → QueueTrack, PlaybackStatus, RepeatMode
 //    import '../generated/omni_mix_player/events/ws_events.pb.dart'; → WsEvent (protobuf binary)
 // ═══════════════════════════════════════════════════════════

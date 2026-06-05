@@ -14,6 +14,7 @@ namespace OmniMixPlayer.Backend.Audio
     /// </summary>
     public sealed class InstanceProfileStore : IDisposable
     {
+        private const int InstanceDbVersion = 2;
         private readonly LiteDatabase _db;
         private readonly ILogger _logger;
 
@@ -31,7 +32,7 @@ namespace OmniMixPlayer.Backend.Audio
             public string EqualizerJson { get; set; }
             public string ActiveQueueId { get; set; }
             public string QueuesJson { get; set; }
-            public string PlaybackQueueJson { get; set; }
+            public string PlaybackTimelineJson { get; set; }
             public List<string> ImportedPlaylistIds { get; set; } = new();
             public List<string> PinnedTagIds { get; set; } = new();
             public long CreatedAt { get; set; }
@@ -68,7 +69,7 @@ namespace OmniMixPlayer.Backend.Audio
                 var doc = meta.FindById(StorageVersion.LiteDbDocumentId);
                 if (doc != null &&
                     doc.ContainsKey("version") &&
-                    doc["version"].AsInt32 == StorageVersion.Current)
+                    doc["version"].AsInt32 == InstanceDbVersion)
                 {
                     return;
                 }
@@ -88,7 +89,7 @@ namespace OmniMixPlayer.Backend.Audio
             meta.Upsert(new BsonDocument
             {
                 ["_id"] = StorageVersion.LiteDbDocumentId,
-                ["version"] = StorageVersion.Current
+                ["version"] = InstanceDbVersion
             });
         }
 
@@ -238,7 +239,7 @@ namespace OmniMixPlayer.Backend.Audio
             EqualizerJson = Google.Protobuf.JsonFormatter.Default.Format(p.Equalizer),
             ActiveQueueId = p.ActiveQueueId,
             QueuesJson = SerializeQueues(p.Queues),
-            PlaybackQueueJson = Google.Protobuf.JsonFormatter.Default.Format(p.PlaybackQueue ?? new PlaybackQueueState()),
+            PlaybackTimelineJson = Google.Protobuf.JsonFormatter.Default.Format(p.PlaybackTimeline ?? CreateDefaultTimeline()),
             ImportedPlaylistIds = p.ImportedPlaylistIds?.ToList() ?? new(),
             PinnedTagIds = p.PinnedTagIds?.ToList() ?? new(),
             CreatedAt = p.CreatedAt?.Seconds ?? 0,
@@ -298,17 +299,18 @@ namespace OmniMixPlayer.Backend.Audio
                 catch { }
             }
 
-            if (!string.IsNullOrEmpty(doc.PlaybackQueueJson))
+            if (!string.IsNullOrEmpty(doc.PlaybackTimelineJson))
             {
                 try
                 {
-                    profile.PlaybackQueue = Google.Protobuf.JsonParser.Default.Parse<PlaybackQueueState>(doc.PlaybackQueueJson);
+                    var timeline = Google.Protobuf.JsonParser.Default.Parse<PlaybackTimelineState>(doc.PlaybackTimelineJson);
+                    profile.PlaybackTimeline = timeline.Version == 2 ? timeline : CreateDefaultTimeline();
                 }
-                catch { profile.PlaybackQueue = new PlaybackQueueState { ActiveQueueId = profile.ActiveQueueId }; }
+                catch { profile.PlaybackTimeline = CreateDefaultTimeline(); }
             }
             else
             {
-                profile.PlaybackQueue = new PlaybackQueueState { ActiveQueueId = profile.ActiveQueueId };
+                profile.PlaybackTimeline = CreateDefaultTimeline();
             }
 
             return profile;
@@ -332,8 +334,15 @@ namespace OmniMixPlayer.Backend.Audio
             ActiveQueueId = "default",
             Capabilities = new InstanceCapabilities(),
             Equalizer = new SDK.Protos.Models.EqualizerState { SoftClipEnabled = true },
-            PlaybackQueue = new PlaybackQueueState { ActiveQueueId = "default" },
+            PlaybackTimeline = CreateDefaultTimeline(),
             CreatedAt = new OmniTimestamp { Seconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds() },
+        };
+
+        private static PlaybackTimelineState CreateDefaultTimeline() => new()
+        {
+            Version = 2,
+            SourceCursor = -1,
+            CurrentSourceIndex = -1
         };
 
         public void Dispose()

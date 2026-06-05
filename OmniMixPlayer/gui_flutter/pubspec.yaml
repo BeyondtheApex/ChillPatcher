@@ -35,10 +35,6 @@ dependencies:
   process_run: ^1.1.0
   windows_single_instance: ^1.1.0
 
-  # Audio
-  flutter_sound:
-    path: third_party/flutter_sound
-
   # Storage
   shared_preferences: ^2.3.0
   ffi: ^2.2.0

@@ -6,7 +6,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   audio_service_win
   desktop_multi_window
   dynamic_color
-  flutter_sound
   screen_retriever_windows
   system_tray
   url_launcher_windows

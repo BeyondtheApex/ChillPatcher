@@ -20,7 +20,6 @@ namespace OmniMixPlayer.Backend.Http
             _subscriptions.Add(EventBus.Instance.Subscribe<ModuleUnloadedEvent>(OnModuleUnloaded));
             _subscriptions.Add(EventBus.Instance.Subscribe<FavoriteChangedEvent>(OnFavoriteChanged));
             _subscriptions.Add(EventBus.Instance.Subscribe<ExcludeChangedEvent>(OnExcludeChanged));
-            _subscriptions.Add(EventBus.Instance.Subscribe<QueueChangedEvent>(OnQueueChangedEvent));
             _subscriptions.Add(EventBus.Instance.Subscribe<CoverInvalidatedEvent>(OnCoverInvalidated));
             _subscriptions.Add(EventBus.Instance.Subscribe<PlaylistUpdatedEvent>(OnPlaylistUpdated));
             _subscriptions.Add(EventBus.Instance.Subscribe<ErrorEvent>(OnError));
@@ -55,13 +54,6 @@ namespace OmniMixPlayer.Backend.Http
         {
             var evt = MakeEvent("exclude.changed");
             evt.ExcludeChanged = new ProtoEvents.ExcludeChangedEvent { Uuid = e.UUID, IsExcluded = e.IsExcluded, ModuleId = e.ModuleId };
-            _ = _apiServer.BroadcastProtoEvent(evt);
-        }
-
-        private void OnQueueChangedEvent(QueueChangedEvent e)
-        {
-            var evt = MakeEvent("queue.changed");
-            evt.QueueChanged = new ProtoEvents.QueueChangedEvent { ChangeType = e.ChangeType.ToString(), QueueLength = e.QueueLength };
             _ = _apiServer.BroadcastProtoEvent(evt);
         }
 

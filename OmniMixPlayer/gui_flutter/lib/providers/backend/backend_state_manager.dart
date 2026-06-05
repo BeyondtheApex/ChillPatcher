@@ -8,6 +8,7 @@
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_client.dart';
 import '../../services/flutter_pcm_playback_service.dart';
 import '../../services/ws_client.dart';
@@ -23,6 +24,7 @@ class BackendStateManager extends ChangeNotifier {
   late final BackendManager backendMgr;
   final FlutterPcmPlaybackService _pcmPlayback = FlutterPcmPlaybackService();
   Timer? _heartbeatTimer;
+  Timer? _reconnectTimer;
 
   // ── State ──
   bool _online = false;
@@ -34,6 +36,10 @@ class BackendStateManager extends ChangeNotifier {
   bool _connecting = false;
   bool _autostart = false;
   bool _minimizeToTray = true;
+  String? _audioOutputDeviceId;
+  List<AudioOutputDevice> _audioOutputDevices = const [];
+  NativeAudioState _nativeAudioState = NativeAudioState.empty;
+  DateTime? _lastNativeAudioStateRefresh;
 
   // Getters
   bool get online => _online;
@@ -45,6 +51,9 @@ class BackendStateManager extends ChangeNotifier {
   bool get autostart => _autostart;
   bool get minimizeToTray => _minimizeToTray;
   String get apiBaseUrl => api.baseUrl;
+  String? get audioOutputDeviceId => _audioOutputDeviceId;
+  List<AudioOutputDevice> get audioOutputDevices => _audioOutputDevices;
+  NativeAudioState get nativeAudioState => _nativeAudioState;
 
   // Setters (used by settings / config)
   set portVal(int v) {
@@ -99,6 +108,8 @@ class BackendStateManager extends ChangeNotifier {
     _setupWs();
     backendMgr.onAliveChanged = _onBackendAliveChanged;
     backendMgr.startWatching();
+    unawaited(_loadAudioOutputPrefs());
+    unawaited(refreshAudioOutputDevices());
     _busy = true;
     _runInitialDetection();
   }
@@ -192,6 +203,45 @@ class BackendStateManager extends ChangeNotifier {
     _applyAliveState(alive);
   }
 
+  Future<void> refreshAudioOutputDevices() async {
+    if (_isWeb) return;
+    try {
+      _audioOutputDevices = await _pcmPlayback.listOutputDevices();
+      notifyListeners();
+    } catch (e) {
+      onError?.call('Failed to list audio output devices: $e');
+    }
+  }
+
+  Future<void> setAudioOutputDevice(String? deviceId) async {
+    final normalized = deviceId == null || deviceId.isEmpty ? null : deviceId;
+    _audioOutputDeviceId = normalized;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (normalized == null) {
+        await prefs.remove('audio_output_device_id');
+      } else {
+        await prefs.setString('audio_output_device_id', normalized);
+      }
+      await _pcmPlayback.setOutputDevice(normalized);
+      _nativeAudioState = await _pcmPlayback.getState();
+      notifyListeners();
+    } catch (e) {
+      onError?.call('Failed to switch audio output device: $e');
+    }
+  }
+
+  Future<void> _loadAudioOutputPrefs() async {
+    if (_isWeb) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _audioOutputDeviceId = prefs.getString('audio_output_device_id');
+      await _pcmPlayback.setOutputDevice(_audioOutputDeviceId);
+      notifyListeners();
+    } catch (_) {}
+  }
+
   void _applyAliveState(bool alive) {
     if (_online == alive && _running == alive) return;
 
@@ -199,6 +249,8 @@ class BackendStateManager extends ChangeNotifier {
     _running = alive;
 
     if (alive) {
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
       if (_isWeb) {
         _connectDirectly();
       } else {
@@ -206,7 +258,9 @@ class BackendStateManager extends ChangeNotifier {
       }
     } else {
       _stopHeartbeat();
-      _pcmPlayback.stop();
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      unawaited(_pcmPlayback.stop());
       ws.disconnect();
       onStopCleanup?.call();
     }
@@ -216,6 +270,7 @@ class BackendStateManager extends ChangeNotifier {
   Future<void> _connectAndLoad() async {
     if (_connecting) return;
     _connecting = true;
+    var completed = false;
     try {
       final discovered = await backendMgr.discover();
       if (discovered == null) return;
@@ -235,24 +290,46 @@ class BackendStateManager extends ChangeNotifier {
       if (connected) {
         final profile = await api.connectController();
         _startHeartbeat(profile.id);
-        await _pcmPlayback.startForInstance(profile.id);
+        await _startNativeAudio(profile.id);
         await onNeedRefreshPlayback?.call();
         await onNeedLoadModules?.call();
         await onNeedRefreshArchives?.call();
         onLibraryBump?.call();
         onInitComplete?.call();
+        completed = true;
         notifyListeners();
       }
     } catch (e, st) {
       debugPrint('OmniMix: _connectAndLoad failed: $e\n$st');
     } finally {
       _connecting = false;
+      if (!completed && !_busy) {
+        _online = false;
+        _running = false;
+        notifyListeners();
+        _scheduleReconnect();
+      }
     }
+  }
+
+  void _scheduleReconnect() {
+    if (_reconnectTimer != null || _connecting || _busy) return;
+    _reconnectTimer = Timer(const Duration(seconds: 1), () async {
+      _reconnectTimer = null;
+      if (_online || _connecting) return;
+      try {
+        final alive = await backendMgr.discover() != null;
+        if (alive) {
+          _applyAliveState(true);
+        }
+      } catch (_) {}
+    });
   }
 
   Future<void> _connectDirectly() async {
     if (_connecting) return;
     _connecting = true;
+    var completed = false;
     try {
       for (var i = 0; i < 10; i++) {
         final ok = await api.checkHealth();
@@ -264,20 +341,52 @@ class BackendStateManager extends ChangeNotifier {
         final profile = await api.connectController();
         _startHeartbeat(profile.id);
         if (!_isWeb) {
-          await _pcmPlayback.startForInstance(profile.id);
+          await _startNativeAudio(profile.id);
         }
         await onNeedRefreshPlayback?.call();
         await onNeedLoadModules?.call();
         await onNeedRefreshArchives?.call();
         onLibraryBump?.call();
         onInitComplete?.call();
+        completed = true;
         notifyListeners();
       }
     } catch (e, st) {
       debugPrint('OmniMix Web: _connectDirectly failed: $e\n$st');
     } finally {
       _connecting = false;
+      if (!completed && !_busy) {
+        _online = false;
+        _running = false;
+        notifyListeners();
+        _scheduleReconnect();
+      }
     }
+  }
+
+  Future<void> _startNativeAudio(String instanceId) async {
+    try {
+      await _pcmPlayback.startForInstance(instanceId);
+      _nativeAudioState = await _pcmPlayback.getState();
+      _lastNativeAudioStateRefresh = DateTime.now();
+      notifyListeners();
+    } catch (e) {
+      onError?.call('Failed to start native PCM playback: $e');
+    }
+  }
+
+  Future<void> _refreshNativeAudioStateThrottled() async {
+    if (_isWeb) return;
+    final now = DateTime.now();
+    final last = _lastNativeAudioStateRefresh;
+    if (last != null && now.difference(last) < const Duration(seconds: 1)) {
+      return;
+    }
+    _lastNativeAudioStateRefresh = now;
+    try {
+      _nativeAudioState = await _pcmPlayback.getState();
+      notifyListeners();
+    } catch (_) {}
   }
 
   // ── WebSocket setup ──
@@ -323,6 +432,7 @@ class BackendStateManager extends ChangeNotifier {
               event.positionChanged.instanceId,
               event.positionChanged.position,
             );
+            unawaited(_refreshNativeAudioStateThrottled());
           }
           break;
         case 'profile.changed':
@@ -359,8 +469,11 @@ class BackendStateManager extends ChangeNotifier {
       if (_online) {
         _online = false;
         _running = false;
+        _stopHeartbeat();
+        unawaited(_pcmPlayback.stop());
         onStopCleanup?.call();
         onLibraryBump?.call();
+        _scheduleReconnect();
         notifyListeners();
       }
     };
@@ -506,22 +619,31 @@ class BackendStateManager extends ChangeNotifier {
 
   void disposeManager() {
     _stopHeartbeat();
-    _pcmPlayback.stop();
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    unawaited(_pcmPlayback.stop());
     ws.disconnect();
     api.dispose();
-    backendMgr.dispose?.call();
+    backendMgr.dispose();
   }
 
   void _startHeartbeat(String instanceId) {
     if (instanceId.isEmpty) return;
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (timer) async {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (
+      timer,
+    ) async {
       if (!_online) {
         timer.cancel();
         return;
       }
       try {
-        await api.heartbeat(instanceId);
+        final alive = await api.heartbeat(instanceId);
+        if (!alive && _online) {
+          timer.cancel();
+          _heartbeatTimer = null;
+          await _connectAndLoad();
+        }
       } catch (e) {
         debugPrint('OmniMix: Heartbeat failed: $e');
       }

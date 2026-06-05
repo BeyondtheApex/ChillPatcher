@@ -144,7 +144,10 @@ InstanceSummary _cSummaryToProto(Pointer<OmniPcmInstanceSummaryInfo> p) {
     ..kind = InstanceKind.valueOf(s.kind) ??
         InstanceKind.INSTANCE_KIND_UNSPECIFIED
     ..isOnline = s.isOnline != 0
-    ..queueCount = s.queueCount;
+    ..queueCount = s.queueCount
+    ..mode = PlaybackModeType.valueOf(s.mode) ??
+        PlaybackModeType.PLAYBACK_MODE_UNSPECIFIED
+    ..connectedAt = _omniTimestamp(s.connectedAt);
 }
 
 InstanceProfile _cProfileToProto(Pointer<OmniPcmInstanceProfileInfo> p) {
@@ -176,7 +179,11 @@ InstanceProfile _cProfileToProto(Pointer<OmniPcmInstanceProfileInfo> p) {
         InstanceKind.INSTANCE_KIND_UNSPECIFIED
     ..capabilities = caps
     ..volume = prof.volume
-    ..targetLatency = prof.targetLatency;
+    ..targetLatency = prof.targetLatency
+    ..mode = PlaybackModeType.valueOf(prof.mode) ??
+        PlaybackModeType.PLAYBACK_MODE_UNSPECIFIED
+    ..createdAt = _omniTimestamp(prof.createdAt)
+    ..updatedAt = _omniTimestamp(prof.updatedAt);
 }
 
 PlaybackStatus _cStatusToProto(Pointer<OmniPcmPlaybackStatusInfo> p) {
@@ -318,11 +325,14 @@ class _RawOmniSdkClient {
       for (int i = 0; i < total; i++) {
         final id = _readArray(buf[i].instanceId, 128);
         if (id == _clientId) {
-          _instanceId = id;
-          final prof = await getProfile(id);
-          calloc.free(buf);
-          calloc.free(cnt2);
-          return prof;
+          if (buf[i].isOnline != 0) {
+            _instanceId = id;
+            final prof = await getProfile(id);
+            calloc.free(buf);
+            calloc.free(cnt2);
+            return prof;
+          }
+          break;
         }
       }
       calloc.free(buf);
@@ -369,6 +379,18 @@ class _RawOmniSdkClient {
     _freeStr(iid);
     final result = _cProfileToProto(p);
     calloc.free(p);
+
+    try {
+      final sources = await getPlaylistSources(instanceId);
+      result.playbackTimeline = PlaybackTimelineState()
+        ..version = 2
+        ..playlistSources.addAll(sources.map((s) => PlaylistSourceState()
+          ..id = s.id
+          ..name = s.name
+          ..kind = s.kind
+          ..refId = s.refId));
+    } catch (_) {}
+
     return result;
   }
 

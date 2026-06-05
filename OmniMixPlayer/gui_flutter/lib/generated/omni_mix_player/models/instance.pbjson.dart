@@ -219,41 +219,63 @@ final $typed_data.Uint8List playlistSourceStateDescriptor = $convert.base64Decod
     '1lEhQKBXV1aWRzGAMgAygJUgV1dWlkcxI3CgRraW5kGAQgASgOMiMub21uaV9taXhfcGxheWVy'
     'LlBsYXlsaXN0U291cmNlS2luZFIEa2luZBIVCgZyZWZfaWQYBSABKAlSBXJlZklk');
 
-@$core.Deprecated('Use playbackQueueStateDescriptor instead')
-const PlaybackQueueState$json = {
-  '1': 'PlaybackQueueState',
+@$core.Deprecated('Use playbackTimelineStateDescriptor instead')
+const PlaybackTimelineState$json = {
+  '1': 'PlaybackTimelineState',
   '2': [
-    {'1': 'active_queue_id', '3': 1, '4': 1, '5': 9, '10': 'activeQueueId'},
-    {'1': 'queue_uuids', '3': 2, '4': 3, '5': 9, '10': 'queueUuids'},
-    {'1': 'history_uuids', '3': 3, '4': 3, '5': 9, '10': 'historyUuids'},
+    {'1': 'version', '3': 1, '4': 1, '5': 5, '10': 'version'},
+    {'1': 'source_uuids', '3': 2, '4': 3, '5': 9, '10': 'sourceUuids'},
+    {'1': 'source_cursor', '3': 3, '4': 1, '5': 5, '10': 'sourceCursor'},
+    {'1': 'current_uuid', '3': 4, '4': 1, '5': 9, '10': 'currentUuid'},
+    {
+      '1': 'current_source_index',
+      '3': 5,
+      '4': 1,
+      '5': 5,
+      '10': 'currentSourceIndex'
+    },
+    {'1': 'history_uuids', '3': 6, '4': 3, '5': 9, '10': 'historyUuids'},
+    {'1': 'nav_forward_uuids', '3': 7, '4': 3, '5': 9, '10': 'navForwardUuids'},
+    {
+      '1': 'manual_queue_uuids',
+      '3': 8,
+      '4': 3,
+      '5': 9,
+      '10': 'manualQueueUuids'
+    },
     {
       '1': 'playlist_sources',
-      '3': 4,
+      '3': 9,
       '4': 3,
       '5': 11,
       '6': '.omni_mix_player.PlaylistSourceState',
       '10': 'playlistSources'
     },
-    {'1': 'shuffle', '3': 5, '4': 1, '5': 8, '10': 'shuffle'},
+    {'1': 'shuffle', '3': 10, '4': 1, '5': 8, '10': 'shuffle'},
     {
       '1': 'repeat_mode',
-      '3': 6,
+      '3': 11,
       '4': 1,
       '5': 14,
       '6': '.omni_mix_player.RepeatMode',
       '10': 'repeatMode'
     },
+    {'1': 'revision', '3': 12, '4': 1, '5': 3, '10': 'revision'},
   ],
 };
 
-/// Descriptor for `PlaybackQueueState`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List playbackQueueStateDescriptor = $convert.base64Decode(
-    'ChJQbGF5YmFja1F1ZXVlU3RhdGUSJgoPYWN0aXZlX3F1ZXVlX2lkGAEgASgJUg1hY3RpdmVRdW'
-    'V1ZUlkEh8KC3F1ZXVlX3V1aWRzGAIgAygJUgpxdWV1ZVV1aWRzEiMKDWhpc3RvcnlfdXVpZHMY'
-    'AyADKAlSDGhpc3RvcnlVdWlkcxJPChBwbGF5bGlzdF9zb3VyY2VzGAQgAygLMiQub21uaV9taX'
-    'hfcGxheWVyLlBsYXlsaXN0U291cmNlU3RhdGVSD3BsYXlsaXN0U291cmNlcxIYCgdzaHVmZmxl'
-    'GAUgASgIUgdzaHVmZmxlEjwKC3JlcGVhdF9tb2RlGAYgASgOMhsub21uaV9taXhfcGxheWVyLl'
-    'JlcGVhdE1vZGVSCnJlcGVhdE1vZGU=');
+/// Descriptor for `PlaybackTimelineState`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List playbackTimelineStateDescriptor = $convert.base64Decode(
+    'ChVQbGF5YmFja1RpbWVsaW5lU3RhdGUSGAoHdmVyc2lvbhgBIAEoBVIHdmVyc2lvbhIhCgxzb3'
+    'VyY2VfdXVpZHMYAiADKAlSC3NvdXJjZVV1aWRzEiMKDXNvdXJjZV9jdXJzb3IYAyABKAVSDHNv'
+    'dXJjZUN1cnNvchIhCgxjdXJyZW50X3V1aWQYBCABKAlSC2N1cnJlbnRVdWlkEjAKFGN1cnJlbn'
+    'Rfc291cmNlX2luZGV4GAUgASgFUhJjdXJyZW50U291cmNlSW5kZXgSIwoNaGlzdG9yeV91dWlk'
+    'cxgGIAMoCVIMaGlzdG9yeVV1aWRzEioKEW5hdl9mb3J3YXJkX3V1aWRzGAcgAygJUg9uYXZGb3'
+    'J3YXJkVXVpZHMSLAoSbWFudWFsX3F1ZXVlX3V1aWRzGAggAygJUhBtYW51YWxRdWV1ZVV1aWRz'
+    'Ek8KEHBsYXlsaXN0X3NvdXJjZXMYCSADKAsyJC5vbW5pX21peF9wbGF5ZXIuUGxheWxpc3RTb3'
+    'VyY2VTdGF0ZVIPcGxheWxpc3RTb3VyY2VzEhgKB3NodWZmbGUYCiABKAhSB3NodWZmbGUSPAoL'
+    'cmVwZWF0X21vZGUYCyABKA4yGy5vbW5pX21peF9wbGF5ZXIuUmVwZWF0TW9kZVIKcmVwZWF0TW'
+    '9kZRIaCghyZXZpc2lvbhgMIAEoA1IIcmV2aXNpb24=');
 
 @$core.Deprecated('Use instanceProfileDescriptor instead')
 const InstanceProfile$json = {
@@ -331,12 +353,12 @@ const InstanceProfile$json = {
       '10': 'updatedAt'
     },
     {
-      '1': 'playback_queue',
+      '1': 'playback_timeline',
       '3': 17,
       '4': 1,
       '5': 11,
-      '6': '.omni_mix_player.PlaybackQueueState',
-      '10': 'playbackQueue'
+      '6': '.omni_mix_player.PlaybackTimelineState',
+      '10': 'playbackTimeline'
     },
   ],
 };
@@ -356,8 +378,8 @@ final $typed_data.Uint8List instanceProfileDescriptor = $convert.base64Decode(
     'b3J0ZWRQbGF5bGlzdElkcxIkCg5waW5uZWRfdGFnX2lkcxgOIAMoCVIMcGlubmVkVGFnSWRzEj'
     '0KCmNyZWF0ZWRfYXQYDyABKAsyHi5vbW5pX21peF9wbGF5ZXIuT21uaVRpbWVzdGFtcFIJY3Jl'
     'YXRlZEF0Ej0KCnVwZGF0ZWRfYXQYECABKAsyHi5vbW5pX21peF9wbGF5ZXIuT21uaVRpbWVzdG'
-    'FtcFIJdXBkYXRlZEF0EkoKDnBsYXliYWNrX3F1ZXVlGBEgASgLMiMub21uaV9taXhfcGxheWVy'
-    'LlBsYXliYWNrUXVldWVTdGF0ZVINcGxheWJhY2tRdWV1ZQ==');
+    'FtcFIJdXBkYXRlZEF0ElMKEXBsYXliYWNrX3RpbWVsaW5lGBEgASgLMiYub21uaV9taXhfcGxh'
+    'eWVyLlBsYXliYWNrVGltZWxpbmVTdGF0ZVIQcGxheWJhY2tUaW1lbGluZQ==');
 
 @$core.Deprecated('Use instanceConnectRequestDescriptor instead')
 const InstanceConnectRequest$json = {

@@ -70,15 +70,24 @@ message PlaylistSourceState {
   string ref_id = 5;
 }
 
-// Persisted runtime queue state. Track details remain in LibraryService; this
-// stores only stable IDs so the queue survives reconnects and backend restarts.
-message PlaybackQueueState {
-  string active_queue_id = 1;
-  repeated string queue_uuids = 2;
-  repeated string history_uuids = 3;
-  repeated PlaylistSourceState playlist_sources = 4;
-  bool shuffle = 5;
-  RepeatMode repeat_mode = 6;
+// Profile-owned playback timeline. Track details remain in LibraryService; this
+// stores only stable IDs so playback order survives reconnects and restarts.
+message PlaybackTimelineState {
+  int32 version = 1;
+  repeated string source_uuids = 2;
+  int32 source_cursor = 3;
+
+  string current_uuid = 4;
+  int32 current_source_index = 5;
+
+  repeated string history_uuids = 6;
+  repeated string nav_forward_uuids = 7;
+  repeated string manual_queue_uuids = 8;
+  repeated PlaylistSourceState playlist_sources = 9;
+
+  bool shuffle = 10;
+  RepeatMode repeat_mode = 11;
+  int64 revision = 12;
 }
 
 // 实例配置 — 统一持久化
@@ -105,7 +114,7 @@ message InstanceProfile {
   OmniTimestamp created_at = 15;
   OmniTimestamp updated_at = 16;
 
-  PlaybackQueueState playback_queue = 17;
+  PlaybackTimelineState playback_timeline = 17;
 }
 
 // 连接请求

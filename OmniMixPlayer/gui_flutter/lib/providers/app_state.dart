@@ -13,6 +13,7 @@ import '../generated/omni_mix_player/services/playback.pb.dart';
 import '../services/api_client.dart';
 import '../services/ws_client.dart';
 import '../services/floating_window_service.dart';
+import '../services/flutter_pcm_playback_service.dart';
 import '../services/backend_manager.dart'
     if (dart.library.js_interop) '../stubs/backend_manager_web.dart';
 import '../services/platform_service.dart'
@@ -69,6 +70,9 @@ class AppState extends ChangeNotifier {
   String get backendBind => _backend.bind;
   bool get autostart => _backend.autostart;
   bool get minimizeToTray => _backend.minimizeToTray;
+  String? get audioOutputDeviceId => _backend.audioOutputDeviceId;
+  List<AudioOutputDevice> get audioOutputDevices => _backend.audioOutputDevices;
+  NativeAudioState get nativeAudioState => _backend.nativeAudioState;
   Future<void> startBackend() => _backend.start();
   Future<void> stopBackend() => _backend.stop();
   Future<void> toggleBackend() => _backend.toggle();
@@ -104,6 +108,12 @@ class AppState extends ChangeNotifier {
       await api.saveConfig();
     } catch (_) {}
   }
+
+  Future<void> refreshAudioOutputDevices() =>
+      _backend.refreshAudioOutputDevices();
+
+  Future<void> setAudioOutputDevice(String? deviceId) =>
+      _backend.setAudioOutputDevice(deviceId);
 
   // ── Service ──
   String get serviceState => _service.state;

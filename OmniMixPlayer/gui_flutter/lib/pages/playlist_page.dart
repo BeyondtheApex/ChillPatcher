@@ -74,10 +74,12 @@ class _PlaylistPageState extends State<PlaylistPage> {
   String _error = '';
   int _totalSongs = 0;
   int _lastLibGen = 0;
+  int _loadSerial = 0;
 
   @override
   void initState() {
     super.initState();
+    _lastLibGen = widget.state.libraryGeneration;
     widget.state.addListener(_onStateChanged);
     if (widget.state.backendOnline) _loadTree();
   }
@@ -106,6 +108,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   Future<void> _loadTree() async {
     if (!widget.state.backendOnline) return;
+    final loadSerial = ++_loadSerial;
     setState(() {
       _loading = true;
       _error = '';
@@ -113,13 +116,15 @@ class _PlaylistPageState extends State<PlaylistPage> {
     try {
       final playlists = await widget.state.api.getPlaylists();
       final allAlbums = await widget.state.api.getAlbums();
-      if (!mounted) return;
+      if (!mounted || loadSerial != _loadSerial) return;
 
-      _tree.clear();
+      final nextTree = <_PlaylistNode>[];
       var total = 0;
       for (final playlist in playlists) {
-        final playlistSongs = await widget.state.api.getSongs(playlistId: playlist.id);
-        if (!mounted) return;
+        final playlistSongs = await widget.state.api.getSongs(
+          playlistId: playlist.id,
+        );
+        if (!mounted || loadSerial != _loadSerial) return;
         final tagAlbumIds = playlistSongs.map((s) => s.albumId).toSet();
         final filteredAlbums = allAlbums
             .where((a) => tagAlbumIds.contains(a.id))
@@ -132,19 +137,25 @@ class _PlaylistPageState extends State<PlaylistPage> {
           albumNodes.add(_AlbumNode(album, songs: albumSongs));
           total += albumSongs.length;
         }
-        _tree.add(_PlaylistNode(playlist, albumNodes));
+        nextTree.add(_PlaylistNode(playlist, albumNodes));
       }
+      if (!mounted || loadSerial != _loadSerial) return;
+      _tree
+        ..clear()
+        ..addAll(nextTree);
       _totalSongs = total;
       _rebuildFlatList();
     } catch (e) {
-      if (mounted) {
+      if (mounted && loadSerial == _loadSerial) {
         final l10n = context.mounted ? AppLocalizations.of(context) : null;
         _error =
             l10n?.loadLibraryFailed(e.toString()) ??
             'Failed to load library: $e';
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && loadSerial == _loadSerial) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -621,7 +632,7 @@ class _Cover extends StatelessWidget {
               child: CircularProgressIndicator(
                 value: progress.expectedTotalBytes != null
                     ? progress.cumulativeBytesLoaded /
-                        progress.expectedTotalBytes!
+                          progress.expectedTotalBytes!
                     : null,
                 strokeWidth: 1.5,
               ),

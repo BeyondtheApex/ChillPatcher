@@ -5,7 +5,6 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_multi_window
   dynamic_color
-  flutter_sound
   screen_retriever_linux
   system_tray
   url_launcher_linux

@@ -1,9 +1,8 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using OmniMixPlayer.Backend.ModuleSystem;
 using OmniMixPlayer.SDK.Events;
 using OmniMixPlayer.SDK.Interfaces;
 using OmniMixPlayer.SDK.Protos.Models;
@@ -17,13 +16,13 @@ namespace OmniMixPlayer.Backend.Audio
         private readonly IEventBus _eventBus;
         private readonly ILibraryRegistry _library;
         private readonly IStreamingService _streamingService;
+        private readonly PlaybackTimelineStore _timeline;
+        private readonly object _lock = new();
+
         public string Id { get; }
+
         private readonly Equalizer _equalizer = new();
         public Equalizer Equalizer => _equalizer;
-
-        private readonly Dictionary<string, QueueSlot> _queues = new();
-        private string _activeQueueId;
-        private const string DefaultQueueId = "default";
 
         private CancellationTokenSource _playbackCts;
         private Task _playbackTask;
@@ -32,56 +31,30 @@ namespace OmniMixPlayer.Backend.Audio
         public VolumeNode VolumeNode => _volumeNode;
         private volatile int _playState;
         private float _targetLatency = 0.1f;
-        private readonly Random _rng = new();
-        private readonly object _lock = new();
 
         private IPcmStreamReader _currentReader;
+        private Track _playingTrack;
         private bool _disposed;
 
         public event Action<Track> OnTrackChanged;
         public event Action<int> OnStateChanged;
         public event Action<float> OnPositionChanged;
-        public event Action OnQueueChanged;
 
-        private QueueSlot Active
-        {
-            get
-            {
-                lock (_lock)
-                {
-                    if (_activeQueueId == null || !_queues.TryGetValue(_activeQueueId, out var q))
-                        return _queues[DefaultQueueId];
-                    return q;
-                }
-            }
-        }
-
-        public Track CurrentTrack => Active.CurrentTrack;
+        public Track CurrentTrack => _timeline.GetCurrentTrack(Id);
         public bool IsPlaying => _playState == 1;
         public float Position { get; private set; }
         public float Volume { get => _volumeNode.Volume; set => _volumeNode.Volume = value; }
         public float TargetLatency { get => _targetLatency; set => _targetLatency = Math.Clamp(value, 0.03f, 1.0f); }
-        public bool Shuffle { get => Active.Shuffle; set => Active.Shuffle = value; }
-        public SDK.Protos.Models.RepeatMode RepeatMode { get => Active.RepeatMode; set => Active.RepeatMode = value; }
-        public IReadOnlyList<Track> Queue => Active.Queue;
-        public int QueueCount => Active.QueueCount;
-        public IReadOnlyList<Track> History => Active.History;
-        public int HistoryCount => Active.HistoryCount;
-        public IReadOnlyList<Track> Playlist => Active.Playlist;
-        public IReadOnlyList<PlaylistSourceInfo> PlaylistSources => Active.PlaylistSources;
-        public IReadOnlyList<PlaylistSourceRequest> PlaylistSourceSpecs => Active.PlaylistSourceSpecs;
-        public int PlaylistPosition => Active.PlaylistPosition;
-        public bool CanGoPrevious => Active.CanGoPrevious;
-        public bool CanGoNext => Active.CanGoNext;
-        public string ActiveQueueId => _activeQueueId;
-        public IReadOnlyList<string> QueueIds => _queues.Keys.ToList();
+        public bool Shuffle => _timeline.Get(Id).Shuffle;
+        public RepeatMode RepeatMode => _timeline.Get(Id).RepeatMode;
 
         public PlaybackController(
             ILogger logger,
-            SharedMemoryServer sharedMemory,  // nullable — null for non-audio clients
+            SharedMemoryServer sharedMemory,
             IEventBus eventBus,
             ILibraryRegistry library,
             IStreamingService streamingService,
+            PlaybackTimelineStore timeline,
             string instanceId)
         {
             _logger = logger;
@@ -89,18 +62,8 @@ namespace OmniMixPlayer.Backend.Audio
             _eventBus = eventBus;
             _library = library;
             _streamingService = streamingService;
+            _timeline = timeline;
             Id = instanceId;
-
-            _queues[DefaultQueueId] = CreateQueueSlot(DefaultQueueId, "Default");
-            _activeQueueId = DefaultQueueId;
-        }
-
-        private QueueSlot CreateQueueSlot(string id, string name)
-        {
-            return new QueueSlot(id, name)
-            {
-                SourceResolver = ResolvePlaylistSource
-            };
         }
 
         public void ApplyProfile(InstanceProfile profile)
@@ -112,74 +75,29 @@ namespace OmniMixPlayer.Backend.Audio
                 SetTargetLatency(profile.TargetLatency);
                 if (profile.Equalizer != null)
                     _equalizer.UpdateState(MapEqualizerStateToInternal(profile.Equalizer));
-
-                var queue = profile.PlaybackQueue;
-                if (queue == null) return;
-                _activeQueueId = string.IsNullOrWhiteSpace(queue.ActiveQueueId) ? DefaultQueueId : queue.ActiveQueueId;
-                if (!_queues.ContainsKey(_activeQueueId))
-                    _queues[_activeQueueId] = CreateQueueSlot(_activeQueueId, _activeQueueId);
-
-                var slot = Active;
-                slot.Shuffle = queue.Shuffle;
-                slot.RepeatMode = queue.RepeatMode;
-                slot.SetQueue(queue.QueueUuids.Select(u => _library.GetTrack(u)).Where(t => t != null));
-                slot.SetHistory(queue.HistoryUuids.Select(u => _library.GetTrack(u)).Where(t => t != null));
-                slot.SetPlaylistSources(queue.PlaylistSources.Select(s =>
-                    new PlaylistSource(
-                        s.Id,
-                        s.Name,
-                        s.Kind,
-                        string.IsNullOrWhiteSpace(s.RefId) ? InferRefId(s.Id, s.Kind) : s.RefId,
-                        s.Uuids)));
             }
         }
-
-        public PlaybackQueueState CreateQueueSnapshot()
-        {
-            lock (_lock)
-            {
-                var slot = Active;
-                var snapshot = new PlaybackQueueState
-                {
-                    ActiveQueueId = _activeQueueId ?? DefaultQueueId,
-                    Shuffle = slot.Shuffle,
-                    RepeatMode = slot.RepeatMode
-                };
-                snapshot.QueueUuids.AddRange(slot.Queue.Select(t => t.Uuid));
-                snapshot.HistoryUuids.AddRange(slot.History.Select(t => t.Uuid));
-                foreach (var source in slot.PlaylistSourceSpecs)
-                {
-                    var state = new PlaylistSourceState { Id = source.id ?? "", Name = source.name ?? "" };
-                    state.Uuids.AddRange(source.uuids ?? Array.Empty<string>());
-                    state.Kind = source.kind;
-                    state.RefId = source.refId ?? "";
-                    snapshot.PlaylistSources.Add(state);
-                }
-                return snapshot;
-            }
-        }
-
-        // ── Playback control ──
 
         public void Play(string uuid = null)
         {
             lock (_lock)
             {
-                if (!string.IsNullOrEmpty(uuid))
+                TimelineAdvanceResult result;
+                if (!string.IsNullOrWhiteSpace(uuid))
                 {
-                    var track = _library.GetTrack(uuid);
-                    if (track != null && !track.IsExcluded) PlayTrack(track);
-                    else _logger.LogWarning("Track not found: {Uuid}", uuid);
+                    result = _timeline.PlayExplicit(Id, uuid);
                 }
                 else if (_playState == 0)
                 {
-                    var next = DequeueNext();
-                    if (next != null) PlayTrack(next);
+                    result = _timeline.EnsureCurrentOrTakeNext(Id);
                 }
                 else
                 {
                     Resume();
+                    return;
                 }
+
+                PlayTimelineResult(result, PlaySource.UserClick);
             }
         }
 
@@ -200,9 +118,9 @@ namespace OmniMixPlayer.Backend.Audio
         {
             lock (_lock)
             {
-                var next = DequeueNext();
-                if (next != null) PlayTrack(next);
-                else Stop();
+                var result = _timeline.Next(Id);
+                if (string.IsNullOrWhiteSpace(result.CurrentUuid)) StopInternal(clearTimeline: false);
+                else PlayTimelineResult(result, PlaySource.Queue);
             }
         }
 
@@ -210,199 +128,201 @@ namespace OmniMixPlayer.Backend.Audio
         {
             lock (_lock)
             {
-                var slot = Active;
-                if (slot.NavigateHistory(-1))
-                {
-                    var track = slot.GetHistoryTrack();
-                    if (track != null) PlayTrack(track);
-                }
+                var before = _playingTrack?.Uuid;
+                var result = _timeline.Previous(Id);
+                if (string.IsNullOrWhiteSpace(result.CurrentUuid) || result.CurrentUuid == before)
+                    return;
+                PlayTimelineResult(result, PlaySource.Previous);
             }
         }
 
         public void Seek(float position)
         {
+            IPcmStreamReader reader;
+            int sampleRate;
+            long targetFrame;
             lock (_lock)
             {
                 Position = position;
+                reader = _currentReader;
+                sampleRate = reader?.Info.SampleRate > 0 ? reader.Info.SampleRate : 44100;
+                targetFrame = Math.Max(0, (long)(position * sampleRate));
+                if (reader != null && !reader.Seek((ulong)targetFrame))
+                {
+                    _logger.LogWarning("Seek failed: position={Position}, frame={Frame}", position, targetFrame);
+                    return;
+                }
                 OnPositionChanged?.Invoke(position);
+            }
+            if (reader != null)
+            {
+                _sharedMemory?.RequestSeek(targetFrame);
+                _sharedMemory?.ResetCursors(targetFrame);
             }
         }
 
         public void Stop()
         {
-            lock (_lock)
-            {
-                SetPlayState(0);
-                var track = Active.CurrentTrack;
-                Active.ClearCurrentTrack();
-                ReleaseCurrentReader(track);
-                Interlocked.Increment(ref _playbackGeneration);
-            }
+            lock (_lock) { StopInternal(clearTimeline: true); }
         }
-
-        // ── Volume ──
 
         public void SetVolume(float volume) { _volumeNode.Volume = Math.Clamp(volume, 0f, 1f); }
         public void SetTargetLatency(float latency) { _targetLatency = Math.Clamp(latency, 0.03f, 1.0f); }
 
-        // ── Shuffle / Repeat ──
-
-        public void SetShuffle(bool enabled) { Active.Shuffle = enabled; }
-        public void SetRepeatMode(SDK.Protos.Models.RepeatMode mode) { Active.RepeatMode = mode; }
-
-        // ── Queue ──
-
-        public void AddToQueue(string uuid)
+        private void PlayTimelineResult(TimelineAdvanceResult result, PlaySource fallbackSource)
         {
-            var track = _library.GetTrack(uuid);
-            if (track == null || track.IsExcluded) return;
-            lock (_lock) { Active.AddToQueue(track); }
-            OnQueueChanged?.Invoke();
-        }
-
-        public void InsertIntoQueue(IEnumerable<string> uuids, int index)
-        {
-            var tracks = uuids.Select(u => _library.GetTrack(u)).Where(t => t != null && !t.IsExcluded).ToList();
-            lock (_lock) { Active.InsertIntoQueue(tracks, index); }
-            OnQueueChanged?.Invoke();
-        }
-
-        public void SetQueue(IEnumerable<string> uuids)
-        {
-            var tracks = uuids.Select(u => _library.GetTrack(u)).Where(t => t != null && !t.IsExcluded).ToList();
-            lock (_lock) { Active.SetQueue(tracks); }
-            OnQueueChanged?.Invoke();
-        }
-
-        public void RemoveFromQueue(int index) { lock (_lock) { Active.RemoveFromQueue(index); } OnQueueChanged?.Invoke(); }
-        public void RemoveFromQueue(string uuid) { lock (_lock) { Active.RemoveFromQueueByUuid(uuid); } OnQueueChanged?.Invoke(); }
-        public void MoveInQueue(int from, int to) { lock (_lock) { Active.MoveInQueue(from, to); } OnQueueChanged?.Invoke(); }
-        public void ClearQueue() { lock (_lock) { Active.ClearQueue(); } OnQueueChanged?.Invoke(); }
-        public void RemoveFromHistory(int index) { lock (_lock) { Active.RemoveFromHistory(index); } OnQueueChanged?.Invoke(); }
-        public void MoveInHistory(int from, int to) { lock (_lock) { Active.MoveInHistory(from, to); } OnQueueChanged?.Invoke(); }
-        public void ClearHistory() { lock (_lock) { Active.ClearHistory(); } OnQueueChanged?.Invoke(); }
-
-        // ── Playlist sources ──
-
-        public void SetPlaylistSources(IEnumerable<PlaylistSourceRequest> sources)
-        {
-            lock (_lock)
+            if (string.IsNullOrWhiteSpace(result?.CurrentUuid))
             {
-                var playlistSources = sources.Select(s =>
-                {
-                    return new PlaylistSource(
-                        s.id,
-                        s.name,
-                        s.kind,
-                        string.IsNullOrWhiteSpace(s.refId) ? InferRefId(s.id, s.kind) : s.refId,
-                        s.uuids);
-                });
-                Active.SetPlaylistSources(playlistSources);
+                StopInternal(clearTimeline: false);
+                return;
             }
-            OnQueueChanged?.Invoke();
-        }
 
-        private IReadOnlyList<Track> ResolvePlaylistSource(PlaylistSourceKind kind, string refId)
-        {
-            if (string.IsNullOrWhiteSpace(refId)) return Array.Empty<Track>();
-            switch (kind)
+            var track = _library.GetTrack(result.CurrentUuid);
+            if (track == null || track.IsExcluded)
             {
-                case PlaylistSourceKind.Tag:
-                    var tagQuery = new TrackQuery { IsExcluded = false };
-                    tagQuery.TagIds.Add(refId);
-                    return _library.QueryTracks(tagQuery);
-                case PlaylistSourceKind.Album:
-                    return _library.QueryTracks(new TrackQuery { AlbumId = refId, IsExcluded = false });
-                case PlaylistSourceKind.Playlist:
-                    return _library.QueryTracks(new TrackQuery { PlaylistId = refId, IsExcluded = false });
-                case PlaylistSourceKind.Track:
-                    var track = _library.GetTrack(refId);
-                    return track == null || track.IsExcluded ? Array.Empty<Track>() : new[] { track };
-                default:
-                    return Array.Empty<Track>();
+                _logger.LogWarning("Timeline current track not playable: {Uuid}", result.CurrentUuid);
+                StopInternal(clearTimeline: false);
+                return;
             }
-        }
 
-        private static string InferRefId(string id, PlaylistSourceKind kind)
-        {
-            if (string.IsNullOrWhiteSpace(id)) return "";
-            var prefix = kind switch
+            var source = result.Reason switch
             {
-                PlaylistSourceKind.Tag => "tag_",
-                PlaylistSourceKind.Album => "album_",
-                PlaylistSourceKind.Playlist => "playlist_",
-                PlaylistSourceKind.Track => "track_",
-                _ => ""
+                TimelineAdvanceReason.NaturalEnd => PlaySource.AutoNext,
+                TimelineAdvanceReason.UserPrevious => PlaySource.Previous,
+                TimelineAdvanceReason.UserNext => PlaySource.Queue,
+                TimelineAdvanceReason.RepeatOne => PlaySource.AutoNext,
+                TimelineAdvanceReason.ExplicitPlay => PlaySource.UserClick,
+                _ => fallbackSource
             };
-            return !string.IsNullOrEmpty(prefix) && id.StartsWith(prefix, StringComparison.Ordinal)
-                ? id[prefix.Length..]
-                : id;
+            PlayTrack(track, source);
         }
 
-        // ── Playback state snapshot (not instance profile) ──
-
-        // ── Internal ──
-
-        private void PlayTrack(Track track)
+        private void PlayTrack(Track track, PlaySource source)
         {
-            ReleaseCurrentReader(CurrentTrack);
-
-            var slot = Active;
-            slot.SetCurrentTrack(track);
-            slot.AddToHistory(track);
+            ReleaseCurrentReader(_playingTrack);
+            _playingTrack = track;
             SetPlayState(1);
             Position = 0;
             OnTrackChanged?.Invoke(track);
-            OnQueueChanged?.Invoke();
 
-            _eventBus.Publish(new PlayStartedEvent { Music = track, Source = PlaySource.Queue });
+            _eventBus.Publish(new PlayStartedEvent { Music = track, Source = source });
 
-            // Start PCM streaming
             var gen = Interlocked.Increment(ref _playbackGeneration);
             _playbackCts?.Cancel();
             _playbackCts = new CancellationTokenSource();
             _playbackTask = Task.Run(() => PlaybackLoopAsync(track, gen, _playbackCts.Token));
         }
 
-        private Track DequeueNext()
+        private void StopInternal(bool clearTimeline)
         {
-            var slot = Active;
-            var next = slot.DequeueNext(_rng);
-            if (next == null && slot.QueueCount > 0)
-            {
-                next = slot.DequeueNext(_rng);
-            }
-            return next;
+            SetPlayState(0);
+            var track = _playingTrack;
+            _playingTrack = null;
+            if (clearTimeline)
+                _timeline.ClearCurrent(Id);
+            ReleaseCurrentReader(track);
+            Interlocked.Increment(ref _playbackGeneration);
         }
 
         private async Task PlaybackLoopAsync(Track track, int generation, CancellationToken ct)
         {
             try
             {
-                if (track.SourceType == SourceType.Stream || track.SourceType == SourceType.Url)
+                if (track.SourceType == SourceType.Stream ||
+                    track.SourceType == SourceType.Url ||
+                    track.SourceType == SourceType.File)
                 {
-                    var format = "mp3";
-                    var cacheKey = $"{track.ModuleId}_{track.Uuid}";
-                    var reader = await _streamingService.CreateStreamAndWaitAsync(
-                        track.SourcePath, format, track.Duration, cacheKey,
-                        cancellationToken: ct);
+                    var reader = await CreateReaderForTrackAsync(track, ct);
 
                     if (reader == null || ct.IsCancellationRequested) return;
 
                     lock (_lock) { _currentReader = reader; }
 
-                    float[] buffer = new float[4096];
+                    long totalFramesHint = track.Duration > 0 ? (long)(track.Duration * 44100f) : 0;
+                    _sharedMemory?.BeginStream(track.Uuid, totalFramesHint);
+
+                    var formatReady = false;
+                    var sampleRate = 44100;
+                    var channels = 2;
+                    float[] buffer = Array.Empty<float>();
+                    var targetBufferedFrames = CalculateTargetBufferedFrames(sampleRate);
+
                     while (!ct.IsCancellationRequested && !reader.IsEndOfStream)
                     {
-                        var frames = reader.ReadFrames(buffer, buffer.Length / 2);
-                        if (frames <= 0) break;
+                        if (_playState == 2)
+                        {
+                            await Task.Delay(10, ct);
+                            continue;
+                        }
+                        if (_playState == 0)
+                            break;
 
-                        lock (_lock) { Position += (float)frames / 44100f; }
+                        if (!formatReady)
+                        {
+                            var info = reader.Info;
+                            if (reader.IsReady && info.SampleRate > 0 && info.Channels > 0)
+                            {
+                                sampleRate = info.SampleRate;
+                                channels = Math.Max(1, info.Channels);
+                                totalFramesHint = info.TotalFrames > 0
+                                    ? (long)info.TotalFrames
+                                    : (track.Duration > 0 ? (long)(track.Duration * sampleRate) : 0);
+                                _sharedMemory?.MarkFormatReady(sampleRate, channels, totalFramesHint);
+                                buffer = new float[1024 * channels];
+                                targetBufferedFrames = CalculateTargetBufferedFrames(sampleRate);
+                                formatReady = true;
+                            }
+                            else
+                            {
+                                await Task.Delay(25, ct);
+                                continue;
+                            }
+                        }
+
+                        var currentInfo = reader.Info;
+                        if (currentInfo.SampleRate > 0 && currentInfo.Channels > 0 &&
+                            (currentInfo.SampleRate != sampleRate || currentInfo.Channels != channels))
+                        {
+                            sampleRate = currentInfo.SampleRate;
+                            channels = Math.Max(1, currentInfo.Channels);
+                            totalFramesHint = currentInfo.TotalFrames > 0
+                                ? (long)currentInfo.TotalFrames
+                                : (track.Duration > 0 ? (long)(track.Duration * sampleRate) : 0);
+                            _sharedMemory?.MarkFormatReady(sampleRate, channels, totalFramesHint);
+                            buffer = new float[1024 * channels];
+                            targetBufferedFrames = CalculateTargetBufferedFrames(sampleRate);
+                        }
+
+                        targetBufferedFrames = CalculateTargetBufferedFrames(sampleRate);
+                        while (!ct.IsCancellationRequested &&
+                               _sharedMemory?.GetReadableFrames() >= targetBufferedFrames)
+                        {
+                            await Task.Delay(1, ct);
+                        }
+
+                        var frames = reader.ReadFrames(buffer, buffer.Length / channels);
+                        if (frames < 0)
+                        {
+                            _sharedMemory?.MarkError(SDK.Ipc.SharedMemoryStreamError.DecoderFailed);
+                            break;
+                        }
+                        if (frames == 0)
+                        {
+                            await Task.Delay(10, ct);
+                            continue;
+                        }
+
+                        _volumeNode.Process(buffer, (int)frames, channels);
+                        _equalizer.Process(buffer, (int)frames, channels, sampleRate);
+
+                        lock (_lock) { Position += (float)frames / sampleRate; }
                         OnPositionChanged?.Invoke(Position);
 
                         _sharedMemory?.WriteFrames(buffer, (int)frames);
-                        await Task.Delay((int)(frames * 1000f / 44100f * 0.9f), ct);
                     }
+
+                    if (!ct.IsCancellationRequested)
+                        _sharedMemory?.MarkDecoderEof((long)reader.CurrentFrame);
 
                     reader.Dispose();
                     lock (_lock) { _currentReader = null; }
@@ -410,7 +330,6 @@ namespace OmniMixPlayer.Backend.Audio
                 }
                 else
                 {
-                    // File-based — handled by external reader
                     await Task.Delay(100, ct);
                 }
 
@@ -419,21 +338,11 @@ namespace OmniMixPlayer.Backend.Audio
                     lock (_lock)
                     {
                         _eventBus.Publish(new PlayEndedEvent { Music = track, Reason = PlayEndReason.Completed });
-                        if (RepeatMode == SDK.Protos.Models.RepeatMode.One)
-                        {
-                            PlayTrack(track);
-                        }
+                        var result = _timeline.NaturalEnd(Id);
+                        if (!string.IsNullOrWhiteSpace(result.CurrentUuid))
+                            PlayTimelineResult(result, PlaySource.AutoNext);
                         else
-                        {
-                            var next = DequeueNext();
-                            if (next != null) PlayTrack(next);
-                            else if (RepeatMode == SDK.Protos.Models.RepeatMode.All)
-                            {
-                                // Rebuild playlist
-                                Play(null);
-                            }
-                            else SetPlayState(0);
-                        }
+                            StopInternal(clearTimeline: false);
                     }
                 }
             }
@@ -444,9 +353,111 @@ namespace OmniMixPlayer.Backend.Audio
             }
         }
 
+        private async Task<IPcmStreamReader> CreateReaderForTrackAsync(Track track, CancellationToken ct)
+        {
+            var decoderProvider = ModuleLoader.Instance?.GetProvider<IModuleAudioDecoderProvider>(track.ModuleId);
+            if (decoderProvider != null && decoderProvider.CanDecode(track.Uuid))
+            {
+                _logger.LogInformation("Creating module PCM decoder for {Uuid} via {ModuleId}", track.Uuid, track.ModuleId);
+                var reader = await decoderProvider.CreateDecoderAsync(track.Uuid, AudioQuality.ExHigh, ct);
+                if (reader != null)
+                    return reader;
+            }
+
+            var resolver = ModuleLoader.Instance?.GetProvider<IPlayableSourceResolver>(track.ModuleId);
+            if (resolver != null)
+            {
+                var source = await resolver.ResolveAsync(track.Uuid, AudioQuality.ExHigh, ct);
+                if (source == null)
+                {
+                    _logger.LogWarning("Module {ModuleId} did not resolve playable source for {Uuid}", track.ModuleId, track.Uuid);
+                    return null;
+                }
+
+                var format = FormatToString(source.Format, source.Url, source.CachePath);
+                var duration = track.Duration > 0 ? track.Duration : 0;
+                _logger.LogInformation(
+                    "Resolved playable source for {Uuid}: type={Type}, format={Format}, cachePath={CachePath}, urlPresent={UrlPresent}",
+                    track.Uuid,
+                    source.SourceType,
+                    format,
+                    source.CachePath ?? "",
+                    !string.IsNullOrWhiteSpace(source.Url));
+                if (source.UseCachePath && !string.IsNullOrWhiteSpace(source.CachePath))
+                {
+                    return _streamingService.CreateStream(
+                        source.GetPath(),
+                        format,
+                        duration,
+                        source.CachePath,
+                        source.Headers,
+                        useCachePath: true);
+                }
+
+                var cacheKey = !string.IsNullOrWhiteSpace(source.CacheKey)
+                    ? source.CacheKey
+                    : $"{track.ModuleId}_{track.Uuid}";
+                return _streamingService.CreateStream(
+                    source.GetPath(),
+                    format,
+                    duration,
+                    cacheKey,
+                    source.Headers);
+            }
+
+            if (string.IsNullOrWhiteSpace(track.SourcePath))
+            {
+                _logger.LogWarning("Track {Uuid} has no source path", track.Uuid);
+                return null;
+            }
+
+            var fallbackFormat = FormatToString(AudioFormat.Unknown, track.SourcePath, null);
+            return _streamingService.CreateStream(
+                track.SourcePath,
+                fallbackFormat,
+                track.Duration,
+                $"{track.ModuleId}_{track.Uuid}");
+        }
+
+        private int CalculateTargetBufferedFrames(int sampleRate)
+        {
+            var latency = Math.Clamp(TargetLatency, 0.03f, 1.0f);
+            return Math.Max(2048, (int)(Math.Max(1, sampleRate) * latency));
+        }
+
+        private static string FormatToString(AudioFormat format, string url, string cachePath)
+        {
+            return format switch
+            {
+                AudioFormat.Flac => "flac",
+                AudioFormat.Wav => "wav",
+                AudioFormat.Aac => "aac",
+                AudioFormat.Ogg => "ogg",
+                AudioFormat.Mp3 => "mp3",
+                _ => InferFormatFromPath(cachePath) ?? InferFormatFromPath(url) ?? "mp3"
+            };
+        }
+
+        private static string InferFormatFromPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            var ext = System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+            return ext switch
+            {
+                "flac" => "flac",
+                "wav" => "wav",
+                "aac" => "aac",
+                "m4a" => "aac",
+                "ogg" => "ogg",
+                "mp3" => "mp3",
+                _ => null
+            };
+        }
+
         private void SetPlayState(int state)
         {
             _playState = state;
+            _sharedMemory?.SetPlayState(state);
             OnStateChanged?.Invoke(state);
         }
 
@@ -476,10 +487,22 @@ namespace OmniMixPlayer.Backend.Audio
                     Frequency = pt.Frequency,
                     GainDb = pt.GainDb,
                     Q = pt.Q,
-                    Type = (Audio.EqualizerFilterType)(int)pt.Type
+                    Type = MapEqualizerFilterType(pt.Type)
                 });
             }
             return state;
+        }
+
+        private static Audio.EqualizerFilterType MapEqualizerFilterType(SDK.Protos.Models.EqualizerFilterType type)
+        {
+            return type switch
+            {
+                SDK.Protos.Models.EqualizerFilterType.EqFilterTypeLowShelf => Audio.EqualizerFilterType.LowShelf,
+                SDK.Protos.Models.EqualizerFilterType.EqFilterTypeHighShelf => Audio.EqualizerFilterType.HighShelf,
+                SDK.Protos.Models.EqualizerFilterType.EqFilterTypeLowPass => Audio.EqualizerFilterType.LowPass,
+                SDK.Protos.Models.EqualizerFilterType.EqFilterTypeHighPass => Audio.EqualizerFilterType.HighPass,
+                _ => Audio.EqualizerFilterType.Peaking
+            };
         }
 
         public void Dispose()
@@ -489,7 +512,7 @@ namespace OmniMixPlayer.Backend.Audio
             Stop();
             _playbackCts?.Cancel();
             _playbackCts?.Dispose();
-            ReleaseCurrentReader(CurrentTrack);
+            ReleaseCurrentReader(_playingTrack);
         }
     }
 }
