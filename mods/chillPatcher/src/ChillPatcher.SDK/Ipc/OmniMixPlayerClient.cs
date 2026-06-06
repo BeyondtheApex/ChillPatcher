@@ -65,6 +65,11 @@ namespace ChillPatcher.SDK.Ipc
         public bool IsExcluded { get; set; }
     }
 
+    public class InstancesChangedEventArgs : EventArgs
+    {
+        public int InstanceCount { get; set; }
+    }
+
     #endregion
 
     /// <summary>
@@ -90,21 +95,23 @@ namespace ChillPatcher.SDK.Ipc
         public event EventHandler<LyricFetchedEventArgs> OnLyricFetched;
         public event EventHandler<LyricPositionEventArgs> OnLyricPosition;
         public event EventHandler<ExcludeChangedEventArgs> OnExcludeChanged;
+        public event EventHandler<InstancesChangedEventArgs> OnInstancesChanged;
 
         public bool IsConnected => !_disposed && !string.IsNullOrEmpty(_instanceId);
         public string InstanceId => _instanceId;
 
+        /// <summary>
+        /// ChillPatcher capability flags:
+        /// Game manages its own playback flow. Backend provides audio, sources, seek, volume, EQ.
+        /// </summary>
         private static readonly OmniPcmCapabilityFlags ChillCaps =
-            OmniPcmCapabilityFlags.ServerControlledPlayback |
-            OmniPcmCapabilityFlags.QueueManagement |
             OmniPcmCapabilityFlags.PlaylistManagement |
             OmniPcmCapabilityFlags.MultiplePlaylists |
             OmniPcmCapabilityFlags.TagFiltering |
             OmniPcmCapabilityFlags.AlbumFiltering |
-            OmniPcmCapabilityFlags.Shuffle |
-            OmniPcmCapabilityFlags.Repeat |
             OmniPcmCapabilityFlags.Seek |
             OmniPcmCapabilityFlags.VolumeControl |
+            OmniPcmCapabilityFlags.Equalizer |
             OmniPcmCapabilityFlags.AudioPlayback |
             OmniPcmCapabilityFlags.CustomSystemMediaService;
 
@@ -192,6 +199,9 @@ namespace ChillPatcher.SDK.Ipc
             _native.SetRepeat(_instanceId, m);
         }
 
+        public async Task SetTargetLatency(float latency) => _native.SetTargetLatency(_instanceId, latency);
+        public async Task<float> GetTargetLatency() => _native.GetTargetLatency(_instanceId);
+
         #endregion
 
         #region Playlist Query (HTTP fallback for library)
@@ -218,12 +228,36 @@ namespace ChillPatcher.SDK.Ipc
             var tracks = _native.GetQueue(_instanceId);
             var arr = new JArray();
             foreach (var t in tracks)
-                arr.Add(new JObject { ["uuid"] = t.uuid, ["title"] = t.title, ["artist"] = t.artist, ["duration"] = t.duration });
+                arr.Add(new JObject
+                {
+                    ["uuid"] = t.uuid,
+                    ["title"] = t.title,
+                    ["artist"] = t.artist,
+                    ["albumId"] = t.albumId,
+                    ["moduleId"] = t.moduleId,
+                    ["duration"] = t.duration
+                });
             return arr;
         }
 
         public async Task AddToQueue(string uuid) => _native.AddToQueue(_instanceId, uuid);
         public async Task ClearQueue() => _native.ClearQueue(_instanceId);
+
+        /// <summary>Get the playlist sources assigned to this instance (via native SDK).</summary>
+        public async Task<JToken> GetPlaylistSources()
+        {
+            var sources = _native.GetPlaylistSources(_instanceId);
+            var arr = new JArray();
+            foreach (var s in sources)
+                arr.Add(new JObject
+                {
+                    ["id"] = s.id,
+                    ["name"] = s.name,
+                    ["refId"] = s.refId,
+                    ["kind"] = s.kind
+                });
+            return arr;
+        }
 
         public async Task InsertIntoQueue(int index, System.Collections.Generic.IEnumerable<string> uuids)
         {
@@ -247,24 +281,81 @@ namespace ChillPatcher.SDK.Ipc
 
         public async Task<JToken> GetTags()
         {
-            var json = await _http.GetStringAsync($"{BaseUrl}/tags");
-            return JToken.Parse(json);
+            var query = new OmniPcmLibraryQuery();
+            var tags = _native.QueryTags(query);
+            var arr = new JArray();
+            foreach (var t in tags)
+                arr.Add(new JObject
+                {
+                    ["id"] = t.id,
+                    ["name"] = t.name,
+                    ["moduleId"] = t.moduleId
+                });
+            return arr;
         }
 
+        /// <summary>Query all albums from native library (no HTTP).</summary>
         public async Task<JToken> GetAlbums(string tagId = null)
         {
-            var url = $"{BaseUrl}/albums";
-            if (!string.IsNullOrEmpty(tagId)) url += $"?tagId={Uri.EscapeDataString(tagId)}";
-            return JToken.Parse(await _http.GetStringAsync(url));
+            var query = new OmniPcmLibraryQuery();
+            var albums = _native.QueryAlbums(query);
+            var arr = new JArray();
+            foreach (var a in albums)
+                arr.Add(new JObject
+                {
+                    ["id"] = a.id,
+                    ["name"] = a.title,
+                    ["artist"] = a.artist,
+                    ["moduleId"] = a.moduleId,
+                    ["coverPath"] = a.coverUri,
+                    ["songCount"] = a.trackCount
+                });
+            return arr;
         }
 
+        /// <summary>Query all tracks from native library (no HTTP).</summary>
         public async Task<JToken> GetSongs(string albumId = null, string tagId = null)
         {
-            var url = $"{BaseUrl}/songs";
-            var sep = "?";
-            if (!string.IsNullOrEmpty(albumId)) { url += $"{sep}albumId={Uri.EscapeDataString(albumId)}"; sep = "&"; }
-            if (!string.IsNullOrEmpty(tagId)) { url += $"{sep}tagId={Uri.EscapeDataString(tagId)}"; }
-            return JToken.Parse(await _http.GetStringAsync(url));
+            var query = new OmniPcmTrackQuery
+            {
+                albumId = albumId,
+                tagId = tagId,
+                isExcluded = -1  // no filter on excluded state
+            };
+            var tracks = _native.QueryTracks(query);
+            var arr = new JArray();
+            foreach (var t in tracks)
+                arr.Add(new JObject
+                {
+                    ["uuid"] = t.uuid,
+                    ["title"] = t.title,
+                    ["artist"] = t.artist,
+                    ["albumId"] = t.albumId,
+                    ["moduleId"] = t.moduleId,
+                    ["duration"] = t.duration,
+                    ["isFavorite"] = false,
+                    ["isExcluded"] = t.isExcluded != 0,
+                    ["tagIds"] = new JArray()
+                });
+            return arr;
+        }
+
+        /// <summary>Query tracks belonging to a specific playlist source (via refId = playlistId).</summary>
+        public async Task<JToken> GetSongsByPlaylist(string playlistId)
+        {
+            var query = new OmniPcmTrackQuery
+            {
+                playlistId = playlistId,
+                isExcluded = -1
+            };
+            var tracks = _native.QueryTracks(query);
+            var arr = new JArray();
+            foreach (var t in tracks)
+                arr.Add(new JObject
+                {
+                    ["uuid"] = t.uuid,
+                });
+            return arr;
         }
 
         public async Task<JToken> GetHistory()
@@ -385,6 +476,12 @@ namespace ChillPatcher.SDK.Ipc
                         {
                             Uuid = e.trackUuid,
                             IsExcluded = e.boolValue != 0
+                        });
+                        break;
+                    case "instances.changed":
+                        OnInstancesChanged?.Invoke(this, new InstancesChangedEventArgs
+                        {
+                            InstanceCount = e.instanceCount
                         });
                         break;
                     case "error":

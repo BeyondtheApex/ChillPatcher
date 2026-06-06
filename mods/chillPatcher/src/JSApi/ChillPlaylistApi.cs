@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using BepInEx.Logging;
 using Bulbul;
 using ChillPatcher.Patches.UIFramework;
+using ChillPatcher.SDK.Models;
 using ChillPatcher.UIFramework.Music;
 using ChillPatcher.UIFramework.Audio;
 using Newtonsoft.Json.Linq;
@@ -25,14 +26,31 @@ namespace ChillPatcher.JSApi
             _logger = logger;
         }
 
-        #region 能力声明 / 数据查询 (from OmniMixPlayer)
+        #region Playlist 查询 (local, populated by ImportSongsToGame)
 
-        /// <summary>
-        /// 获取后端分配的能力声明（Tag 位映射等）
-        /// </summary>
-        public async Task<string> getCapabilities()
+        public Task<string> getAllTags()
         {
-            try { return await OmniMixIntegration.Instance.GetTagsJson(); } catch { return "[]"; }
+            var playlists = OmniMixIntegration.Instance?.GetAllPlaylists() ?? new List<TagInfo>();
+            return Task.FromResult(JSApiHelper.ToJson(playlists.Select(p => new Dictionary<string, object>
+            {
+                ["id"] = p.TagId ?? "",
+                ["name"] = p.DisplayName ?? "",
+                ["moduleId"] = p.ModuleId ?? "",
+            }).ToArray()));
+        }
+
+        #endregion
+
+        #region 专辑查询
+
+        public async Task<string> getAllAlbums()
+        {
+            return await OmniMixIntegration.Instance.GetAlbumsJson();
+        }
+
+        public async Task<string> getAlbumsByTag(string tagId)
+        {
+            return await OmniMixIntegration.Instance.GetAlbumsJson(tagId);
         }
 
         #endregion
@@ -54,9 +72,14 @@ namespace ChillPatcher.JSApi
             return await OmniMixIntegration.Instance.GetSongsJson(null, tagId);
         }
 
+        public async Task<string> getSongsByModule(string moduleId)
+        {
+            return await OmniMixIntegration.Instance.GetSongsJson();
+        }
+
         #endregion
 
-        #region 播放队列 (后端 Profile 权威，游戏侧只读镜像)
+        #region 播放队列 (游戏内部 PlayQueueManager)
 
         public string getQueue()
         {
@@ -99,7 +122,7 @@ namespace ChillPatcher.JSApi
             var audio = FindGameAudioByUuid(uuid);
             if (audio == null) return false;
             PlayQueueManager.Instance?.Enqueue(audio);
-            _ = OmniMixIntegration.Instance.AddToQueue(uuid);
+            // Game manages its own queue; no backend AddToQueue needed.
             return true;
         }
 

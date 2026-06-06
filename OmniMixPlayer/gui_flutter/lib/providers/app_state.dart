@@ -142,6 +142,11 @@ class AppState extends ChangeNotifier {
   int get attachedAudioClientCount => _playback.attachedAudioClientCount;
   InstanceSummary? get activeInstance => _playback.activeInstance;
   bool get canControlActiveInstance => _playback.canControlActiveInstance;
+  bool get canPlayPauseActiveInstance => _playback.canPlayPauseActiveInstance;
+  bool get canSeekActiveInstance => _playback.canSeekActiveInstance;
+  bool get canSetVolumeActiveInstance => _playback.canSetVolumeActiveInstance;
+  bool get canSetLatencyActiveInstance => _playback.canSetLatencyActiveInstance;
+  bool get canEqualizeActiveInstance => _playback.canEqualizeActiveInstance;
   bool get canManageActiveLibrary => _playback.canManageActiveLibrary;
   PlaybackStatus? get playbackStatus => _playback.status;
   String get currentTrackTitle => _playback.currentTitle;
@@ -555,7 +560,15 @@ class AppState extends ChangeNotifier {
         _playback.applyStateChanged(id, state);
     _backend.onPositionChanged = (id, position) =>
         _playback.applyPositionChanged(id, position);
+    _backend.onVolumeChanged = (id, volume) =>
+        _playback.applyVolumeChanged(id, volume);
+    _backend.onLatencyChanged = (id, latency) =>
+        _playback.applyLatencyChanged(id, latency);
     _backend.onEqualizerChanged = () {
+      _equalizerGeneration++;
+      notifyListeners();
+    };
+    _backend.onEqualizerPushed = (id, eq) {
       _equalizerGeneration++;
       notifyListeners();
     };
@@ -627,8 +640,8 @@ class AppState extends ChangeNotifier {
           seedColor: _seedColor,
           useSystemColor: _useSystemColor,
           themeMode: _themeMode.name,
-          canControl: canControlActiveInstance,
-          canSeek: canControlActiveInstance,
+          canControl: canPlayPauseActiveInstance,
+          canSeek: canSeekActiveInstance,
           hasTrack: trackUuid.isNotEmpty,
           isPlaying: isPlaying,
           uuid: trackUuid,

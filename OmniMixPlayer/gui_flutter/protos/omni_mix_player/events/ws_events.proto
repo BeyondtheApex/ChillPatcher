@@ -25,6 +25,9 @@ message WsEvent {
     ModuleChangedEvent module_changed = 18;
     ProfileChangedEvent profile_changed = 19;
     BackendStateEvent backend_state = 20;
+    VolumeChangedEvent volume_changed = 21;
+    LatencyChangedEvent latency_changed = 22;
+    EqualizerChangedEvent eq_changed = 23;
   }
 }
 
@@ -99,4 +102,22 @@ message ProfileChangedEvent {
 // 后端状态
 message BackendStateEvent {
   bool running = 1;
+}
+
+// 音量变化（轻量推送，不触发全量刷新）
+message VolumeChangedEvent {
+  string instance_id = 1;
+  float volume = 2;
+}
+
+// 延迟变化（轻量推送，不触发全量刷新）
+message LatencyChangedEvent {
+  string instance_id = 1;
+  float latency = 2;
+}
+
+// 均衡器变化（轻量推送，不触发全量刷新）
+message EqualizerChangedEvent {
+  string instance_id = 1;
+  EqualizerState state = 2;
 }

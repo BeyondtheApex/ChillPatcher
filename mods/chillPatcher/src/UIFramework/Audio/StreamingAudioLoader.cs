@@ -73,9 +73,54 @@ namespace ChillPatcher.UIFramework.Audio
             AudioResourceManager.Instance?.RegisterPcmStreamReader(uuid, clip, reader);
             Patches.UIFramework.MusicService_SetProgress_Patch.SetActivePcmReader(reader);
 
-            // Wait for data to become available
-            await UniTask.Delay(100, cancellationToken: cancellationToken);
+            // 等待共享内存缓冲区有足够数据后再返回 clip，
+            // 避免 Unity 音频线程刚开始拉数据时缓冲区为空导致丢帧/静音
+            await WaitForBufferReadyAsync(shm, sampleRate, cancellationToken);
             return clip;
+        }
+
+        /// <summary>
+        /// 等待共享内存缓冲区中累积足够 PCM 数据后再返回 clip。
+        /// 缓冲区大小 = max(dspBufferSize * 4, sampleRate * 0.1)，保证前 4 次 Unity 音频回调不会丢帧。
+        /// </summary>
+        private static async UniTask WaitForBufferReadyAsync(
+            OmniPcmShared shm,
+            int sampleRate,
+            CancellationToken cancellationToken)
+        {
+            // 动态计算最小缓冲帧数：4 倍 DSP 缓冲大小（覆盖前几次回调），最低 100ms
+            int dspBufferSize = 1024;
+            try { dspBufferSize = AudioSettings.GetConfiguration().dspBufferSize; } catch { }
+            long minBufferedFrames = Math.Max(dspBufferSize * 4L, sampleRate / 10);
+            var deadline = Time.realtimeSinceStartup + 10f;
+
+            while (!cancellationToken.IsCancellationRequested && Time.realtimeSinceStartup < deadline)
+            {
+                var snap = shm.Snapshot;
+                long availableFrames = snap.WriteCursor - snap.ReadCursor;
+
+                if (availableFrames >= minBufferedFrames)
+                {
+                    Plugin.Log.LogInfo(
+                        $"[StreamingLoader] Buffer ready: {availableFrames} frames available (min={minBufferedFrames})");
+                    return;
+                }
+
+                // 如果 decoder 已经 EOF 且所有数据都写完（WriteCursor 不再增长），就直接返回
+                if (snap.FinalWriteCursor > 0 && snap.WriteCursor >= snap.FinalWriteCursor)
+                {
+                    Plugin.Log.LogInfo(
+                        $"[StreamingLoader] Buffer final: {availableFrames} frames (EOF reached, final write cursor={snap.FinalWriteCursor})");
+                    return;
+                }
+
+                await UniTask.Delay(25, cancellationToken: cancellationToken);
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+                Plugin.Log.LogWarning("[StreamingLoader] Buffer wait cancelled");
+            else
+                Plugin.Log.LogWarning("[StreamingLoader] Buffer wait timed out, returning clip anyway");
         }
 
         private static async Task<bool> WaitForStreamReadyAsync(

@@ -55,7 +55,8 @@ namespace OmniMixPlayer.Backend.Audio
             ILibraryRegistry library,
             IStreamingService streamingService,
             PlaybackTimelineStore timeline,
-            string instanceId)
+            string instanceId,
+            bool serverControlledPlayback = false)
         {
             _logger = logger;
             _sharedMemory = sharedMemory;
@@ -64,7 +65,14 @@ namespace OmniMixPlayer.Backend.Audio
             _streamingService = streamingService;
             _timeline = timeline;
             Id = instanceId;
+            ServerControlledPlayback = serverControlledPlayback;
         }
+
+        /// <summary>
+        /// 后端是否控制播放流程。false = 客户端自己管理队列和切歌，
+        /// 此时后端不应在歌曲自然结束时自动推进。
+        /// </summary>
+        public bool ServerControlledPlayback { get; set; }
 
         public void ApplyProfile(InstanceProfile profile)
         {
@@ -338,11 +346,24 @@ namespace OmniMixPlayer.Backend.Audio
                     lock (_lock)
                     {
                         _eventBus.Publish(new PlayEndedEvent { Music = track, Reason = PlayEndReason.Completed });
-                        var result = _timeline.NaturalEnd(Id);
-                        if (!string.IsNullOrWhiteSpace(result.CurrentUuid))
-                            PlayTimelineResult(result, PlaySource.AutoNext);
+
+                        if (ServerControlledPlayback)
+                        {
+                            // 服务端控制模式：自动推进到下一首
+                            var result = _timeline.NaturalEnd(Id);
+                            if (!string.IsNullOrWhiteSpace(result.CurrentUuid))
+                                PlayTimelineResult(result, PlaySource.AutoNext);
+                            else
+                                StopInternal(clearTimeline: false);
+                        }
                         else
+                        {
+                            // 客户端管理模式：仅停止，由客户端决定下一首
+                            _logger.LogInformation(
+                                "Track {Uuid} ended (client-managed mode), stopping and waiting for client to choose next",
+                                track.Uuid);
                             StopInternal(clearTimeline: false);
+                        }
                     }
                 }
             }

@@ -106,6 +106,7 @@ namespace ChillPatcher.Patches.UIFramework
             if (_cachedTagListUI != null)
             {
                 Setup_Postfix(_cachedTagListUI);
+                _cachedTagListUI.SetTitle();
             }
         }
         

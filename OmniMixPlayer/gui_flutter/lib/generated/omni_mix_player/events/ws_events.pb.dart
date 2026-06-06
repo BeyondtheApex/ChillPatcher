@@ -31,6 +31,9 @@ enum WsEvent_Event {
   moduleChanged,
   profileChanged,
   backendState,
+  volumeChanged,
+  latencyChanged,
+  eqChanged,
   notSet
 }
 
@@ -49,6 +52,9 @@ class WsEvent extends $pb.GeneratedMessage {
     ModuleChangedEvent? moduleChanged,
     ProfileChangedEvent? profileChanged,
     BackendStateEvent? backendState,
+    VolumeChangedEvent? volumeChanged,
+    LatencyChangedEvent? latencyChanged,
+    EqualizerChangedEvent? eqChanged,
   }) {
     final result = create();
     if (type != null) result.type = type;
@@ -64,6 +70,9 @@ class WsEvent extends $pb.GeneratedMessage {
     if (moduleChanged != null) result.moduleChanged = moduleChanged;
     if (profileChanged != null) result.profileChanged = profileChanged;
     if (backendState != null) result.backendState = backendState;
+    if (volumeChanged != null) result.volumeChanged = volumeChanged;
+    if (latencyChanged != null) result.latencyChanged = latencyChanged;
+    if (eqChanged != null) result.eqChanged = eqChanged;
     return result;
   }
 
@@ -88,6 +97,9 @@ class WsEvent extends $pb.GeneratedMessage {
     18: WsEvent_Event.moduleChanged,
     19: WsEvent_Event.profileChanged,
     20: WsEvent_Event.backendState,
+    21: WsEvent_Event.volumeChanged,
+    22: WsEvent_Event.latencyChanged,
+    23: WsEvent_Event.eqChanged,
     0: WsEvent_Event.notSet
   };
   static final $pb.BuilderInfo _i = $pb.BuilderInfo(
@@ -95,7 +107,7 @@ class WsEvent extends $pb.GeneratedMessage {
       package:
           const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
       createEmptyInstance: create)
-    ..oo(0, [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+    ..oo(0, [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23])
     ..aOS(1, _omitFieldNames ? '' : 'type')
     ..aInt64(2, _omitFieldNames ? '' : 'timestamp')
     ..aOM<TrackChangedEvent>(10, _omitFieldNames ? '' : 'trackChanged',
@@ -120,6 +132,12 @@ class WsEvent extends $pb.GeneratedMessage {
         subBuilder: ProfileChangedEvent.create)
     ..aOM<BackendStateEvent>(20, _omitFieldNames ? '' : 'backendState',
         subBuilder: BackendStateEvent.create)
+    ..aOM<VolumeChangedEvent>(21, _omitFieldNames ? '' : 'volumeChanged',
+        subBuilder: VolumeChangedEvent.create)
+    ..aOM<LatencyChangedEvent>(22, _omitFieldNames ? '' : 'latencyChanged',
+        subBuilder: LatencyChangedEvent.create)
+    ..aOM<EqualizerChangedEvent>(23, _omitFieldNames ? '' : 'eqChanged',
+        subBuilder: EqualizerChangedEvent.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -151,6 +169,9 @@ class WsEvent extends $pb.GeneratedMessage {
   @$pb.TagNumber(18)
   @$pb.TagNumber(19)
   @$pb.TagNumber(20)
+  @$pb.TagNumber(21)
+  @$pb.TagNumber(22)
+  @$pb.TagNumber(23)
   WsEvent_Event whichEvent() => _WsEvent_EventByTag[$_whichOneof(0)]!;
   @$pb.TagNumber(10)
   @$pb.TagNumber(11)
@@ -163,6 +184,9 @@ class WsEvent extends $pb.GeneratedMessage {
   @$pb.TagNumber(18)
   @$pb.TagNumber(19)
   @$pb.TagNumber(20)
+  @$pb.TagNumber(21)
+  @$pb.TagNumber(22)
+  @$pb.TagNumber(23)
   void clearEvent() => $_clearField($_whichOneof(0));
 
   @$pb.TagNumber(1)
@@ -303,6 +327,39 @@ class WsEvent extends $pb.GeneratedMessage {
   void clearBackendState() => $_clearField(20);
   @$pb.TagNumber(20)
   BackendStateEvent ensureBackendState() => $_ensure(12);
+
+  @$pb.TagNumber(21)
+  VolumeChangedEvent get volumeChanged => $_getN(13);
+  @$pb.TagNumber(21)
+  set volumeChanged(VolumeChangedEvent value) => $_setField(21, value);
+  @$pb.TagNumber(21)
+  $core.bool hasVolumeChanged() => $_has(13);
+  @$pb.TagNumber(21)
+  void clearVolumeChanged() => $_clearField(21);
+  @$pb.TagNumber(21)
+  VolumeChangedEvent ensureVolumeChanged() => $_ensure(13);
+
+  @$pb.TagNumber(22)
+  LatencyChangedEvent get latencyChanged => $_getN(14);
+  @$pb.TagNumber(22)
+  set latencyChanged(LatencyChangedEvent value) => $_setField(22, value);
+  @$pb.TagNumber(22)
+  $core.bool hasLatencyChanged() => $_has(14);
+  @$pb.TagNumber(22)
+  void clearLatencyChanged() => $_clearField(22);
+  @$pb.TagNumber(22)
+  LatencyChangedEvent ensureLatencyChanged() => $_ensure(14);
+
+  @$pb.TagNumber(23)
+  EqualizerChangedEvent get eqChanged => $_getN(15);
+  @$pb.TagNumber(23)
+  set eqChanged(EqualizerChangedEvent value) => $_setField(23, value);
+  @$pb.TagNumber(23)
+  $core.bool hasEqChanged() => $_has(15);
+  @$pb.TagNumber(23)
+  void clearEqChanged() => $_clearField(23);
+  @$pb.TagNumber(23)
+  EqualizerChangedEvent ensureEqChanged() => $_ensure(15);
 }
 
 /// 歌曲切换
@@ -1131,6 +1188,214 @@ class BackendStateEvent extends $pb.GeneratedMessage {
   $core.bool hasRunning() => $_has(0);
   @$pb.TagNumber(1)
   void clearRunning() => $_clearField(1);
+}
+
+/// 音量变化（轻量推送，不触发全量刷新）
+class VolumeChangedEvent extends $pb.GeneratedMessage {
+  factory VolumeChangedEvent({
+    $core.String? instanceId,
+    $core.double? volume,
+  }) {
+    final result = create();
+    if (instanceId != null) result.instanceId = instanceId;
+    if (volume != null) result.volume = volume;
+    return result;
+  }
+
+  VolumeChangedEvent._();
+
+  factory VolumeChangedEvent.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory VolumeChangedEvent.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'VolumeChangedEvent',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'instanceId')
+    ..aD(2, _omitFieldNames ? '' : 'volume', fieldType: $pb.PbFieldType.OF)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  VolumeChangedEvent clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  VolumeChangedEvent copyWith(void Function(VolumeChangedEvent) updates) =>
+      super.copyWith((message) => updates(message as VolumeChangedEvent))
+          as VolumeChangedEvent;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static VolumeChangedEvent create() => VolumeChangedEvent._();
+  @$core.override
+  VolumeChangedEvent createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static VolumeChangedEvent getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<VolumeChangedEvent>(create);
+  static VolumeChangedEvent? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get instanceId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set instanceId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasInstanceId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearInstanceId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.double get volume => $_getN(1);
+  @$pb.TagNumber(2)
+  set volume($core.double value) => $_setFloat(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasVolume() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearVolume() => $_clearField(2);
+}
+
+/// 延迟变化（轻量推送，不触发全量刷新）
+class LatencyChangedEvent extends $pb.GeneratedMessage {
+  factory LatencyChangedEvent({
+    $core.String? instanceId,
+    $core.double? latency,
+  }) {
+    final result = create();
+    if (instanceId != null) result.instanceId = instanceId;
+    if (latency != null) result.latency = latency;
+    return result;
+  }
+
+  LatencyChangedEvent._();
+
+  factory LatencyChangedEvent.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory LatencyChangedEvent.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'LatencyChangedEvent',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'instanceId')
+    ..aD(2, _omitFieldNames ? '' : 'latency', fieldType: $pb.PbFieldType.OF)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  LatencyChangedEvent clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  LatencyChangedEvent copyWith(void Function(LatencyChangedEvent) updates) =>
+      super.copyWith((message) => updates(message as LatencyChangedEvent))
+          as LatencyChangedEvent;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static LatencyChangedEvent create() => LatencyChangedEvent._();
+  @$core.override
+  LatencyChangedEvent createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static LatencyChangedEvent getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<LatencyChangedEvent>(create);
+  static LatencyChangedEvent? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get instanceId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set instanceId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasInstanceId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearInstanceId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.double get latency => $_getN(1);
+  @$pb.TagNumber(2)
+  set latency($core.double value) => $_setFloat(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasLatency() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearLatency() => $_clearField(2);
+}
+
+/// 均衡器变化（轻量推送，不触发全量刷新）
+class EqualizerChangedEvent extends $pb.GeneratedMessage {
+  factory EqualizerChangedEvent({
+    $core.String? instanceId,
+    $0.EqualizerState? state,
+  }) {
+    final result = create();
+    if (instanceId != null) result.instanceId = instanceId;
+    if (state != null) result.state = state;
+    return result;
+  }
+
+  EqualizerChangedEvent._();
+
+  factory EqualizerChangedEvent.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory EqualizerChangedEvent.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'EqualizerChangedEvent',
+      package:
+          const $pb.PackageName(_omitMessageNames ? '' : 'omni_mix_player'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'instanceId')
+    ..aOM<$0.EqualizerState>(2, _omitFieldNames ? '' : 'state',
+        subBuilder: $0.EqualizerState.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EqualizerChangedEvent clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  EqualizerChangedEvent copyWith(
+          void Function(EqualizerChangedEvent) updates) =>
+      super.copyWith((message) => updates(message as EqualizerChangedEvent))
+          as EqualizerChangedEvent;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static EqualizerChangedEvent create() => EqualizerChangedEvent._();
+  @$core.override
+  EqualizerChangedEvent createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static EqualizerChangedEvent getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<EqualizerChangedEvent>(create);
+  static EqualizerChangedEvent? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get instanceId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set instanceId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasInstanceId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearInstanceId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $0.EqualizerState get state => $_getN(1);
+  @$pb.TagNumber(2)
+  set state($0.EqualizerState value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasState() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearState() => $_clearField(2);
+  @$pb.TagNumber(2)
+  $0.EqualizerState ensureState() => $_ensure(1);
 }
 
 const $core.bool _omitFieldNames =

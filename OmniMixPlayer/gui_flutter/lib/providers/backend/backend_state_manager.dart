@@ -17,6 +17,7 @@ import '../../services/backend_manager.dart'
 import '../../services/platform_service.dart'
     if (dart.library.js_interop) '../../stubs/platform_service_web.dart';
 import '../../generated/omni_mix_player/events/ws_events.pb.dart';
+import '../../generated/omni_mix_player/models/instance.pb.dart';
 
 class BackendStateManager extends ChangeNotifier {
   late ApiClient api;
@@ -86,9 +87,12 @@ class BackendStateManager extends ChangeNotifier {
   void Function(String instanceId, int state)? onStateChanged;
   void Function(String instanceId, double position)? onPositionChanged;
   void Function()? onEqualizerChanged;
+  void Function(String instanceId, EqualizerState state)? onEqualizerPushed;
   void Function()? onPlaylistUpdated;
   void Function()? onModulesChanged;
   void Function()? onProfileChanged;
+  void Function(String instanceId, double volume)? onVolumeChanged;
+  void Function(String instanceId, double latency)? onLatencyChanged;
   void Function(String msg)? onError;
   void Function()? onLibraryBump;
   void Function()? onStopCleanup;
@@ -437,6 +441,30 @@ class BackendStateManager extends ChangeNotifier {
           break;
         case 'profile.changed':
           onProfileChanged?.call();
+          break;
+        case 'volume.changed':
+          if (event.hasVolumeChanged()) {
+            onVolumeChanged?.call(
+              event.volumeChanged.instanceId,
+              event.volumeChanged.volume,
+            );
+          }
+          break;
+        case 'latency.changed':
+          if (event.hasLatencyChanged()) {
+            onLatencyChanged?.call(
+              event.latencyChanged.instanceId,
+              event.latencyChanged.latency,
+            );
+          }
+          break;
+        case 'eq.changed':
+          if (event.hasEqChanged()) {
+            onEqualizerPushed?.call(
+              event.eqChanged.instanceId,
+              event.eqChanged.state,
+            );
+          }
           break;
         case 'favorite.changed':
         case 'exclude.changed':

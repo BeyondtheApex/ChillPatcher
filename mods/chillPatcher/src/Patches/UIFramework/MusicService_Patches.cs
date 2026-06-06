@@ -83,6 +83,21 @@ namespace ChillPatcher.Patches.UIFramework
             // 添加到列表
             allMusicList.Add(music);
 
+            // TODO: IPC bridge needed - TagMerge via MusicRegistry/TagRegistry removed
+            /*
+            // ✅ 合并自定义Tag到音频对象 (通过 TagRegistry 获取)
+            var musicInfo = MusicRegistry.Instance?.GetByUUID(music.UUID);
+            if (musicInfo != null && !string.IsNullOrEmpty(musicInfo.TagId))
+            {
+                var tagInfo = TagRegistry.Instance?.GetTag(musicInfo.TagId);
+                if (tagInfo != null)
+                {
+                    music.Tag |= (AudioTag)tagInfo.BitValue;
+                    Plugin.Log.LogDebug($"[TagMerge] {music.Title}: {music.Tag} (merged tag: {tagInfo.DisplayName})");
+                }
+            }
+            */
+
             // ⚠️ 注释掉存档保存：运行时加载的歌曲不需要保存到存档
             // SaveDataManager.Instance.MusicSetting.PlaylistOrder.Add(music.UUID);
             // SaveDataManager.Instance.SaveMusicSetting();
@@ -164,6 +179,21 @@ namespace ChillPatcher.Patches.UIFramework
 
             // 添加到列表
             allMusicList.Add(music);
+            
+            // TODO: IPC bridge needed - TagMerge via MusicRegistry/TagRegistry removed
+            /*
+            // ✅ 合并自定义Tag到音频对象 (通过 TagRegistry 获取)
+            var musicInfo = MusicRegistry.Instance?.GetByUUID(music.UUID);
+            if (musicInfo != null && !string.IsNullOrEmpty(musicInfo.TagId))
+            {
+                var tagInfo = TagRegistry.Instance?.GetTag(musicInfo.TagId);
+                if (tagInfo != null)
+                {
+                    music.Tag |= (AudioTag)tagInfo.BitValue;
+                    Plugin.Log.LogDebug($"[TagMerge] {music.Title}: {music.Tag} (merged tag: {tagInfo.DisplayName})");
+                }
+            }
+            */
             
             // ⚠️ 注释掉存档保存：运行时加载的歌曲不需要保存到存档
             // SaveDataManager.Instance.MusicSetting.PlaylistOrder.Add(music.UUID);

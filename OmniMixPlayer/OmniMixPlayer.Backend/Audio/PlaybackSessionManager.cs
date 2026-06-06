@@ -100,7 +100,8 @@ namespace OmniMixPlayer.Backend.Audio
                     _library,
                     _streamingService,
                     _timeline,
-                    instanceId: id);
+                    instanceId: id,
+                    serverControlledPlayback: caps.ServerControlledPlayback);
                 controller.ApplyProfile(profile);
                 WireController(id, controller);
 

@@ -170,6 +170,9 @@ InstanceProfile _cProfileToProto(Pointer<OmniPcmInstanceProfileInfo> p) {
   caps.albumFiltering = (f & 4096) != 0;
   caps.audioPlayback = (f & omniPcmCapAudioPlayback) != 0;
   caps.customSystemMediaService = (f & omniPcmCapCustomSystemMediaService) != 0;
+  caps.maxImportedPlaylists = prof.maxImportedPlaylists;
+  caps.maxTags = prof.maxTags;
+  caps.maxPlaylistEntries = prof.maxPlaylistEntries;
 
   return InstanceProfile()
     ..id = _readArray(prof.instanceId, 128)
@@ -424,6 +427,12 @@ class _RawOmniSdkClient {
     }
     if (profile.hasCapabilities()) {
       p.ref.capabilityFlags = _capFlags(profile.capabilities);
+      final caps = profile.capabilities;
+      if (caps.hasMaxImportedPlaylists())
+        p.ref.maxImportedPlaylists = caps.maxImportedPlaylists;
+      if (caps.hasMaxTags()) p.ref.maxTags = caps.maxTags;
+      if (caps.hasMaxPlaylistEntries())
+        p.ref.maxPlaylistEntries = caps.maxPlaylistEntries;
     }
     if (profile.volume != 0) {
       p.ref.volume = profile.volume;

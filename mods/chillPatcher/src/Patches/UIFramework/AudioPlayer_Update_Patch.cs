@@ -36,7 +36,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// 防重入锁：防止 EOF 触发后、异步跳转完成前被重复触发
         /// </summary>
         private static bool _isSkippingToNext = false;
-        
+
         /// <summary>
         /// 记录已经触发过 EOF 的 stream ID，防止同一个 stream 被多次触发
         /// </summary>
@@ -54,7 +54,7 @@ namespace ChillPatcher.Patches.UIFramework
         private static float _lastProgressChangeTime = 0f;
         private static float _lastKnownProgress = 0f;
         private const float STALL_TIMEOUT_SECONDS = 10f; // 10秒不变化则认为结束
-        
+
         /// <summary>
         /// 重置 EOF 追踪状态（在新歌曲开始播放时调用）
         /// </summary>
@@ -70,7 +70,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// <summary>
         /// 处理歌曲播放结束：检查单曲循环，否则跳到下一首
         /// </summary>
-        private static void HandlePlaybackEnd(MusicService musicService, string reason)
+        private static async void HandlePlaybackEnd(MusicService musicService, string reason)
         {
             // 检查单曲循环模式
             if (musicService.IsRepeatOneMusic)
@@ -101,9 +101,31 @@ namespace ChillPatcher.Patches.UIFramework
 
             // 非单曲循环：跳到下一首
             Plugin.Log.LogInfo($"[AudioPlayer_Patch] {reason}, triggering next song");
-            musicService.SkipCurrentMusic(MusicChangeKind.Auto).Forget<bool>();
+            try
+            {
+                bool success = await musicService.SkipCurrentMusic(MusicChangeKind.Auto);
+                if (!success)
+                {
+                    // 切歌失败（如找不到下一首），重置锁防止永久卡死
+                    Plugin.Log.LogWarning($"[AudioPlayer_Patch] SkipCurrentMusic returned false ({reason}), resetting EOF lock");
+                    _isSkippingToNext = false;
+                    _lastEofTriggeredStreamId = null;
+                    // 重置超时追踪，避免立即再次触发
+                    _lastProgressChangeTime = Time.time;
+                    _lastKnownProgress = 0f;
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Plugin.Log.LogError($"[AudioPlayer_Patch] SkipCurrentMusic threw exception ({reason}): {ex.Message}");
+                _isSkippingToNext = false;
+                _lastEofTriggeredStreamId = null;
+                // 重置超时追踪，避免立即再次触发
+                _lastProgressChangeTime = Time.time;
+                _lastKnownProgress = 0f;
+            }
         }
-        
+
         [HarmonyPatch(typeof(AudioPlayer), nameof(AudioPlayer.Update))]
         [HarmonyPrefix]
         public static bool Update_Prefix(AudioPlayer __instance)
@@ -146,11 +168,11 @@ namespace ChillPatcher.Patches.UIFramework
             }
 
             // ===== 流媒体特殊处理 =====
-            
+
             // 获取当前 clip 对应的 PCM 读取器
             var currentClip = audioSource.clip;
             var reader = AudioResourceManager.Instance?.GetPcmStreamReader(currentClip);
-            
+
             // 如果没找到，回退到 ActivePcmReader（兼容性）
             if (reader == null)
             {
@@ -169,12 +191,12 @@ namespace ChillPatcher.Patches.UIFramework
                 // 优先使用 reader 的帧位置，因为 audioSource.time 可能不准
                 currentProgress = (float)reader.CurrentFrame / reader.Info.SampleRate;
             }
-            
+
             // 【超时保护】只在播放超过原始时长后才启用检查
             // 这样可以避免正常播放过程中误触发
             float originalDuration = reader?.Info?.Duration ?? 0f;
             bool isPassedOriginalDuration = originalDuration > 0 && currentProgress >= originalDuration - 1f; // 提前1秒开始检查
-            
+
             if (Mathf.Abs(currentProgress - _lastKnownProgress) > 0.1f)
             {
                 // 进度有变化，重置计时器
@@ -238,12 +260,12 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         return false; // 阻止原始逻辑，等待跳转完成
                     }
-                    
+
                     if (clipName == _lastEofTriggeredStreamId)
                     {
                         return false; // 已经触发过，阻止原始逻辑
                     }
-                    
+
                     // 标记防重入
                     _lastEofTriggeredStreamId = clipName;
                     _isSkippingToNext = true;
@@ -257,7 +279,7 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         Plugin.Log.LogError($"[AudioPlayer_Patch] Error handling playback end: {ex.Message}");
                     }
-                    
+
                     return false; // 阻止原始逻辑
                 }
             }
@@ -309,12 +331,12 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         return false;
                     }
-                    
+
                     if (clipName == _lastEofTriggeredStreamId)
                     {
                         return false;
                     }
-                    
+
                     _lastEofTriggeredStreamId = clipName;
                     _isSkippingToNext = true;
 
@@ -327,11 +349,11 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         Plugin.Log.LogError($"[AudioPlayer_Patch] Error handling playback end: {ex.Message}");
                     }
-                    
+
                     return false; // 阻止原始逻辑
                 }
             }
-            
+
             // 原始的结束判断条件：Unity 认为播放结束
             // 如果使用 30 分钟余量，这意味着余量也用完了
             bool originalEndCondition = !audioSource.isPlaying && Mathf.Approximately(audioSource.time, 0f);
@@ -353,10 +375,10 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         Plugin.Log.LogError($"[AudioPlayer_Patch] Error handling playback end on margin exhausted: {ex.Message}");
                     }
-                    
+
                     return false;
                 }
-                
+
                 // 已经在跳转中，阻止原始逻辑
                 return false;
             }

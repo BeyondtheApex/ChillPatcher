@@ -120,6 +120,33 @@ const WsEvent$json = {
       '9': 0,
       '10': 'backendState'
     },
+    {
+      '1': 'volume_changed',
+      '3': 21,
+      '4': 1,
+      '5': 11,
+      '6': '.omni_mix_player.VolumeChangedEvent',
+      '9': 0,
+      '10': 'volumeChanged'
+    },
+    {
+      '1': 'latency_changed',
+      '3': 22,
+      '4': 1,
+      '5': 11,
+      '6': '.omni_mix_player.LatencyChangedEvent',
+      '9': 0,
+      '10': 'latencyChanged'
+    },
+    {
+      '1': 'eq_changed',
+      '3': 23,
+      '4': 1,
+      '5': 11,
+      '6': '.omni_mix_player.EqualizerChangedEvent',
+      '9': 0,
+      '10': 'eqChanged'
+    },
   ],
   '8': [
     {'1': 'event'},
@@ -144,8 +171,12 @@ final $typed_data.Uint8List wsEventDescriptor = $convert.base64Decode(
     'QYEiABKAsyIy5vbW5pX21peF9wbGF5ZXIuTW9kdWxlQ2hhbmdlZEV2ZW50SABSDW1vZHVsZUNo'
     'YW5nZWQSTwoPcHJvZmlsZV9jaGFuZ2VkGBMgASgLMiQub21uaV9taXhfcGxheWVyLlByb2ZpbG'
     'VDaGFuZ2VkRXZlbnRIAFIOcHJvZmlsZUNoYW5nZWQSSQoNYmFja2VuZF9zdGF0ZRgUIAEoCzIi'
-    'Lm9tbmlfbWl4X3BsYXllci5CYWNrZW5kU3RhdGVFdmVudEgAUgxiYWNrZW5kU3RhdGVCBwoFZX'
-    'ZlbnQ=');
+    'Lm9tbmlfbWl4X3BsYXllci5CYWNrZW5kU3RhdGVFdmVudEgAUgxiYWNrZW5kU3RhdGUSTAoOdm'
+    '9sdW1lX2NoYW5nZWQYFSABKAsyIy5vbW5pX21peF9wbGF5ZXIuVm9sdW1lQ2hhbmdlZEV2ZW50'
+    'SABSDXZvbHVtZUNoYW5nZWQSTwoPbGF0ZW5jeV9jaGFuZ2VkGBYgASgLMiQub21uaV9taXhfcG'
+    'xheWVyLkxhdGVuY3lDaGFuZ2VkRXZlbnRIAFIObGF0ZW5jeUNoYW5nZWQSRwoKZXFfY2hhbmdl'
+    'ZBgXIAEoCzImLm9tbmlfbWl4X3BsYXllci5FcXVhbGl6ZXJDaGFuZ2VkRXZlbnRIAFIJZXFDaG'
+    'FuZ2VkQgcKBWV2ZW50');
 
 @$core.Deprecated('Use trackChangedEventDescriptor instead')
 const TrackChangedEvent$json = {
@@ -316,3 +347,52 @@ const BackendStateEvent$json = {
 /// Descriptor for `BackendStateEvent`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List backendStateEventDescriptor = $convert.base64Decode(
     'ChFCYWNrZW5kU3RhdGVFdmVudBIYCgdydW5uaW5nGAEgASgIUgdydW5uaW5n');
+
+@$core.Deprecated('Use volumeChangedEventDescriptor instead')
+const VolumeChangedEvent$json = {
+  '1': 'VolumeChangedEvent',
+  '2': [
+    {'1': 'instance_id', '3': 1, '4': 1, '5': 9, '10': 'instanceId'},
+    {'1': 'volume', '3': 2, '4': 1, '5': 2, '10': 'volume'},
+  ],
+};
+
+/// Descriptor for `VolumeChangedEvent`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List volumeChangedEventDescriptor = $convert.base64Decode(
+    'ChJWb2x1bWVDaGFuZ2VkRXZlbnQSHwoLaW5zdGFuY2VfaWQYASABKAlSCmluc3RhbmNlSWQSFg'
+    'oGdm9sdW1lGAIgASgCUgZ2b2x1bWU=');
+
+@$core.Deprecated('Use latencyChangedEventDescriptor instead')
+const LatencyChangedEvent$json = {
+  '1': 'LatencyChangedEvent',
+  '2': [
+    {'1': 'instance_id', '3': 1, '4': 1, '5': 9, '10': 'instanceId'},
+    {'1': 'latency', '3': 2, '4': 1, '5': 2, '10': 'latency'},
+  ],
+};
+
+/// Descriptor for `LatencyChangedEvent`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List latencyChangedEventDescriptor = $convert.base64Decode(
+    'ChNMYXRlbmN5Q2hhbmdlZEV2ZW50Eh8KC2luc3RhbmNlX2lkGAEgASgJUgppbnN0YW5jZUlkEh'
+    'gKB2xhdGVuY3kYAiABKAJSB2xhdGVuY3k=');
+
+@$core.Deprecated('Use equalizerChangedEventDescriptor instead')
+const EqualizerChangedEvent$json = {
+  '1': 'EqualizerChangedEvent',
+  '2': [
+    {'1': 'instance_id', '3': 1, '4': 1, '5': 9, '10': 'instanceId'},
+    {
+      '1': 'state',
+      '3': 2,
+      '4': 1,
+      '5': 11,
+      '6': '.omni_mix_player.EqualizerState',
+      '10': 'state'
+    },
+  ],
+};
+
+/// Descriptor for `EqualizerChangedEvent`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List equalizerChangedEventDescriptor = $convert.base64Decode(
+    'ChVFcXVhbGl6ZXJDaGFuZ2VkRXZlbnQSHwoLaW5zdGFuY2VfaWQYASABKAlSCmluc3RhbmNlSW'
+    'QSNQoFc3RhdGUYAiABKAsyHy5vbW5pX21peF9wbGF5ZXIuRXF1YWxpemVyU3RhdGVSBXN0YXRl');

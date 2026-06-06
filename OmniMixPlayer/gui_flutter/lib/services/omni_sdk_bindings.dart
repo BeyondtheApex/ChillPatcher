@@ -123,6 +123,12 @@ final class OmniPcmConnectOptions extends Struct {
   external int capabilityFlags;
   @Int32()
   external int noInstance;
+  @Int32()
+  external int maxImportedPlaylists;
+  @Int32()
+  external int maxTags;
+  @Int32()
+  external int maxPlaylistEntries;
 }
 
 final class OmniPcmConnectionInfo extends Struct {
@@ -199,6 +205,12 @@ final class OmniPcmInstanceProfileInfo extends Struct {
   external double targetLatency;
   @Int32()
   external int mode;
+  @Int32()
+  external int maxImportedPlaylists;
+  @Int32()
+  external int maxTags;
+  @Int32()
+  external int maxPlaylistEntries;
   @Int64()
   external int createdAt;
   @Int64()

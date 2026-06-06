@@ -72,7 +72,42 @@ class PlaybackStateManager extends ChangeNotifier {
 
   // ── Capability helpers ──
 
-  /// Whether the active instance supports server-controlled playback.
+  /// Whether the active instance supports play/pause/stop (AudioPlayback).
+  bool get canPlayPauseActiveInstance {
+    final id = _activeInstanceId;
+    if (id == null) return false;
+    return isInstanceOnline(id) && _capabilities[id]?.audioPlayback == true;
+  }
+
+  /// Whether the active instance supports seek (Seek).
+  bool get canSeekActiveInstance {
+    final id = _activeInstanceId;
+    if (id == null) return false;
+    return isInstanceOnline(id) && _capabilities[id]?.seek == true;
+  }
+
+  /// Whether the active instance supports volume control (VolumeControl).
+  bool get canSetVolumeActiveInstance {
+    final id = _activeInstanceId;
+    if (id == null) return false;
+    return _capabilities[id]?.volumeControl == true;
+  }
+
+  /// Whether the active instance supports latency adjustment (AudioPlayback).
+  bool get canSetLatencyActiveInstance {
+    final id = _activeInstanceId;
+    if (id == null) return false;
+    return _capabilities[id]?.audioPlayback == true;
+  }
+
+  /// Whether the active instance supports equalizer (Equalizer).
+  bool get canEqualizeActiveInstance {
+    final id = _activeInstanceId;
+    if (id == null) return false;
+    return _capabilities[id]?.equalizer == true;
+  }
+
+  /// Whether the active instance supports server-controlled next/prev (ServerControlledPlayback).
   bool get canControlActiveInstance {
     final id = _activeInstanceId;
     if (id == null) return false;
@@ -80,10 +115,22 @@ class PlaybackStateManager extends ChangeNotifier {
         _capabilities[id]?.serverControlledPlayback == true;
   }
 
-  /// Check if a specific instance can be controlled (playback, queue, etc.).
+  /// Check if a specific instance can be controlled (next/prev only — ServerControlledPlayback).
   bool canControlInstance(String instanceId) {
     return isInstanceOnline(instanceId) &&
         _capabilities[instanceId]?.serverControlledPlayback == true;
+  }
+
+  /// Check if a specific instance supports play/pause.
+  bool canPlayPauseInstance(String instanceId) {
+    return isInstanceOnline(instanceId) &&
+        _capabilities[instanceId]?.audioPlayback == true;
+  }
+
+  /// Check if a specific instance supports seek.
+  bool canSeekInstance(String instanceId) {
+    return isInstanceOnline(instanceId) &&
+        _capabilities[instanceId]?.seek == true;
   }
 
   bool get canManageActiveLibrary {
@@ -108,7 +155,9 @@ class PlaybackStateManager extends ChangeNotifier {
     final caps = _capabilities[id];
     if (caps == null) return null;
     if (!caps.multiplePlaylists) return 1;
-    return caps.hasMaxImportedPlaylists() ? caps.maxImportedPlaylists : null;
+    if (!caps.hasMaxImportedPlaylists()) return null;
+    final v = caps.maxImportedPlaylists;
+    return v <= 0 ? null : v;
   }
 
   bool get activePlaylistSourceLimitReached {
@@ -138,7 +187,7 @@ class PlaybackStateManager extends ChangeNotifier {
     final instance = _instances.where((i) => i.id == instanceId).firstOrNull;
     return instance != null &&
         instance.isOnline &&
-        canControlInstance(instanceId);
+        canPlayPauseInstance(instanceId);
   }
 
   // Getters
@@ -382,7 +431,7 @@ class PlaybackStateManager extends ChangeNotifier {
         : MediaControlSnapshot(
             instance: snapshotInstance,
             baseUrl: api.baseUrl,
-            canSeek: canControlInstance(snapshotInstance.id),
+            canSeek: canSeekInstance(snapshotInstance.id),
           );
     _publishMediaControlSnapshot(snapshot);
   }
@@ -437,7 +486,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> _mediaSeek(String instanceId, Duration position) async {
     if (!_canMediaControl(instanceId)) return;
-    if (!canControlInstance(instanceId)) return;
+    if (!canSeekInstance(instanceId)) return;
     await api.seek(instanceId, position.inMilliseconds / 1000.0);
     await refreshPlayback();
   }
@@ -446,7 +495,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> togglePlayback() async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canPlayPauseInstance(instance.id)) return;
     await api.toggle(instance.id);
     await refreshPlayback();
   }
@@ -467,7 +516,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> seekActive(double position) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canSeekInstance(instance.id)) return;
     await api.seek(instance.id, position);
     await refreshPlayback();
   }
@@ -492,7 +541,7 @@ class PlaybackStateManager extends ChangeNotifier {
 
   Future<void> playSongOnActive(String uuid) async {
     final instance = activeInstance;
-    if (instance == null || !canControlInstance(instance.id)) return;
+    if (instance == null || !canPlayPauseInstance(instance.id)) return;
     await api.play(instance.id, uuid: uuid);
     await refreshPlayback();
   }
@@ -727,6 +776,20 @@ class PlaybackStateManager extends ChangeNotifier {
     if (_activeInstanceId != instanceId) return;
     final next = (_status ?? PlaybackStatus()).deepCopy()..position = position;
     _status = next;
+    notifyListeners();
+  }
+
+  void applyVolumeChanged(String instanceId, double volume) {
+    if (_activeInstanceId != instanceId) return;
+    _lastVolume = volume;
+    final next = (_status ?? PlaybackStatus()).deepCopy()..volume = volume;
+    _status = next;
+    notifyListeners();
+  }
+
+  void applyLatencyChanged(String instanceId, double latency) {
+    if (_activeInstanceId != instanceId) return;
+    _lastTargetLatency = latency;
     notifyListeners();
   }
 

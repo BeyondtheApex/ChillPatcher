@@ -64,17 +64,35 @@ namespace ChillPatcher
         private OmniMixPlayerClient _client;
         private OmniPcmShared _shmReader;
         private CancellationTokenSource _heartbeatCts;
+        private CancellationTokenSource _syncDebounceCts; // deduplicate queue.changed + instances.changed
         private readonly string _clientId;
         private bool _connected;
         private bool _disposed;
         private readonly SemaphoreSlim _importSemaphore = new SemaphoreSlim(1, 1);
 
-        // Tag state (synced from backend)
-        private List<TagInfo> _allTags = new List<TagInfo>();
-        private List<TagInfo> _growableTags = new List<TagInfo>();
-        private TagInfo _currentGrowableTag;
+        // Playlist state (synced from backend) — replaces old tag-based system.
+        // Each playlist is mapped to a game AudioTag bit for in-game tag filtering.
+        private List<TagInfo> _allPlaylists = new List<TagInfo>();
+        private Dictionary<string, ulong> _playlistBitMap = new Dictionary<string, ulong>();
+        private ulong _nextPlaylistBit = 1uL << 36; // Start at bit 36 to avoid built-in tags
 
-        public IReadOnlyList<TagInfo> GetAllTags() => _allTags;
+        public IReadOnlyList<TagInfo> GetAllPlaylists() => _allPlaylists;
+
+        /// <summary>Get or assign the game AudioTag bit for a playlist (module) id.</summary>
+        public ulong GetPlaylistBit(string moduleId)
+        {
+            if (string.IsNullOrEmpty(moduleId)) return 0;
+            lock (_playlistBitMap)
+            {
+                if (_playlistBitMap.TryGetValue(moduleId, out var bit)) return bit;
+                // Assign a new bit (up to 27 playlists, bits 36-62)
+                if (_playlistBitMap.Count >= 27) return 0;
+                bit = _nextPlaylistBit;
+                _nextPlaylistBit <<= 1;
+                _playlistBitMap[moduleId] = bit;
+                return bit;
+            }
+        }
 
         // Song and Album cache
         private Dictionary<string, MusicInfo> _songsCache = new Dictionary<string, MusicInfo>();
@@ -139,6 +157,9 @@ namespace ChillPatcher
 
         public bool IsConnected => _connected && _client?.IsConnected == true;
         public OmniPcmShared SharedMemory => _shmReader;
+
+        /// <summary>Cached target latency for pre-buffering calculations.</summary>
+        public float CurrentTargetLatency { get; private set; } = 0.4f;
 
         /// <summary>
         /// Unified Unix socket path (fallback IPC).
@@ -367,15 +388,30 @@ namespace ChillPatcher
                 _client.OnPosition += OnPosition;
                 _client.OnPlaylistUpdated += OnPlaylistUpdated;
                 _client.OnExcludeChanged += OnExcludeChanged;
+                _client.OnInstancesChanged += OnInstancesChanged;
 
                 // 3. Open this instance's shared memory for PCM audio
                 _shmReader = new OmniPcmShared(sharedMemoryName);
                 StartHeartbeatLoop();
 
-                // Sync growable tags
-                await RefreshGrowableTags();
+                // 4. Ensure minimum target latency for stable streaming (only if not already set higher)
+                try
+                {
+                    var currentLatency = await _client.GetTargetLatency();
+                    if (currentLatency < 0.4f)
+                    {
+                        await _client.SetTargetLatency(0.4f);
+                        CurrentTargetLatency = 0.4f;
+                        Plugin.Log?.LogInfo($"[OmniMix] Target latency adjusted: {currentLatency:F2}s -> 0.40s");
+                    }
+                    else
+                    {
+                        CurrentTargetLatency = currentLatency;
+                    }
+                }
+                catch (Exception ex) { Plugin.Log?.LogWarning($"[OmniMix] TargetLatency init failed: {ex.Message}"); }
 
-                Plugin.Log?.LogInfo($"[OmniMix] Connected to OmniMixPlayer backend instance {_client.InstanceId} (ServerManaged mode)");
+                Plugin.Log?.LogInfo($"[OmniMix] Connected to OmniMixPlayer backend instance {_client.InstanceId} (ClientManaged mode)");
                 return true;
             }
             catch (Exception ex)
@@ -404,7 +440,9 @@ namespace ChillPatcher
                     _client.OnPosition -= OnPosition;
                     _client.OnPlaylistUpdated -= OnPlaylistUpdated;
                     _client.OnExcludeChanged -= OnExcludeChanged;
+                    _client.OnInstancesChanged -= OnInstancesChanged;
 
+                    StopSyncDebounce();
                     StopHeartbeatLoop();
                     try { await _client.DisconnectInstance(); } catch { }
                     await _client.DisconnectAsync();
@@ -623,36 +661,55 @@ namespace ChillPatcher
                     return 0;
                 }
 
-                // Pull active queue from OmniMixPlayer
-                var queueJson = await _client.GetQueue();
-                var songsJson = await _client.GetSongs();
-                var tagsJson = await _client.GetTags();
+                // ── Phase 1: All native queries (thread-pool safe, P/Invoke) ──
+                var sourcesJson = await _client.GetPlaylistSources();
                 var albumsJson = await _client.GetAlbums();
+                var queueJson = await _client.GetQueue();
 
-                // Refresh custom tags and growable tags
-                await RefreshGrowableTags();
+                // Build source → tag bit mapping (lock-protected, thread-safe)
+                var sourceTagBits = new List<(string refId, ulong bit, string name)>();
+                lock (_playlistBitMap) { _playlistBitMap.Clear(); _nextPlaylistBit = 1uL << 5; }
+                _allPlaylists.Clear();
 
-                // Switch to main thread for modifying game collections
-                await UniTask.SwitchToMainThread();
-
-                var moduleSongs = new List<MusicInfo>();
-
-                // Parse tags to map tagId -> bitValue
-                var tagBitValues = new Dictionary<string, ulong>();
-                if (tagsJson is JArray tagsArr)
+                if (sourcesJson is JArray srcArr && srcArr.Count > 0)
                 {
-                    foreach (var tag in tagsArr)
+                    foreach (var s in srcArr)
                     {
-                        var tagId = tag.GetStringIgnoreCase("id");
-                        var bitValue = tag.GetValueIgnoreCase<ulong>("bitValue");
-                        if (!string.IsNullOrEmpty(tagId) && bitValue > 0)
-                        {
-                            tagBitValues[tagId] = bitValue;
-                        }
+                        var refId = s.GetStringIgnoreCase("refId") ?? "";
+                        if (string.IsNullOrEmpty(refId)) continue;
+                        var name = s.GetStringIgnoreCase("name") ?? refId;
+                        var bit = GetPlaylistBit(refId);
+                        sourceTagBits.Add((refId, bit, name));
                     }
                 }
 
-                // Parse albums
+                // Query all tracks once for metadata, then per-playlist for tag membership
+                var allTracksJson = await _client.GetSongs();
+                var perSourceResults = new List<(ulong bit, JToken tracks)>();
+                foreach (var (refId, bit, _) in sourceTagBits)
+                {
+                    var tracks = await _client.GetSongsByPlaylist(refId);
+                    perSourceResults.Add((bit, tracks));
+                }
+
+                // ── Phase 2: Main thread for Unity object creation ──
+                await UniTask.SwitchToMainThread();
+
+                // Build tag list (must be on main thread for UI)
+                foreach (var (refId, bit, name) in sourceTagBits)
+                {
+                    _allPlaylists.Add(new TagInfo
+                    {
+                        TagId = refId,
+                        DisplayName = name,
+                        ModuleId = refId,
+                        BitValue = bit,
+                        IsGrowableList = false,
+                    });
+                }
+                Plugin.Log?.LogInfo($"[OmniMix] Built {_allPlaylists.Count} playlist tags from sources");
+
+                // Parse album cache
                 var albumDict = new Dictionary<string, AlbumInfo>();
                 if (albumsJson is JArray albumsArr)
                 {
@@ -660,104 +717,115 @@ namespace ChillPatcher
                     {
                         var id = a.GetStringIgnoreCase("id");
                         if (string.IsNullOrEmpty(id)) continue;
-
-                        var album = new AlbumInfo
+                        albumDict[id] = new AlbumInfo
                         {
                             AlbumId = id,
-                            DisplayName = a.GetStringIgnoreCase("name"),
-                            ModuleId = a.GetStringIgnoreCase("moduleId"),
-                            CoverPath = a.GetStringIgnoreCase("coverPath"),
-                            SongCount = a.GetValueIgnoreCase<int>("songCount"),
-                            IsGrowableAlbum = a.GetValueIgnoreCase<bool>("isGrowable")
+                            DisplayName = a.GetStringIgnoreCase("name") ?? "",
+                            Artist = a.GetStringIgnoreCase("artist") ?? "",
+                            CoverPath = a.GetStringIgnoreCase("coverPath") ?? "",
+                            ModuleId = a.GetStringIgnoreCase("moduleId") ?? "",
                         };
-                        albumDict[id] = album;
                     }
                 }
 
-                // Parse all songs
+                // uuid → accumulated tag bits
+                var uuidTagBits = new Dictionary<string, ulong>();
                 var songDict = new Dictionary<string, MusicInfo>();
-                if (songsJson is JArray songsArr)
+                var seenUuids = new HashSet<string>();
+
+                if (allTracksJson is JArray allTracksArr)
                 {
-                    foreach (var s in songsArr)
+                    foreach (var s in allTracksArr)
                     {
                         var uuid = s.GetStringIgnoreCase("uuid");
-                        if (string.IsNullOrEmpty(uuid)) continue;
-
-                        bool isExcluded = s.GetValueIgnoreCase<bool>("isExcluded");
-                        lock (_excludedUuids)
-                        {
-                            if (isExcluded)
-                                _excludedUuids.Add(uuid);
-                            else
-                                _excludedUuids.Remove(uuid);
-                        }
-
-                        var songTagIds = s.GetValueIgnoreCase<List<string>>("tagIds") ?? new List<string>();
-
-                        var song = new MusicInfo
+                        if (string.IsNullOrEmpty(uuid) || !seenUuids.Add(uuid)) continue;
+                        songDict[uuid] = new MusicInfo
                         {
                             UUID = uuid,
-                            Title = s.GetStringIgnoreCase("title"),
-                            Artist = s.GetStringIgnoreCase("artist"),
-                            AlbumId = s.GetStringIgnoreCase("albumId"),
+                            Title = s.GetStringIgnoreCase("title") ?? "",
+                            Artist = s.GetStringIgnoreCase("artist") ?? "",
+                            AlbumId = s.GetStringIgnoreCase("albumId") ?? "",
                             Duration = s.GetValueIgnoreCase<float>("duration"),
-                            ModuleId = s.GetStringIgnoreCase("moduleId"),
+                            ModuleId = s.GetStringIgnoreCase("moduleId") ?? "",
                             SourceType = MusicSourceType.Stream,
                             IsUnlocked = true,
                             IsFavorite = s.GetValueIgnoreCase<bool>("isFavorite"),
-                            IsExcluded = isExcluded,
-                            TagIds = songTagIds
                         };
-                        songDict[uuid] = song;
+                        uuidTagBits[uuid] = 0;
                     }
                 }
+                Plugin.Log?.LogInfo($"[OmniMix] Loaded {songDict.Count} tracks from library");
 
-                // Parse queue items
+                // Accumulate tag bits from each playlist source
+                foreach (var (bit, tracksJson) in perSourceResults)
+                {
+                    int matched = 0;
+                    if (tracksJson is JArray tracksArr)
+                    {
+                        foreach (var t in tracksArr)
+                        {
+                            var uuid = t.GetStringIgnoreCase("uuid");
+                            if (!string.IsNullOrEmpty(uuid) && uuidTagBits.ContainsKey(uuid))
+                            {
+                                uuidTagBits[uuid] |= bit;
+                                matched++;
+                            }
+                        }
+                    }
+                    Plugin.Log?.LogInfo($"[OmniMix] Source bit={bit} matched {matched} tracks");
+                }
+
+                // Build GameAudioInfo — only tracks that belong to at least one playlist source
+                var allGameAudios = new List<GameAudioInfo>();
+                foreach (var kvp in songDict)
+                {
+                    var mi = kvp.Value;
+                    var tagValue = uuidTagBits.TryGetValue(mi.UUID, out var b) ? b : 0;
+                    if (tagValue == 0) continue; // skip tracks not in any playlist source
+                    mi.TagIds = new List<string> { $"bit_{tagValue}" };
+                    allGameAudios.Add(ConvertToGameAudio(mi, tagValue));
+                }
+                Plugin.Log?.LogInfo($"[OmniMix] Built {allGameAudios.Count} GameAudioInfo items (skipped {songDict.Count - allGameAudios.Count} unassigned)");
+
+                // Supplement with queue items
                 if (queueJson is JArray queueArr)
                 {
+                    int queueAdded = 0;
                     foreach (var item in queueArr)
                     {
                         var uuid = item.GetStringIgnoreCase("uuid");
-                        if (string.IsNullOrEmpty(uuid)) continue;
+                        if (string.IsNullOrEmpty(uuid) || !seenUuids.Add(uuid)) continue;
 
-                        MusicInfo song;
-                        if (songDict.TryGetValue(uuid, out var existingSong))
-                        {
-                            song = existingSong;
-                        }
-                        else
-                        {
-                            var title = item.GetStringIgnoreCase("title");
-                            var artist = item.GetStringIgnoreCase("artist");
-                            var moduleId = item.GetStringIgnoreCase("moduleId");
-                            song = new MusicInfo
-                            {
-                                UUID = uuid,
-                                Title = title,
-                                Artist = artist,
-                                ModuleId = moduleId,
-                                SourceType = MusicSourceType.Stream,
-                                IsUnlocked = true
-                            };
-                        }
+                        var moduleId = item.GetStringIgnoreCase("moduleId") ?? "";
+                        var tagValue = GetPlaylistBit(moduleId);
 
-                        if (!moduleSongs.Any(m => m.UUID == uuid))
+                        var mi = new MusicInfo
                         {
-                            moduleSongs.Add(song);
-                        }
+                            UUID = uuid,
+                            Title = item.GetStringIgnoreCase("title") ?? "",
+                            Artist = item.GetStringIgnoreCase("artist") ?? "",
+                            AlbumId = item.GetStringIgnoreCase("albumId") ?? "",
+                            Duration = item.GetValueIgnoreCase<float>("duration"),
+                            ModuleId = moduleId,
+                            SourceType = MusicSourceType.Stream,
+                            IsUnlocked = true,
+                            TagIds = new List<string> { moduleId },
+                        };
+                        if (!songDict.ContainsKey(uuid))
+                            songDict[uuid] = mi;
+
+                        allGameAudios.Add(ConvertToGameAudio(mi, tagValue));
+                        queueAdded++;
                     }
+                    if (queueAdded > 0)
+                        Plugin.Log?.LogInfo($"[OmniMix] Added {queueAdded} queue-only tracks");
                 }
 
-                // Add remaining songs from songDict to moduleSongs
-                foreach (var kvp in songDict)
-                {
-                    if (!moduleSongs.Any(m => m.UUID == kvp.Key))
-                    {
-                        moduleSongs.Add(kvp.Value);
-                    }
-                }
+                // Cache for UI
+                _songsCache = songDict;
+                _albumsCache = albumDict;
 
-                // Inject into game MusicService
+                // ── Step 6: Inject into game MusicService ──
                 var allMusicList = Traverse.Create(musicService)
                     .Field("_allMusicList")
                     .GetValue<List<GameAudioInfo>>();
@@ -770,76 +838,54 @@ namespace ChillPatcher
 
                 if (replace)
                 {
-                    // Remove previously synced module songs. Native game songs can also have no LocalPath,
-                    // so only remove tracks carrying custom AudioTag bits.
-                    allMusicList.RemoveAll(IsImportedOmniMixSong);
+                    allMusicList.RemoveAll(a => ((ulong)a.Tag & ~31UL) != 0);
                 }
 
-                var importedGameAudios = new List<GameAudioInfo>();
-                foreach (var ms in moduleSongs)
+                var newUuids = new HashSet<string>(allGameAudios.Select(g => g.UUID));
+                foreach (var ga in allGameAudios)
                 {
-                    var existing = allMusicList.FirstOrDefault(a => a.UUID == ms.UUID);
-                    if (existing == null)
-                    {
-                        var ga = ConvertToGameAudio(ms, tagBitValues);
+                    if (!allMusicList.Any(a => a.UUID == ga.UUID))
                         allMusicList.Add(ga);
-                        importedGameAudios.Add(ga);
-                    }
-                    else
-                    {
-                        importedGameAudios.Add(existing);
-                    }
                 }
+                // Remove imported songs no longer in any playlist source
+                allMusicList.RemoveAll(a => ((ulong)a.Tag & ~31UL) != 0 && !newUuids.Contains(a.UUID));
 
                 // Sync to current playlist
                 var currentPlayList = musicService.CurrentPlayList;
-                if (currentPlayList != null && importedGameAudios.Count > 0)
+                if (currentPlayList != null)
                 {
                     if (replace)
                     {
                         for (int i = currentPlayList.Count - 1; i >= 0; i--)
                         {
-                            if (IsImportedOmniMixSong(currentPlayList[i]))
-                            {
+                            if (((ulong)currentPlayList[i].Tag & ~31UL) != 0)
                                 currentPlayList.RemoveAt(i);
-                            }
                         }
                     }
 
                     var currentTag = SaveDataManager.Instance?.MusicSetting?.CurrentAudioTag?.CurrentValue ?? AudioTag.All;
-                    foreach (var ga in importedGameAudios)
+                    foreach (var ga in allGameAudios)
                     {
-                        if (currentTag.HasFlagFast(ga.Tag) && !currentPlayList.Any(a => a.UUID == ga.UUID))
+                        if (!currentPlayList.Any(a => a.UUID == ga.UUID) && currentTag.HasFlagFast(ga.Tag))
                             currentPlayList.Add(ga);
+                    }
+                    // Remove stale imported songs from current playlist
+                    for (int i = currentPlayList.Count - 1; i >= 0; i--)
+                    {
+                        if (((ulong)currentPlayList[i].Tag & ~31UL) != 0 && !newUuids.Contains(currentPlayList[i].UUID))
+                            currentPlayList.RemoveAt(i);
                     }
                 }
 
-                Plugin.Log?.LogInfo($"[OmniMix] Imported {moduleSongs.Count} songs to game MusicService");
+                Plugin.Log?.LogInfo($"[OmniMix] Imported {allGameAudios.Count} songs to game MusicService");
 
-                // Trigger UI playlist refresh
-                try
-                {
-                    MusicUI_VirtualScroll_Patch.RefreshPlaylistDisplay();
-                }
-                catch (Exception ex)
-                {
-                    Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh playlist display: {ex.Message}");
-                }
+                try { MusicUI_VirtualScroll_Patch.RefreshPlaylistDisplay(); }
+                catch (Exception ex) { Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh playlist display: {ex.Message}"); }
 
-                // Trigger UI tag buttons refresh
-                try
-                {
-                    MusicTagListUI_Patches.RefreshCustomTagButtons();
-                }
-                catch (Exception ex)
-                {
-                    Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh custom tag buttons: {ex.Message}");
-                }
+                try { MusicTagListUI_Patches.RefreshCustomTagButtons(); }
+                catch (Exception ex) { Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh custom tag buttons: {ex.Message}"); }
 
-                _songsCache = songDict;
-                _albumsCache = albumDict;
-
-                return moduleSongs.Count;
+                return allGameAudios.Count;
             }
             catch (Exception ex)
             {
@@ -852,23 +898,10 @@ namespace ChillPatcher
             }
         }
 
-        private static GameAudioInfo ConvertToGameAudio(MusicInfo mi, Dictionary<string, ulong> tagBitValues)
+        private static GameAudioInfo ConvertToGameAudio(MusicInfo mi, ulong tagValue)
         {
-            ulong tagValue = 0;
-            if (mi.TagIds != null && tagBitValues != null)
-            {
-                foreach (var tagId in mi.TagIds)
-                {
-                    if (tagBitValues.TryGetValue(tagId, out var bv))
-                    {
-                        tagValue |= bv;
-                    }
-                }
-            }
             if (mi.IsFavorite)
-            {
                 tagValue |= (ulong)AudioTag.Favorite;
-            }
 
             return new GameAudioInfo
             {
@@ -883,20 +916,9 @@ namespace ChillPatcher
             };
         }
 
-        private static bool IsImportedOmniMixSong(GameAudioInfo audio)
-        {
-            if (audio == null) return false;
-            return ((ulong)audio.Tag & ~31UL) != 0;
-        }
-
         #endregion
 
         #region Playlist query (for JSApi)
-
-        public async UniTask<string> GetTagsJson()
-        {
-            try { var r = await _client.GetTags(); return r.ToString(); } catch { return "[]"; }
-        }
 
         public async UniTask<string> GetAlbumsJson(string tagId = null)
         {
@@ -928,101 +950,48 @@ namespace ChillPatcher
 
         #region Playback control (for JSApi)
 
-        public async UniTask Play(string uuid) { try { await _client.Play(uuid); } catch { } }
+        /// <summary>Play a specific track. The game decides the UUID via its own queue system.</summary>
+        public async UniTask Play(string uuid)
+        {
+            if (string.IsNullOrEmpty(uuid)) return;
+            try { await _client.Play(uuid); } catch { }
+        }
         public async UniTask Pause() { try { await _client.Pause(); } catch { } }
         public async UniTask Resume() { try { await _client.Resume(); } catch { } }
-        public async UniTask Toggle() { try { await _client.Toggle(); } catch { } }
-        public async UniTask Next() { try { await _client.Next(); } catch { } }
-        public async UniTask Prev() { try { await _client.Prev(); } catch { } }
 
-        public async UniTask AddToQueue(string uuid) { try { await _client.AddToQueue(uuid); } catch { } }
-        public async UniTask InsertIntoQueue(int index, IEnumerable<string> uuids) { try { await _client.InsertIntoQueue(index, uuids); } catch { } }
-        public async UniTask RemoveFromQueue(int index) { try { await _client.RemoveFromQueue(index); } catch { } }
-        public async UniTask RemoveFromQueue(string uuid) { try { await _client.RemoveFromQueue(uuid); } catch { } }
-        public async UniTask MoveInQueue(int from, int to) { try { await _client.MoveInQueue(from, to); } catch { } }
-        public async UniTask ClearHistoryAsync() { try { await _client.ClearHistory(); } catch { } }
+        // NOTE: Next/Prev/Toggle are NOT exposed — the game manages its own queue and
+        // playback flow. The game determines the next UUID and calls Play(uuid).
+
         public async UniTask SetFavorite(string uuid, bool fav)
         {
-            try { await _client.SetFavorite(uuid, fav); } catch { }
+            try { await _client.PostAsync($"/favorite", new { uuid, isFavorite = fav }); } catch { }
         }
         public async UniTask SetExcluded(string uuid, bool excluded)
         {
-            try { await _client.SetExcluded(uuid, excluded); } catch { }
+            try { await _client.PostAsync($"/exclude", new { uuid, isFavorite = excluded }); } catch { }
         }
 
         #endregion
 
-        #region Growable List (IPC bridge for paginated loading)
+        #region Playlist Management
 
-        /// <summary>
-        /// 获取所有增长列表 Tag（从后端缓存）
-        /// </summary>
-        public IReadOnlyList<TagInfo> GetGrowableTags()
-        {
-            return _growableTags;
-        }
 
-        /// <summary>
-        /// 获取当前选中的增长列表 Tag
-        /// </summary>
-        public TagInfo GetCurrentGrowableTag()
-        {
-            return _currentGrowableTag;
-        }
+        // ── Backward-compat stubs for patches that still reference old tag API ──
 
-        /// <summary>
-        /// 设置当前选中的增长列表 Tag（同步到后端）
-        /// </summary>
-        public async UniTask SetCurrentGrowableTag(string tagId)
-        {
-            if (!string.IsNullOrEmpty(tagId))
-            {
-                _currentGrowableTag = _growableTags.FirstOrDefault(t => t.TagId == tagId);
-            }
-            else
-            {
-                _currentGrowableTag = null;
-            }
-            await UniTask.CompletedTask;
-        }
+        /// <summary>[Compat] Alias for GetAllPlaylists.</summary>
+        public IReadOnlyList<TagInfo> GetAllTags() => _allPlaylists;
 
-        /// <summary>
-        /// 触发增长列表加载更多（调用后端模块的 LoadMoreCallback）
-        /// </summary>
-        public async UniTask<int> TriggerGrowableLoadMore(string tagId)
-        {
-            await UniTask.CompletedTask;
-            return 0;
-        }
+        /// <summary>[Compat] Growable tags are not yet ported to playlist system.</summary>
+        public IReadOnlyList<TagInfo> GetGrowableTags() => new List<TagInfo>();
 
-        /// <summary>
-        /// 从后端刷新 Tag 缓存（包括所有自定义 Tag 和增长型 Tag）
-        /// </summary>
-        public async UniTask RefreshGrowableTags()
-        {
-            try
-            {
-                var token = await _client.GetTags();
-                var arr = token as JArray ?? new JArray();
-                _allTags = arr.Select(j => new TagInfo
-                {
-                    TagId = j.GetStringIgnoreCase("id"),
-                    DisplayName = j.GetStringIgnoreCase("name"),
-                    ModuleId = j.GetStringIgnoreCase("moduleId"),
-                    BitValue = (ulong)j.GetValueIgnoreCase<long>("bitValue"),
-                    IsGrowableList = j.GetValueIgnoreCase<bool>("isGrowable")
-                })
-                .Where(t => t.BitValue != 0)
-                .ToList();
+        /// <summary>[Compat] Returns null until growable playlist support is added.</summary>
+        public TagInfo GetCurrentGrowableTag() => null;
 
-                _growableTags = _allTags.Where(t => t.IsGrowableList).ToList();
-                Plugin.Log?.LogInfo($"[OmniMix] Refreshed {_allTags.Count} custom tags ({_growableTags.Count} growable)");
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh tags: {ex.Message}");
-            }
-        }
+        /// <summary>[Compat] No-op until growable playlist support is added.</summary>
+        public UniTask SetCurrentGrowableTag(string tagId) => UniTask.CompletedTask;
+
+        /// <summary>[Compat] Returns 0 until growable playlist support is added.</summary>
+        public UniTask<int> TriggerGrowableLoadMore(string tagId) => UniTask.FromResult(0);
 
         #endregion
 
@@ -1086,7 +1055,7 @@ namespace ChillPatcher
 
                 if (allMusicList != null)
                 {
-                    targetAudio = ConvertToGameAudio(virtualMusic, new Dictionary<string, ulong>());
+                    targetAudio = ConvertToGameAudio(virtualMusic, 0);
                     allMusicList.Add(targetAudio);
                 }
             }
@@ -1095,9 +1064,6 @@ namespace ChillPatcher
             {
                 Plugin.Log?.LogInfo($"[OmniMix] Syncing track change from backend: {targetAudio.AudioClipName}");
                 musicService.PlayArugumentMusic(targetAudio, MusicChangeKind.Manual);
-
-                // 同步到 PlayQueueManager 本地镜像
-                PlayQueueManager.Instance.UpdateCurrentTrack(targetAudio.UUID);
             }
         }
 
@@ -1112,46 +1078,51 @@ namespace ChillPatcher
         private void OnQueueChanged(object sender, QueueChangedEventArgs e)
         {
             OnQueueUpdated?.Invoke();
-
-            // 同步到 PlayQueueManager 本地镜像
-            _ = SyncQueueToPlayQueueManagerAsync();
+            // queue.changed may arrive together with instances.changed — debounce to avoid double import
+            DebouncedSyncSongs();
         }
 
-        private async UniTaskVoid SyncQueueToPlayQueueManagerAsync()
+        private void OnInstancesChanged(object sender, InstancesChangedEventArgs e)
         {
-            try
+            Plugin.Log?.LogInfo($"[OmniMix] Instances changed (count={e.InstanceCount}), triggering playlist sync...");
+            // instances.changed may arrive together with queue.changed — debounce to avoid double import
+            DebouncedSyncSongs();
+        }
+
+        /// <summary>
+        /// Debounced song/playlist sync.  When queue.changed and instances.changed arrive
+        /// close together (which they often do), only one full ImportSongsToGame runs.
+        /// </summary>
+        private void DebouncedSyncSongs()
+        {
+            StopSyncDebounce();
+            _syncDebounceCts = new CancellationTokenSource();
+            var token = _syncDebounceCts.Token;
+            UniTask.Void(async () =>
             {
-                if (_client == null || !_connected) return;
-                var queueJson = await _client.GetQueue();
-                var historyJson = await _client.GetHistory();
-
-                await UniTask.SwitchToMainThread();
-
-                var queueUuids = new List<string>();
-                if (queueJson is JArray qArr)
+                try
                 {
-                    foreach (var item in qArr)
-                    {
-                        var uuid = item.GetStringIgnoreCase("uuid");
-                        if (!string.IsNullOrEmpty(uuid)) queueUuids.Add(uuid);
-                    }
+                    // Wait a short window so that rapidly-firing events coalesce
+                    await UniTask.Delay(TimeSpan.FromMilliseconds(250), cancellationToken: token);
+                    if (token.IsCancellationRequested) return;
+                    Plugin.Log?.LogInfo("[OmniMix] Debounced sync: importing songs...");
+                    await ImportSongsToGame(false);
                 }
-
-                var historyUuids = new List<string>();
-                if (historyJson is JArray historyArr)
+                catch (OperationCanceledException) { /* coalesced */ }
+                catch (Exception ex)
                 {
-                    foreach (var item in historyArr)
-                    {
-                        var uuid = item is JObject jo ? jo.GetStringIgnoreCase("uuid") : item?.ToString();
-                        if (!string.IsNullOrEmpty(uuid)) historyUuids.Add(uuid);
-                    }
+                    Plugin.Log?.LogWarning($"[OmniMix] Debounced sync failed: {ex.Message}");
                 }
+            });
+        }
 
-                PlayQueueManager.Instance.UpdateFromBackendQueue(queueUuids, historyUuids, 0);
-            }
-            catch (Exception ex)
+        private void StopSyncDebounce()
+        {
+            if (_syncDebounceCts != null)
             {
-                Plugin.Log?.LogDebug($"[OmniMix] SyncQueueToPlayQueueManagerAsync: {ex.Message}");
+                _syncDebounceCts.Cancel();
+                _syncDebounceCts.Dispose();
+                _syncDebounceCts = null;
             }
         }
 
@@ -1166,7 +1137,7 @@ namespace ChillPatcher
             // When backend pushes new songs (e.g. from growable list load-more),
             // re-import them into the game's MusicService
             Plugin.Log?.LogInfo("[OmniMix] Playlist updated, re-importing songs...");
-            ImportSongsToGame(false).Forget();
+            DebouncedSyncSongs();
         }
 
         private void OnExcludeChanged(object sender, ExcludeChangedEventArgs e)
@@ -1191,30 +1162,11 @@ namespace ChillPatcher
 
         #endregion
 
-        #region 队列控制
-
-        /// <summary>
-        /// 清空后端播放队列
-        /// </summary>
-        public async UniTask ClearQueueAsync()
-        {
-            try
-            {
-                if (_client != null && _connected)
-                    await _client.ClearQueue();
-            }
-            catch (Exception ex)
-            {
-                Plugin.Log?.LogWarning($"[OmniMix] ClearQueueAsync failed: {ex.Message}");
-            }
-        }
-
-        #endregion
-
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
+            StopSyncDebounce();
             _ = DisconnectAsync();
         }
     }

@@ -20,6 +20,9 @@ namespace OmniMixPlayer.Backend.Audio
 
         public event Action OnChanged;
         public event Action<string> OnProfileChanged;
+        public event Action<string, float> OnVolumeChanged;
+        public event Action<string, float> OnLatencyChanged;
+        public event Action<string, SDK.Protos.Models.EqualizerState> OnEqualizerChanged;
 
         public InstanceRegistry(InstanceProfileStore store, ILogger logger)
         {
@@ -45,7 +48,7 @@ namespace OmniMixPlayer.Backend.Audio
                 Kind = req.Kind,
                 ModId = req.ModId ?? existing.ModId,
                 GameName = req.GameName ?? existing.GameName,
-                Capabilities = req.Capabilities ?? existing.Capabilities ?? new InstanceCapabilities(),
+                Capabilities = MergeCapabilities(req.Capabilities, existing.Capabilities),
                 Volume = existing.Volume,
                 TargetLatency = existing.TargetLatency,
                 Equalizer = existing.Equalizer ?? new SDK.Protos.Models.EqualizerState { SoftClipEnabled = true },
@@ -106,32 +109,38 @@ namespace OmniMixPlayer.Backend.Audio
         {
             id = SanitizeId(id);
             _store.SaveVolume(id, volume);
-            OnChanged?.Invoke();
+            // Volume doesn't affect InstanceSummary — light push only.
             OnProfileChanged?.Invoke(id);
+            OnVolumeChanged?.Invoke(id, volume);
         }
 
         public void SaveTargetLatency(string id, float latency)
         {
             id = SanitizeId(id);
             _store.SaveTargetLatency(id, latency);
-            OnChanged?.Invoke();
+            // Latency doesn't affect InstanceSummary — light push only.
             OnProfileChanged?.Invoke(id);
+            OnLatencyChanged?.Invoke(id, latency);
         }
 
         public void SaveEqualizer(string id, SDK.Protos.Models.EqualizerState eq)
         {
             id = SanitizeId(id);
             _store.SaveEqualizer(id, eq);
-            OnChanged?.Invoke();
+            // EQ doesn't affect InstanceSummary — light push only.
             OnProfileChanged?.Invoke(id);
+            OnEqualizerChanged?.Invoke(id, eq);
         }
         public void SavePlaybackTimeline(string id, PlaybackTimelineState timeline)
         {
-            var profile = _store.Get(SanitizeId(id));
+            id = SanitizeId(id);
+            var profile = _store.Get(id);
             profile.PlaybackTimeline = EnsureTimeline(timeline);
             profile.ImportedPlaylistIds.Clear();
             profile.ImportedPlaylistIds.AddRange(profile.PlaybackTimeline.PlaylistSources.Select(s => s.Id));
             _store.Upsert(profile);
+            OnChanged?.Invoke();
+            OnProfileChanged?.Invoke(id);
         }
 
         public List<InstanceSummary> ListSummaries(PlaybackSessionManager sessions = null)
@@ -160,6 +169,38 @@ namespace OmniMixPlayer.Backend.Audio
                 });
             }
             return summaries;
+        }
+
+        /// <summary>
+        /// Merge capabilities: use the request's booleans, but preserve existing limit
+        /// values (max_imported_playlists, etc.) when the request doesn't specify them.
+        /// This is needed because the native C SDK only carries boolean flags and
+        /// cannot express limits — limits are declared by the Flutter mod catalog.
+        /// </summary>
+        private static InstanceCapabilities MergeCapabilities(InstanceCapabilities req, InstanceCapabilities existing)
+        {
+            var merged = req ?? existing ?? new InstanceCapabilities();
+            if (req != null && existing != null)
+            {
+                // Preserve existing limits unless req explicitly overrides with a positive value.
+                // Native SDK may set MaxImportedPlaylists=0 with Has=true; treat 0 as "not set".
+                if (!req.HasMaxImportedPlaylists || req.MaxImportedPlaylists <= 0)
+                {
+                    if (existing.HasMaxImportedPlaylists)
+                        merged.MaxImportedPlaylists = existing.MaxImportedPlaylists;
+                }
+                if (!req.HasMaxTags || req.MaxTags <= 0)
+                {
+                    if (existing.HasMaxTags)
+                        merged.MaxTags = existing.MaxTags;
+                }
+                if (!req.HasMaxPlaylistEntries || req.MaxPlaylistEntries <= 0)
+                {
+                    if (existing.HasMaxPlaylistEntries)
+                        merged.MaxPlaylistEntries = existing.MaxPlaylistEntries;
+                }
+            }
+            return merged;
         }
 
         private static string SanitizeId(string id) => (id ?? "").Replace("..", "").Replace("/", "").Replace("\\", "").Trim();

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:archive/archive.dart';
+import '../generated/omni_mix_player/models/instance.pb.dart';
 import '../mods/registry.dart';
 import '../games/registry.dart';
 
@@ -71,7 +72,7 @@ class FrameworkDeclaration {
   bool verifyInstallation(String gameDir) {
     final sFiles = statusFiles.isNotEmpty ? statusFiles : filesToLink;
     final sDirs = statusDirs.isNotEmpty ? statusDirs : dirsToLink;
-    
+
     for (final relFile in sFiles) {
       if (File('$gameDir/$relFile').existsSync()) return true;
     }
@@ -112,7 +113,7 @@ class FrameworkDeclaration {
     try {
       final bytes = File(localZipPath).readAsBytesSync();
       final archive = ZipDecoder().decodeBytes(bytes);
-      
+
       final targetExtractDir = Directory(tempDir);
       if (!targetExtractDir.existsSync()) {
         targetExtractDir.createSync(recursive: true);
@@ -133,7 +134,7 @@ class FrameworkDeclaration {
 
         outFile.writeAsBytesSync(file.content);
       }
-      
+
       for (final relativeDir in dirsToCreate) {
         final d = Directory('$tempDir/$relativeDir');
         if (!d.existsSync()) {
@@ -168,6 +169,11 @@ class ModDeclaration {
   /// "client" = game-managed playback (minimal profile)
   final String mode;
 
+  /// Instance capabilities declared by the mod.
+  /// Passed to the backend during registration so the instance menu
+  /// can show control buttons immediately, before the mod connects.
+  final InstanceCapabilities? capabilities;
+
   const ModDeclaration({
     required this.id,
     required this.name,
@@ -180,6 +186,7 @@ class ModDeclaration {
     this.rootFilesNoBackup = const [],
     this.pluginTargetDir = 'BepInEx/plugins',
     required this.mode,
+    this.capabilities,
   });
 
   bool get usesFramework =>
@@ -196,10 +203,7 @@ class ModDeclaration {
     Map<String, dynamic> settings,
   ) async {}
 
-  Future<void> onUndeploy(
-    String gameDir,
-    void Function(String) log,
-  ) async {}
+  Future<void> onUndeploy(String gameDir, void Function(String) log) async {}
 
   Widget buildSettingsWidget(
     BuildContext context,
@@ -213,7 +217,7 @@ class ModDeclaration {
     if (installsToGameRoot) {
       final marker = File('$gameDir/.omnimix_mods/$id.managed');
       if (marker.existsSync()) return true;
-      
+
       for (final relFile in rootFilesToLink) {
         if (File('$gameDir/$relFile').existsSync()) return true;
       }
@@ -255,12 +259,15 @@ class ModDeclaration {
     await extractZipToStaging(tempDir, log);
   }
 
-  Future<void> extractZipToStaging(String tempDir, void Function(String) log) async {
+  Future<void> extractZipToStaging(
+    String tempDir,
+    void Function(String) log,
+  ) async {
     final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
     final managerDir = localAppData.isEmpty
         ? '${Directory.systemTemp.path}/omnimix_mod_manager'
         : '$localAppData/OmniMixPlayer/mod_manager';
-        
+
     final localZipPath = '$managerDir/$archiveName';
     log('Loading $archiveName from assets...');
 
@@ -284,8 +291,8 @@ class ModDeclaration {
       final bytes = File(localZipPath).readAsBytesSync();
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      final targetExtractPath = installsToGameRoot 
-          ? tempDir 
+      final targetExtractPath = installsToGameRoot
+          ? tempDir
           : '$tempDir/$pluginTargetDir/$folderName';
 
       final targetExtractDir = Directory(targetExtractPath);
@@ -381,7 +388,6 @@ ModDeclaration? primaryModForGame(GameDeclaration game) {
   final mods = modsForGame(game);
   return mods.isEmpty ? null : mods.first;
 }
-
 
 // ═══════════════════════════════════════════════════════════
 //  Instance & Archive Models

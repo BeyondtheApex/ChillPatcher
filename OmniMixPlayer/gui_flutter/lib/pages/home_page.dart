@@ -269,6 +269,8 @@ class _HomePageState extends State<HomePage> {
     final instance = widget.state.activeInstance;
     final trackUuid = instance?.currentTrackUuid ?? '';
     final canControl = widget.state.canControlActiveInstance;
+    final canPlayPause = widget.state.canPlayPauseActiveInstance;
+
     final title = (widget.state.currentTrackTitle.isNotEmpty)
         ? widget.state.currentTrackTitle
         : (trackUuid.isNotEmpty ? trackUuid : l10n.noSongPlaying);
@@ -276,9 +278,9 @@ class _HomePageState extends State<HomePage> {
     final duration = widget.state.currentTrackDuration;
     final isPlaying = widget.state.isPlaying;
     final position = _draggingPosition ?? widget.state.currentTrackPosition;
-    final canSeek = canControl;
-    final canSetVolume = canControl;
-    final canSetLatency = canControl;
+    final canSeek = widget.state.canSeekActiveInstance;
+    final canSetVolume = widget.state.canSetVolumeActiveInstance;
+    final canSetLatency = widget.state.canSetLatencyActiveInstance;
 
     return _Panel(
       child: Column(
@@ -333,7 +335,7 @@ class _HomePageState extends State<HomePage> {
                   tooltip: l10n.previous,
                 ),
                 IconButton(
-                  onPressed: canControl ? widget.state.togglePlayback : null,
+                  onPressed: canPlayPause ? widget.state.togglePlayback : null,
                   icon: Icon(
                     isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                   ),
@@ -483,7 +485,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 6),
           Text(
-            canControl
+            canPlayPause
                 ? l10n.serverControlMode
                 : l10n.clientModeControlsDisabled,
             style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
@@ -539,7 +541,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildReorderList(List<QueueTrack> items, {required bool isQueue}) {
     final l10n = AppLocalizations.of(context)!;
     final canQueue = widget.state.canControlActiveInstance;
-    final canPlayback = widget.state.canControlActiveInstance;
+    final canPlayback = widget.state.canPlayPauseActiveInstance;
     if (items.isEmpty) return Center(child: Text(l10n.empty));
 
     return ReorderableListView.builder(
@@ -668,7 +670,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildLibraryList(bool canControl) {
     final l10n = AppLocalizations.of(context)!;
     final songs = _filteredSongs();
-    final canPlayback = widget.state.canControlActiveInstance;
+    final canPlayback = widget.state.canPlayPauseActiveInstance;
     final canQueue = widget.state.canControlActiveInstance;
     final selectedSourceIds = widget.state.playlistSources
         .map((s) => s.id)

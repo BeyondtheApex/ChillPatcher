@@ -54,7 +54,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<PlayResponse> Play(PlayRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireServerPlayback(caps, "play");
+            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "play");
             GetController(request.InstanceId).Play(request.Uuid);
             return Task.FromResult(new PlayResponse());
         }
@@ -62,7 +62,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<PauseResponse> Pause(PauseRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireServerPlayback(caps, "pause");
+            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "pause");
             GetController(request.InstanceId).Pause();
             return Task.FromResult(new PauseResponse());
         }
@@ -70,7 +70,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<ResumeResponse> Resume(ResumeRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireServerPlayback(caps, "resume");
+            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "resume");
             GetController(request.InstanceId).Resume();
             return Task.FromResult(new ResumeResponse());
         }
@@ -78,7 +78,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<ToggleResponse> Toggle(ToggleRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireServerPlayback(caps, "toggle");
+            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "toggle");
             GetController(request.InstanceId).Toggle();
             return Task.FromResult(new ToggleResponse());
         }
@@ -110,7 +110,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<StopResponse> Stop(StopRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireServerPlayback(caps, "stop");
+            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "stop");
             GetController(request.InstanceId).Stop();
             return Task.FromResult(new StopResponse());
         }
@@ -160,7 +160,9 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<GetQueueResponse> GetQueue(GetQueueRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireQueueManagement(caps, "getQueue");
+            // getQueue is read-only — available even without QueueManagement.
+            // Return the combined queue: source-derived uuids + manual queue.
+            var timeline = _timeline.Get(request.InstanceId);
             var resp = new GetQueueResponse();
             resp.Queue.AddRange(_timeline.Get(request.InstanceId).ManualQueueUuids.Select((u, i) => ToQueueTrack(u, i)));
             return Task.FromResult(resp);
@@ -225,7 +227,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<GetHistoryResponse> GetHistory(GetHistoryRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireQueueManagement(caps, "getHistory");
+            // getHistory is read-only — available even without QueueManagement
             var resp = new GetHistoryResponse();
             resp.History.AddRange(_timeline.Get(request.InstanceId).HistoryUuids.Select((u, i) => ToQueueTrack(u, i)));
             return Task.FromResult(resp);

@@ -159,7 +159,12 @@ namespace ChillPatcher
         {
             Logger.LogInfo("OnApplicationQuit - cleaning up...");
 
-            // 队列/历史/播放状态由后端 Profile 自动持久化，无需游戏侧保存
+            try
+            {
+                PlaybackStateManager.Instance?.ForceSave();
+                Logger.LogInfo("Playback state saved!");
+            }
+            catch { }
 
             try
             {

@@ -328,12 +328,20 @@ class ApiClient {
     String instanceId,
     String modId,
     String gameName,
-    String mode,
-  ) async {
+    String mode, {
+    InstanceCapabilities? capabilities,
+  }) async {
     final profile = await _loadProfileForUpdate(instanceId)
+      ..kind = InstanceKind.INSTANCE_KIND_GAME_MOD
       ..modId = modId
       ..gameName = gameName
       ..displayName = gameName;
+    // Use mod-declared capabilities if provided, otherwise ensure non-null
+    profile.capabilities =
+        capabilities ??
+        (profile.hasCapabilities()
+            ? profile.capabilities
+            : InstanceCapabilities());
     await _grpc.instance.updateProfile(
       UpdateProfileRequest(instanceId: instanceId, profile: profile),
     );

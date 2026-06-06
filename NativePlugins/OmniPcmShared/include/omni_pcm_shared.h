@@ -169,6 +169,9 @@ typedef struct OmniPcmConnectOptions {
     int32_t kind;
     uint32_t capability_flags;
     int32_t no_instance;
+    int32_t max_imported_playlists;  /* 0 = unspecified / no limit */
+    int32_t max_tags;
+    int32_t max_playlist_entries;
 } OmniPcmConnectOptions;
 
 typedef struct OmniPcmConnectionInfo {
@@ -213,6 +216,9 @@ typedef struct OmniPcmInstanceProfileInfo {
     float volume;
     float target_latency;
     int32_t mode;
+    int32_t max_imported_playlists;
+    int32_t max_tags;
+    int32_t max_playlist_entries;
     int64_t created_at;
     int64_t updated_at;
 } OmniPcmInstanceProfileInfo;
@@ -348,6 +354,8 @@ typedef struct OmniPcmEventInfo {
     int32_t bool_value;
     int32_t song_count;
     int32_t instance_count;
+    float volume;
+    float latency;
 } OmniPcmEventInfo;
 
 typedef void (*OmniPcmEventCallback)(const OmniPcmEventInfo* event_info, void* user_data);

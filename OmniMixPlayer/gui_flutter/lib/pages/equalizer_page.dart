@@ -459,7 +459,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
   Future<void> _loadState() async {
     final instId = widget.state.activeInstanceId;
     if (instId == null) return;
-    if (!widget.state.canControlActiveInstance) {
+    if (!widget.state.canEqualizeActiveInstance) {
       _notifier?.removeListener(_onNotifierChanged);
       if (mounted) {
         setState(() {
@@ -487,7 +487,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
   Future<void> _saveState() async {
     final instId = widget.state.activeInstanceId;
     if (instId == null || _eqState == null) return;
-    if (!widget.state.canControlActiveInstance) return;
+    if (!widget.state.canEqualizeActiveInstance) return;
     try {
       await widget.state.api.updateInstanceEqualizer(
         instId,
@@ -560,7 +560,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
       return Center(child: Text(l10n.noSelectedInstance));
     }
 
-    if (!widget.state.canControlActiveInstance) {
+    if (!widget.state.canEqualizeActiveInstance) {
       return Center(child: Text(l10n.disabled));
     }
 

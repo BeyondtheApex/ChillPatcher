@@ -15,8 +15,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <fstream>
-#include <memory>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -24,7 +24,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <winhttp.h>
 #endif
 
 namespace {
@@ -261,6 +260,10 @@ void fill_profile(const omni_mix_player::InstanceProfile& profile, OmniPcmInstan
     out->capability_flags = capability_flags(profile.capabilities());
     out->volume = profile.volume();
     out->target_latency = profile.target_latency();
+    const auto& caps = profile.capabilities();
+    out->max_imported_playlists = caps.has_max_imported_playlists() ? caps.max_imported_playlists() : 0;
+    out->max_tags = caps.has_max_tags() ? caps.max_tags() : 0;
+    out->max_playlist_entries = caps.has_max_playlist_entries() ? caps.max_playlist_entries() : 0;
     out->created_at = profile.has_created_at() ? profile.created_at().seconds() : 0;
     out->updated_at = profile.has_updated_at() ? profile.updated_at().seconds() : 0;
 }
@@ -386,100 +389,48 @@ void fill_event(const omni_mix_player::WsEvent& evt, OmniPcmEventInfo* out) {
         case omni_mix_player::WsEvent::kBackendState:
             out->backend_running = evt.backend_state().running() ? 1 : 0;
             break;
+        case omni_mix_player::WsEvent::kVolumeChanged:
+            copy_text(out->instance_id, sizeof(out->instance_id), evt.volume_changed().instance_id());
+            out->volume = evt.volume_changed().volume();
+            break;
+        case omni_mix_player::WsEvent::kLatencyChanged:
+            copy_text(out->instance_id, sizeof(out->instance_id), evt.latency_changed().instance_id());
+            out->latency = evt.latency_changed().latency();
+            break;
         default:
             break;
     }
 }
 
-#ifdef _WIN32
-std::wstring widen_ascii(const std::string& text) {
-    return std::wstring(text.begin(), text.end());
-}
-
 void websocket_event_loop(OmniPcmClientContext* c, OmniPcmEventCallback callback, void* user_data) {
-    HINTERNET session = WinHttpOpen(L"OmniPcmShared/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) {
-        c->set_error("WinHttpOpen failed");
-        return;
-    }
-    DWORD receive_timeout = 1000;
-    WinHttpSetOption(session, WINHTTP_OPTION_RECEIVE_TIMEOUT, &receive_timeout, sizeof(receive_timeout));
+    std::string url = "ws://" + c->host + ":" + std::to_string(c->port) + "/ws";
 
-    HINTERNET connect = WinHttpConnect(session, widen_ascii(c->host).c_str(),
-        static_cast<INTERNET_PORT>(c->port), 0);
-    if (!connect) {
-        c->set_error("WinHttpConnect failed");
-        WinHttpCloseHandle(session);
+    httplib::ws::WebSocketClient ws(url);
+    ws.set_websocket_ping_interval(5);
+    ws.set_read_timeout(10, 0);
+
+    if (!ws.connect()) {
+        c->set_error("WebSocket connect failed");
         return;
     }
 
-    HINTERNET request = WinHttpOpenRequest(connect, L"GET", L"/ws", nullptr,
-        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
-    if (!request) {
-        c->set_error("WinHttpOpenRequest failed");
-        WinHttpCloseHandle(connect);
-        WinHttpCloseHandle(session);
-        return;
-    }
-
-    DWORD zero = 0;
-    WinHttpSetOption(request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, &zero, sizeof(zero));
-    if (!WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) ||
-        !WinHttpReceiveResponse(request, nullptr)) {
-        c->set_error("WebSocket upgrade failed");
-        WinHttpCloseHandle(request);
-        WinHttpCloseHandle(connect);
-        WinHttpCloseHandle(session);
-        return;
-    }
-
-    HINTERNET ws = WinHttpWebSocketCompleteUpgrade(request, 0);
-    WinHttpCloseHandle(request);
-    if (!ws) {
-        c->set_error("WinHttpWebSocketCompleteUpgrade failed");
-        WinHttpCloseHandle(connect);
-        WinHttpCloseHandle(session);
-        return;
-    }
-
-    std::vector<uint8_t> chunk(64 * 1024);
-    std::string message;
+    std::string msg;
     while (!c->event_stop.load()) {
-        DWORD read = 0;
-        WINHTTP_WEB_SOCKET_BUFFER_TYPE type{};
-        DWORD status = WinHttpWebSocketReceive(ws, chunk.data(), static_cast<DWORD>(chunk.size()), &read, &type);
-        if (status == ERROR_WINHTTP_TIMEOUT) {
-            continue;
-        }
-        if (status != NO_ERROR) {
-            c->set_error("WinHttpWebSocketReceive failed");
-            break;
-        }
-        if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE) {
-            break;
-        }
-        if (type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE ||
-            type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE) {
-            message.append(reinterpret_cast<const char*>(chunk.data()), read);
-            if (type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE) {
-                omni_mix_player::WsEvent evt;
-                if (evt.ParseFromString(message)) {
-                    OmniPcmEventInfo info{};
-                    fill_event(evt, &info);
-                    callback(&info, user_data);
-                }
-                message.clear();
+        auto result = ws.read(msg);
+        if (result == httplib::ws::ReadResult::Binary || result == httplib::ws::ReadResult::Text) {
+            omni_mix_player::WsEvent evt;
+            if (evt.ParseFromString(msg)) {
+                OmniPcmEventInfo info{};
+                fill_event(evt, &info);
+                callback(&info, user_data);
             }
+        } else if (!ws.is_open()) {
+            break;
         }
     }
 
-    WinHttpWebSocketClose(ws, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
-    WinHttpCloseHandle(ws);
-    WinHttpCloseHandle(connect);
-    WinHttpCloseHandle(session);
+    ws.close();
 }
-#endif
 
 template <typename Request, typename Response>
 int unary_playback(OmniPcmClientContext* c, const char* method, const char* instance_id) {
@@ -549,6 +500,12 @@ OMNI_PCM_API int OmniPcmClient_ConnectInstance(
     if (options->display_name) req.set_display_name(options->display_name);
     req.set_no_instance(options->no_instance != 0);
     fill_capabilities(options->capability_flags, req.mutable_capabilities());
+    if (options->max_imported_playlists > 0)
+        req.mutable_capabilities()->set_max_imported_playlists(options->max_imported_playlists);
+    if (options->max_tags > 0)
+        req.mutable_capabilities()->set_max_tags(options->max_tags);
+    if (options->max_playlist_entries > 0)
+        req.mutable_capabilities()->set_max_playlist_entries(options->max_playlist_entries);
 
     omni_mix_player::InstanceConnectResponse resp;
     int r = grpc_web_unary(c, "omni_mix_player.InstanceService", "Connect", req, &resp);
@@ -642,6 +599,20 @@ OMNI_PCM_API int OmniPcmClient_UpdateProfile(
     existing.set_volume(profile->volume);
     existing.set_target_latency(profile->target_latency);
     fill_capabilities(profile->capability_flags, existing.mutable_capabilities());
+    if (profile->max_imported_playlists > 0)
+        existing.mutable_capabilities()->set_max_imported_playlists(profile->max_imported_playlists);
+    else
+        existing.mutable_capabilities()->clear_max_imported_playlists();
+
+    if (profile->max_tags > 0)
+        existing.mutable_capabilities()->set_max_tags(profile->max_tags);
+    else
+        existing.mutable_capabilities()->clear_max_tags();
+
+    if (profile->max_playlist_entries > 0)
+        existing.mutable_capabilities()->set_max_playlist_entries(profile->max_playlist_entries);
+    else
+        existing.mutable_capabilities()->clear_max_playlist_entries();
 
     omni_mix_player::UpdateProfileRequest req;
     req.set_instance_id(profile->instance_id);
@@ -1114,15 +1085,18 @@ OMNI_PCM_API int OmniPcmClient_StartEvents(
     if (!c || !callback) return OMNI_PCM_BAD_ARGUMENT;
     OmniPcmClient_StopEvents(client);
     c->event_stop.store(false);
-#ifdef _WIN32
-    c->event_thread = std::thread([c, callback, user_data]() {
-        websocket_event_loop(c, callback, user_data);
-    });
+    try {
+        c->event_thread = std::thread([c, callback, user_data]() {
+            websocket_event_loop(c, callback, user_data);
+        });
+    } catch (const std::exception& ex) {
+        c->set_error(ex.what());
+        return OMNI_PCM_ERROR;
+    } catch (...) {
+        c->set_error("Unknown thread creation error");
+        return OMNI_PCM_ERROR;
+    }
     return OMNI_PCM_OK;
-#else
-    c->set_error("Event WebSocket client is currently implemented for Windows only");
-    return OMNI_PCM_UNSUPPORTED;
-#endif
 }
 
 /* ── Library queries ──────────────────────────────────────────── */

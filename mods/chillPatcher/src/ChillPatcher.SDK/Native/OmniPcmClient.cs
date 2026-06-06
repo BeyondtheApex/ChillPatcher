@@ -10,9 +10,11 @@ namespace ChillPatcher.SDK.Native
     {
         Ok = 0,
         Error = -1,
-        BadArgument = -2,
-        Unsupported = -3,
-        NotReady = -4
+        NotReady = -2,
+        Eof = -3,
+        BadArgument = -4,
+        Unsupported = -5,
+        WrongStream = -6
     }
 
     public enum OmniPcmInstanceKind
@@ -76,6 +78,9 @@ namespace ChillPatcher.SDK.Native
         public int kind;
         public uint capabilityFlags;
         public int noInstance;
+        public int maxImportedPlaylists;
+        public int maxTags;
+        public int maxPlaylistEntries;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -208,6 +213,21 @@ namespace ChillPatcher.SDK.Native
         public int boolValue;
         public int songCount;
         public int instanceCount;
+        public float volume;
+        public float latency;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OmniPcmPlaylistSourceInfo
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string id;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string name;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string refId;
+        public int songCount;
+        public int kind;
     }
 
     #endregion
@@ -216,6 +236,26 @@ namespace ChillPatcher.SDK.Native
     /// C# P/Invoke wrapper for the native OmniPcmShared control-plane client.
     /// All backend communication (gRPC-Web, HTTP, WebSocket events) goes through this DLL.
     /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OmniPcmTrackQuery
+    {
+        [MarshalAs(UnmanagedType.LPStr)] public string albumId;
+        [MarshalAs(UnmanagedType.LPStr)] public string tagId;
+        [MarshalAs(UnmanagedType.LPStr)] public string playlistId;
+        [MarshalAs(UnmanagedType.LPStr)] public string moduleId;
+        public int isExcluded;    // -1=no filter, 0=not excluded, 1=excluded
+        public int limit;
+        public int offset;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OmniPcmLibraryQuery
+    {
+        [MarshalAs(UnmanagedType.LPStr)] public string moduleId;
+        public int limit;
+        public int offset;
+    }
+
     public sealed class OmniPcmClient : IDisposable
     {
         private const string DllName = "OmniPcmShared";
@@ -289,7 +329,10 @@ namespace ChillPatcher.SDK.Native
                 displayName = displayName,
                 kind = (int)OmniPcmInstanceKind.GameMod,
                 capabilityFlags = (uint)caps,
-                noInstance = 0
+                noInstance = 0,
+                maxImportedPlaylists = 0,
+                maxTags = 0,
+                maxPlaylistEntries = 0
             };
             var r = OmniPcmClient_ConnectInstance(_handle, ref opts, out var info);
             if (r != 0) throw new InvalidOperationException($"ConnectInstance failed: {LastError}");
@@ -379,6 +422,25 @@ namespace ChillPatcher.SDK.Native
             OmniPcmClient_SetRepeatMode(_handle, instanceId, mode);
         }
 
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int OmniPcmClient_SetTargetLatency(IntPtr client,
+            [MarshalAs(UnmanagedType.LPStr)] string instanceId, float latency);
+
+        public void SetTargetLatency(string instanceId, float latency)
+        {
+            OmniPcmClient_SetTargetLatency(_handle, instanceId, latency);
+        }
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int OmniPcmClient_GetTargetLatency(IntPtr client,
+            [MarshalAs(UnmanagedType.LPStr)] string instanceId, out float outLatency);
+
+        public float GetTargetLatency(string instanceId)
+        {
+            OmniPcmClient_GetTargetLatency(_handle, instanceId, out var latency);
+            return latency;
+        }
+
         #endregion
 
         #region Queue
@@ -415,6 +477,25 @@ namespace ChillPatcher.SDK.Native
         public void ClearQueue(string instanceId)
         {
             OmniPcmClient_ClearQueue(_handle, instanceId);
+        }
+
+        #endregion
+
+        #region PlaylistSources
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        private static extern int OmniPcmClient_GetPlaylistSources(IntPtr client,
+            [MarshalAs(UnmanagedType.LPStr)] string instanceId,
+            [Out] OmniPcmPlaylistSourceInfo[] outSources, ref int inoutCount);
+
+        public OmniPcmPlaylistSourceInfo[] GetPlaylistSources(string instanceId)
+        {
+            int count = 0;
+            int r = OmniPcmClient_GetPlaylistSources(_handle, instanceId, null, ref count);
+            if (r != (int)OmniPcmResult.NotReady || count == 0) return Array.Empty<OmniPcmPlaylistSourceInfo>();
+            var sources = new OmniPcmPlaylistSourceInfo[count];
+            r = OmniPcmClient_GetPlaylistSources(_handle, instanceId, sources, ref count);
+            return r == 0 ? sources : Array.Empty<OmniPcmPlaylistSourceInfo>();
         }
 
         #endregion
@@ -466,13 +547,35 @@ namespace ChillPatcher.SDK.Native
         private static extern int OmniPcmClient_QueryTags(IntPtr client,
             ref OmniPcmLibraryQuery query, [Out] OmniPcmTagInfo[] outTags, ref int inoutCount);
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct OmniPcmTrackQuery { /* ... */ }
-        [StructLayout(LayoutKind.Sequential)]
-        private struct OmniPcmLibraryQuery { /* ... */ }
+        public OmniPcmTrackInfo[] QueryTracks(OmniPcmTrackQuery query)
+        {
+            int count = 0;
+            var r = OmniPcmClient_QueryTracks(_handle, ref query, null, ref count);
+            if (r != (int)OmniPcmResult.NotReady || count == 0) return Array.Empty<OmniPcmTrackInfo>();
+            var tracks = new OmniPcmTrackInfo[count];
+            r = OmniPcmClient_QueryTracks(_handle, ref query, tracks, ref count);
+            return r == 0 ? tracks : Array.Empty<OmniPcmTrackInfo>();
+        }
 
-        // Library queries not needed for core playback; stub for future use.
-        // The native SDK supports them via the same DllImport pattern.
+        public OmniPcmAlbumInfo[] QueryAlbums(OmniPcmLibraryQuery query)
+        {
+            int count = 0;
+            var r = OmniPcmClient_QueryAlbums(_handle, ref query, null, ref count);
+            if (r != (int)OmniPcmResult.NotReady || count == 0) return Array.Empty<OmniPcmAlbumInfo>();
+            var albums = new OmniPcmAlbumInfo[count];
+            r = OmniPcmClient_QueryAlbums(_handle, ref query, albums, ref count);
+            return r == 0 ? albums : Array.Empty<OmniPcmAlbumInfo>();
+        }
+
+        public OmniPcmTagInfo[] QueryTags(OmniPcmLibraryQuery query)
+        {
+            int count = 0;
+            var r = OmniPcmClient_QueryTags(_handle, ref query, null, ref count);
+            if (r != (int)OmniPcmResult.NotReady || count == 0) return Array.Empty<OmniPcmTagInfo>();
+            var tags = new OmniPcmTagInfo[count];
+            r = OmniPcmClient_QueryTags(_handle, ref query, tags, ref count);
+            return r == 0 ? tags : Array.Empty<OmniPcmTagInfo>();
+        }
 
         #endregion
     }

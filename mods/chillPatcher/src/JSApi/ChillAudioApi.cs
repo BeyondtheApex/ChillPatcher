@@ -11,8 +11,8 @@ using ChillPatcher.UIFramework.Audio;
 namespace ChillPatcher.JSApi
 {
     /// <summary>
-    /// 音频控制 API（后端代理版本）
-    /// 播放控制全部通过 OmniMixPlayer 后端，Profile 维护队列/历史/播放状态
+    /// 音频控制 API (IPC 版本)
+    /// 播放控制通过 OmniMixPlayer API，游戏内状态通过 MusicService
     /// </summary>
     public class ChillAudioApi
     {
@@ -23,34 +23,51 @@ namespace ChillPatcher.JSApi
             _logger = logger;
         }
 
-        #region 播放控制（全部转发到后端）
+        #region 播放控制
 
         public void togglePause()
         {
-            _ = OmniMixIntegration.Instance.Toggle();
-            SyncGamePlayState();
+            var facility = GetFacilityMusic();
+            if (facility == null) return;
+            facility.OnClickButtonPlayOrPauseMusic();
+            // Game handles play/pause state internally; no backend Toggle needed.
         }
 
         public void pause()
         {
+            var facility = GetFacilityMusic();
+            if (facility == null) return;
+            facility.PauseMusic();
             _ = OmniMixIntegration.Instance.Pause();
-            SyncGamePauseState();
         }
 
         public void resume()
         {
+            var facility = GetFacilityMusic();
+            if (facility == null) return;
+            facility.UnPauseMusic();
             _ = OmniMixIntegration.Instance.Resume();
-            SyncGamePlayState();
         }
 
         public void next()
         {
-            _ = OmniMixIntegration.Instance.Next();
+            var facility = GetFacilityMusic();
+            if (facility == null) return;
+            facility.OnClickButtonSkip();
+            // Game's own queue determines the next UUID → Play(uuid).
         }
 
         public void previous()
         {
-            _ = OmniMixIntegration.Instance.Prev();
+            var queue = PlayQueueManager.Instance;
+            if (queue == null || !queue.CanGoPrevious) return;
+            var prev = queue.GoPrevious();
+            if (prev != null)
+            {
+                var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
+                musicService?.PlayArugumentMusic(prev, MusicChangeKind.Manual);
+            }
+            // Game's own queue determines the previous UUID → Play(uuid).
         }
 
         public void playByIndex(int index)
@@ -62,12 +79,8 @@ namespace ChillPatcher.JSApi
 
         public bool playByUuid(string uuid)
         {
-            if (string.IsNullOrEmpty(uuid)) return false;
-            _ = OmniMixIntegration.Instance.Play(uuid);
-
-            // 同步游戏内 UI 状态
             var musicService = MusicService_RemoveLimit_Patch.CurrentInstance;
-            if (musicService == null) return true;
+            if (musicService == null) return false;
             var playlist = musicService.CurrentPlayList;
             for (int i = 0; i < playlist.Count; i++)
             {
@@ -75,26 +88,11 @@ namespace ChillPatcher.JSApi
                 {
                     var facility = GetFacilityMusic();
                     facility?.PlayMusic(i);
+                    _ = OmniMixIntegration.Instance.Play(uuid);
                     return true;
                 }
             }
-            return true; // 即使没在列表中也已发送播放请求
-        }
-
-        private static void SyncGamePlayState()
-        {
-            var facility = UnityEngine.Object.FindObjectOfType<FacilityMusic>();
-            if (facility == null) return;
-            facility._mainState = Bulbul.FacilityMusic.MainState.Playing;
-            (facility._musicListUI as MusicUI)?.OnPlayMusic();
-        }
-
-        private static void SyncGamePauseState()
-        {
-            var facility = UnityEngine.Object.FindObjectOfType<FacilityMusic>();
-            if (facility == null) return;
-            facility._mainState = Bulbul.FacilityMusic.MainState.Pause;
-            (facility._musicListUI as MusicUI)?.OnPauseMusic();
+            return false;
         }
 
         #endregion

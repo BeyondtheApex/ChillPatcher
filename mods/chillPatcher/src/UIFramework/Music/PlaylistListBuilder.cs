@@ -15,7 +15,7 @@ namespace ChillPatcher.UIFramework.Music
     /// </summary>
     public class PlaylistListBuilder
     {
-        private static readonly BepInEx.Logging.ManualLogSource Logger = 
+        private static readonly BepInEx.Logging.ManualLogSource Logger =
             BepInEx.Logging.Logger.CreateLogSource("PlaylistBuilder");
 
         public PlaylistListBuilder()
@@ -59,6 +59,9 @@ namespace ChillPatcher.UIFramework.Music
 
             foreach (var group in groups)
             {
+                // 单曲专辑不渲染专辑头，直接列出歌曲
+                bool isSingleSongGroup = group.Songs.Count <= 1;
+
                 AlbumHeaderInfo header;
                 if (!string.IsNullOrEmpty(group.AlbumId))
                 {
@@ -91,7 +94,10 @@ namespace ChillPatcher.UIFramework.Music
                     };
                 }
 
-                result.Add(PlaylistListItem.CreateAlbumHeader(header));
+                if (!isSingleSongGroup)
+                {
+                    result.Add(PlaylistListItem.CreateAlbumHeader(header));
+                }
 
                 foreach (var swi in group.Songs)
                 {

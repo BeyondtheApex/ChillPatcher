@@ -82,6 +82,30 @@ namespace OmniMixPlayer.Backend.Http
             }
             _sessions.OnSessionsChanged += OnInstancesOrSessionsChanged;
             _registry.OnChanged += OnInstancesOrSessionsChanged;
+
+            _registry.OnVolumeChanged += (id, vol) =>
+                _ = BroadcastProtoEvent(new ProtoEvents.WsEvent
+                {
+                    Type = "volume.changed",
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    VolumeChanged = new ProtoEvents.VolumeChangedEvent { InstanceId = id, Volume = vol }
+                });
+
+            _registry.OnLatencyChanged += (id, lat) =>
+                _ = BroadcastProtoEvent(new ProtoEvents.WsEvent
+                {
+                    Type = "latency.changed",
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    LatencyChanged = new ProtoEvents.LatencyChangedEvent { InstanceId = id, Latency = lat }
+                });
+
+            _registry.OnEqualizerChanged += (id, eq) =>
+                _ = BroadcastProtoEvent(new ProtoEvents.WsEvent
+                {
+                    Type = "eq.changed",
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    EqChanged = new ProtoEvents.EqualizerChangedEvent { InstanceId = id, State = eq }
+                });
         }
 
         public void SetModuleUIHandler(ModuleUIHandler handler) => _moduleUIHandler = handler;

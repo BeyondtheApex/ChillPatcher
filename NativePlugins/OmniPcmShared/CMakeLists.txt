@@ -17,7 +17,7 @@ set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     protobuf
     GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
-    GIT_TAG v29.0
+    GIT_TAG v29.3
 )
 FetchContent_MakeAvailable(protobuf)
 
