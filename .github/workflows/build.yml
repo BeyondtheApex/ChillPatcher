@@ -59,8 +59,10 @@ jobs:
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
-          path: ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('NativePlugins/**/go.sum') }}
+          path: |
+            ~/go/pkg/mod
+            ~\AppData\Local\go-build
+          key: go-${{ runner.os }}-${{ hashFiles('NativePlugins/*/go.sum') }}
           restore-keys: go-${{ runner.os }}-
 
       - name: Cache Pub (Flutter/Dart)
@@ -147,13 +149,14 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
-      # MSVC + CMake — 预装在 windows-latest, 确认可用
+      # MSVC + CMake — 预装在 windows-latest, CMake 自动发现 MSVC
       - name: Verify MSVC & CMake
         shell: pwsh
         run: |
           cmake --version
-          where cl.exe
-          cl.exe 2>&1 | Select-Object -First 1
+          # MSVC 不在默认 PATH, 但 CMake 会用 vswhere 自动发现
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath 2>$null
+          if ($vsPath) { Write-Host "VS: $vsPath" } else { Write-Host "VS: not found (will use default CMake detection)" }
 
       # ═══════════════════════════════════════
       #  Build
