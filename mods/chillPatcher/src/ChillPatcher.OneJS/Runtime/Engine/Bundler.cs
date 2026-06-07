@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -9,7 +9,6 @@ using OneJS.Utils;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Serialization;
-using Debug = UnityEngine.Debug;
 
 namespace OneJS {
     /// <summary>
@@ -77,7 +76,7 @@ namespace OneJS {
 
             if (!File.Exists(path)) {
                 File.WriteAllText(path, mapping.textAsset.text);
-                Debug.Log($"'{mapping.path}' wasn't found. A new one was created.");
+                UnityEngine.Debug.Log($"'{mapping.path}' wasn't found. A new one was created.");
             }
         }
 
@@ -125,7 +124,7 @@ namespace OneJS {
         //         return;
         //
         //     Extract(onejsCoreZip.bytes);
-        //     Debug.Log($"An existing 'onejs-core' directory wasn't found. A new one was created ({path})");
+        //     UnityEngine.Debug.Log($"An existing 'onejs-core' directory wasn't found. A new one was created ({path})");
         // }
 
         public void ExtractOutputsIfNotFound() {
@@ -135,18 +134,18 @@ namespace OneJS {
                 return;
 
             Extract(bundleZip.bytes);
-            Debug.Log($"An existing 'outputs' directory wasn't found. An example one was created ({path})");
+            UnityEngine.Debug.Log($"An existing 'outputs' directory wasn't found. An example one was created ({path})");
         }
 
         public void ExtractForStandalone() {
             var deployVersion = PlayerPrefs.GetString("ONEJS_APP_DEPLOYMENT_VERSION", "0.0");
             var outputPath = _engine.WorkingDir;
             if (forceExtract || deployVersion != version) {
-                Debug.Log($"Extracting for Standalone Player. Deployment Version: {version}");
+                UnityEngine.Debug.Log($"Extracting for Standalone Player. Deployment Version: {version}");
                 if (Directory.Exists(outputPath))
                     DeleteEverythingInPath(outputPath);
                 Extract(bundleZip.bytes);
-                Debug.Log($"Bundle Zip extracted.");
+                UnityEngine.Debug.Log($"Bundle Zip extracted.");
 
                 PlayerPrefs.SetString("ONEJS_APP_DEPLOYMENT_VERSION", version);
             }
@@ -169,7 +168,7 @@ namespace OneJS {
         void DeleteEverythingInPath(string path) {
             var dotGitPath = Path.Combine(path, ".git");
             if (Directory.Exists(dotGitPath)) {
-                Debug.Log($".git folder detected at {path}, aborting extraction.");
+                UnityEngine.Debug.Log($".git folder detected at {path}, aborting extraction.");
                 return;
             }
             if (Directory.Exists(path)) {
@@ -211,7 +210,7 @@ namespace OneJS {
         //         };
         //         tarCreator.CreateTar(tarOutputStream);
         //
-        //         Debug.Log($"onejs-core.tgz.bytes file updated. {tarOutputStream.Length} bytes {(DateTime.Now - t).TotalMilliseconds}ms");
+        //         UnityEngine.Debug.Log($"onejs-core.tgz.bytes file updated. {tarOutputStream.Length} bytes {(DateTime.Now - t).TotalMilliseconds}ms");
         //         tarOutputStream.Close();
         //     }
         // }
@@ -245,7 +244,7 @@ namespace OneJS {
             var tarCreator = new TarCreator(_engine.WorkingDir, _engine.WorkingDir) { IgnoreList = ignoreList };
             tarCreator.CreateTarFromIncludes(includes, tarOutputStream);
 
-            Debug.Log($"bundle.tgz.bytes file updated. {tarOutputStream.Length} bytes {(DateTime.Now - t).TotalMilliseconds}ms");
+            UnityEngine.Debug.Log($"bundle.tgz.bytes file updated. {tarOutputStream.Length} bytes {(DateTime.Now - t).TotalMilliseconds}ms");
             tarOutputStream.Close();
         }
 

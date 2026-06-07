@@ -392,19 +392,19 @@ namespace ChillPatcher.SDK.Native
         public void PlaybackCommand(string instanceId, OmniPcmCommand cmd)
         {
             var r = OmniPcmClient_PlaybackCommand(_handle, instanceId, (int)cmd);
-            if (r != 0) Debug.WriteLine($"[OmniPcmClient] PlaybackCommand {cmd} failed: {LastError}");
+            if (r != 0) System.Diagnostics.Debug.WriteLine($"[OmniPcmClient] PlaybackCommand {cmd} failed: {LastError}");
         }
 
         public void Play(string instanceId, string uuid = null)
         {
             var r = OmniPcmClient_Play(_handle, instanceId, uuid);
-            if (r != 0) Debug.WriteLine($"[OmniPcmClient] Play failed: {LastError}");
+            if (r != 0) System.Diagnostics.Debug.WriteLine($"[OmniPcmClient] Play failed: {LastError}");
         }
 
         public void Seek(string instanceId, float position)
         {
             var r = OmniPcmClient_Seek(_handle, instanceId, position);
-            if (r != 0) Debug.WriteLine($"[OmniPcmClient] Seek failed: {LastError}");
+            if (r != 0) System.Diagnostics.Debug.WriteLine($"[OmniPcmClient] Seek failed: {LastError}");
         }
 
         public void SetVolume(string instanceId, float volume)
