@@ -1,0 +1,221 @@
+name: Build & Package
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "构建模式"
+        required: true
+        type: choice
+        default: "installer"
+        options:
+          - all
+          - player
+          - installer
+          - mod
+      full:
+        description: "完整构建 (restore + native 全量编译)"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      # ═══════════════════════════════════════
+      #  Checkout
+      # ═══════════════════════════════════════
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ═══════════════════════════════════════
+      #  Cache — 加速重复构建
+      # ═══════════════════════════════════════
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/packages.config') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Cache Cargo (Rust)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            OmniMixPlayer/gui_flutter/rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('OmniMixPlayer/gui_flutter/rust/Cargo.lock', 'NativePlugins/SpotifyLibrespotBridge/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('NativePlugins/**/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Cache Pub (Flutter/Dart)
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('OmniMixPlayer/gui_flutter/pubspec.lock') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Cache npm (esbuild UI)
+        uses: actions/cache@v4
+        with:
+          path: |
+            mods/chillPatcher/src/ui/default/node_modules
+            mods/chillPatcher/src/ui/window-manager/node_modules
+          key: npm-${{ runner.os }}-${{ hashFiles('mods/chillPatcher/src/ui/**/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-${{ runner.os }}-${{ hashFiles('scripts/**/build_*.py') }}
+
+      # ═══════════════════════════════════════
+      #  Toolchains
+      # ═══════════════════════════════════════
+
+      # .NET 10 (Preview) — Backend / SDK / Modules / MediaGenerator
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+          dotnet-quality: preview
+
+      # .NET Framework 4.7.2 — Mod (ChillPatcher) — 预装在 windows-latest
+      - name: Verify .NET Framework 4.7.2
+        shell: pwsh
+        run: |
+          Write-Host "MSBuild path:"
+          Resolve-Path "${env:ProgramFiles}\Microsoft Visual Studio\2022\*\MSBuild\Current\Bin\MSBuild.exe" -ErrorAction SilentlyContinue
+
+      # Python 3.11 — 构建脚本
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Flutter — GUI (Windows + Web WASM)
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27.x"
+          channel: stable
+
+      # Node.js + npm — esbuild for UI (default, window-manager)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Go — EsbuildBridge / netease_bridge / qqmusic_bridge
+      # CGo 需要 MinGW GCC, 不支持 MSVC
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install MinGW (for CGo)
+        shell: pwsh
+        run: |
+          choco install mingw --no-progress -y
+          # choco 安装路径加入 PATH 让 CGo 找到 gcc
+          $mingw = Resolve-Path "C:\ProgramData\chocolatey\lib\mingw\tools\install\*\bin\gcc.exe" -ErrorAction SilentlyContinue
+          if ($mingw) { Add-Content $env:GITHUB_PATH (Split-Path $mingw) }
+
+      # Rust — omnimix_audio (Flutter FFI) / SpotifyLibrespotBridge
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Inno Setup — 安装程序打包
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      # MSVC + CMake — 预装在 windows-latest, 确认可用
+      - name: Verify MSVC & CMake
+        shell: pwsh
+        run: |
+          cmake --version
+          where cl.exe
+          cl.exe 2>&1 | Select-Object -First 1
+
+      # ═══════════════════════════════════════
+      #  Build
+      # ═══════════════════════════════════════
+      - name: Build
+        id: build
+        shell: pwsh
+        env:
+          INNOSETUP: "C:\\Program Files\\Inno Setup 7"
+        run: |
+          $mode = if ('${{ inputs.mode }}') { '${{ inputs.mode }}' } else { 'installer' }
+          $fullFlag = if ('${{ inputs.full }}' -eq 'true') { '--full' } else { '' }
+          Write-Host "Mode: $mode  Full: $fullFlag"
+          python scripts/ci_build.py $mode $fullFlag
+
+      # ═══════════════════════════════════════
+      #  Display Logs in Console (折叠展开)
+      # ═══════════════════════════════════════
+      - name: Display build logs in console
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path "build_logs") {
+            $logFiles = Get-ChildItem "build_logs\*" -Include *.log, *.txt
+            if ($logFiles.Count -eq 0) {
+              Write-Host "No log files found in build_logs/."
+            }
+            else {
+              # 按名称排序 (任务树顺序)
+              $sorted = $logFiles | Sort-Object Name
+              foreach ($file in $sorted) {
+                $filename = $file.Name
+                Write-Output "::group::📄 $filename"
+                Get-Content $file.FullName
+                Write-Output "::endgroup::"
+              }
+            }
+          }
+          else {
+            Write-Host "build_logs/ directory not found."
+          }
+
+      # ═══════════════════════════════════════
+      #  Artifacts
+      # ═══════════════════════════════════════
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build_logs/
+
+      - name: Upload installer
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: release/OmniMixPlayer_*_installer.exe
+
+      - name: Upload playerbuild
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playerbuild
+          path: playerbuild/

@@ -127,7 +127,8 @@ class BuildGUI:
         ttk.Label(top, text="模式:").pack(side=tk.LEFT, padx=(0, 3))
         self._mode_var = tk.StringVar(value="all")
         for text, val in [("全部", "all"), ("仅 Mod", "mod"),
-                          ("仅 Player", "player"), ("FH6 Asset", "fh6-asset"),
+                          ("仅 Player", "player"), ("安装程序", "installer"),
+                          ("FH6 Asset", "fh6-asset"),
                           ("FH6 Mod", "fh6")]:
             ttk.Radiobutton(top, text=text, variable=self._mode_var,
                             value=val, command=self._rebuild_tree).pack(

@@ -4,13 +4,13 @@
 ; =============================================================================
 
 #define MyAppName "OmniMixPlayer"
-#define MyAppVersion "3.0"
+#define MyAppVersion "3.0.0"
 #define MyAppPublisher "Kevin-2483"
 #define MyAppURL "https://github.com/Kevin-2483/Chill"
 #define MyAppExeName "omnimix_gui.exe"
 #define MyAppBackendName "OmniMixPlayer.Backend.exe"
-#define MyServiceName "OmniMixPlayerBackend"
-
+#define MyServiceName "OmniMixPlayerBackend"; SourceDir — 构建时由脚本自动替换为实际 playerbuild 路径
+#define SourceDir "G:\Csharp\Chill\playerbuild"
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}}
 AppName={#MyAppName}
@@ -28,7 +28,7 @@ DisableProgramGroupPage=yes
 ;PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=G:\Csharp\Chill\release
-OutputBaseFilename=OmniMixPlayer_V3.0_installer
+OutputBaseFilename=OmniMixPlayer_V3.0.0_installer
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -42,31 +42,28 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; ═══ 主程序 ═══
-Source: "G:\Csharp\Chill\playerbuild\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\Csharp\Chill\playerbuild\{#MyAppBackendName}"; DestDir: "{app}"; Flags: ignoreversion
-
-; ═══ DLL 文件 ═══
-Source: "G:\Csharp\Chill\playerbuild\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+; ═══ 所有可执行文件和 DLL (排除 VC 运行库，它单独处理) ═══
+Source: "{#SourceDir}\*.exe"; DestDir: "{app}"; Flags: ignoreversion; Excludes: "VC_redist.x64.exe"
+Source: "{#SourceDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ═══ 配置文件 ═══
-Source: "G:\Csharp\Chill\playerbuild\*.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\Csharp\Chill\playerbuild\*.config"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\*.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\*.config"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ═══ data 目录 (Flutter 资源) ═══
-Source: "G:\Csharp\Chill\playerbuild\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; ═══ wwwroot 目录 (Web GUI) ═══
-Source: "G:\Csharp\Chill\playerbuild\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\wwwroot\*"; DestDir: "{app}\wwwroot"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; ═══ modules 目录 (插件模块) ═══
-Source: "G:\Csharp\Chill\playerbuild\modules\*"; DestDir: "{app}\modules"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\modules\*"; DestDir: "{app}\modules"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; ═══ native 目录 (原生库) ═══
-Source: "G:\Csharp\Chill\playerbuild\native\*"; DestDir: "{app}\native"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\native\*"; DestDir: "{app}\native"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; ═══ VC++ 运行库安装器 (复制到临时目录，安装后删除) ═══
-Source: "G:\Csharp\Chill\playerbuild\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall
+Source: "{#SourceDir}\VC_redist.x64.exe"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall
 ; NOTE: 不要对共享系统文件使用 "Flags: ignoreversion"
 
 [Icons]

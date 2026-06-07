@@ -33,6 +33,11 @@ def build_tree(mode: str, full: bool, skip_flutter: bool) -> list[TaskNode]:
         roots.append(_media_generator())
         roots.append(_flutter_gui(full, skip_flutter))
         roots.append(_assemble_playerbuild())
+        roots.append(_installer())
+
+    elif mode == "installer":
+        # 仅打包安装程序 (假设 playerbuild 已就位)
+        roots.append(_installer())
 
     elif mode == "mod":
         # 仅构建 mod, 输出到 release/ChillPatcher/ + zip
@@ -522,6 +527,15 @@ def _make_module_fn(src_name: str, full: bool):
                 return code
         return dotnet_build(proj)
     return _build
+
+
+# ════════════════════════════════════════════
+#  安装程序任务
+# ════════════════════════════════════════════
+
+def _installer() -> TaskNode:
+    from tasks.installer import installer_node
+    return installer_node()
 
 
 def _make_ui_fn(ui_dir: Path):
