@@ -14,15 +14,6 @@
     <NoWarn>CS0168;CS0169;CS0414;CS0618;CS0649</NoWarn>
   </PropertyGroup>
 
-  <PropertyGroup>
-    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">$(CHILL_STEAM_LIBRARY)</SteamLibraryRoot>
-    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">F:\SteamLibrary</SteamLibraryRoot>
-    <GamePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed</GamePath>
-    <BepInExCorePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core</BepInExCorePath>
-    <LibPath Condition="Exists('..\lib\UnityEngine.CoreModule.dll')">..\lib</LibPath>
-    <LibPath Condition="!Exists('..\lib\UnityEngine.CoreModule.dll')">$(GamePath)</LibPath>
-  </PropertyGroup>
-
   <!-- Define constants: Not IL2CPP, Not Unity Editor, Unity 2022.3 -->
   <PropertyGroup>
     <DefineConstants>UNITY_2020_1_OR_NEWER;UNITY_2021_1_OR_NEWER;UNITY_2022_1_OR_NEWER;CSHARP_7_3_OR_NEWER</DefineConstants>
@@ -48,65 +39,11 @@
     </Reference>
   </ItemGroup>
 
-  <!-- Unity Engine DLLs -->
-  <ItemGroup>
-    <Reference Include="UnityEngine">
-      <HintPath>$(LibPath)\UnityEngine.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(LibPath)\UnityEngine.CoreModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.UIElementsModule">
-      <HintPath>$(LibPath)\UnityEngine.UIElementsModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>$(LibPath)\UnityEngine.IMGUIModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.ImageConversionModule">
-      <HintPath>$(GamePath)\UnityEngine.ImageConversionModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.TextRenderingModule">
-      <HintPath>$(GamePath)\UnityEngine.TextRenderingModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.TextCoreTextEngineModule">
-      <HintPath>$(GamePath)\UnityEngine.TextCoreTextEngineModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.TextCoreFontEngineModule">
-      <HintPath>$(GamePath)\UnityEngine.TextCoreFontEngineModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.UnityWebRequestModule">
-      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.AssetBundleModule">
-      <HintPath>$(GamePath)\UnityEngine.AssetBundleModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.JSONSerializeModule">
-      <HintPath>$(GamePath)\UnityEngine.JSONSerializeModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <!-- Burst / Jobs / Mathematics for GradientTextureFillJob -->
-    <Reference Include="Unity.Burst">
-      <HintPath>$(GamePath)\Unity.Burst.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="Unity.Mathematics">
-      <HintPath>$(GamePath)\Unity.Mathematics.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-  </ItemGroup>
+  <!-- Unity & Game DLLs — 全部由 ChillPatcher.GameRefs NuGet 包提供 -->
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="ChillPatcher.GameRefs" Version="1.0.0" />
   </ItemGroup>
 
   <!-- NuGet packages for .NET 4.7.2 compatibility -->
@@ -114,18 +51,6 @@
     <PackageReference Include="System.Memory" Version="4.5.5" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
     <PackageReference Include="IndexRange" Version="1.0.3" />
-  </ItemGroup>
-
-  <!-- Additional Unity modules -->
-  <ItemGroup>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>$(GamePath)\UnityEngine.PhysicsModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.UnityWebRequestTextureModule">
-      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
   </ItemGroup>
 
   <!-- System references -->
