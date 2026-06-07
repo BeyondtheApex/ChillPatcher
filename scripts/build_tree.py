@@ -571,37 +571,6 @@ def _cmake_build(src: Path, dll_name: str,
     if code != 0:
         return code
 
-
-def _get_vs_generator() -> str | None:
-    """用 vswhere 获取 VS Generator 名 (如 'Visual Studio 18 2026')。"""
-    import subprocess
-    vs = C.get_vs_dir()
-    if not vs:
-        return None
-    # 从 VS 安装目录名推断版本号
-    parts = vs.parts
-    try:
-        ver_dir = parts[parts.index("Microsoft Visual Studio") + 1]  # e.g. "18" or "2022"
-        # VS versions: "18" → "Visual Studio 18 2026", "2022" → "Visual Studio 17 2022"
-        if ver_dir == "18":
-            return "Visual Studio 18 2026"
-        elif ver_dir == "2022":
-            return "Visual Studio 17 2022"
-        elif ver_dir == "2019":
-            return "Visual Studio 16 2019"
-    except (ValueError, IndexError):
-        pass
-    # Fallback: 调用 cmake --help 列出可用 generator
-    try:
-        cmake = shutil.which("cmake") or "cmake"
-        result = subprocess.run([cmake, "--help"], capture_output=True, text=True, timeout=10)
-        for line in result.stdout.splitlines():
-            if "Visual Studio" in line and "202" in line:
-                return " ".join(line.strip().split()[:4])
-    except Exception:
-        pass
-    return None
-
     for dst in dst_paths:
         for candidate in [
             build_dir / "bin" / "Release" / dll_name,
@@ -616,6 +585,34 @@ def _get_vs_generator() -> str | None:
         else:
             info(f"  WARNING: {dll_name} not found in build output")
     return 0
+
+
+def _get_vs_generator() -> str | None:
+    """用 vswhere 获取 VS Generator 名 (如 'Visual Studio 18 2026')。"""
+    import subprocess
+    vs = C.get_vs_dir()
+    if not vs:
+        return None
+    parts = vs.parts
+    try:
+        ver_dir = parts[parts.index("Microsoft Visual Studio") + 1]
+        if ver_dir == "18":
+            return "Visual Studio 18 2026"
+        elif ver_dir == "2022":
+            return "Visual Studio 17 2022"
+        elif ver_dir == "2019":
+            return "Visual Studio 16 2019"
+    except (ValueError, IndexError):
+        pass
+    try:
+        cmake = shutil.which("cmake") or "cmake"
+        result = subprocess.run([cmake, "--help"], capture_output=True, text=True, timeout=10)
+        for line in result.stdout.splitlines():
+            if "Visual Studio" in line and "202" in line:
+                return " ".join(line.strip().split()[:4])
+    except Exception:
+        pass
+    return None
 
 
 def _find_vs_cmake() -> str | None:
