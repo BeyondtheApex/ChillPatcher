@@ -116,7 +116,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.27.x"
+          flutter-version: "3.44.x"
           channel: stable
 
       # Node.js + npm — esbuild for UI (default, window-manager)
