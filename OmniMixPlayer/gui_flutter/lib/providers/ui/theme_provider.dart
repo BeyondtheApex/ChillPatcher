@@ -1,6 +1,7 @@
 /// Theme/appearance providers.
 /// During Riverpod migration these read from AppState via the bridge.
 /// After full migration, ThemeNotifier will own its state directly.
+library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/app_state_bridge.dart';

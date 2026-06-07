@@ -4,6 +4,7 @@
 ///
 /// Public API is kept compatible with existing providers, migrating from old
 /// JSON models to generated protobuf types where possible.
+library;
 
 import '../utils/json_utils.dart';
 import 'dart:math' as math;
@@ -276,8 +277,9 @@ class ApiClient {
     if (data['displayName'] != null) {
       profile.displayName = data['displayName'] as String? ?? '';
     }
-    if (data['volume'] != null)
+    if (data['volume'] != null) {
       profile.volume = (data['volume'] as num).toDouble();
+    }
     if (data['targetLatency'] != null) {
       profile.targetLatency = (data['targetLatency'] as num).toDouble();
     }

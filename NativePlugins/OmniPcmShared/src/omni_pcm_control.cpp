@@ -12,10 +12,12 @@
 #include "omni_mix_player/services/playback.pb.h"
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -23,6 +25,7 @@
 #include <vector>
 
 #ifdef _WIN32
+#include <shellapi.h>
 #include <windows.h>
 #endif
 
@@ -73,11 +76,20 @@ std::string read_file_trimmed(const std::string& path) {
 int discover_port() {
     std::vector<std::string> paths;
 #ifdef _WIN32
+    // 1. Game directory — backend writes here on every startup
+    //    (game dir is registered in global_config.json → port_file_dirs)
+    wchar_t exePath[MAX_PATH]{};
+    if (GetModuleFileNameW(nullptr, exePath, MAX_PATH)) {
+        auto gameDir = std::filesystem::path{exePath}.parent_path();
+        paths.emplace_back((gameDir / "omnimix_port.txt").string());
+    }
+    // 2. PUBLIC\OmniMixPlayer (fallback shared location)
     char public_dir[MAX_PATH]{};
     if (GetEnvironmentVariableA("PUBLIC", public_dir, MAX_PATH) > 0) {
         paths.emplace_back(std::string(public_dir) + "\\OmniMixPlayer\\omnimix_port.txt");
     }
 #endif
+    // 3. Current working directory
     paths.emplace_back("omnimix_port.txt");
 
     for (const auto& path : paths) {
@@ -90,6 +102,69 @@ int discover_port() {
         }
     }
     return DEFAULT_PORT;
+}
+
+/// Best-effort: ensure the OmniMixPlayer backend is running.
+void try_start_backend() {
+#ifdef _WIN32
+    SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!scm) return;
+    SC_HANDLE svc = OpenServiceW(scm, L"OmniMixPlayerBackend",
+                                  SERVICE_QUERY_STATUS | SERVICE_START);
+    if (svc) {
+        SERVICE_STATUS status{};
+        if (QueryServiceStatus(svc, &status) &&
+            status.dwCurrentState == SERVICE_STOPPED) {
+            StartServiceW(svc, 0, nullptr);
+        }
+        CloseServiceHandle(svc);
+    } else {
+        // Service not installed — try launching exe next to host process
+        wchar_t hostPath[MAX_PATH]{};
+        if (GetModuleFileNameW(nullptr, hostPath, MAX_PATH)) {
+            auto exePath = std::filesystem::path{hostPath}.parent_path() /
+                           "OmniMixPlayer.Backend.exe";
+            if (std::filesystem::exists(exePath)) {
+                SHELLEXECUTEINFOW sei{sizeof(sei)};
+                sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS;
+                sei.lpVerb = L"open";
+                sei.lpFile = exePath.c_str();
+                sei.nShow = SW_HIDE;
+                if (ShellExecuteExW(&sei) && sei.hProcess)
+                    CloseHandle(sei.hProcess);
+            }
+        }
+    }
+    CloseServiceHandle(scm);
+#endif
+}
+
+/// Auto-detect a client/instance ID for the host process.
+/// Reads .omnimix_instance_id from the host exe directory;
+/// falls back to the host executable name (lowercased, no extension).
+std::string discover_instance_id() {
+#ifdef _WIN32
+    wchar_t exePath[MAX_PATH]{};
+    if (!GetModuleFileNameW(nullptr, exePath, MAX_PATH))
+        return "unknown";
+
+    std::filesystem::path exeDir = std::filesystem::path{exePath}.parent_path();
+
+    // 1. Try .omnimix_instance_id
+    auto idFile = exeDir / ".omnimix_instance_id";
+    auto text = read_file_trimmed(idFile.string());
+    if (!text.empty()) return text;
+
+    // 2. Fallback: process name (lowercase, no extension)
+    std::string name = std::filesystem::path{exePath}.filename().string();
+    auto dot = name.rfind('.');
+    if (dot != std::string::npos) name = name.substr(0, dot);
+    for (auto& c : name)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return name;
+#else
+    return "unknown";
+#endif
 }
 
 std::string grpc_frame(const MessageLite& message) {
@@ -456,6 +531,10 @@ int fill_counted_buffer(int total, Repeated&& fill, int32_t* inout_count) {
 } // namespace
 
 OMNI_PCM_API OmniPcmClientHandle OmniPcmClient_Create(const OmniPcmClientConfig* config) {
+    // Best-effort: auto-start the backend before discovering the port.
+    // The SDK handles port discovery but not backend lifecycle.
+    try_start_backend();
+
     auto* c = new OmniPcmClientContext();
     if (config) {
         if (config->host && *config->host) c->host = config->host;
@@ -489,10 +568,19 @@ OMNI_PCM_API int OmniPcmClient_ConnectInstance(
     const OmniPcmConnectOptions* options,
     OmniPcmConnectionInfo* out_info) {
     auto* c = client_ctx(client);
-    if (!c || !options || !options->client_id || !out_info) return OMNI_PCM_BAD_ARGUMENT;
+    if (!c || !options || !out_info) return OMNI_PCM_BAD_ARGUMENT;
+
+    // Auto-detect instance ID when the caller doesn't provide one.
+    // Game mods can pass nullptr / empty string and let the SDK
+    // derive the ID from .omnimix_instance_id or the process name.
+    std::string effective_client_id;
+    if (options->client_id && *options->client_id)
+        effective_client_id = options->client_id;
+    else
+        effective_client_id = discover_instance_id();
 
     omni_mix_player::InstanceConnectRequest req;
-    req.set_client_id(options->client_id);
+    req.set_client_id(effective_client_id);
     req.set_kind(static_cast<omni_mix_player::InstanceKind>(
         options->kind > 0 ? options->kind : OMNI_PCM_INSTANCE_KIND_GAME_MOD));
     if (options->mod_id) req.set_mod_id(options->mod_id);

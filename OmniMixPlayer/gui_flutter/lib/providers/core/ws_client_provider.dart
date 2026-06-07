@@ -1,5 +1,6 @@
 /// Provider for WsClient, reading from the AppState bridge.
 /// In the final state, this will manage its own WsClient lifecycle.
+library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/ws_client.dart';

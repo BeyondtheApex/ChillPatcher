@@ -330,7 +330,7 @@ namespace ChillPatcher.SDK.Native
                 kind = (int)OmniPcmInstanceKind.GameMod,
                 capabilityFlags = (uint)caps,
                 noInstance = 0,
-                maxImportedPlaylists = 0,
+                maxImportedPlaylists = 27,
                 maxTags = 0,
                 maxPlaylistEntries = 0
             };

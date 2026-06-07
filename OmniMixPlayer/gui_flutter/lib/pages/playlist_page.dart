@@ -25,7 +25,7 @@ class _AlbumNode {
   List<Track> songs;
   bool expanded;
 
-  _AlbumNode(this.album, {this.songs = const [], this.expanded = false});
+  _AlbumNode(this.album, {this.songs = const []}) : expanded = false;
 }
 
 class _PlaylistNode {
@@ -38,8 +38,7 @@ class _PlaylistNode {
     this.playlist,
     this.albums, {
     this.looseSongs = const [],
-    this.expanded = false,
-  });
+  }) : expanded = false;
 }
 
 // ── 扁平列表条目（供 ListView.builder 虚拟滚动） ──
@@ -181,7 +180,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
   // ── 根据展开状态重建扁平列表（虚拟滚动数据源） ──
 
   void _rebuildFlatList() {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     _flatItems.clear();
     for (final playlistNode in _tree) {
       final subtitleParts = <String>[
@@ -281,7 +280,7 @@ class _PlaylistPageState extends State<PlaylistPage> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
 
     if (!widget.state.backendOnline) {
@@ -657,7 +656,7 @@ class _Cover extends StatelessWidget {
     return Image.network(
       '$baseUrl/api/track/cover?uuid=$uuid',
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, _, _) => Container(
         color: cs.surfaceContainerHighest,
         child: Center(
           child: Icon(

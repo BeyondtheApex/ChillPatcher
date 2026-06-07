@@ -32,7 +32,7 @@ Future<WebSocket> connectUnixWebSocket(String socketPath, String path) async {
       customClient: httpClient,
     ).timeout(const Duration(seconds: 10));
     return ws;
-  } catch (e, st) {
+  } catch (e) {
     rethrow;
   }
 }

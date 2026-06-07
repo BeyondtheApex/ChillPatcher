@@ -221,8 +221,8 @@ class BackendManager {
     final sep = Platform.pathSeparator;
     for (final c in [
       '$guiDir$sep$exeName',
-      '$guiDir${sep}..${sep}OmniMixPlayer.Backend$sep$exeName',
-      '$guiDir${sep}..${sep}bin${sep}Backend$sep$exeName',
+      '$guiDir$sep..${sep}OmniMixPlayer.Backend$sep$exeName',
+      '$guiDir$sep..${sep}bin${sep}Backend$sep$exeName',
     ]) {
       if (File(c).existsSync()) return c;
     }

@@ -212,6 +212,26 @@ class _EqualizerPageState extends State<EqualizerPage> {
   String? _lastActiveInstanceId;
   Timer? _saveDebounce;
 
+  /// Tracks how many _saveState() calls are in flight so we can ignore
+  /// the self-inflicted eq.changed WebSocket echo that would otherwise
+  /// trigger a full _loadState() → setState() → focus loss.
+  int _pendingSelfSaveCount = 0;
+
+  /// Safety timeout: if the WebSocket echo never arrives (e.g. network
+  /// glitch), release the pending count so real external changes aren't
+  /// blocked forever.
+  Timer? _pendingSaveTimeout;
+
+  void _markPendingSave() {
+    _pendingSelfSaveCount++;
+    _pendingSaveTimeout?.cancel();
+    _pendingSaveTimeout = Timer(const Duration(seconds: 2), () {
+      if (_pendingSelfSaveCount > 0) {
+        _pendingSelfSaveCount--;
+      }
+    });
+  }
+
   /// Hardcoded EQ presets — pure client-side, no backend dependency.
   static final Map<String, EqState> _builtinPresets = {
     'Flat': EqState(
@@ -434,15 +454,25 @@ class _EqualizerPageState extends State<EqualizerPage> {
       _saveDebounce!.cancel();
       _saveState();
     }
+    _pendingSaveTimeout?.cancel();
     super.dispose();
   }
 
   void _onAppStateChanged() {
     if (_lastActiveInstanceId != widget.state.activeInstanceId) {
       _lastActiveInstanceId = widget.state.activeInstanceId;
+      _pendingSelfSaveCount = 0;
+      _pendingSaveTimeout?.cancel();
       _loadState();
     } else if (widget.state.equalizerGeneration != _lastEqGeneration) {
       _lastEqGeneration = widget.state.equalizerGeneration;
+      if (_pendingSelfSaveCount > 0) {
+        _pendingSelfSaveCount--;
+        if (_pendingSelfSaveCount == 0) {
+          _pendingSaveTimeout?.cancel();
+        }
+        return; // self-inflicted echo — skip reload to avoid focus loss
+      }
       _loadState();
     }
   }
@@ -488,12 +518,14 @@ class _EqualizerPageState extends State<EqualizerPage> {
     final instId = widget.state.activeInstanceId;
     if (instId == null || _eqState == null) return;
     if (!widget.state.canEqualizeActiveInstance) return;
+    _markPendingSave();
     try {
       await widget.state.api.updateInstanceEqualizer(
         instId,
         _eqState!.toJson(),
       );
     } catch (e) {
+      _pendingSelfSaveCount--; // failed — don't wait for an echo that won't come
       debugPrint("Failed to save EQ state: $e");
     }
   }
@@ -552,7 +584,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
     final instId = widget.state.activeInstanceId;
 
@@ -813,7 +845,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                               fontWeight: FontWeight.bold,
                               color: selectedPt != null
                                   ? cs.onSurface
-                                  : cs.onSurface.withOpacity(0.4),
+                                  : cs.onSurface.withValues(alpha: 0.4),
                             ),
                           ),
                           const Spacer(),
@@ -824,14 +856,14 @@ class _EqualizerPageState extends State<EqualizerPage> {
                               size: 16,
                               color: selectedPt != null
                                   ? Colors.red
-                                  : cs.onSurface.withOpacity(0.3),
+                                  : cs.onSurface.withValues(alpha: 0.3),
                             ),
                             label: Text(
                               l10n.delete,
                               style: TextStyle(
                                 color: selectedPt != null
                                     ? Colors.red
-                                    : cs.onSurface.withOpacity(0.3),
+                                    : cs.onSurface.withValues(alpha: 0.3),
                                 fontSize: 13,
                               ),
                             ),
@@ -851,7 +883,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                               fontSize: 12,
                               color: selectedPt != null
                                   ? cs.onSurface
-                                  : cs.onSurface.withOpacity(0.4),
+                                  : cs.onSurface.withValues(alpha: 0.4),
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -860,7 +892,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                             style: TextStyle(
                               color: selectedPt != null
                                   ? cs.onSurface
-                                  : cs.onSurface.withOpacity(0.4),
+                                  : cs.onSurface.withValues(alpha: 0.4),
                               fontSize: 12,
                             ),
                             underline: const SizedBox(),
@@ -907,7 +939,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                               fontSize: 12,
                               color: selectedPt != null
                                   ? cs.onSurface
-                                  : cs.onSurface.withOpacity(0.4),
+                                  : cs.onSurface.withValues(alpha: 0.4),
                             ),
                           ),
                           Expanded(
@@ -934,7 +966,7 @@ class _EqualizerPageState extends State<EqualizerPage> {
                                 fontSize: 12,
                                 color: selectedPt != null
                                     ? cs.onSurface
-                                    : cs.onSurface.withOpacity(0.4),
+                                    : cs.onSurface.withValues(alpha: 0.4),
                               ),
                             ),
                           ),

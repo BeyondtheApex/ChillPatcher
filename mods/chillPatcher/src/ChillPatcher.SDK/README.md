@@ -1,279 +1,54 @@
-# 项目架构更新,音乐接口不在提供,此SDK作为兼容结构保留
+# ChillPatcher SDK — ⚠️ 已废弃
 
-需要开发音乐模块,使用OmniMixPlayer\OmniMixPlayer.SDK
+> **此 SDK 已停止维护，仅保留兼容性空壳。所有新模块开发请使用 OmniMixPlayer.SDK。**
 
-# ChillPatcher SDK
+## 迁移到 OmniMixPlayer.SDK
 
-ChillPatcher SDK 为《Chill With You》游戏提供音乐模块开发接口，允许开发者创建自定义音乐源模块。
+请参考 **[OmniMixPlayer.SDK 模块开发指南](../../../OmniMixPlayer/OmniMixPlayer.SDK/README.md)**。
 
-## 快速开始
+### 快速对照
 
-### 1. 引用 SDK
+| 旧 (`ChillPatcher.SDK`)       | 新 (`OmniMixPlayer.SDK`)        |
+| ----------------------------- | ------------------------------- |
+| 命名空间 `ChillPatcher.SDK.*` | `OmniMixPlayer.SDK.*`           |
+| `context.MusicRegistry`       | `context.Library`               |
+| `context.TagRegistry`         | `context.Library.UpsertTag()`   |
+| `context.AlbumRegistry`       | `context.Library.UpsertAlbum()` |
+| `context.AudioLoader`         | `context.StreamingService`      |
+| `MusicInfo` 数据模型          | Protobuf 生成的 `Track`         |
 
-在你的模块项目中引用 `ChillPatcher.SDK.dll`：
+### 核心变更
 
-```xml
-<ItemGroup>
-  <Reference Include="ChillPatcher.SDK">
-    <HintPath>..\path\to\ChillPatcher.SDK.dll</HintPath>
-  </Reference>
-</ItemGroup>
-```
+1. **统一注册 API**：不再有分别的 MusicRegistry/TagRegistry/AlbumRegistry，统一使用 `ILibraryRegistry`
+2. **Protobuf 数据模型**：所有模型类型由 `.proto` 文件生成，提供跨语言兼容性
+3. **流式解码服务**：`IStreamingService` 替代旧的 `AudioLoader`，支持异步等待就绪
 
-### 2. 创建模块类
+### 当前 ChillPatcher.SDK 保留的接口
 
-```csharp
-using ChillPatcher.SDK.Attributes;
-using ChillPatcher.SDK.Interfaces;
+此 SDK 目录中仅保留以下接口用于兼容现有 ChillPatcher 插件内部调用：
 
-[MusicModule("com.yourname.modulename", "模块显示名称",
-    Version = "1.0.0",
-    Author = "Your Name",
-    Description = "模块描述")]
-public class YourModule : IMusicModule, IMusicSourceProvider
-{
-    public string ModuleId => "com.yourname.modulename";
-    public string DisplayName => "模块显示名称";
-    public string Version => "1.0.0";
-    public int Priority => 100;
-    
-    public ModuleCapabilities Capabilities => new ModuleCapabilities
-    {
-        CanDelete = false,
-        CanFavorite = true,
-        CanExclude = true,
-        ProvidesCover = true,
-        ProvidesAlbum = true
-    };
+| 文件                             | 用途                                     |
+| -------------------------------- | ---------------------------------------- |
+| `Interfaces/ICoreServices.cs`    | ChillPatcher 内部核心服务                |
+| `Interfaces/ICustomJSApi.cs`     | OneJS UI 桥接                            |
+| `Interfaces/IPcmStreamReader.cs` | 旧版 PCM 读取器（ChillPatcher 内部使用） |
+| `Interfaces/IPlaybackBridge.cs`  | 播放控制桥接                             |
 
-    public async Task InitializeAsync(IModuleContext context)
-    {
-        // 初始化模块，注册歌曲、专辑和标签
-    }
-
-    public void OnEnable() { }
-    public void OnDisable() { }
-    public void OnUnload() { }
-}
-```
-
-## 核心接口
-
-### IMusicModule
-
-所有音乐模块必须实现的基础接口。
-
-| 成员 | 说明 |
-|------|------|
-| `ModuleId` | 模块唯一标识符，推荐格式：`com.author.modulename` |
-| `DisplayName` | 模块显示名称 |
-| `Version` | 模块版本 |
-| `Priority` | 加载优先级（越小越先加载） |
-| `Capabilities` | 模块能力声明 |
-| `InitializeAsync(context)` | 初始化模块 |
-| `OnEnable()` | 启用模块时调用 |
-| `OnDisable()` | 禁用模块时调用 |
-| `OnUnload()` | 卸载模块时调用 |
-
-### ModuleCapabilities
-
-模块能力声明，告知主程序模块支持的功能。
-
-| 属性 | 默认值 | 说明 |
-|------|--------|------|
-| `CanDelete` | false | 是否支持删除歌曲 |
-| `CanFavorite` | true | 是否支持收藏 |
-| `CanExclude` | true | 是否支持排除 |
-| `SupportsLiveUpdate` | false | 是否支持实时更新（文件监控等） |
-| `ProvidesCover` | true | 是否提供自己的封面 |
-| `ProvidesAlbum` | true | 是否提供自己的专辑 |
-
-### IModuleContext
-
-模块上下文，由主程序提供，包含所有可用服务。
-
-| 成员 | 说明 |
-|------|------|
-| `TagRegistry` | Tag 注册表，用于注册自定义播放列表 |
-| `AlbumRegistry` | 专辑注册表 |
-| `MusicRegistry` | 歌曲注册表 |
-| `ConfigManager` | 配置管理器 |
-| `EventBus` | 事件总线 |
-| `Logger` | 日志记录器 |
-| `DefaultCover` | 默认封面提供器 |
-| `AudioLoader` | 音频加载器 |
-| `DependencyLoader` | 原生依赖加载器 |
-
-### IMusicSourceProvider
-
-音乐源提供器接口，模块通过此接口提供音乐列表和加载功能。
-
-```csharp
-public interface IMusicSourceProvider
-{
-    Task<List<MusicInfo>> GetMusicListAsync();
-    Task<AudioClip> LoadAudioAsync(string uuid);
-    Task<AudioClip> LoadAudioAsync(string uuid, CancellationToken cancellationToken);
-    void UnloadAudio(string uuid);
-    Task RefreshAsync();
-    MusicSourceType SourceType { get; }
-}
-```
-
-### ICoverProvider
-
-封面提供器接口。
-
-```csharp
-public interface ICoverProvider
-{
-    Task<Sprite> GetMusicCoverAsync(string uuid);
-    Task<Sprite> GetAlbumCoverAsync(string albumId);
-    Task<(byte[] data, string mimeType)> GetMusicCoverBytesAsync(string uuid);
-    void ClearCache();
-}
-```
-
-### IFavoriteExcludeHandler
-
-收藏和排除状态管理接口。
-
-```csharp
-public interface IFavoriteExcludeHandler
-{
-    bool IsFavorite(string uuid);
-    void SetFavorite(string uuid, bool isFavorite);
-    bool IsExcluded(string uuid);
-    void SetExcluded(string uuid, bool isExcluded);
-    IReadOnlyList<string> GetFavorites();
-    IReadOnlyList<string> GetExcluded();
-}
-```
-
-### IDeleteHandler
-
-删除处理器接口（可选实现）。
-
-```csharp
-public interface IDeleteHandler
-{
-    bool CanDelete { get; }
-    bool Delete(string uuid);
-    string GetDeleteConfirmMessage(string uuid);
-}
-```
-
-## 数据模型
-
-### MusicInfo
-
-歌曲信息模型。
-
-| 属性 | 类型 | 说明 |
-|------|------|------|
-| `UUID` | string | 歌曲唯一标识符 |
-| `Title` | string | 歌曲标题 |
-| `Artist` | string | 艺术家 |
-| `AlbumId` | string | 所属专辑 ID |
-| `TagId` | string | 所属 Tag ID |
-| `SourceType` | MusicSourceType | 音乐源类型（File/Url/Clip/Stream） |
-| `SourcePath` | string | 源路径（文件路径或 URL） |
-| `Duration` | float | 时长（秒） |
-| `ModuleId` | string | 所属模块 ID |
-| `IsUnlocked` | bool | 是否已解锁（默认 true） |
-| `IsExcluded` | bool | 是否被排除 |
-| `IsFavorite` | bool | 是否收藏 |
-| `PlayCount` | int | 播放次数 |
-| `ExtendedData` | object | 扩展数据（模块自定义） |
-
-静态方法：
-- `MusicInfo.GenerateUUID()` - 生成随机 UUID
-- `MusicInfo.GenerateUUID(string sourcePath)` - 根据路径生成确定性 UUID
-
-### AlbumInfo
-
-专辑信息模型。
-
-| 属性 | 类型 | 说明 |
-|------|------|------|
-| `AlbumId` | string | 专辑唯一标识符 |
-| `DisplayName` | string | 专辑显示名称 |
-| `Artist` | string | 专辑艺术家 |
-| `TagId` | string | 所属 Tag ID |
-| `ModuleId` | string | 所属模块 ID |
-| `DirectoryPath` | string | 专辑目录路径 |
-| `CoverPath` | string | 封面图片路径 |
-| `SongCount` | int | 专辑中的歌曲数量 |
-| `SortOrder` | int | 排序顺序 |
-| `IsDefault` | bool | 是否是默认专辑 |
-| `ExtendedData` | object | 扩展数据（模块自定义） |
-
-### TagInfo
-
-标签（播放列表）信息模型。
-
-| 属性 | 类型 | 说明 |
-|------|------|------|
-| `TagId` | string | Tag 唯一标识符 |
-| `DisplayName` | string | 显示名称 |
-| `ModuleId` | string | 所属模块 ID |
-| `BitValue` | ulong | Tag 的位值（用于游戏内部位运算） |
-| `SortOrder` | int | 排序顺序 |
-| `IconPath` | string | 图标路径 |
-| `AlbumCount` | int | Tag 下的专辑数量 |
-| `SongCount` | int | Tag 下的歌曲数量 |
-| `IsVisible` | bool | 是否显示在 Tag 列表中 |
-| `ExtendedData` | object | 扩展数据（模块自定义） |
-
-## 配置管理
-
-使用 `IModuleConfigManager` 注册模块配置项：
-
-```csharp
-public async Task InitializeAsync(IModuleContext context)
-{
-    var config = context.ConfigManager;
-    
-    // 绑定到模块默认 section: [Module:com.yourname.modulename]
-    var rootFolder = config.BindDefault(
-        "RootFolder",
-        @"C:\Music",
-        "音乐根目录"
-    );
-    
-    // 绑定到自定义 section
-    var customSetting = config.Bind(
-        "CustomSection",
-        "SettingKey",
-        "default value",
-        "设置描述"
-    );
-}
-```
-
-## 事件系统
-
-使用 `IEventBus` 订阅和发布事件：
-
-```csharp
-// 订阅事件（返回 IDisposable，用于取消订阅）
-var subscription = context.EventBus.Subscribe<PlayStartedEvent>(OnPlayStarted);
-
-// 发布事件
-context.EventBus.Publish(new PlayStartedEvent { Music = musicInfo });
+**新模块不应引用或实现这些接口**。它们仅服务于 ChillPatcher 内部已有功能，不对外提供扩展点。
 
 // 取消订阅
 subscription.Dispose();
-```
+
+````
 
 ### 可用事件类型
 
-| 事件 | 说明 |
-|------|------|
-| `PlayStartedEvent` | 播放开始 |
-| `PlayEndedEvent` | 播放结束 |
-| `PlayPausedEvent` | 播放暂停/恢复 |
-| `PlayProgressEvent` | 播放进度变化 |
+| 事件                | 说明          |
+| ------------------- | ------------- |
+| `PlayStartedEvent`  | 播放开始      |
+| `PlayEndedEvent`    | 播放结束      |
+| `PlayPausedEvent`   | 播放暂停/恢复 |
+| `PlayProgressEvent` | 播放进度变化  |
 
 ## 注册表接口
 
@@ -285,7 +60,7 @@ void UnregisterTag(string tagId);
 TagInfo GetTag(string tagId);
 IReadOnlyList<TagInfo> GetAllTags();
 IReadOnlyList<TagInfo> GetTagsByModule(string moduleId);
-```
+````
 
 ### IAlbumRegistry
 
@@ -355,6 +130,7 @@ public interface IDependencyLoader
 ## 模块部署
 
 编译后的模块 DLL 放置在：
+
 ```
 BepInEx/plugins/ChillPatcher/modules/<ModuleId>/
 ├── YourModule.dll

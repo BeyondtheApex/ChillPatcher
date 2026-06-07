@@ -1,6 +1,6 @@
 /// Web stub for PortFile — no-op on web platform.
 /// On web, the backend is always on the same origin (served by ASP.NET UseStaticFiles).
-library port_file_web;
+library;
 
 /// Web stub: no port file needed on web (same-origin).
 int? readPort() => null;

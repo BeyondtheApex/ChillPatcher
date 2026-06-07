@@ -1,5 +1,6 @@
 /// Navigation tab state provider.
 /// During transition reads from AppState; after migration becomes standalone.
+library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/app_state_bridge.dart';

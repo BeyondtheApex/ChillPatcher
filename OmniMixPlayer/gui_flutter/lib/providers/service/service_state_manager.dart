@@ -1,5 +1,6 @@
 /// Service installation & management (Windows service).
 /// Extracted from AppState during Riverpod migration.
+library;
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';

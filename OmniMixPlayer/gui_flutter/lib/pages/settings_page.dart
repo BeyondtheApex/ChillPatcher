@@ -268,7 +268,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               l10n.shortcutSettingsDesc,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: cs.onSurfaceVariant.withOpacity(0.8),
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.8),
                               ),
                             ),
                           ],
@@ -521,13 +521,14 @@ class _BackendToggleButton extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final running = state.backendRunning;
     final busy = state.backendBusy;
-    if (busy)
+    if (busy) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(8),
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
       );
+    }
     return SizedBox(
       width: double.infinity,
       child: running
@@ -672,7 +673,7 @@ class _AudioOutputDeviceRow extends StatelessWidget {
                 _audioStateText(state.nativeAudioState),
                 style: TextStyle(
                   fontSize: 12,
-                  color: cs.onSurfaceVariant.withOpacity(0.8),
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.8),
                 ),
               ),
             ],
@@ -975,10 +976,11 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
   }
 
   String _resultText(String result, String svcState, dynamic l10n) {
-    if (result == 'failed')
+    if (result == 'failed') {
       return svcState == 'running' || svcState == 'installed'
           ? l10n.serviceUninstallFailed
           : l10n.serviceInstallFailed;
+    }
     if (result == 'installed') return l10n.serviceInstallSuccess;
     if (result == 'not_installed') return l10n.serviceUninstallSuccess;
     return result;
@@ -986,7 +988,7 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
 
   Future<void> _doInstall() async {
     await widget.state.installService();
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -997,6 +999,7 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
           duration: const Duration(seconds: 2),
         ),
       );
+    }
   }
 
   Future<void> _doUninstall() async {
@@ -1019,7 +1022,7 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
     );
     if (confirmed != true) return;
     await widget.state.uninstallService();
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1030,6 +1033,7 @@ class _ServiceStatusCardState extends State<_ServiceStatusCard> {
           duration: const Duration(seconds: 2),
         ),
       );
+    }
   }
 }
 

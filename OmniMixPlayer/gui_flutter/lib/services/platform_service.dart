@@ -31,8 +31,8 @@ class PlatformService {
 
     for (final c in [
       '$guiDir$sep$exeName',
-      '$guiDir${sep}..${sep}OmniMixPlayer.Backend$sep$exeName',
-      '$guiDir${sep}..${sep}..${sep}..${sep}..${sep}OmniMixPlayer.Backend${sep}bin${sep}Release${sep}net8.0$sep$exeName',
+      '$guiDir$sep..${sep}OmniMixPlayer.Backend$sep$exeName',
+      '$guiDir$sep..$sep..$sep..$sep..${sep}OmniMixPlayer.Backend${sep}bin${sep}Release${sep}net8.0$sep$exeName',
     ]) {
       if (File(c).existsSync()) return c;
     }

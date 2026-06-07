@@ -1,6 +1,7 @@
 /// Native (dart:io) implementation of Unix socket WebSocket connection.
 /// This file is only compiled on native platforms (Windows, Linux, macOS).
 /// On web, the stub in ws_unix_web.dart is used instead (never called).
+library;
 
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -12,7 +13,7 @@ Future<WebSocketChannel> connectViaUnixSocket(String socketPath) async {
     final channel = IOWebSocketChannel(ws);
     await channel.ready;
     return channel;
-  } catch (e, st) {
+  } catch (e) {
     rethrow;
   }
 }

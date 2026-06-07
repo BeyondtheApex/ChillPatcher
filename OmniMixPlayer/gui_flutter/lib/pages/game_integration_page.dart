@@ -123,7 +123,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       elevation: 2,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: InkWell(
         onTap: () => setState(() => _activeGameId = game.id),
@@ -145,8 +145,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
                           width: 160,
                           height: 120,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _coverFallback(game, cs),
+                          errorBuilder: (_, _, _) => _coverFallback(game, cs),
                         )
                       : _coverFallback(game, cs),
                 ),
@@ -333,7 +332,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       color: cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -446,10 +445,10 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
   Widget _unmanagedWarning(ColorScheme cs, AppLocalizations l10n) {
     return Card(
       elevation: 0,
-      color: Colors.orange.withOpacity(0.08),
+      color: Colors.orange.withValues(alpha: 0.08),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.orange.withOpacity(0.4)),
+        side: BorderSide(color: Colors.orange.withValues(alpha: 0.4)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -498,7 +497,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       color: cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -659,7 +658,7 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
       color: cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -931,9 +930,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.85),
+        color: Colors.black.withValues(alpha: 0.85),
         border: Border(
-          top: BorderSide(color: cs.outlineVariant.withOpacity(0.5)),
+          top: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
         ),
       ),
       child: SafeArea(
@@ -1237,9 +1236,9 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.4), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
       ),
       child: Text(
         text,
@@ -1609,7 +1608,7 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.85),
+              color: Colors.black.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(8),
             ),
             child: ListView.builder(
@@ -1695,9 +1694,9 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Text(
           title,
@@ -1774,7 +1773,7 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.85),
+              color: Colors.black.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(8),
             ),
             child: ListView.builder(
@@ -1907,7 +1906,7 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
           decoration: BoxDecoration(
             color: cs.surfaceContainerLow,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: cs.outlineVariant.withOpacity(0.5)),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1944,9 +1943,9 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
             width: double.infinity,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.15),
+              color: Colors.red.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.red.withOpacity(0.4)),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
             ),
             child: Row(
               children: [
@@ -2038,7 +2037,7 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
   }
 
   Future<void> _checkManualInstallation() async {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final gameDir = widget.state.gamePathFor(widget.gameId);
     bool verified = false;
 
@@ -2153,6 +2152,37 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
         } catch (_) {}
       }
     }
+
+    // Write .omnimix_instance_id into tempDir so the user copies it
+    // alongside mod files.  This binds the same instanceId to the
+    // backend profile across reinstalls, even when the user never
+    // clicks "Check Installation".
+    if (widget.modId != null) {
+      final gameDir = widget.state.gamePathFor(widget.gameId);
+      final gameInstanceIdFile = File('$gameDir/.omnimix_instance_id');
+      final String instanceId;
+      if (gameInstanceIdFile.existsSync()) {
+        // Reinstall: reuse the existing instanceId so the backend
+        // profile stays bound to the same game directory.
+        instanceId = gameInstanceIdFile.readAsStringSync().trim();
+      } else {
+        // First install: generate a fresh instanceId.
+        final r = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+        instanceId =
+            'inst_${widget.modId}_'
+            '${r.substring(r.length > 8 ? r.length - 8 : 0).padLeft(8, '0')}';
+      }
+      File('$tempDir/.omnimix_instance_id').writeAsStringSync(instanceId);
+
+      // Also write the managed marker so the mod is recognised as
+      // OmniMix-managed after a fully-manual copy.
+      final mod = modById(widget.modId!);
+      if (mod != null) {
+        final tempMarker = File('$tempDir/.omnimix_mods/${mod.id}.managed');
+        tempMarker.parent.createSync(recursive: true);
+        tempMarker.writeAsStringSync(mod.version);
+      }
+    }
   }
 
   void _restoreManualInstallFolder() {
@@ -2177,6 +2207,21 @@ class _ModInstallWizardState extends State<ModInstallWizard> {
           destBackupFile.copySync(tempBackupFile.path);
         } catch (_) {}
       }
+    }
+
+    // Clean up instance-id and managed-marker files that
+    // _prepareManualInstallFolder wrote into tempDir, so the user
+    // gets a clean folder when returning to the auto-install path.
+    if (widget.modId != null) {
+      try {
+        File('$tempDir/.omnimix_instance_id').deleteSync();
+      } catch (_) {}
+      try {
+        final mod = modById(widget.modId!);
+        if (mod != null) {
+          File('$tempDir/.omnimix_mods/${mod.id}.managed').deleteSync();
+        }
+      } catch (_) {}
     }
   }
 }

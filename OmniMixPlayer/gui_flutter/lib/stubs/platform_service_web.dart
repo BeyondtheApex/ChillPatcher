@@ -1,6 +1,6 @@
 /// Web stub for PlatformService — no-op on web.
 /// Service management (install/uninstall/start/stop) is not available in browser.
-library platform_service_web;
+library;
 
 /// Web stub: always returns 'not_installed' since OS services aren't accessible from browser.
 Future<String> getServiceState() async => 'not_installed';

@@ -14,7 +14,7 @@
 #include <thread>
 
 // Bridge version — parsed by build_all.py for version_info.json
-#define FH6_BRIDGE_VERSION "1.0.0"
+#define FH6_BRIDGE_VERSION "2.0.0"
 
 namespace fh6 {
 
@@ -36,8 +36,10 @@ void run_bridge(HMODULE self) noexcept {
     std::filesystem::create_directories(data_dir, ec);
 
     log::init(data_dir / "bridge.log");
-    log::info("[bridge] FH6 OmniMix bridge starting; data_dir={}", data_dir.string());
+    log::info("[bridge] FH6 OmniMix bridge v{} starting; data_dir={}",
+              FH6_BRIDGE_VERSION, data_dir.string());
 
+    // ── Parse host PE for FMOD signature scanning ──────────────────
     auto img = fmod_bridge::parse(reinterpret_cast<std::byte*>(GetModuleHandleW(nullptr)));
     if (!img.valid()) {
         log::error("[bridge] failed to parse host PE image; aborting");
@@ -46,42 +48,46 @@ void run_bridge(HMODULE self) noexcept {
 
     fmod_bridge::FMODFns fns;
     if (!fmod_bridge::resolve_fmod_signatures(img, fns)) {
-        log::warn("[bridge] some FMOD signatures unresolved -- DSP injection may retry late");
+        log::warn("[bridge] some FMOD signatures unresolved; DSP injection may retry late");
     }
 
+    // ── Create OmniMixPlayer audio source ─────────────────────────
+    // The source declares Flutter-built-in-player capabilities
+    // (SERVER_CONTROLLED_PLAYBACK + AUDIO_PLAYBACK + full library mgmt)
+    // and uses the OmniPcmShared SDK for all backend communication.
     constexpr std::size_t ring_bytes = 8u << 20;
     AudioSourceManager mgr{ring_bytes};
 
-    auto omni = std::make_unique<sources::OmniPcmSource>("fh6");
+    auto omni = std::make_unique<sources::OmniPcmSource>("");
     if (!omni->initialize()) {
-        log::error("[bridge] OmniPcmSource initialization failed; bridge will keep retrying via source pump");
+        log::error("[bridge] OmniPcmSource init failed; retrying via pump loop");
     }
     mgr.register_source(std::move(omni));
     mgr.switch_to("omnimix");
 
+    // ── FMOD DSP injection bridge ─────────────────────────────────
     fmod_bridge::DSPBridge bridge{mgr, fns};
     bridge.set_gain(1.0f);
     bridge.set_force_stereo_audio(true);
 
     PlaybackConfig playback;
-    playback.force_stereo_audio = true;
+    playback.force_stereo_audio  = true;
     playback.race_start_playback = "next";
-    playback.quick_station_skip = true;
+    playback.quick_station_skip  = true;
 
     std::unique_ptr<fmod_bridge::ControlLoop> ctrl;
     if (fns.ready()) {
         ctrl = std::make_unique<fmod_bridge::ControlLoop>(bridge, img, playback, 1.0f);
     } else {
-        log::warn("[bridge] control loop not started because required FMOD signatures are missing");
+        log::warn("[bridge] control loop not started (missing FMOD signatures)");
     }
 
-    // Keep the audio source pump running even while the ControlLoop is
-    // still discovering the radio target (player on main menu).  Without
-    // this, heartbeats stall during discovery and the backend will
-    // disconnect the client after its heartbeat timeout (30 s).
-    // pump_once() is guarded by a mutex so it coexists safely with the
-    // ControlLoop's own pump ticks once discovery succeeds.
-    log::info("[bridge] running");
+    // ── Main pump loop ────────────────────────────────────────────
+    // The pump drives both the audio source (shared-memory reads,
+    // heartbeat, SDK event processing) and the ControlLoop (FMOD radio
+    // discovery, DSP retargeting). The mutex inside AudioSourceManager
+    // keeps them safely interleaved.
+    log::info("[bridge] entering main loop");
     using namespace std::chrono_literals;
     for (;;) {
         mgr.pump_once();

@@ -383,7 +383,7 @@ class _InputNodeWidgetState extends State<_InputNodeWidget> {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            AppLocalizations.of(context)!.pendingSave,
+                            AppLocalizations.of(context).pendingSave,
                             style: TextStyle(fontSize: 11, color: cs.tertiary),
                           ),
                         ],
@@ -410,7 +410,7 @@ class _InputNodeWidgetState extends State<_InputNodeWidget> {
                 ),
               ),
               onPressed: _save,
-              tooltip: AppLocalizations.of(context)!.save,
+              tooltip: AppLocalizations.of(context).save,
             ),
           ),
           // Cancel
@@ -429,7 +429,7 @@ class _InputNodeWidgetState extends State<_InputNodeWidget> {
                 ),
               ),
               onPressed: _cancel,
-              tooltip: AppLocalizations.of(context)!.cancel,
+              tooltip: AppLocalizations.of(context).cancel,
             ),
           ),
         ],

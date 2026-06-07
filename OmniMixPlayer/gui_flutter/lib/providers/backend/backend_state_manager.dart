@@ -5,6 +5,7 @@
 /// lifecycle logic (start/stop/restart, service coordination, discovery).
 ///
 /// Cross-domain callbacks are set by AppState to coordinate with other managers.
+library;
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';

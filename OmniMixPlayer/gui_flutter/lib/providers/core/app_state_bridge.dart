@@ -7,6 +7,7 @@
 ///
 /// Uses ChangeNotifierProvider so that when AppState calls notifyListeners(),
 /// all dependent Riverpod providers automatically rebuild.
+library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app_state.dart';

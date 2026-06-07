@@ -2140,96 +2140,6 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// components/ModulesPanel.tsx
-var MODULES_PER_PAGE = 4;
-var POLL_INTERVAL2 = 3e3;
-var ModulesPanel = () => {
-  const [modules, setModules] = useState([]);
-  const [page, setPage] = useState(0);
-  const lastJson = useRef("");
-  const refresh = () => {
-    try {
-      const json = chill.modules.getAll();
-      if (json === lastJson.current)
-        return;
-      lastJson.current = json;
-      setModules(parse(json) || []);
-    } catch (e) {
-      console.error("ModulesPanel refresh error:", e);
-    }
-  };
-  useEffect(() => {
-    refresh();
-    const timer = setInterval(refresh, POLL_INTERVAL2);
-    return () => clearInterval(timer);
-  }, []);
-  const toggle = (mod) => {
-    try {
-      if (mod.enabled) {
-        chill.modules.disable(mod.moduleId);
-      } else {
-        chill.modules.enable(mod.moduleId);
-      }
-      refresh();
-    } catch (e) {
-      console.error("ModulesPanel toggle error:", e);
-    }
-  };
-  const totalPages = Math.max(1, Math.ceil(modules.length / MODULES_PER_PAGE));
-  const pageModules = modules.slice(page * MODULES_PER_PAGE, (page + 1) * MODULES_PER_PAGE);
-  return /* @__PURE__ */ createElement("div", { style: { flexDirection: "Column", display: "Flex", flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 12, color: theme.textMuted, marginBottom: 8 } }, `\u5DF2\u6CE8\u518C ${modules.length} \u4E2A\u6A21\u5757\uFF08\u7981\u7528/\u542F\u7528\u540E\u9700\u91CD\u542F\u6E38\u620F\u751F\u6548\uFF09`), pageModules.map((mod) => /* @__PURE__ */ createElement(ModuleCard, { key: mod.moduleId, module: mod, onToggle: () => toggle(mod) })), /* @__PURE__ */ createElement(Pagination, { page, totalPages, onPageChange: setPage }));
-};
-var ModuleCard = ({ module: module2, onToggle }) => /* @__PURE__ */ createElement("div", { style: {
-  flexDirection: "Column",
-  display: "Flex",
-  backgroundColor: theme.bgCard,
-  borderRadius: theme.radius,
-  paddingTop: 12,
-  paddingBottom: 12,
-  paddingLeft: 14,
-  paddingRight: 14,
-  marginBottom: 6
-} }, /* @__PURE__ */ createElement("div", { style: {
-  flexDirection: "Row",
-  display: "Flex",
-  justifyContent: "SpaceBetween",
-  alignItems: "Center",
-  marginBottom: 6
-} }, /* @__PURE__ */ createElement("div", { style: { flexDirection: "Row", display: "Flex", alignItems: "Center" } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 14, color: theme.text, marginRight: 8 } }, module2.displayName), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted } }, `v${module2.version}`)), /* @__PURE__ */ createElement(
-  "div",
-  {
-    style: {
-      paddingTop: 3,
-      paddingBottom: 3,
-      paddingLeft: 10,
-      paddingRight: 10,
-      borderRadius: 4,
-      fontSize: 11,
-      backgroundColor: module2.enabled ? theme.success : theme.danger,
-      color: theme.textBright
-    },
-    onClick: onToggle
-  },
-  module2.enabled ? "\u542F\u7528" : "\u7981\u7528"
-)), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted, marginBottom: 4 } }, module2.moduleId), /* @__PURE__ */ createElement("div", { style: { fontSize: 11, color: theme.textMuted } }, `\u4F18\u5148\u7EA7: ${module2.priority} \xB7 \u52A0\u8F7D\u4E8E ${module2.loadedAt}`), module2.capabilities ? /* @__PURE__ */ createElement("div", { style: {
-  flexDirection: "Row",
-  display: "Flex",
-  flexWrap: "Wrap",
-  marginTop: 6
-} }, module2.capabilities.canDelete && /* @__PURE__ */ createElement(CapBadge, { label: "\u5220\u9664" }), module2.capabilities.canFavorite && /* @__PURE__ */ createElement(CapBadge, { label: "\u6536\u85CF" }), module2.capabilities.canExclude && /* @__PURE__ */ createElement(CapBadge, { label: "\u6392\u9664" }), module2.capabilities.supportsLiveUpdate && /* @__PURE__ */ createElement(CapBadge, { label: "\u70ED\u66F4\u65B0" }), module2.capabilities.providesCover && /* @__PURE__ */ createElement(CapBadge, { label: "\u5C01\u9762" }), module2.capabilities.providesAlbum && /* @__PURE__ */ createElement(CapBadge, { label: "\u4E13\u8F91" })) : null);
-var CapBadge = ({ label }) => /* @__PURE__ */ createElement("div", { style: {
-  fontSize: 10,
-  color: theme.accent,
-  backgroundColor: theme.bg,
-  borderRadius: 3,
-  paddingTop: 2,
-  paddingBottom: 2,
-  paddingLeft: 6,
-  paddingRight: 6,
-  marginRight: 4,
-  marginBottom: 2
-} }, label);
-
 // components/UIExplorerPanel.tsx
 var ITEMS_PER_PAGE2 = 8;
 var UIExplorerPanel = () => {
@@ -3333,7 +3243,21 @@ var ErrorBoundary = class extends BaseComponent {
   }
   render() {
     if (this.state.error) {
-      return /* @__PURE__ */ createElement("div", { style: { color: "#ff5555", fontSize: 11, padding: 8, backgroundColor: "#2a0000", borderRadius: 4, marginBottom: 4 } }, /* @__PURE__ */ createElement("div", { style: { color: "#ff8888", fontSize: 12, marginBottom: 4 } }, "[", this.props.name, "] Error:"), /* @__PURE__ */ createElement("div", { style: { color: "#ffaaaa", fontSize: 10, whiteSpace: "Normal" } }, this.state.error));
+      return /* @__PURE__ */ createElement(
+        "div",
+        {
+          style: {
+            color: "#ff5555",
+            fontSize: 11,
+            padding: 8,
+            backgroundColor: "#2a0000",
+            borderRadius: 4,
+            marginBottom: 4
+          }
+        },
+        /* @__PURE__ */ createElement("div", { style: { color: "#ff8888", fontSize: 12, marginBottom: 4 } }, "[", this.props.name, "] Error:"),
+        /* @__PURE__ */ createElement("div", { style: { color: "#ffaaaa", fontSize: 10, whiteSpace: "Normal" } }, this.state.error)
+      );
     }
     return this.props.children;
   }
@@ -3408,74 +3332,137 @@ var App = () => {
       )
     );
   }
-  return /* @__PURE__ */ createElement("div", { key: "panel", style: {
-    position: "Absolute",
-    top: "20%",
-    bottom: "20%",
-    left: "15%",
-    right: "15%",
-    backgroundColor: theme.bg,
-    borderRadius: theme.radiusLg,
-    flexDirection: "Column",
-    display: "Flex",
-    overflow: "Hidden"
-  } }, /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    justifyContent: "SpaceBetween",
-    alignItems: "Center",
-    paddingTop: 12,
-    paddingBottom: 8,
-    paddingLeft: 20,
-    paddingRight: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border
-  } }, /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: theme.accent } }, "ChillPatcher"), /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Row",
-    display: "Flex",
-    alignItems: "Center"
-  } }, /* @__PURE__ */ createElement(
+  return /* @__PURE__ */ createElement(
     "div",
     {
-      style: { fontSize: 18, color: theme.accent },
-      onClick: () => {
-        toggleInputMode();
+      key: "panel",
+      style: {
+        position: "Absolute",
+        top: "20%",
+        bottom: "20%",
+        left: "15%",
+        right: "15%",
+        backgroundColor: theme.bg,
+        borderRadius: theme.radiusLg,
+        flexDirection: "Column",
+        display: "Flex",
+        overflow: "Hidden"
       }
     },
-    isGameMode ? "\u{F0B82}  " : "\uF108  "
-  ), /* @__PURE__ */ createElement(
-    "div",
-    {
-      style: { fontSize: 18, color: theme.accent },
-      onClick: () => setVisible(false)
-    },
-    "\u2715"
-  ))), /* @__PURE__ */ createElement("scrollview", { style: { flexGrow: 1 } }, /* @__PURE__ */ createElement("div", { style: {
-    flexDirection: "Column",
-    display: "Flex",
-    paddingTop: 8,
-    paddingBottom: 12,
-    paddingLeft: 16,
-    paddingRight: 16
-  } }, /* @__PURE__ */ createElement(
-    TabContainer,
-    {
-      defaultTab: "modules",
-      tabs: [
-        { id: "modules", label: "\u6A21\u5757", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "ModulesPanel" }, /* @__PURE__ */ createElement(ModulesPanel, null)) },
-        { id: "gameapi", label: "\u6E38\u620FAPI", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "GameApiTestPanel" }, /* @__PURE__ */ createElement(GameApiTestPanel, null)) },
-        { id: "profiles", label: "\u5B58\u6863", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "SaveProfilePanel" }, /* @__PURE__ */ createElement(SaveProfilePanel, null)) },
-        { id: "explorer", label: "\u573A\u666F\u6811", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "UIExplorerPanel" }, /* @__PURE__ */ createElement(UIExplorerPanel, null)) },
-        { id: "ime", label: "\u8F93\u5165\u6CD5", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "IMESettingsPanel" }, /* @__PURE__ */ createElement(IMESettingsPanel, null)) },
-        { id: "settings", label: "\u8BBE\u7F6E", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "SettingsPanel" }, /* @__PURE__ */ createElement(SettingsPanel, null)) },
-        { id: "licenses", label: "\u8BB8\u53EF\u8BC1", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "LicensesPanel" }, /* @__PURE__ */ createElement(LicensesPanel, null)) },
-        { id: "about", label: "\u5173\u4E8E", content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "AboutPanel" }, /* @__PURE__ */ createElement(AboutPanel, null)) }
-      ]
-    }
-  ))));
+    /* @__PURE__ */ createElement(
+      "div",
+      {
+        style: {
+          flexDirection: "Row",
+          display: "Flex",
+          justifyContent: "SpaceBetween",
+          alignItems: "Center",
+          paddingTop: 12,
+          paddingBottom: 8,
+          paddingLeft: 20,
+          paddingRight: 20,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.border
+        }
+      },
+      /* @__PURE__ */ createElement("div", { style: { fontSize: 16, color: theme.accent } }, "ChillPatcher"),
+      /* @__PURE__ */ createElement(
+        "div",
+        {
+          style: {
+            flexDirection: "Row",
+            display: "Flex",
+            alignItems: "Center"
+          }
+        },
+        /* @__PURE__ */ createElement(
+          "div",
+          {
+            style: { fontSize: 18, color: theme.accent },
+            onClick: () => {
+              toggleInputMode();
+            }
+          },
+          isGameMode ? "\u{F0B82}  " : "\uF108  "
+        ),
+        /* @__PURE__ */ createElement(
+          "div",
+          {
+            style: { fontSize: 18, color: theme.accent },
+            onClick: () => setVisible(false)
+          },
+          "\u2715"
+        )
+      )
+    ),
+    /* @__PURE__ */ createElement("scrollview", { style: { flexGrow: 1 } }, /* @__PURE__ */ createElement(
+      "div",
+      {
+        style: {
+          flexDirection: "Column",
+          display: "Flex",
+          paddingTop: 8,
+          paddingBottom: 12,
+          paddingLeft: 16,
+          paddingRight: 16
+        }
+      },
+      /* @__PURE__ */ createElement(
+        TabContainer,
+        {
+          defaultTab: "gameapi",
+          tabs: [
+            {
+              id: "gameapi",
+              label: "\u6E38\u620FAPI",
+              content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "GameApiTestPanel" }, /* @__PURE__ */ createElement(GameApiTestPanel, null))
+            },
+            {
+              id: "profiles",
+              label: "\u5B58\u6863",
+              content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "SaveProfilePanel" }, /* @__PURE__ */ createElement(SaveProfilePanel, null))
+            },
+            {
+              id: "explorer",
+              label: "\u573A\u666F\u6811",
+              content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "UIExplorerPanel" }, /* @__PURE__ */ createElement(UIExplorerPanel, null))
+            },
+            {
+              id: "ime",
+              label: "\u8F93\u5165\u6CD5",
+              content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "IMESettingsPanel" }, /* @__PURE__ */ createElement(IMESettingsPanel, null))
+            },
+            {
+              id: "settings",
+              label: "\u8BBE\u7F6E",
+              content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "SettingsPanel" }, /* @__PURE__ */ createElement(SettingsPanel, null))
+            },
+            {
+              id: "licenses",
+              label: "\u8BB8\u53EF\u8BC1",
+              content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "LicensesPanel" }, /* @__PURE__ */ createElement(LicensesPanel, null))
+            },
+            {
+              id: "about",
+              label: "\u5173\u4E8E",
+              content: () => /* @__PURE__ */ createElement(ErrorBoundary, { name: "AboutPanel" }, /* @__PURE__ */ createElement(AboutPanel, null))
+            }
+          ]
+        }
+      )
+    ))
+  );
 };
 render(
-  /* @__PURE__ */ createElement("div", { style: { position: "Absolute", top: 0, left: 0, right: 0, bottom: 0 }, "picking-mode": 1 }, /* @__PURE__ */ createElement(App, null), /* @__PURE__ */ createElement(ErrorBoundary, { name: "IMECandidatePanel" }, /* @__PURE__ */ createElement(IMECandidatePanel, null))),
+  /* @__PURE__ */ createElement(
+    "div",
+    {
+      style: { position: "Absolute", top: 0, left: 0, right: 0, bottom: 0 },
+      "picking-mode": 1
+    },
+    /* @__PURE__ */ createElement(App, null),
+    /* @__PURE__ */ createElement(ErrorBoundary, { name: "IMECandidatePanel" }, /* @__PURE__ */ createElement(IMECandidatePanel, null))
+  ),
   document.body
 );
 //# sourceMappingURL=app.js.map

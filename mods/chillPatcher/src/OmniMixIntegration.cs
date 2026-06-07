@@ -1113,6 +1113,11 @@ namespace ChillPatcher
 
         private void OnStateChanged(object sender, StateChangedEventArgs e)
         {
+            // During Unity shutdown the native SDK thread may still fire events.
+            // Calling UnityEngine.Time.time after the engine has started tearing
+            // down causes a native access violation that cannot be caught.
+            if (_disposed) return;
+
             _currentIsPlaying = e.IsPlaying;
             _currentTrackPosition = e.Position;
             _lastPositionUpdateTime = Time.time;
@@ -1172,6 +1177,11 @@ namespace ChillPatcher
 
         private void OnPosition(object sender, PositionEventArgs e)
         {
+            // During Unity shutdown the native SDK thread may still fire events.
+            // Calling UnityEngine.Time.time after the engine has started tearing
+            // down causes a native access violation that cannot be caught.
+            if (_disposed) return;
+
             _currentTrackPosition = e.Position;
             _lastPositionUpdateTime = Time.time;
         }

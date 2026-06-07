@@ -184,10 +184,11 @@ class _FloatingPlayerWindowAppState extends State<FloatingPlayerWindowApp>
         _lastPosition = pos;
         _invoke("update_manual_position", {"x": pos.dx, "y": pos.dy});
       }
-      if (mounted)
+      if (mounted) {
         setState(() {
           _highlightedButtonIndex = 1;
         });
+      }
     });
 
     await widget.controller.setWindowMethodHandler((call) async {
@@ -211,10 +212,11 @@ class _FloatingPlayerWindowAppState extends State<FloatingPlayerWindowApp>
       } else if (call.method == "visibility_changed") {
         final visible = call.arguments as bool? ?? false;
         _isPlayerVisible = visible;
-        if (mounted)
+        if (mounted) {
           setState(() {
             _highlightedButtonIndex = visible ? 1 : null;
           });
+        }
         return true;
       } else if (call.method == "input_event" && call.arguments is Map) {
         _handleFloatingInputEvent(
@@ -706,7 +708,7 @@ class _TriggerKeyItem extends StatelessWidget {
       color: cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: cs.outlineVariant.withOpacity(0.4)),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -755,7 +757,7 @@ class _TriggerKeyItem extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               boxShadow: [
                 BoxShadow(
-                  color: bg.withOpacity(0.3),
+                  color: bg.withValues(alpha: 0.3),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -773,7 +775,7 @@ class _TriggerKeyItem extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(Icons.close, size: 14, color: textCol.withOpacity(0.7)),
+                Icon(Icons.close, size: 14, color: textCol.withValues(alpha: 0.7)),
               ],
             ),
           ),
@@ -791,12 +793,12 @@ class _TriggerKeyItem extends StatelessWidget {
           border: Border.all(
             color: isCapturing
                 ? Colors.amber
-                : cs.outlineVariant.withOpacity(0.6),
+                : cs.outlineVariant.withValues(alpha: 0.6),
             width: isCapturing ? 2.0 : 1.2,
           ),
           borderRadius: BorderRadius.circular(8),
           color: isCapturing
-              ? Colors.amber.withOpacity(0.08)
+              ? Colors.amber.withValues(alpha: 0.08)
               : Colors.transparent,
         ),
         child: isCapturing
@@ -812,7 +814,7 @@ class _TriggerKeyItem extends StatelessWidget {
                 '\u70b9\u51fb\u8bbe\u7f6e',
                 style: TextStyle(
                   fontSize: 13,
-                  color: cs.onSurfaceVariant.withOpacity(0.5),
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.5),
                 ),
               ),
       ),
@@ -1009,7 +1011,7 @@ class _RoundIconButtonState extends State<_RoundIconButton>
             boxShadow: widget.highlighted
                 ? [
                     BoxShadow(
-                      color: cs.primary.withOpacity(0.4),
+                      color: cs.primary.withValues(alpha: 0.4),
                       blurRadius: 12,
                       spreadRadius: 2,
                     ),

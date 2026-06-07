@@ -333,15 +333,15 @@ class Fh6OmniBridgeMod extends ModDeclaration {
       // 1. Production: sibling of Flutter executable in playerbuild
       '$guiDir${sep}chill-gen-media.exe',
       // 2. Adjacent folders in release
-      '$guiDir${sep}..${sep}Backend${sep}chill-gen-media.exe',
+      '$guiDir$sep..${sep}Backend${sep}chill-gen-media.exe',
       // 3. Dev: absolute playerbuild path
       r'G:\Csharp\Chill\playerbuild\chill-gen-media.exe',
       // 4. Dev: relative playerbuild path from Flutter debug runner build
-      '$guiDir${sep}..${sep}..${sep}..${sep}..${sep}..${sep}playerbuild${sep}chill-gen-media.exe',
+      '$guiDir$sep..$sep..$sep..$sep..$sep..${sep}playerbuild${sep}chill-gen-media.exe',
       // 5. Dev: absolute MediaGenerator release output path (net10.0)
       r'G:\Csharp\Chill\ChillPatcher.MediaGenerator\bin\Release\net10.0\chill-gen-media.exe',
       // 6. Dev: relative MediaGenerator release output path (net10.0)
-      '$guiDir${sep}..${sep}..${sep}..${sep}..${sep}ChillPatcher.MediaGenerator${sep}bin${sep}Release${sep}net10.0${sep}chill-gen-media.exe',
+      '$guiDir$sep..$sep..$sep..$sep..${sep}ChillPatcher.MediaGenerator${sep}bin${sep}Release${sep}net10.0${sep}chill-gen-media.exe',
     ];
 
     for (final c in candidates) {
@@ -435,12 +435,12 @@ class FH6SettingsDialog extends StatefulWidget {
   final void Function(Map<String, dynamic>) saveConfigJson;
 
   const FH6SettingsDialog({
-    Key? key,
+    super.key,
     required this.currentSettings,
     required this.onSave,
     required this.loadConfigJson,
     required this.saveConfigJson,
-  }) : super(key: key);
+  });
 
   @override
   _FH6SettingsDialogState createState() => _FH6SettingsDialogState();
@@ -539,7 +539,7 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
@@ -633,7 +633,7 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
               if (anthemZipEnabled) ...[
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: anthemMode,
+                  initialValue: anthemMode,
                   decoration: InputDecoration(
                     labelText: l10n.anthemModeLabel,
                     border: const OutlineInputBorder(),
@@ -655,7 +655,7 @@ class _FH6SettingsDialogState extends State<FH6SettingsDialog> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: logoMode,
+                  initialValue: logoMode,
                   decoration: InputDecoration(
                     labelText: l10n.logoOptionLabel,
                     border: const OutlineInputBorder(),

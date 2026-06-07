@@ -242,7 +242,43 @@ namespace OmniMixPlayer.Backend.Audio
                 {
                     var reader = await CreateReaderForTrackAsync(track, ct);
 
-                    if (reader == null || ct.IsCancellationRequested) return;
+                    if (ct.IsCancellationRequested) return;
+
+                    if (reader == null)
+                    {
+                        // Failed to resolve playable source — advance to next instead of
+                        // leaving the instance stuck in a zombie "playing" state.
+                        if (generation == _playbackGeneration)
+                        {
+                            _logger.LogWarning(
+                                "Track {Uuid} failed to resolve — advancing to next track",
+                                track.Uuid);
+                            _sharedMemory?.MarkError(
+                                SDK.Ipc.SharedMemoryStreamError.DecoderFailed);
+                            lock (_lock)
+                            {
+                                _eventBus.Publish(new PlayEndedEvent
+                                {
+                                    Music = track,
+                                    Reason = PlayEndReason.Failed
+                                });
+
+                                if (ServerControlledPlayback)
+                                {
+                                    var result = _timeline.NaturalEnd(Id);
+                                    if (!string.IsNullOrWhiteSpace(result.CurrentUuid))
+                                        PlayTimelineResult(result, PlaySource.AutoNext);
+                                    else
+                                        StopInternal(clearTimeline: false);
+                                }
+                                else
+                                {
+                                    StopInternal(clearTimeline: false);
+                                }
+                            }
+                        }
+                        return;
+                    }
 
                     lock (_lock) { _currentReader = reader; }
 

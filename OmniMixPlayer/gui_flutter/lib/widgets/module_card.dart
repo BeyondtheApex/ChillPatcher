@@ -67,7 +67,7 @@ class ModuleCard extends StatelessWidget {
                 if (module.hasSettingsUi)
                   FilledButton(
                     onPressed: onTap,
-                    child: Text(AppLocalizations.of(context)!.open),
+                    child: Text(AppLocalizations.of(context).open),
                   ),
               ],
             ),
@@ -80,7 +80,7 @@ class ModuleCard extends StatelessWidget {
                     TextButton.icon(
                       onPressed: onSettingsTap,
                       icon: const Icon(Icons.settings, size: 18),
-                      label: Text(AppLocalizations.of(context)!.settings),
+                      label: Text(AppLocalizations.of(context).settings),
                     ),
                   for (var i = 0; i < module.linkEntries.length; i++)
                     TextButton(

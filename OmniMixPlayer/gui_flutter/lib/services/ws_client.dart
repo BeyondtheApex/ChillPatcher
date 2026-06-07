@@ -37,9 +37,8 @@ class WsClient {
       _socketPath = null;
 
   /// Unix socket mode.
-  WsClient.withSocket({required String socketPath})
-    : _wsUrl = 'ws://unix/ws',
-      _socketPath = socketPath;
+  WsClient.withSocket({required String this._socketPath})
+    : _wsUrl = 'ws://unix/ws';
 
   /// Web mode: build full ws:// or wss:// URL from the current page origin.
   /// The web_socket package's BrowserWebSocket requires an absolute URI with
@@ -65,7 +64,7 @@ class WsClient {
       if (_socketPath != null) {
         // Unix socket path — only available on native platforms.
         // connectViaUnixSocket is conditionally imported (web stub throws).
-        _channel = await connectViaUnixSocket(_socketPath!);
+        _channel = await connectViaUnixSocket(_socketPath);
       } else {
         // TCP mode — WebSocketChannel.connect works on both native and web
         _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
@@ -83,7 +82,7 @@ class WsClient {
         },
       );
       return true;
-    } catch (e, st) {
+    } catch (e) {
       _cleanup();
       return false;
     }
@@ -141,7 +140,7 @@ class WsClient {
         'event': {'nodeId': nodeId, 'action': action, 'value': value},
       });
       _channel!.sink.add(msg);
-    } catch (e, st) {}
+    } catch (e) {}
   }
 
   void disconnect() {

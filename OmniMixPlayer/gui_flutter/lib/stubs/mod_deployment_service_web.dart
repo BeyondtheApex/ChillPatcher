@@ -1,7 +1,7 @@
 /// Web stub for ModDeploymentService — no-op on web.
 /// Mod deployment (extract zip, copy to game dir, manage BepInEx) is not
 /// available in the browser — it requires filesystem access.
-library mod_deployment_service_web;
+library;
 
 import '../models/mod_manifest.dart';
 import '../models/mod_enums.dart';

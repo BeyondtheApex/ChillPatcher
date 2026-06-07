@@ -1,45 +1,88 @@
-# ChillPatcher - Bilibili Music Module
+# Bilibili 音乐模块
 
-这是一个为 ChillPatcher 开发的 Bilibili 音乐扩展模块。它允许你直接登录 Bilibili 账号，同步收藏夹，并播放其中音乐
+Bilibili 收藏夹音乐集成模块，纯 C# 实现，无需原生桥接。通过 Bilibili 官方 API 同步收藏夹中的视频音频。
 
-## ✨ 主要功能
+> 作者：[@xiaogouqianqian](https://github.com/xiaogouqianqian)
 
-* **🎧 流式播放**：实时流式传输音频，无需等待完整下载。
-* **📂 大歌单支持**：支持1000 首歌曲的大型收藏夹，自动分页加载。
-* **🖼️ 智能封面**：自动将收藏夹中第一个视频的封面设置为歌单封面，美观直观。
-* **🔓 二维码登录**：内置二维码登录流程。
-* **⚙️ 自定义配置**：支持在 BepInEx 配置文件中调整加载延迟。
+## 功能特性
 
+- **二维码登录** — 内置 Bilibili 扫码登录，Session 持久化
+- **收藏夹同步** — 自动加载所有 B 站收藏夹，每个收藏夹生成独立的歌单标签
+- **流式播放** — 边下边播，10 秒环形缓冲；完整下载后支持 Seek
+- **智能封面** — 自动加载视频封面并居中裁切为正方形
+- **大歌单支持** — 自动分页加载，支持 1000+ 首歌曲
+- **访问控制** — 可配置翻页延迟防止 412 限流（默认 300ms）
+- **收藏夹过滤** — 支持白名单/黑名单模式，按 fid 筛选收藏夹
 
-## ⚙️ 配置文件
+## 架构
 
-首次运行游戏后，会在 `BepInEx/config/` 下生成 `com.chillpatcher.plugin.cfg` 文件。你可以在此调整参数：
+```
+┌──────────────────────────────────────────┐
+│              OmniMixPlayer.SDK            │
+│  IMusicModule / IStreamingMusicSource...  │
+└──────────────────┬───────────────────────┘
+                   │
+┌──────────────────▼───────────────────────┐
+│        C# 模块层 (BilibiliModule)         │
+│  命名空间: OmniMixPlayer.Module.Bilibili  │
+│  实现: IStreamingMusicSourceProvider,     │
+│        ICoverProvider, IModuleUIProvider  │
+│  API: api.bilibili.com / passport.bilibili.com│
+└──────────────────────────────────────────┘
+```
 
-```ini
-[Module:com.chillpatcher.bilibili]
+## 编译
 
-## 翻页加载延迟(毫秒)。过低可能导致412错误，建议保持在300以上。
-# Setting type: Int32
-# Default value: 300
-PageLoadDelay = 300
+纯 C# 项目，无需 Go/Rust 编译：
 
-## 是否启用收藏夹名单。关闭时导入当前账号下全部创建的收藏夹。
-# Setting type: Boolean
-# Default value: false
-ImportFilterEnabled = false
+```batch
+cd OmniMixPlayer\modules\Bilibili
+dotnet restore
+dotnet build -c Release
+```
 
-## 收藏夹名单模式：allow = 只导入名单中的 fid；deny = 排除名单中的 fid。
-# Setting type: String
-# Default value: allow
-ImportFilterMode = allow
+## 文件结构
 
-## 收藏夹 fid，使用英文逗号分隔。网页 favlist 链接里的 fid 参数就是这里的 ID。
-# Setting type: String
-# Default value:
-ImportFolderIds =
+```
+OmniMixPlayer/modules/Bilibili/
+├── BilibiliModule.cs             # 主模块入口
+├── BilibiliBridge.cs             # Bilibili API 客户端
+├── BilibiliModels.cs             # API 数据模型
+├── BilibiliSongRegistry.cs       # 歌曲注册（ILibraryRegistry）
+├── QRLoginManager.cs             # 二维码登录
+└── README.md
+```
 
-`````
+## 登录数据
 
-## 注意
+Session 保存在：
 
-加载收藏夹较慢，请耐心等待
+```
+C:\Users\<用户名>\AppData\LocalLow\nestopi\Chill With You\ChillPatcher\com.chillpatcher.bilibili\bilibili_session.json
+```
+
+## 配置
+
+通过 `IModuleConfigManager` 管理（图形化设置面板）：
+
+| 配置项                | 默认值 | 说明                           |
+| --------------------- | ------ | ------------------------------ |
+| `PageLoadDelay`       | 300    | 翻页延迟(ms)，防止 412 限流    |
+| `ImportFilterEnabled` | false  | 启用收藏夹过滤                 |
+| `ImportFilterMode`    | allow  | `allow`=白名单 / `deny`=黑名单 |
+| `ImportFolderIds`     | (空)   | 逗号分隔的 fid 列表            |
+
+> 注意：加载大型收藏夹可能需要较长时间，请耐心等待。
+
+## 实现接口
+
+| 接口                            | 说明                                      |
+| ------------------------------- | ----------------------------------------- |
+| `IMusicModule`                  | 基础模块入口                              |
+| `IStreamingMusicSourceProvider` | 流媒体音源（提供 URL，后端负责下载+解码） |
+| `ICoverProvider`                | 视频封面（正方形裁切）                    |
+| `IModuleUIProvider`             | 二维码登录 UI 面板                        |
+
+## 许可证
+
+本项目仅供学习研究使用。请遵守 Bilibili 服务条款。

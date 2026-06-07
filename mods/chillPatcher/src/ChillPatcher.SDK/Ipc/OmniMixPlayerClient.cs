@@ -435,6 +435,12 @@ namespace ChillPatcher.SDK.Ipc
 
         private void HandleNativeEvent(OmniPcmEventInfo e)
         {
+            // Bail out early during shutdown — native events may still fire after
+            // Unity has begun tearing down; calling Unity APIs (e.g. Time.time)
+            // at that point causes a native access violation that cannot be
+            // caught by managed try/catch.
+            if (_disposed) return;
+
             try
             {
                 switch (e.type)
@@ -498,6 +504,13 @@ namespace ChillPatcher.SDK.Ipc
         {
             if (_disposed) return;
             _disposed = true;
+
+            // Stop native event callbacks BEFORE destroying the native handle.
+            // During shutdown the native SDK thread may still fire events;
+            // calling into already-torn-down Unity APIs (e.g. Time.time) from
+            // those callbacks causes an uncatchable access violation.
+            try { _native?.StopEvents(); } catch { }
+
             _native?.Dispose();
             _http?.Dispose();
         }

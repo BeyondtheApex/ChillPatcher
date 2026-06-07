@@ -4,6 +4,7 @@
 /// Manages playback instances, active instance selection, queue/history/playlist
 /// state, and all playback control operations.
 /// Now uses proto-generated types from gRPC.
+library;
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -351,7 +352,7 @@ class PlaybackStateManager extends ChangeNotifier {
                     ? list.first
                     : null)
                 ?.id;
-        if (_activeInstanceId == null) _activeInstanceId = nextActiveId;
+        _activeInstanceId ??= nextActiveId;
         if (nextActiveId != null) {
           api.putConfigRaw({'active_instance': nextActiveId});
           await api.saveConfig();

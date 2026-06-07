@@ -2,9 +2,6 @@
 // as the hand-written gRPC-Web service clients (for api_client.dart compatibility).
 
 import '../generated/omni_mix_player/models/track.pb.dart';
-import '../generated/omni_mix_player/models/album.pb.dart';
-import '../generated/omni_mix_player/models/tag.pb.dart';
-import '../generated/omni_mix_player/models/playlist.pb.dart';
 import '../generated/omni_mix_player/models/query.pb.dart';
 import '../generated/omni_mix_player/models/instance.pb.dart';
 import '../generated/omni_mix_player/services/library.pb.dart';

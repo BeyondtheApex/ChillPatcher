@@ -1,6 +1,7 @@
 /// Error state utilities.
 /// During transition, error display is still handled by app.dart's listener.
 /// These utilities are available for future ConsumerWidget migration.
+library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/app_state_bridge.dart';

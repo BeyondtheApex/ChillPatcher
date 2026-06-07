@@ -72,8 +72,9 @@ void _writeFixedString(Array<Uint8> dst, int maxLen, String value) {
 
 int _capFlags(InstanceCapabilities caps) {
   var flags = 0;
-  if (caps.serverControlledPlayback)
+  if (caps.serverControlledPlayback) {
     flags |= omniPcmCapServerControlledPlayback;
+  }
   if (caps.queueManagement) flags |= omniPcmCapQueueManagement;
   if (caps.playlistManagement) flags |= omniPcmCapPlaylistManagement;
   if (caps.shuffle) flags |= omniPcmCapShuffle;
@@ -269,7 +270,7 @@ class _RawOmniSdkClient {
   final String _clientId;
   String _instanceId = '';
 
-  _RawOmniSdkClient({String clientId = 'flutter'}) : _clientId = clientId {
+  _RawOmniSdkClient({this._clientId = 'flutter'}) {
     final config = calloc<OmniPcmClientConfig>();
     config.ref.host = nullptr; // default: 127.0.0.1
     config.ref.port = 0; // discover
@@ -428,11 +429,13 @@ class _RawOmniSdkClient {
     if (profile.hasCapabilities()) {
       p.ref.capabilityFlags = _capFlags(profile.capabilities);
       final caps = profile.capabilities;
-      if (caps.hasMaxImportedPlaylists())
+      if (caps.hasMaxImportedPlaylists()) {
         p.ref.maxImportedPlaylists = caps.maxImportedPlaylists;
+      }
       if (caps.hasMaxTags()) p.ref.maxTags = caps.maxTags;
-      if (caps.hasMaxPlaylistEntries())
+      if (caps.hasMaxPlaylistEntries()) {
         p.ref.maxPlaylistEntries = caps.maxPlaylistEntries;
+      }
     }
     if (profile.volume != 0) {
       p.ref.volume = profile.volume;
@@ -1082,7 +1085,7 @@ class OmniSdkClient {
   Object? _initError;
   StackTrace? _initStackTrace;
 
-  OmniSdkClient({String clientId = 'flutter'}) : _clientId = clientId {
+  OmniSdkClient({this._clientId = 'flutter'}) {
     _initFuture = _init();
     _initFuture.ignore();
   }

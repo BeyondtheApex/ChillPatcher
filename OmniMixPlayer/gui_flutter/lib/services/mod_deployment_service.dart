@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/mod_manifest.dart';
 import '../models/mod_enums.dart';

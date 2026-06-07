@@ -6,6 +6,7 @@
 /// and the Flutter app is served by ASP.NET's UseStaticFiles.
 ///
 /// Build: flutter build web --wasm -t lib/main_web.dart
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

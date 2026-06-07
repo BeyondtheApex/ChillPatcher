@@ -1,5 +1,6 @@
 /// Game Integration (Mod Manager) state & deployment manager.
 /// Extracted from AppState during Riverpod migration.
+library;
 
 import 'dart:async';
 import 'dart:convert';
@@ -22,16 +23,12 @@ class GameIntegrationManager extends ChangeNotifier {
   final void Function(String? id) _clearActiveInstance;
 
   GameIntegrationManager({
-    required ApiClient Function() getApi,
+    required this._getApi,
     required bool Function() isOnline,
-    required int Function() getBackendPort,
-    required Future<void> Function() refreshPlayback,
-    required void Function(String?) clearActiveInstance,
-  }) : _getApi = getApi,
-       _isOnline = isOnline,
-       _getBackendPort = getBackendPort,
-       _refreshPlayback = refreshPlayback,
-       _clearActiveInstance = clearActiveInstance;
+    required this._getBackendPort,
+    required this._refreshPlayback,
+    required this._clearActiveInstance,
+  }) : _isOnline = isOnline;
 
   ApiClient get api => _getApi();
   bool get _backendOnline => _isOnline();

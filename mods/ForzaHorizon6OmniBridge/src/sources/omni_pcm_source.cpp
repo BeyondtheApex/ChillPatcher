@@ -2,137 +2,131 @@
 #include "fh6/log.hpp"
 #include "fh6/ring_buffer.hpp"
 
-#include <shellapi.h>
-
 #include <algorithm>
-#include <cctype>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <type_traits>
 
 namespace fh6::sources {
 
 namespace {
-constexpr int kFmodRate = 48000;
-constexpr int kOutChannels = 2;
-constexpr int kFrameBytes = kOutChannels * (int)sizeof(float);
-constexpr int kPumpFrames = 2048;
+constexpr int kFmodRate                 = 48000;
+constexpr int kOutChannels              = 2;
+constexpr int kPumpFrames               = 2048;
+constexpr int kLocalBufferTargetDivisor = 10;    // matches Flutter: rate/10 = 100ms
+constexpr int kLocalBufferMinFrames     = 3072;  // matches Flutter: 1024*3
+constexpr float kMinTargetLatency       = 0.1f;  // floor for target_latency to avoid 0
 
-std::wstring read_text_file_w(const std::filesystem::path& path) {
-    std::wifstream in{path};
-    if (!in) return {};
-    std::wstring text;
-    std::getline(in, text);
-    return text;
+// ── Flutter built-in player capability flags ─────────────────────
+//
+// These match exactly what the Flutter GUI player (OmniMixPlayer
+// Backend's PlaybackController) declares when connecting as a GUI
+// instance. The only difference is this mod uses FMOD for output
+// instead of a system audio device.
+constexpr uint32_t kFlutterPlayerCapabilities =
+    OMNI_PCM_CAP_SERVER_CONTROLLED_PLAYBACK |
+    OMNI_PCM_CAP_QUEUE_MANAGEMENT           |
+    OMNI_PCM_CAP_PLAYLIST_MANAGEMENT        |
+    OMNI_PCM_CAP_SHUFFLE                    |
+    OMNI_PCM_CAP_REPEAT                     |
+    OMNI_PCM_CAP_SEEK                       |
+    OMNI_PCM_CAP_VOLUME_CONTROL             |
+    OMNI_PCM_CAP_EQUALIZER                  |
+    OMNI_PCM_CAP_MULTIPLE_PLAYLISTS         |
+    OMNI_PCM_CAP_TAG_FILTERING             |
+    OMNI_PCM_CAP_UNLIMITED_TAGS            |
+    OMNI_PCM_CAP_ALBUM_FILTERING           |
+    OMNI_PCM_CAP_AUDIO_PLAYBACK;
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+// (instance ID and backend startup are handled by the SDK —
+//  see OmniPcmClient_Create / discover_instance_id in omni_pcm_control.cpp)
+
+// Forward declaration is no longer needed — SDK handles instance ID detection
+
+// ── Event queue push/pop (lock-free SPSC) ───────────────────────
+
+inline bool event_queue_push(OmniPcmEventInfo* queue, std::size_t cap,
+                             std::atomic<std::size_t>& w, std::atomic<std::size_t>& r,
+                             const OmniPcmEventInfo& evt) {
+    const auto wi = w.load(std::memory_order_relaxed);
+    const auto ri = r.load(std::memory_order_acquire);
+    if (wi - ri >= cap) return false; // full
+    queue[wi % cap] = evt;
+    w.store(wi + 1, std::memory_order_release);
+    return true;
 }
 
-/// Try to start the OmniMixPlayer backend (best-effort).
-void try_start_backend() {
-    // 1. Try Windows Service
-    SC_HANDLE scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
-    if (scm) {
-        SC_HANDLE svc = OpenServiceW(scm, L"OmniMixPlayerBackend", SERVICE_QUERY_STATUS | SERVICE_START);
-        if (svc) {
-            SERVICE_STATUS status{};
-            if (QueryServiceStatus(svc, &status)) {
-                if (status.dwCurrentState == SERVICE_STOPPED) {
-                    log::info("[omni] service 'OmniMixPlayerBackend' is stopped; starting...");
-                    StartServiceW(svc, 0, nullptr);
-                }
-            }
-            CloseServiceHandle(svc);
-        } else {
-            // 2. Service not installed — try launching the exe directly
-            log::info("[omni] service not installed; trying direct exe launch...");
-            std::filesystem::path exeDir;
-            // Look for the exe next to the bridge DLL (typical layout)
-            wchar_t modPath[MAX_PATH]{};
-            if (GetModuleFileNameW(nullptr, modPath, MAX_PATH)) {
-                exeDir = std::filesystem::path{modPath}.parent_path();
-            }
-            auto exePath = exeDir / "OmniMixPlayer.Backend.exe";
-            if (std::filesystem::exists(exePath)) {
-                SHELLEXECUTEINFOW sei{sizeof(sei)};
-                sei.fMask = SEE_MASK_NOASYNC | SEE_MASK_NOCLOSEPROCESS;
-                sei.lpVerb = L"open";
-                sei.lpFile = exePath.c_str();
-                sei.nShow = SW_HIDE;
-                if (ShellExecuteExW(&sei) && sei.hProcess) {
-                    log::info("[omni] launched OmniMixPlayer.Backend.exe");
-                    // Don't wait — just fire and forget
-                    CloseHandle(sei.hProcess);
-                } else {
-                    log::warn("[omni] failed to launch OmniMixPlayer.Backend.exe (error {})",
-                              GetLastError());
-                }
-            } else {
-                log::warn("[omni] OmniMixPlayer.Backend.exe not found at {}",
-                          std::filesystem::absolute(exePath).string());
-            }
-        }
-        CloseServiceHandle(scm);
-    }
+inline bool event_queue_pop(OmniPcmEventInfo* queue, std::size_t cap,
+                            std::atomic<std::size_t>& w, std::atomic<std::size_t>& r,
+                            OmniPcmEventInfo& out) {
+    const auto ri = r.load(std::memory_order_relaxed);
+    if (ri == w.load(std::memory_order_acquire)) return false; // empty
+    out = queue[ri % cap];
+    r.store(ri + 1, std::memory_order_release);
+    return true;
 }
+
 } // namespace
 
+// ═══════════════════════════════════════════════════════════════════
+//  Api::ready
+// ═══════════════════════════════════════════════════════════════════
+
 bool OmniPcmSource::Api::ready() const noexcept {
-    return dll && open_utf8 && close && is_open && last_error && snapshot && info &&
-           bind_current && format_ready && has_error && complete && read_frames &&
-           request_seek && set_audible && client_create && client_destroy &&
-           client_last_error && client_get_port && client_connect && client_heartbeat &&
-           client_disconnect && client_status && client_command && client_play &&
-           client_seek;
+    return dll
+        && open_utf8 && close && is_open && last_error && snapshot && info
+        && bind_current && format_ready && has_error && complete && read_frames
+        && request_seek && set_audible
+        && client_create && client_destroy && client_last_error
+        && client_connect && client_heartbeat && client_disconnect
+        && client_status && client_command && client_play && client_seek
+        && client_start_events && client_stop_events
+        && client_get_target_latency && client_set_target_latency;
 }
 
-// Forward declaration (must precede constructor use)
-static std::string read_instance_id();
+// ═══════════════════════════════════════════════════════════════════
+//  Construction / destruction
+// ═══════════════════════════════════════════════════════════════════
 
 OmniPcmSource::OmniPcmSource(std::string client_id)
-    : client_id_{client_id.empty() || client_id == "fh6" ? read_instance_id() : std::move(client_id)} {}
-
-static std::string read_instance_id() {
-    wchar_t exePath[MAX_PATH]{};
-    if (!GetModuleFileNameW(nullptr, exePath, MAX_PATH)) return "fh6";
-    auto exeDir = std::filesystem::path{exePath}.parent_path();
-    auto idFile = exeDir / ".omnimix_instance_id";
-    auto text = read_text_file_w(idFile);
-    if (text.empty()) return "fh6";
-    // Convert wide to narrow
-    int len = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (len <= 0) return "fh6";
-    std::string result(len - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, &result[0], len, nullptr, nullptr);
-    while (!result.empty() && isspace(static_cast<unsigned char>(result.back()))) result.pop_back();
-    log::info("[omni] using instance ID from .omnimix_instance_id: {}", result);
-    return result;
-}
+    : client_id_{std::move(client_id)} {}
 
 OmniPcmSource::~OmniPcmSource() {
     shutdown();
 }
 
+// (read_instance_id moved into SDK — see discover_instance_id in omni_pcm_control.cpp)
+
+// ═══════════════════════════════════════════════════════════════════
+//  Initialisation / shutdown
+// ═══════════════════════════════════════════════════════════════════
+
 bool OmniPcmSource::initialize() {
     std::scoped_lock lk{mutex_};
     if (!load_api()) return false;
 
-    // Best-effort: try to start the backend before discovery
-    try_start_backend();
-
-    if (!discover_port()) log::warn("[omni] port discovery failed; falling back to {}", port_);
+    // Backend auto-start and instance ID detection are handled by the SDK.
     connected_ = connect_backend();
-    if (connected_) open_shared_memory();
+    if (connected_) {
+        open_shared_memory();
+        if (api_.client_start_events) {
+            api_.client_start_events(client_, on_sdk_event, this);
+            log::info("[omni] subscribed to backend events");
+        }
+    }
     next_heartbeat_ = std::chrono::steady_clock::now();
-    next_status_refresh_ = std::chrono::steady_clock::now();
     return api_.ready();
 }
 
 void OmniPcmSource::shutdown() noexcept {
     std::scoped_lock lk{mutex_};
+    // Stop events first so the callback won't touch freed memory
+    if (client_ && api_.client_stop_events) {
+        api_.client_stop_events(client_);
+    }
     close_shared_memory();
-    if (connected_) {
+    if (connected_ && client_ && api_.client_disconnect) {
         api_.client_disconnect(client_, instance_id_.empty() ? client_id_.c_str() : instance_id_.c_str());
     }
     connected_ = false;
@@ -146,12 +140,22 @@ void OmniPcmSource::shutdown() noexcept {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  Playback transport (called from ControlLoop / HTTP server)
+// ═══════════════════════════════════════════════════════════════════
+
 void OmniPcmSource::play() {
     std::scoped_lock lk{mutex_};
-    if (!connected_) connect_backend();
+    if (!connected_) {
+        connected_ = connect_backend();
+        if (connected_) {
+            open_shared_memory();
+            next_heartbeat_ = std::chrono::steady_clock::now();
+            eof_advanced_ = false;
+        }
+    }
     if (connected_) api_.client_play(client_, instance_id_.c_str(), nullptr);
     playing_ = true;
-    refresh_status_if_due(true);
 }
 
 void OmniPcmSource::pause() {
@@ -201,35 +205,47 @@ bool OmniPcmSource::restart_current() {
     return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  Pump — main audio + housekeeping loop
+// ═══════════════════════════════════════════════════════════════════
+
 void OmniPcmSource::pump(RingBuffer& ring) {
     std::scoped_lock lk{mutex_};
-    const auto now = std::chrono::steady_clock::now();
 
-    if (!connected_ && now >= next_connect_attempt_) {
-        connected_ = connect_backend();
-        next_connect_attempt_ = now + std::chrono::seconds(5);
+    // 1. Process incoming SDK events (track metadata, state changes)
+    process_pending_events();
+
+    // 2. Heartbeat && status polling fallback
+    heartbeat_if_due();
+
+    // 3. Reconnect if needed (with cooldown to avoid log spam)
+    if (!connected_) {
+        auto now = std::chrono::steady_clock::now();
+        if (now >= next_connect_attempt_) {
+            connected_ = connect_backend();
+            next_connect_attempt_ = now + std::chrono::seconds(5);
+            if (connected_) {
+                open_shared_memory();
+                next_heartbeat_ = std::chrono::steady_clock::now();
+                eof_advanced_ = false;
+            }
+        }
     }
     if (connected_ && !pcm_) open_shared_memory();
-    heartbeat_if_due();
-    refresh_status_if_due(false);
 
     if (!pcm_ || !api_.is_open(pcm_) || !playing_) return;
 
-    // Read snapshot FIRST so we can detect stream transitions and errors
-    // even when the new stream's format isn't ready yet. The previous
-    // ordering checked format_ready before snapshot/has_error, which
-    // caused a permanent stall whenever a new stream never became
-    // format-ready (e.g. decoder failure on the backend).
+    // 4. Read snapshot to detect stream transitions & errors
     OmniPcmSnapshot snap{};
     if (api_.snapshot(pcm_, &snap) == OMNI_PCM_OK) {
         snapshot_ = snap;
         bool stream_changed = (current_stream_id_ != snap.stream_id || current_uuid_ != snap.current_uuid);
-        bool seek_detected = (last_seen_seek_generation_ != snap.seek_generation);
+        bool seek_detected  = (last_seen_seek_generation_ != snap.seek_generation);
 
         if (stream_changed || seek_detected) {
             if (stream_changed) {
                 current_stream_id_ = snap.stream_id;
-                current_uuid_ = snap.current_uuid;
+                current_uuid_      = snap.current_uuid;
                 api_.bind_current(pcm_);
             }
             last_seen_seek_generation_ = snap.seek_generation;
@@ -238,10 +254,9 @@ void OmniPcmSource::pump(RingBuffer& ring) {
         }
     }
 
-    // Check for stream errors regardless of format readiness so we can
-    // log failures and attempt automatic recovery.
+    // 5. Check for stream errors
     if (api_.has_error(pcm_)) {
-        log::warn("[omni] shared memory stream reported an error: {} — attempting skip",
+        log::warn("[omni] shared memory stream error: {} — requesting skip",
                   api_.last_error(pcm_));
         if (connected_) api_.client_command(client_, instance_id_.c_str(), OMNI_PCM_COMMAND_NEXT);
         reset_stream_state(&ring);
@@ -251,13 +266,26 @@ void OmniPcmSource::pump(RingBuffer& ring) {
 
     if (!api_.format_ready(pcm_)) return;
 
+    // 6. Get latest format info
     api_.info(pcm_, &info_);
     pending_channels_ = info_.channels > 0 ? info_.channels : 2;
 
+    // 7. Report audible cursor (lets backend know how far the game consumed)
     update_audible_from_ring(ring);
 
+    // 8. Pull PCM from shared memory → resample → push to ring buffer.
+    //    Throttle local pre-buffering to ~100ms (matching Flutter's
+    //    LOCAL_BUFFER_TARGET_DIVISOR=10) so the ring buffer does not
+    //    bypass the server's target_latency control.
+    constexpr std::size_t kFrameBytes = kOutChannels * sizeof(float);
+    const int target_frames = std::max(kFmodRate / kLocalBufferTargetDivisor,
+                                       kLocalBufferMinFrames);
+    const std::size_t target_bytes = static_cast<std::size_t>(target_frames) * kFrameBytes;
+    if (ring.readable() >= target_bytes) return;
+
     float out[kPumpFrames * kOutChannels];
-    while (ring.writable() >= sizeof(out)) {
+    while (ring.readable() + sizeof(out) <= target_bytes
+           && ring.writable() >= sizeof(out)) {
         int frames = produce_float_stereo(out, kPumpFrames);
         if (frames <= 0) break;
         const int64_t input_end =
@@ -268,6 +296,10 @@ void OmniPcmSource::pump(RingBuffer& ring) {
     update_audible_from_ring(ring);
     maybe_advance_on_complete(ring);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  Metadata queries
+// ═══════════════════════════════════════════════════════════════════
 
 TrackInfo OmniPcmSource::current_track() const {
     std::scoped_lock lk{mutex_};
@@ -292,11 +324,52 @@ std::string OmniPcmSource::auth_instructions() const {
 
 SourceCapabilities OmniPcmSource::capabilities() const noexcept {
     SourceCapabilities caps{};
-    caps.seek = true;
+    caps.seek     = true;
     caps.previous = true;
-    caps.queue = true;
+    caps.queue    = true;
     return caps;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  SDK event callback
+// ═══════════════════════════════════════════════════════════════════
+
+void OmniPcmSource::on_sdk_event(const OmniPcmEventInfo* evt, void* user_data) {
+    if (!evt || !user_data) return;
+    auto* self = static_cast<OmniPcmSource*>(user_data);
+    // Push onto lock-free queue; drop if full (shouldn't happen in practice)
+    event_queue_push(self->event_queue_, kEventQueueSize,
+                     self->event_write_, self->event_read_, *evt);
+}
+
+void OmniPcmSource::handle_sdk_event(const OmniPcmEventInfo& evt) {
+    // Update cached TrackInfo from backend status events
+    std::string type{evt.type};
+    if (type == "playback_status" || type == "track_change" || type == "play_state") {
+        TrackInfo t{};
+        if (evt.title[0])   t.title       = evt.title;
+        else                t.title       = "OmniMixPlayer";
+        if (evt.artist[0])  t.artist      = evt.artist;
+        else                t.artist      = playing_ ? "Playing" : "Idle";
+        t.album      = evt.album_id;
+        t.duration_ms = static_cast<uint64_t>(std::max(0.0f, evt.duration) * 1000.0f);
+        t.position_ms = static_cast<uint64_t>(std::max(0.0f, evt.position) * 1000.0f);
+        track_ = std::move(t);
+        playing_ = (evt.state == OMNI_PCM_STATE_PLAYING);
+    }
+}
+
+void OmniPcmSource::process_pending_events() {
+    OmniPcmEventInfo evt{};
+    while (event_queue_pop(event_queue_, kEventQueueSize,
+                           event_write_, event_read_, evt)) {
+        handle_sdk_event(evt);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SDK loading & backend connection
+// ═══════════════════════════════════════════════════════════════════
 
 bool OmniPcmSource::load_api() {
     if (api_.ready()) return true;
@@ -307,34 +380,42 @@ bool OmniPcmSource::load_api() {
     }
 
     auto proc = [&](auto& target, const char* name) {
-        target = reinterpret_cast<std::remove_reference_t<decltype(target)>>(GetProcAddress(api_.dll, name));
-        if (!target) log::error("[omni] missing OmniPcmShared export {}", name);
+        target = reinterpret_cast<std::remove_reference_t<decltype(target)>>(
+            GetProcAddress(api_.dll, name));
+        if (!target) log::error("[omni] missing OmniPcmShared export: {}", name);
     };
 
-    proc(api_.open_utf8, "OmniPcm_OpenUtf8");
-    proc(api_.close, "OmniPcm_Close");
-    proc(api_.is_open, "OmniPcm_IsOpen");
-    proc(api_.last_error, "OmniPcm_GetLastError");
-    proc(api_.snapshot, "OmniPcm_GetSnapshot");
-    proc(api_.info, "OmniPcm_GetInfo");
-    proc(api_.bind_current, "OmniPcm_BindCurrentStream");
-    proc(api_.format_ready, "OmniPcm_IsFormatReady");
-    proc(api_.has_error, "OmniPcm_HasError");
-    proc(api_.complete, "OmniPcm_IsPlaybackComplete");
-    proc(api_.read_frames, "OmniPcm_ReadFrames");
-    proc(api_.request_seek, "OmniPcm_RequestSeek");
-    proc(api_.set_audible, "OmniPcm_SetAudibleCursor");
-    proc(api_.client_create, "OmniPcmClient_Create");
-    proc(api_.client_destroy, "OmniPcmClient_Destroy");
-    proc(api_.client_last_error, "OmniPcmClient_GetLastError");
-    proc(api_.client_get_port, "OmniPcmClient_GetPort");
-    proc(api_.client_connect, "OmniPcmClient_ConnectInstance");
-    proc(api_.client_heartbeat, "OmniPcmClient_Heartbeat");
-    proc(api_.client_disconnect, "OmniPcmClient_DisconnectInstance");
-    proc(api_.client_status, "OmniPcmClient_GetStatus");
-    proc(api_.client_command, "OmniPcmClient_PlaybackCommand");
-    proc(api_.client_play, "OmniPcmClient_Play");
-    proc(api_.client_seek, "OmniPcmClient_Seek");
+    // Shared memory API
+    proc(api_.open_utf8,      "OmniPcm_OpenUtf8");
+    proc(api_.close,          "OmniPcm_Close");
+    proc(api_.is_open,        "OmniPcm_IsOpen");
+    proc(api_.last_error,     "OmniPcm_GetLastError");
+    proc(api_.snapshot,       "OmniPcm_GetSnapshot");
+    proc(api_.info,           "OmniPcm_GetInfo");
+    proc(api_.bind_current,   "OmniPcm_BindCurrentStream");
+    proc(api_.format_ready,   "OmniPcm_IsFormatReady");
+    proc(api_.has_error,      "OmniPcm_HasError");
+    proc(api_.complete,       "OmniPcm_IsPlaybackComplete");
+    proc(api_.read_frames,    "OmniPcm_ReadFrames");
+    proc(api_.request_seek,   "OmniPcm_RequestSeek");
+    proc(api_.set_audible,    "OmniPcm_SetAudibleCursor");
+
+    // Control-plane client API
+    proc(api_.client_create,       "OmniPcmClient_Create");
+    proc(api_.client_destroy,      "OmniPcmClient_Destroy");
+    proc(api_.client_last_error,   "OmniPcmClient_GetLastError");
+    proc(api_.client_connect,      "OmniPcmClient_ConnectInstance");
+    proc(api_.client_heartbeat,    "OmniPcmClient_Heartbeat");
+    proc(api_.client_disconnect,   "OmniPcmClient_DisconnectInstance");
+    proc(api_.client_status,       "OmniPcmClient_GetStatus");
+    proc(api_.client_command,      "OmniPcmClient_PlaybackCommand");
+    proc(api_.client_play,         "OmniPcmClient_Play");
+    proc(api_.client_seek,         "OmniPcmClient_Seek");
+    proc(api_.client_start_events,        "OmniPcmClient_StartEvents");
+    proc(api_.client_stop_events,         "OmniPcmClient_StopEvents");
+    proc(api_.client_get_target_latency,  "OmniPcmClient_GetTargetLatency");
+    proc(api_.client_set_target_latency,  "OmniPcmClient_SetTargetLatency");
+
     return api_.ready();
 }
 
@@ -343,32 +424,18 @@ bool OmniPcmSource::connect_backend() {
     if (!client_) {
         OmniPcmClientConfig cfg{};
         cfg.timeout_ms = 2500;
+        // port=0 → SDK discovers port automatically via omnimix_port.txt
         client_ = api_.client_create(&cfg);
         if (!client_) return false;
-        port_ = static_cast<uint16_t>(std::max<int32_t>(0, api_.client_get_port(client_)));
     }
 
     OmniPcmConnectOptions options{};
-    options.client_id = client_id_.c_str();
-    options.mod_id = "forza_horizon_6";
-    options.game_name = "Forza Horizon 6";
-    options.display_name = "Forza Horizon 6";
-    options.kind = OMNI_PCM_INSTANCE_KIND_GAME_MOD;
-    options.capability_flags =
-        OMNI_PCM_CAP_SERVER_CONTROLLED_PLAYBACK |
-        OMNI_PCM_CAP_CLIENT_MANAGED_PLAYBACK |
-        OMNI_PCM_CAP_QUEUE_MANAGEMENT |
-        OMNI_PCM_CAP_PLAYLIST_MANAGEMENT |
-        OMNI_PCM_CAP_SHUFFLE |
-        OMNI_PCM_CAP_REPEAT |
-        OMNI_PCM_CAP_SEEK |
-        OMNI_PCM_CAP_VOLUME_CONTROL |
-        OMNI_PCM_CAP_EQUALIZER |
-        OMNI_PCM_CAP_MULTIPLE_PLAYLISTS |
-        OMNI_PCM_CAP_TAG_FILTERING |
-        OMNI_PCM_CAP_UNLIMITED_TAGS |
-        OMNI_PCM_CAP_ALBUM_FILTERING |
-        OMNI_PCM_CAP_AUDIO_PLAYBACK;
+    options.client_id        = client_id_.empty() ? nullptr : client_id_.c_str();
+    options.mod_id           = "forza_horizon_6";
+    options.game_name        = "Forza Horizon 6";
+    options.display_name     = "Forza Horizon 6";
+    options.kind             = OMNI_PCM_INSTANCE_KIND_GAME_MOD;
+    options.capability_flags = kFlutterPlayerCapabilities;
 
     OmniPcmConnectionInfo info{};
     int result = api_.client_connect(client_, &options, &info);
@@ -379,8 +446,23 @@ bool OmniPcmSource::connect_backend() {
 
     instance_id_ = info.instance_id[0] ? info.instance_id : client_id_;
     shared_memory_name_ = "Global\\OmniMixPlayer_PCM_" + instance_id_;
-    log::info("[omni] connected backend on port {}, instance={}, sharedMemory={}",
-              port_, instance_id_, shared_memory_name_);
+    log::info("[omni] connected backend, instance={}, sharedMemory={}",
+              instance_id_, shared_memory_name_);
+
+    // Ensure target_latency is never stuck at 0 (proto3 default).
+    // Flutter sets a sane floor; apply the same guard on first connect.
+    float current_latency = 0.0f;
+    if (api_.client_get_target_latency &&
+        api_.client_get_target_latency(client_, instance_id_.c_str(), &current_latency) == OMNI_PCM_OK) {
+        if (current_latency < kMinTargetLatency) {
+            log::info("[omni] target_latency {:.3f} < {:.3f}, clamping to floor",
+                      current_latency, kMinTargetLatency);
+            api_.client_set_target_latency(client_, instance_id_.c_str(), kMinTargetLatency);
+        } else {
+            log::info("[omni] target_latency = {:.3f}", current_latency);
+        }
+    }
+
     return true;
 }
 
@@ -419,29 +501,30 @@ void OmniPcmSource::heartbeat_if_due() {
     if (api_.client_heartbeat(client_, instance_id_.c_str(), &alive) != OMNI_PCM_OK || !alive) {
         connected_ = false;
         close_shared_memory();
+        next_heartbeat_ = now + std::chrono::seconds(10);
+        return;
+    }
+    // Fallback: poll status every heartbeat tick as a safety net in case
+    // SDK events are delayed or dropped. Only backfills metadata; once
+    // events have populated track_ the poll becomes a no-op for title/artist.
+    OmniPcmPlaybackStatusInfo status{};
+    if (api_.client_status(client_, instance_id_.c_str(), &status) == OMNI_PCM_OK) {
+        playing_ = status.is_playing != 0;
+        if (track_.title.empty() && status.title[0]) {
+            TrackInfo t{};
+            t.title       = status.title;
+            t.artist      = status.artist;
+            t.duration_ms = static_cast<uint64_t>(std::max(0.0f, status.duration) * 1000.0f);
+            t.position_ms = static_cast<uint64_t>(std::max(0.0f, status.position) * 1000.0f);
+            track_ = std::move(t);
+        }
     }
     next_heartbeat_ = now + std::chrono::seconds(10);
 }
 
-void OmniPcmSource::refresh_status_if_due(bool force) {
-    auto now = std::chrono::steady_clock::now();
-    if (!force && now < next_status_refresh_) return;
-    if (connected_) {
-        OmniPcmPlaybackStatusInfo status{};
-        if (api_.client_status(client_, instance_id_.c_str(), &status) == OMNI_PCM_OK) {
-            playing_ = status.is_playing != 0;
-        TrackInfo t{};
-            t.title = status.title;
-            t.artist = status.artist;
-            t.duration_ms = static_cast<uint64_t>(std::max(0.0f, status.duration) * 1000.0f);
-            t.position_ms = static_cast<uint64_t>(std::max(0.0f, status.position) * 1000.0f);
-        if (t.title.empty()) t.title = "OmniMixPlayer";
-        if (t.artist.empty()) t.artist = playing_ ? "Playing" : "Idle";
-        track_ = std::move(t);
-        }
-    }
-    next_status_refresh_ = now + std::chrono::milliseconds(500);
-}
+// ═══════════════════════════════════════════════════════════════════
+//  Stream state management
+// ═══════════════════════════════════════════════════════════════════
 
 void OmniPcmSource::reset_stream_state(RingBuffer* ring) {
     pending_input_.clear();
@@ -468,21 +551,13 @@ void OmniPcmSource::maybe_advance_on_complete(const RingBuffer& ring) {
     const int rate = info_.sample_rate > 0 ? info_.sample_rate : kFmodRate;
     if (api_.complete(pcm_, rate / 4)) {
         eof_advanced_ = true;
-        log::info("[omni] playback complete; server-managed instance will advance");
+        log::info("[omni] playback complete; server will auto-advance");
     }
 }
 
-bool OmniPcmSource::discover_port() {
-    if (!api_.ready()) return false;
-    if (!client_) {
-        OmniPcmClientConfig cfg{};
-        cfg.timeout_ms = 1200;
-        client_ = api_.client_create(&cfg);
-    }
-    if (!client_) return false;
-    port_ = static_cast<uint16_t>(std::max<int32_t>(0, api_.client_get_port(client_)));
-    return port_ != 0;
-}
+// ═══════════════════════════════════════════════════════════════════
+//  PCM pipeline internals
+// ═══════════════════════════════════════════════════════════════════
 
 bool OmniPcmSource::ensure_pending_input(int min_frames) {
     if (!pcm_ || !api_.read_frames) return false;
@@ -503,9 +578,9 @@ bool OmniPcmSource::ensure_pending_input(int min_frames) {
 
 int OmniPcmSource::produce_float_stereo(float* out, int max_frames) {
     if (!out || max_frames <= 0) return 0;
-    const int in_rate = info_.sample_rate > 0 ? info_.sample_rate : kFmodRate;
+    const int in_rate  = info_.sample_rate > 0 ? info_.sample_rate : kFmodRate;
     const int channels = std::max(1, pending_channels_);
-    const double step = static_cast<double>(in_rate) / static_cast<double>(kFmodRate);
+    const double step  = static_cast<double>(in_rate) / static_cast<double>(kFmodRate);
     int produced = 0;
 
     while (produced < max_frames) {
@@ -536,8 +611,6 @@ int OmniPcmSource::produce_float_stereo(float* out, int max_frames) {
 
 int OmniPcmSource::append_to_ring(RingBuffer& ring, const float* stereo, int frames,
                                   int64_t input_end) {
-    // DSPBridge::read_callback (local overlay variant) expects float stereo
-    // (8 bytes/frame). Write the float samples directly — no conversion needed.
     if (!stereo || frames <= 0) return 0;
     const std::size_t bytes = static_cast<std::size_t>(frames) * 2 * sizeof(float);
     const std::size_t before = ring.write_position();
@@ -546,7 +619,6 @@ int OmniPcmSource::append_to_ring(RingBuffer& ring, const float* stereo, int fra
     segments_.push_back({before + wrote, input_end});
     return static_cast<int>(wrote / (2 * sizeof(float)));
 }
-
 
 void OmniPcmSource::trim_pending_input() {
     const int channels = std::max(1, pending_channels_);
@@ -557,8 +629,6 @@ void OmniPcmSource::trim_pending_input() {
     input_frame_base_ += drop;
     resample_pos_ -= drop;
 
-    // Compact periodically so the offset doesn't grow unbounded.
-    // A single erase is still O(remaining) but it runs rarely.
     if (pending_read_ofs_ >= pending_input_.size() - pending_read_ofs_) {
         if (pending_read_ofs_ >= pending_input_.size()) {
             pending_input_.clear();

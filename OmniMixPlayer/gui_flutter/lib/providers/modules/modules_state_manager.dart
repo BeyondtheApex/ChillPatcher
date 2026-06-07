@@ -1,5 +1,6 @@
 /// Modules (plugin) state & navigation manager.
 /// Extracted from AppState during Riverpod migration.
+library;
 
 import 'package:flutter/foundation.dart';
 import '../../services/api_client.dart';

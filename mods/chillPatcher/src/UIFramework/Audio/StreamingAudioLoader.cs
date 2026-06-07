@@ -139,6 +139,16 @@ namespace ChillPatcher.UIFramework.Audio
             {
                 if (reader.CurrentUuid == targetUuid && reader.IsFormatReady())
                     return true;
+
+                // If the server aborted playback (e.g. track failed to resolve),
+                // stop waiting immediately instead of blocking for 10 s.
+                if (reader.HasError())
+                {
+                    Plugin.Log.LogWarning(
+                        $"[StreamingLoader] Server signaled error for {targetUuid}, aborting wait");
+                    return false;
+                }
+
                 await UniTask.Delay(25, cancellationToken: cancellationToken);
             }
             return false;

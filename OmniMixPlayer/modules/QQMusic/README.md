@@ -1,196 +1,122 @@
-# ChillPatcher QQ 音乐模块
+# QQ 音乐模块 (QQMusic)
 
-为 ChillPatcher 开发的 QQ 音乐集成模块，让游戏在 Wallpaper Engine 中运行时可以播放 QQ 音乐的歌曲。
+QQ 音乐集成模块，通过 Go 原生桥接 DLL 调用 QQ 音乐官方接口，支持二维码登录和多音质流式播放。
 
 ## 功能特性
 
-- **二维码登录** - 使用 QQ 音乐 APP 扫码登录(暂不支持)
-- **收藏同步** - 喜欢的歌曲自动同步到 QQ 音乐
-- **歌单导入** - 支持导入自定义歌单
-- **每日推荐** - 自动加载每日推荐歌曲
-- **边下边播** - PCM 流式播放，无需等待完整下载
-- **多音质支持** - 标准(128k)、HQ(320k)、无损(FLAC)、Hi-Res
-- **封面显示** - 自动加载专辑封面
+- **二维码登录** — 支持 QQ 扫码和微信扫码两种登录方式
+- **收藏同步** — 喜欢的歌曲自动同步到 QQ 音乐"我喜欢的音乐"
+- **歌单导入** — 支持通过歌单 ID 导入自定义歌单
+- **每日推荐** — 自动加载每日推荐歌曲
+- **流式播放** — 边下边播，后端负责下载+解码，支持 MP3 / FLAC 格式
+- **多音质** — 标准(128k) / HQ(320k) / 无损(FLAC) / Hi-Res
+- **封面显示** — 自动加载专辑封面
+- **歌词显示** — 自动加载 LRC 歌词
 
-## 编译要求
+## 架构
 
-### Go 环境
-- Go 1.21 或更高版本
-- CGO 支持（需要 GCC 编译器）
-  - Windows 推荐：[TDM-GCC](https://jmeubank.github.io/tdm-gcc/) 或 [MinGW-w64](https://www.mingw-w64.org/)
-
-### .NET 环境
-- .NET SDK（支持 .NET Framework 4.7.2）
-- Visual Studio 2019+ 或 `dotnet` CLI
-
-## 编译方法
-
-### 方法一：一键编译
-
-在项目根目录运行：
-
-```batch
-build_qqmusic.bat
+```
+┌──────────────────────────────────────────┐
+│              OmniMixPlayer.SDK            │
+│  IMusicModule / IStreamingMusicSource...  │
+└──────────────────┬───────────────────────┘
+                   │
+┌──────────────────▼───────────────────────┐
+│          C# 模块层 (QQMusicModule)        │
+│  命名空间: OmniMixPlayer.Module.QQMusic   │
+│  实现: IStreamingMusicSourceProvider      │
+│        (提供可播放URL,后端负责下载+解码),  │
+│        ICoverProvider, ILyricProvider,    │
+│        IFavoriteExcludeHandler,           │
+│        IModuleUIProvider                  │
+└──────────────────┬───────────────────────┘
+                   │ P/Invoke (cdecl)
+┌──────────────────▼───────────────────────┐
+│          Go 网桥层 (qqmusic_bridge)       │
+│  NativePlugins/qqmusic_bridge/           │
+│  CGO → c-shared DLL                      │
+└──────────────────┬───────────────────────┘
+                   │ HTTPS
+┌──────────────────▼───────────────────────┐
+│            QQ 音乐服务器                  │
+│    u.y.qq.com / dl.stream.qqmusic.qq.com │
+└──────────────────────────────────────────┘
 ```
 
-### 方法二：分步编译
+## 编译
 
-1. **编译 Go 网桥**
+### 环境要求
 
-```batch
-cd qqmusic_bridge
-set CGO_ENABLED=1
-set GOOS=windows
-set GOARCH=amd64
-go mod tidy
-go build -buildmode=c-shared -o ChillQQMusic.dll -ldflags "-s -w" .
-```
+- **Go** 1.21+ (CGO + GCC，推荐 [TDM-GCC](https://jmeubank.github.io/tdm-gcc/))
+- **.NET Framework 4.7.2** SDK
 
-2. **编译 C# 模块**
+### 编译步骤
 
 ```batch
-cd ChillPatcher.Module.QQMusic
+# 1. 编译 Go 网桥 DLL
+cd NativePlugins\qqmusic_bridge
+build.bat
+
+# 2. 编译 C# 模块
+cd OmniMixPlayer\modules\QQMusic
 dotnet restore
 dotnet build -c Release
 ```
 
-## 配置说明
-
-配置文件位于：`BepInEx/config/ChillPatcher.cfg`
-
-首次运行后会自动生成配置项：
-
-```ini
-[Module:com.chillpatcher.qqmusic]
-
-## QQ音乐数据目录（留空使用默认路径）
-# 默认路径: BepInEx/plugins/ChillPatcher/data/com.chillpatcher.qqmusic/
-DataDirectory =
-
-## 音质等级
-# 0 = 标准 (128kbps MP3)
-# 1 = HQ (320kbps MP3) - 默认，需要绿钻
-# 2 = SQ (FLAC 无损) - 需要绿钻
-# 3 = Hi-Res (高解析度) - 需要豪华绿钻
-AudioQuality = 1
-
-## 自定义歌单 ID
-# 多个歌单用逗号分隔，例如: 123456789, 987654321
-# 歌单 ID 可从 QQ 音乐网页版链接获取
-CustomPlaylistIds =
-
-## PCM 流就绪超时（毫秒）
-# 等待音频流准备就绪的最大时间
-StreamReadyTimeoutMs = 20000
-```
-
-## 获取歌单 ID
-
-1. 打开 [QQ 音乐网页版](https://y.qq.com/)
-2. 进入想要导入的歌单
-3. 从地址栏复制歌单 ID，例如：
-   - 链接：`https://y.qq.com/n/ryqq/playlist/7890123456`
-   - 歌单 ID：`7890123456`
-
-## 使用流程
-
-1. **首次登录**
-   - 启动游戏后，模块会显示二维码
-   - 打开 QQ 音乐 APP，扫描二维码
-   - 在手机上确认登录
-
-2. **播放音乐**
-   - 登录成功后自动加载收藏的歌曲
-   - 选择歌曲即可播放
-
-3. **收藏歌曲**
-   - 在游戏中收藏的歌曲会同步到 QQ 音乐
-
 ## 文件结构
 
 ```
-ChillPatcher.Module.QQMusic/
-├── ChillPatcher.Module.QQMusic.csproj  # 项目文件
-├── ModuleInfo.cs                        # 模块元数据
-├── QQMusicModule.cs                     # 主模块类
-├── QQMusicBridge.cs                     # P/Invoke 桥接
-├── QQMusicSongRegistry.cs               # 歌曲注册管理
-├── QQMusicCoverLoader.cs                # 封面加载器
-├── QQMusicFavoriteManager.cs            # 收藏管理器
-├── QRLoginManager.cs                    # 二维码登录
-└── README.md                            # 本文件
+OmniMixPlayer/modules/QQMusic/
+├── QQMusicModule.cs              # 主模块入口
+├── ModuleInfo.cs                 # 模块 ID/名称/版本常量
+├── QQMusicBridge.cs              # P/Invoke Go DLL 桥接
+├── QQMusicSongRegistry.cs        # 歌曲注册（ILibraryRegistry）
+├── QQMusicCoverLoader.cs         # 封面图片加载
+├── QQMusicFavoriteManager.cs     # 收藏状态管理
+├── QQMusicLyricApi.cs            # LRC 歌词获取
+├── QRLoginManager.cs             # QQ/微信扫码登录
+└── native/x64/
+    └── qqmusic_bridge.dll        # Go 编译产物
 
-qqmusic_bridge/
-├── go.mod                               # Go 模块定义
-├── main.go                              # 导出函数入口
-├── build.bat                            # Go 编译脚本
-├── api/
-│   ├── client.go                        # HTTP 客户端
-│   ├── qrlogin.go                       # 二维码登录 API
-│   ├── user.go                          # 用户 API
-│   ├── song.go                          # 歌曲 API
-│   └── playlist.go                      # 歌单 API
-├── crypto/
-│   └── sign.go                          # 签名加密
-├── stream/
-│   ├── cache.go                         # 缓存管理
-│   └── pcm_stream.go                    # PCM 流处理
-└── models/
-    └── types.go                         # 数据结构
+NativePlugins/qqmusic_bridge/     # Go 网桥源码
+├── main.go                       # C 导出函数入口
+├── api/                          # API 客户端
+│   ├── client.go                 # HTTP 客户端
+│   ├── qrlogin.go                # 二维码登录 API
+│   ├── user.go                   # 用户 API
+│   ├── song.go                   # 歌曲 API
+│   └── playlist.go               # 歌单 API
+├── crypto/sign.go                # 签名算法
+├── stream/                       # 流处理
+│   ├── cache.go                  # 缓存管理
+│   └── pcm_stream.go             # PCM 流
+├── models/types.go               # 数据结构
+└── build.bat                     # 编译脚本
 ```
 
-## 常见问题
+## 登录数据
 
-### Q: 登录后没有歌曲显示？
-A: 检查你的 QQ 音乐账号是否有收藏的歌曲。也可以在配置文件中添加歌单 ID 来导入歌单。
+登录 Cookie 保存在 `<游戏目录>\BepInEx\plugins\ChillPatcher\Modules\com.chillpatcher.qqmusic\data\qqmusic_cookie.json`。如需重新登录，删除此文件后重启即可。
 
-### Q: 歌曲无法播放？
-A:
-- 检查网络连接
-- 部分歌曲可能需要 VIP 权限
-- 尝试降低音质设置
+## 配置
 
-### Q: 二维码无法显示？
-A: 检查 Go DLL 是否正确放置在 `native/x64/` 目录下。
+模块通过 `IModuleConfigManager` 管理配置，首次运行后在图形化设置中可调整：
 
-### Q: 编译 Go DLL 失败？
-A:
-- 确保安装了 GCC（TDM-GCC 或 MinGW-w64）
-- 确保 `CGO_ENABLED=1`
-- 运行 `go mod tidy` 下载依赖
+- **音质等级**：0=标准 / 1=HQ / 2=无损 / 3=Hi-Res
+- **自定义歌单 ID**：逗号分隔的歌单 ID 列表（从 y.qq.com 链接获取）
+- **PCM 流超时**：等待音频流就绪的最大时间（毫秒）
 
-## 技术说明
+## 实现接口
 
-### 架构
-
-```
-┌─────────────────────────────────────┐
-│           C# 模块层                  │
-│    ChillPatcher.Module.QQMusic      │
-└──────────────┬──────────────────────┘
-               │ P/Invoke (cdecl)
-               ▼
-┌─────────────────────────────────────┐
-│           Go 网桥层                  │
-│         qqmusic_bridge              │
-└──────────────┬──────────────────────┘
-               │ HTTPS
-               ▼
-┌─────────────────────────────────────┐
-│         QQ 音乐服务器                │
-│  u.y.qq.com / dl.stream.qqmusic.qq.com
-└─────────────────────────────────────┘
-```
-
-### 实现的 SDK 接口
-
-| 接口 | 说明 |
-|------|------|
-| `IMusicModule` | 基础模块接口 |
-| `IStreamingMusicSourceProvider` | 流媒体音乐源 |
-| `ICoverProvider` | 封面提供 |
-| `IFavoriteExcludeHandler` | 收藏/排除处理 |
+| 接口                            | 说明                                      |
+| ------------------------------- | ----------------------------------------- |
+| `IMusicModule`                  | 基础模块入口                              |
+| `IStreamingMusicSourceProvider` | 流媒体音源（提供 URL，后端负责下载+解码） |
+| `ICoverProvider`                | 专辑封面                                  |
+| `ILyricProvider`                | LRC 歌词                                  |
+| `IFavoriteExcludeHandler`       | 收藏状态管理                              |
+| `IModuleUIProvider`             | 自定义设置面板（二维码/歌单管理）         |
 
 ## 许可证
 
-本项目仅供学习和个人使用。请遵守 QQ 音乐的服务条款。
+本项目仅供学习研究使用。请遵守 QQ 音乐服务条款。

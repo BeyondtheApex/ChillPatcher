@@ -1,6 +1,7 @@
 /// Web-safe gRPC-Web client using package:http (BrowserClient XHR).
 /// On web, XHR sends headers+body atomically — no Content-Length race.
 /// Mirrors the C++ omni_pcm_control.cpp framing logic.
+library;
 
 import 'dart:typed_data';
 

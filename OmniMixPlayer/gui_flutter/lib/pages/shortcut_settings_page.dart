@@ -223,7 +223,7 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
             color: cs.surfaceContainerLow,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: cs.outlineVariant.withOpacity(0.4)),
+              side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.4)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -284,7 +284,7 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
                         Container(
                           height: 32,
                           width: 1.2,
-                          color: cs.outlineVariant.withOpacity(0.6),
+                          color: cs.outlineVariant.withValues(alpha: 0.6),
                         ),
                         const SizedBox(width: 12),
 
@@ -332,14 +332,14 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
               decoration: BoxDecoration(
                 color: (prefixKey != null && hasRegularKeys)
                     ? (prefixNegated
-                          ? Colors.red.withOpacity(0.12)
-                          : Colors.green.withOpacity(0.12))
+                          ? Colors.red.withValues(alpha: 0.12)
+                          : Colors.green.withValues(alpha: 0.12))
                     : cs.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
                   color: (prefixKey != null && hasRegularKeys)
                       ? (prefixNegated ? Colors.red : Colors.green)
-                      : cs.outlineVariant.withOpacity(0.5),
+                      : cs.outlineVariant.withValues(alpha: 0.5),
                   width: 1.2,
                 ),
               ),
@@ -348,7 +348,7 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
                 style: TextStyle(
                   color: (prefixKey != null && hasRegularKeys)
                       ? (prefixNegated ? Colors.red : Colors.green)
-                      : cs.onSurfaceVariant.withOpacity(0.5),
+                      : cs.onSurfaceVariant.withValues(alpha: 0.5),
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 ),
@@ -437,8 +437,8 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: op == 'and'
-              ? Colors.blue.withOpacity(0.12)
-              : Colors.orange.withOpacity(0.12),
+              ? Colors.blue.withValues(alpha: 0.12)
+              : Colors.orange.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
             color: op == 'and' ? Colors.blue : Colors.orange,
@@ -539,7 +539,7 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: bg.withOpacity(0.3),
+            color: bg.withValues(alpha: 0.3),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -570,7 +570,7 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
               child: Icon(
                 Icons.close,
                 size: 14,
-                color: textCol.withOpacity(0.7),
+                color: textCol.withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -594,13 +594,13 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
           border: Border.all(
             color: isCapturing
                 ? Colors.amber
-                : cs.outlineVariant.withOpacity(0.6),
+                : cs.outlineVariant.withValues(alpha: 0.6),
             style: BorderStyle.solid,
             width: isCapturing ? 2.0 : 1.2,
           ),
           borderRadius: BorderRadius.circular(8),
           color: isCapturing
-              ? Colors.amber.withOpacity(0.08)
+              ? Colors.amber.withValues(alpha: 0.08)
               : Colors.transparent,
         ),
         child: Center(
@@ -617,7 +617,7 @@ class _ShortcutSettingsPageState extends ConsumerState<ShortcutSettingsPage> {
                   label,
                   style: TextStyle(
                     fontSize: 11,
-                    color: cs.onSurfaceVariant.withOpacity(0.5),
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.5),
                   ),
                 ),
         ),

@@ -4,6 +4,7 @@
 ///
 /// All methods return plain Future<T> (compatible with the
 /// ResponseFuture<T> returned by generated stubs; both support .timeout()).
+library;
 
 import '../generated/omni_mix_player/models/track.pb.dart';
 import '../generated/omni_mix_player/models/album.pb.dart';
@@ -180,9 +181,8 @@ class GrpcServices {
   late final PlaybackServiceClient playback;
   late final InstanceServiceClient instance;
 
-  GrpcServices({required String host, required int port})
-      : _host = host,
-        _port = port {
+  GrpcServices({required this._host, required int port})
+      : _port = port {
     _connect();
   }
 

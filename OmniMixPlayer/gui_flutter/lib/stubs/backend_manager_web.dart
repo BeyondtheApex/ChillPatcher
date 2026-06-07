@@ -1,7 +1,7 @@
 /// Web stub for BackendManager — simplified for web.
 /// On web, the backend is assumed to be running on the same origin.
 /// No process management, no file-based discovery.
-library backend_manager_web;
+library;
 
 import 'dart:async';
 import 'package:http/http.dart' as http;

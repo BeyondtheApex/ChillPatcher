@@ -198,8 +198,8 @@ class CustomShortcutBinding {
     this.prefixNegated = false,
     List<InputKeyId?>? regularKeys,
     List<String>? operators,
-  }) : this.regularKeys = regularKeys ?? List.filled(4, null),
-       this.operators = operators ?? List.filled(3, 'and');
+  }) : regularKeys = regularKeys ?? List.filled(4, null),
+       operators = operators ?? List.filled(3, 'and');
 
   Map<String, dynamic> toJson() {
     return {

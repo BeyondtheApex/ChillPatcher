@@ -90,12 +90,10 @@ class _HomePageState extends State<HomePage> {
     if (elapsed >= 150) {
       _executeSendVolume();
     } else {
-      if (_volumeThrottleTimer == null) {
-        _volumeThrottleTimer = Timer(Duration(milliseconds: 150 - elapsed), () {
+      _volumeThrottleTimer ??= Timer(Duration(milliseconds: 150 - elapsed), () {
           _volumeThrottleTimer = null;
           _executeSendVolume();
         });
-      }
     }
   }
 
@@ -130,15 +128,13 @@ class _HomePageState extends State<HomePage> {
     if (elapsed >= 150) {
       _executeSendLatency();
     } else {
-      if (_latencyThrottleTimer == null) {
-        _latencyThrottleTimer = Timer(
+      _latencyThrottleTimer ??= Timer(
           Duration(milliseconds: 150 - elapsed),
           () {
             _latencyThrottleTimer = null;
             _executeSendLatency();
           },
         );
-      }
     }
   }
 
@@ -181,7 +177,7 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context);
-      setState(() => _error = l10n!.failedToLoadLibrary('$e'));
+      setState(() => _error = l10n.failedToLoadLibrary('$e'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -189,7 +185,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final busy = widget.state.backendBusy || widget.state.serviceBusy;
     if (busy) {
       return _LoadingHome(
@@ -264,7 +260,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildNowPlaying({bool minimalClientMode = false}) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
     final instance = widget.state.activeInstance;
     final trackUuid = instance?.currentTrackUuid ?? '';
@@ -496,7 +492,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildQueuePanel() {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final canQueue = widget.state.canControlActiveInstance;
     return _Panel(
       child: Column(
@@ -539,7 +535,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildReorderList(List<QueueTrack> items, {required bool isQueue}) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final canQueue = widget.state.canControlActiveInstance;
     final canPlayback = widget.state.canPlayPauseActiveInstance;
     if (items.isEmpty) return Center(child: Text(l10n.empty));
@@ -557,7 +553,7 @@ class _HomePageState extends State<HomePage> {
                 await widget.state.moveHistoryItem(oldIndex, to);
               }
             }
-          : (_, __) {},
+          : (_, _) {},
       itemBuilder: (_, i) {
         final s = items[i];
         return _SongRow(
@@ -590,11 +586,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildLibraryPanel() {
-    final l10n = AppLocalizations.of(context)!;
-    if (_loading)
+    final l10n = AppLocalizations.of(context);
+    if (_loading) {
       return const _Panel(child: Center(child: CircularProgressIndicator()));
-    if (_error.isNotEmpty)
+    }
+    if (_error.isNotEmpty) {
       return _Panel(child: Center(child: Text(l10n.errorWithMessage(_error))));
+    }
 
     final canManagePlaylist = widget.state.canManageActiveLibrary;
     final canAddSources = canManagePlaylist;
@@ -668,7 +666,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildLibraryList(bool canControl) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     final songs = _filteredSongs();
     final canPlayback = widget.state.canPlayPauseActiveInstance;
     final canQueue = widget.state.canControlActiveInstance;
@@ -763,8 +761,9 @@ class _HomePageState extends State<HomePage> {
             trailing: canControl && selectedSourceIds.contains('album_${a.id}')
                 ? PopupMenuButton<String>(
                     onSelected: (v) {
-                      if (v == 'remove')
+                      if (v == 'remove') {
                         widget.state.removePlaylistSource('album_${a.id}');
+                      }
                     },
                     itemBuilder: (_) => [
                       PopupMenuItem(
@@ -906,7 +905,7 @@ class _HomePageState extends State<HomePage> {
       _songs.where((s) => s.albumId == albumId).length;
 
   void _showAddSourceSheet() {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1186,7 +1185,7 @@ class _Cover extends StatelessWidget {
     return Image.network(
       '$baseUrl/api/track/cover?uuid=$uuid',
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(
+      errorBuilder: (_, _, _) => Container(
         color: cs.surfaceContainerHighest,
         child: const Icon(Icons.broken_image_rounded),
       ),
@@ -1217,7 +1216,7 @@ class _AlbumCover extends StatelessWidget {
       child: Image.network(
         '$baseUrl/${album.coverUri}',
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const Icon(Icons.album_rounded),
+        errorBuilder: (_, _, _) => const Icon(Icons.album_rounded),
       ),
     );
   }
@@ -1266,7 +1265,7 @@ class _SongRow extends StatelessWidget {
       ),
       title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '${song.artist.isEmpty ? AppLocalizations.of(context)!.unknownArtist : song.artist} · ${song.albumId}',
+        '${song.artist.isEmpty ? AppLocalizations.of(context).unknownArtist : song.artist} · ${song.albumId}',
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1280,7 +1279,7 @@ class _SongRow extends StatelessWidget {
           IconButton(
             onPressed: onPlay,
             icon: const Icon(Icons.play_circle_fill_rounded),
-            tooltip: AppLocalizations.of(context)!.playTooltip,
+            tooltip: AppLocalizations.of(context).playTooltip,
           ),
           PopupMenuButton<String>(
             enabled: canControl,
@@ -1292,7 +1291,7 @@ class _SongRow extends StatelessWidget {
               if (v == 'remove') onDelete?.call();
             },
             itemBuilder: (_) {
-              final l10n = AppLocalizations.of(context)!;
+              final l10n = AppLocalizations.of(context);
               return [
                 PopupMenuItem(value: 'next', child: Text(l10n.playNext)),
                 PopupMenuItem(value: 'tail', child: Text(l10n.addToQueueTail)),
