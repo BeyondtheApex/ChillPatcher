@@ -39,11 +39,83 @@
     </Reference>
   </ItemGroup>
 
-  <!-- Unity & Game DLLs — 全部由 ChillPatcher.GameRefs NuGet 包提供 -->
+  <!-- Unity & Game DLLs — CI 由 ChillPatcher.GameRefs NuGet 包提供，本地用游戏路径 -->
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="ChillPatcher.GameRefs" Version="1.0.0" />
+    <!-- 私有 NuGet 包（CI 使用） -->
+    <PackageReference Include="ChillPatcher.GameRefs" Version="1.0.0"
+                      Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' == 'true'" />
+  </ItemGroup>
+
+  <!-- 本地开发：从游戏目录引用 Unity DLL -->
+  <PropertyGroup Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'">
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">$(CHILL_STEAM_LIBRARY)</SteamLibraryRoot>
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">D:\SteamLibrary</SteamLibraryRoot>
+    <GamePath>$(SteamLibraryRoot)\steamapps\common\Chill with You Lo-Fi Story\Chill With You_Data\Managed</GamePath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'">
+    <Reference Include="UnityEngine">
+      <HintPath>$(GamePath)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GamePath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>$(GamePath)\UnityEngine.UIElementsModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GamePath)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GamePath)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GamePath)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreTextEngineModule">
+      <HintPath>$(GamePath)\UnityEngine.TextCoreTextEngineModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreFontEngineModule">
+      <HintPath>$(GamePath)\UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(GamePath)\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>$(GamePath)\UnityEngine.JSONSerializeModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.Burst">
+      <HintPath>$(GamePath)\Unity.Burst.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.Mathematics">
+      <HintPath>$(GamePath)\Unity.Mathematics.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GamePath)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestTextureModule">
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- NuGet packages for .NET 4.7.2 compatibility -->

@@ -188,6 +188,7 @@ jobs:
           INNOSETUP: "C:\\Program Files\\Inno Setup 7"
           PYTHONIOENCODING: utf-8
           PYTHONUNBUFFERED: 1
+          CHILL_USE_PRIVATE_PACKAGE: "true"
         run: |
           $mode = if ('${{ inputs.mode }}') { '${{ inputs.mode }}' } else { 'player' }
           $fullFlag = if ('${{ inputs.full }}' -eq 'false') { '' } else { '--full' }

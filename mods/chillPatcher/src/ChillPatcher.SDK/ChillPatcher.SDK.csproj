@@ -23,8 +23,36 @@
   <!-- NuGet 依赖 -->
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <!-- 游戏/Unity 引用 DLL（私有 NuGet 包） -->
-    <PackageReference Include="ChillPatcher.GameRefs" Version="1.0.0" />
+    <!-- 游戏/Unity 引用 DLL（私有 NuGet 包，CI 使用） -->
+    <PackageReference Include="ChillPatcher.GameRefs" Version="1.0.0"
+                      Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' == 'true'" />
+  </ItemGroup>
+
+  <!-- 本地开发：从游戏目录引用 -->
+  <PropertyGroup Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'">
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">$(CHILL_STEAM_LIBRARY)</SteamLibraryRoot>
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">D:\SteamLibrary</SteamLibraryRoot>
+    <GamePath>$(SteamLibraryRoot)\steamapps\common\Chill with You Lo-Fi Story\Chill With You_Data\Managed</GamePath>
+    <BepInExCorePath>$(SteamLibraryRoot)\steamapps\common\Chill with You Lo-Fi Story\BepInEx\core</BepInExCorePath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'">
+    <Reference Include="UnityEngine">
+      <HintPath>$(GamePath)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GamePath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(GamePath)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCorePath)\BepInEx.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>

@@ -109,8 +109,12 @@
     <!-- NuGet Packages -->
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <!-- 游戏/Unity 引用 DLL（私有 NuGet 包，来自 chillPatcher-game-refs） -->
-    <PackageReference Include="ChillPatcher.GameRefs" Version="1.0.0" />
+    <!-- 本地开发时需要 Publicize（CI 使用预处理的 NuGet 包，不需要） -->
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.*" PrivateAssets="all"
+                      Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'" />
+    <!-- 游戏/Unity 引用 DLL（私有 NuGet 包，CI 使用） -->
+    <PackageReference Include="ChillPatcher.GameRefs" Version="1.0.0"
+                      Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -121,13 +125,153 @@
   </ItemGroup>
 
   <!-- 
+    ═══════════════════════════════════════════════
+    本地开发（不使用私有 NuGet 包）：
+      从 Steam 游戏安装目录直接引用 DLL
+      CHILL_STEAM_LIBRARY 环境变量可覆盖默认路径
+    CI 构建：
+      设置 CHILL_USE_PRIVATE_PACKAGE=true，使用 GitHub Packages
+    ═══════════════════════════════════════════════
+  -->
+  <PropertyGroup Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'">
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">$(CHILL_STEAM_LIBRARY)</SteamLibraryRoot>
+    <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">D:\SteamLibrary</SteamLibraryRoot>
+    <GamePath>$(SteamLibraryRoot)\steamapps\common\Chill with You Lo-Fi Story\Chill With You_Data\Managed</GamePath>
+    <BepInExCorePath>$(SteamLibraryRoot)\steamapps\common\Chill with You Lo-Fi Story\BepInEx\core</BepInExCorePath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'">
+    <!-- BepInEx and Harmony -->
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCorePath)\0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCorePath)\BepInEx.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'">
+    <!-- Unity Engine -->
+    <Reference Include="UnityEngine">
+      <HintPath>$(GamePath)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GamePath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GamePath)\UnityEngine.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GamePath)\UnityEngine.UIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIElementsModule">
+      <HintPath>$(GamePath)\UnityEngine.UIElementsModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(GamePath)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro" Publicize="true">
+      <HintPath>$(GamePath)\Unity.TextMeshPro.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GamePath)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GamePath)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GamePath)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GamePath)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(GamePath)\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAudioModule">
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestTextureModule">
+      <HintPath>$(GamePath)\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' != 'true'">
+    <!-- Game DLLs (Publicize 由 BepInEx.AssemblyPublicizer.MSBuild 在构建时处理) -->
+    <Reference Include="Assembly-CSharp" Publicize="true">
+      <HintPath>$(GamePath)\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="com.rlabrecque.steamworks.net">
+      <HintPath>$(GamePath)\com.rlabrecque.steamworks.net.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UniTask">
+      <HintPath>$(GamePath)\UniTask.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="ObservableCollections">
+      <HintPath>$(GamePath)\ObservableCollections.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="ObservableCollections.R3">
+      <HintPath>$(GamePath)\ObservableCollections.R3.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="R3">
+      <HintPath>$(GamePath)\R3.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="R3.Unity">
+      <HintPath>$(GamePath)\R3.Unity.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="DOTween">
+      <HintPath>$(GamePath)\DOTween.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="VContainer">
+      <HintPath>$(GamePath)\VContainer.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="FastEnum">
+      <HintPath>$(GamePath)\FastEnum.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="AudioManager">
+      <HintPath>$(GamePath)\AudioManager.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- 
     编译时引用：
-      - ChillPatcher.GameRefs（私有 NuGet 包）自动注入所有游戏/Unity DLL 引用
-      - DLL 已在私有 CI 中通过 assembly-publicizer --strip 预处理
-        （剥离方法体 + 公开化 internal/private API）
+      本地开发：直接引用游戏安装目录的 DLL
+      CI：CHILL_USE_PRIVATE_PACKAGE=true → 从 GitHub Packages 还原私有包
+           DLL 已在私有 CI 中通过 assembly-publicizer 预处理（剥离方法体 + 公开化）
     
     开发调试：使用 dotnet build 构建，手动复制到游戏目录
-    发布构建：CI 自动从 GitHub Packages 还原私有包
+    发布构建：使用 build_release.bat 脚本，自动创建完整的发布目录结构
   -->
 
 </Project>
