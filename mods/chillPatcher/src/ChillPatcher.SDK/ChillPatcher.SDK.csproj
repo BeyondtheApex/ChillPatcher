@@ -20,6 +20,11 @@
     <SteamLibraryRoot Condition="'$(SteamLibraryRoot)' == ''">F:\SteamLibrary</SteamLibraryRoot>
     <GamePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\Chill With You_Data\Managed</GamePath>
     <BepInExCorePath>$(SteamLibraryRoot)\steamapps\common\wallpaper_engine\projects\myprojects\chill_with_you\BepInEx\core</BepInExCorePath>
+    <!-- CI: lib/ 里有 stripped DLL 就用，否则 fallback 到游戏路径 -->
+    <LibPath Condition="Exists('..\lib\UnityEngine.CoreModule.dll')">..\lib</LibPath>
+    <LibPath Condition="!Exists('..\lib\UnityEngine.CoreModule.dll')">$(GamePath)</LibPath>
+    <BepLibPath Condition="Exists('..\lib\BepInEx.dll')">..\lib</BepLibPath>
+    <BepLibPath Condition="!Exists('..\lib\BepInEx.dll')">$(BepInExCorePath)</BepLibPath>
   </PropertyGroup>
 
   <!-- Framework 依赖 -->
@@ -34,27 +39,42 @@
 
   <!-- 原生 SDK DLL 由 CoreDependencyLoader 从 native/x64/ 预加载；此处不再复制 -->
 
-  <!-- SDK 不依赖游戏 DLL，只依赖基础 Unity 类型 -->
+  <!-- Unity DLL — 优先用 lib/ (CI 兼容), Steam 路径做 fallback -->
   <ItemGroup>
-    <!-- Unity Engine (基础类型) -->
-    <Reference Include="UnityEngine">
-      <HintPath>$(GamePath)\UnityEngine.dll</HintPath>
+    <Reference Include="UnityEngine" Condition="Exists('..\lib\UnityEngine.dll')">
+      <HintPath>..\lib\UnityEngine.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(GamePath)\UnityEngine.CoreModule.dll</HintPath>
+    <Reference Include="UnityEngine" Condition="!Exists('..\lib\UnityEngine.dll')">
+      <HintPath>$(LibPath)\UnityEngine.dll</HintPath>
       <Private>False</Private>
     </Reference>
-    <Reference Include="UnityEngine.AudioModule">
-      <HintPath>$(GamePath)\UnityEngine.AudioModule.dll</HintPath>
+    <Reference Include="UnityEngine.CoreModule" Condition="Exists('..\lib\UnityEngine.CoreModule.dll')">
+      <HintPath>..\lib\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="!Exists('..\lib\UnityEngine.CoreModule.dll')">
+      <HintPath>$(LibPath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule" Condition="Exists('..\lib\UnityEngine.AudioModule.dll')">
+      <HintPath>..\lib\UnityEngine.AudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule" Condition="!Exists('..\lib\UnityEngine.AudioModule.dll')">
+      <HintPath>$(LibPath)\UnityEngine.AudioModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
 
-  <!-- BepInEx 配置类型 -->
+  <!-- BepInEx — 优先 lib/, Steam fallback -->
   <ItemGroup>
-    <Reference Include="BepInEx">
-      <HintPath>$(BepInExCorePath)\BepInEx.dll</HintPath>
+    <Reference Include="BepInEx" Condition="Exists('..\lib\BepInEx.dll')">
+      <HintPath>..\lib\BepInEx.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BepInEx" Condition="!Exists('..\lib\BepInEx.dll')">
+      <HintPath>$(BepLibPath)\BepInEx.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>
