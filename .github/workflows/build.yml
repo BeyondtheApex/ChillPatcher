@@ -11,7 +11,7 @@ on:
         description: "构建模式"
         required: true
         type: choice
-        default: "installer"
+        default: "player"
         options:
           - all
           - player
@@ -20,7 +20,7 @@ on:
       full:
         description: "完整构建 (restore + native 全量编译)"
         type: boolean
-        default: false
+        default: true
 
 jobs:
   build:
@@ -166,11 +166,13 @@ jobs:
         shell: pwsh
         env:
           INNOSETUP: "C:\\Program Files\\Inno Setup 7"
+          PYTHONIOENCODING: utf-8
+          PYTHONUNBUFFERED: 1
         run: |
-          $mode = if ('${{ inputs.mode }}') { '${{ inputs.mode }}' } else { 'installer' }
-          $fullFlag = if ('${{ inputs.full }}' -eq 'true') { '--full' } else { '' }
+          $mode = if ('${{ inputs.mode }}') { '${{ inputs.mode }}' } else { 'player' }
+          $fullFlag = if ('${{ inputs.full }}' -eq 'false') { '' } else { '--full' }
           Write-Host "Mode: $mode  Full: $fullFlag"
-          python scripts/ci_build.py $mode $fullFlag
+          python -u scripts/ci_build.py $mode $fullFlag
 
       # ═══════════════════════════════════════
       #  Display Logs in Console (折叠展开)

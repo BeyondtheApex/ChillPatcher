@@ -4,15 +4,10 @@ setlocal EnableDelayedExpansion
 :: ChillNetease.dll Build Script
 :: This script clones go-musicfox, copies netease_bridge, and builds the DLL
 
-:: 设置 Go 路径（如果不在 PATH 中）
-where go >nul 2>&1 || (
-    if exist "C:\Program Files\Go\bin\go.exe" set "PATH=C:\Program Files\Go\bin;%PATH%"
-    if exist "D:\Program Files\Go\bin\go.exe" set "PATH=D:\Program Files\Go\bin;%PATH%"
-)
+:: Go 和 C 编译器由 setup_toolchain 确保在 PATH 中
+where go >nul 2>&1 || ( echo ERROR: Go not in PATH! & exit /b 1 )
 
-:: 设置 C 编译器路径
-:: 优先使用 CC 环境变量（可在外面设 CC=clang -fuse-ld=lld），否则自动找
-:: clang -fuse-ld=lld 使用 LLVM 的 lld 替代 MSVC link.exe，兼容 Go cgo 的 GNU ld 脚本
+:: 优先使用已设置的 CC 环境变量，否则自动找 clang → gcc
 if not defined CC (
     where clang >nul 2>&1 && set CC=clang -fuse-ld=lld
 )

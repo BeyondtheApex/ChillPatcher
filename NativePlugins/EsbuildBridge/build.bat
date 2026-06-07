@@ -8,6 +8,15 @@ cd /d %~dp0
 
 echo Building EsbuildBridge (Go c-shared DLL)...
 
+REM 设置 C 编译器（优先 clang，fallback gcc）
+if not defined CC (
+    where clang >nul 2>&1 && set CC=clang -fuse-ld=lld
+)
+if not defined CC (
+    where gcc >nul 2>&1 && set CC=gcc
+)
+if defined CC echo Using C compiler: %CC%
+
 REM Ensure dependencies
 go mod tidy
 if %errorlevel% neq 0 (

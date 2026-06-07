@@ -13,14 +13,8 @@ echo ========================================
 
 where cl >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Searching for Visual Studio...
-    call "D:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
-    if %errorlevel% neq 0 (
-        call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
-        if %errorlevel% neq 0 (
-            call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
-        )
-    )
+    :: CMake uses vswhere internally to find VS compiler — no need for vcvarsall
+    echo NOTE: cl.exe not in PATH, CMake will auto-detect via vswhere
 )
 
 set CMAKE_EXE=cmake

@@ -42,13 +42,13 @@ def _write_log(line: str):
 
 def info(msg: str):
     line = f"  {msg}"
-    print(line)
+    print(line, flush=True)
     _write_log(line)
 
 
 def step(label: str, msg: str):
     line = f"\n[{label}] {msg}"
-    print(line)
+    print(line, flush=True)
     _write_log(line)
 
 
@@ -57,39 +57,57 @@ def step(label: str, msg: str):
 # ════════════════════════════════════════════
 
 def run_cmd(cmd: list[str], cwd: Path | None = None,
+            env: dict[str, str] | None = None,
             verbose: bool = False) -> int:
     """运行命令，捕获输出到 GUI 和日志文件，返回退出码。"""
     cmd_str = " ".join(str(c) for c in cmd)
     header = f"    > {cmd_str}"
-    print(header)
+    print(header, flush=True)
     _write_log(header)
+
+    # 判断是否需要 shell=True (.bat/.cmd 脚本; 纯 exe 用 shell=False 更可靠)
+    first = cmd[0].lower() if cmd else ""
+    use_shell = first.endswith(".bat") or first.endswith(".cmd")
+
+    if not use_shell:
+        # 用 shutil.which 解析完整路径, 避免 CreateProcess PATH 查找问题
+        resolved = shutil.which(cmd[0])
+        if resolved:
+            cmd = [resolved] + cmd[1:]
+        else:
+            err = f"    FAILED: command not found: {cmd[0]}"
+            print(err, flush=True)
+            _write_log(err)
+            return -1
+
+    popen_cmd = cmd_str if use_shell else cmd
 
     try:
         proc = subprocess.Popen(
-            cmd, cwd=cwd, shell=True,
+            popen_cmd, cwd=cwd, shell=use_shell, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
         )
         for line in proc.stdout:
             line = line.rstrip("\n\r")
             if line.strip():
-                print(f"      {line}")
+                print(f"      {line}", flush=True)
                 _write_log(f"      {line}")
         proc.wait()
         code = proc.returncode
     except Exception as e:
         err = f"    FAILED: {e}"
-        print(err)
+        print(err, flush=True)
         _write_log(err)
         return -1
 
     if code != 0:
         fail = f"    FAILED (exit={code})"
-        print(fail)
+        print(fail, flush=True)
         _write_log(fail)
     else:
         ok = f"    OK (exit=0)"
-        print(ok)
+        print(ok, flush=True)
         _write_log(ok)
     return code
 

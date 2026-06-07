@@ -85,8 +85,9 @@ def _find_mingw_dir() -> Path | None:
     if gcc:
         return gcc.parent.parent  # .../bin/gcc.exe → .../
     for base in [os.environ.get("MINGW_ROOT", ""),
-                 "D:/mingw64", "C:/mingw64", "C:/msys64/mingw64",
-                 "C:/Program Files/mingw64", "C:/ProgramData/chocolatey/lib/mingw/tools/install"]:
+                 "G:/mingw64", "D:/mingw64", "C:/mingw64",
+                 "C:/msys64/mingw64", "C:/Program Files/mingw64",
+                 "C:/ProgramData/chocolatey/lib/mingw/tools/install"]:
         if base:
             p = Path(base)
             if p.joinpath("bin/gcc.exe").is_file():

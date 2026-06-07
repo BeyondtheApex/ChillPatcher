@@ -7,6 +7,8 @@
   Flutter GUI 的 assets/ 下有两个 zip: ChillPatcher.zip, FH6OmniBridge.zip
 """
 from __future__ import annotations
+import os
+import shutil
 from pathlib import Path
 
 from tasks.base import TaskNode, TaskStatus
@@ -357,7 +359,6 @@ def _copy_mediagen_to_build() -> bool:
 
 
 def _copy_flutter_to_build() -> bool:
-    import shutil
     if not C.PLAYER_FLUTTER_BUILD.exists():
         info("  WARNING: Flutter build not found")
         return False
@@ -438,8 +439,6 @@ def _cleanup_build() -> bool:
 #  内部实现函数
 # ════════════════════════════════════════════
 
-import shutil
-
 def _clean_backend() -> bool:
     _rmtree_ignore_locked(C.PLAYER_BUILD)
     (C.PLAYER_BUILD / "modules").mkdir(parents=True, exist_ok=True)
@@ -479,6 +478,182 @@ def _build_flutter_windows() -> int:
 # ── Session 级去重: 同一个构建中, native 只编译一次 ──
 _built_natives: set[str] = set()
 
+# ── Python 原生构建 (不再依赖 build.bat, 消除 shell 编码/路径问题) ──
+
+def _build_native(proj: str) -> int:
+    src = C.NATIVE_PLUGINS_DIR / proj
+    bin64 = C.ROOT / "bin" / "native" / "x64"
+    bin64.mkdir(parents=True, exist_ok=True)
+
+    if proj == "OmniAudioDecoder":
+        return _rust_build(src, "omni_audio_decoder", [
+            (bin64 / "OmniAudioDecoder.dll", "OmniAudioDecoder"),
+            (bin64 / "ChillAudioDecoder.dll", "ChillAudioDecoder"),
+            (bin64 / "ChillFlacDecoder.dll", "ChillFlacDecoder"),
+        ])
+    elif proj == "SpotifyLibrespotBridge":
+        mod_dst = C.PLAYER_DIR / "modules" / "Spotify" / "native" / "x64"
+        mod_dst.mkdir(parents=True, exist_ok=True)
+        return _rust_build(src, "spotify_librespot_bridge", [
+            (mod_dst / "SpotifyLibrespotBridge.dll", None),
+        ])
+    elif proj == "OmniPcmShared":
+        return _cmake_build(src, "OmniPcmShared.dll", [bin64 / "OmniPcmShared.dll"])
+    elif proj == "SmtcBridge":
+        return _cmake_build(src, "ChillSmtcBridge.dll", [bin64 / "ChillSmtcBridge.dll"])
+    elif proj == "EsbuildBridge":
+        return _go_cgo_build(src, "ChillEsbuildBridge.dll", bin64)
+    elif proj == "qqmusic_bridge":
+        return _go_cgo_build(src, "ChillQQMusic.dll", bin64)
+    elif proj == "netease_bridge":
+        # netease_bridge 构建逻辑复杂 (clone go-musicfox, patch, etc), 保留 build.bat
+        clean_cmake_cache(src)
+        return run_cmd(["build.bat", "--no-pause"], cwd=src)
+    else:
+        info(f"  WARNING: unknown native project: {proj}")
+        return TaskStatus.FAILED
+
+
+def _rust_build(src: Path, dll_stem: str,
+                copies: list[tuple[Path, str | None]]) -> int:
+    """cargo build --release + 复制 DLL 到目标位置。"""
+    # 确保 Rust 工具链在 PATH
+    cargo = shutil.which("cargo") or "cargo"
+    info(f"  cargo build --release ({dll_stem})")
+    code = run_cmd([cargo, "build", "--release"], cwd=src)
+    if code != 0:
+        return code
+    target_dll = src / "target" / "release" / f"{dll_stem}.dll"
+    if not target_dll.exists():
+        info(f"  ERROR: {target_dll} not found after build")
+        return 1
+    for dst_path, _name_hint in copies:
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target_dll, dst_path)
+        info(f"  copy → {dst_path}")
+    return 0
+
+
+def _cmake_build(src: Path, dll_name: str,
+                 dst_paths: list[Path], extra_defines: list[str] | None = None) -> int:
+    """CMake 配置 + 构建 (x64 Release) + 复制 DLL。"""
+    build_dir = src / "build" / "x64"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    defines = ["-DCMAKE_BUILD_TYPE=Release"] + (extra_defines or [])
+
+    cmake = _find_vs_cmake() or shutil.which("cmake") or "cmake"
+
+    # VS Generator 名 (用 vswhere 动态获取版本号)
+    vs_gen = _get_vs_generator()
+    if vs_gen:
+        cmake_args = ["-G", vs_gen, "-A", "x64"] + defines
+    else:
+        cmake_args = ["-G", "Ninja",
+                      "-DCMAKE_C_COMPILER=cl",
+                      "-DCMAKE_CXX_COMPILER=cl"] + defines
+
+    info(f"  cmake -G {vs_gen or 'Ninja'} -A x64 -S {src} -B {build_dir}")
+    # 清理旧的 Ninja 缓存 (generator 不匹配会导致 cmake 报错)
+    cache_file = build_dir / "CMakeCache.txt"
+    if cache_file.exists():
+        cache_text = cache_file.read_text(encoding="utf-8", errors="ignore")
+        if "Ninja" in cache_text and vs_gen:
+            info(f"  removing stale Ninja cache...")
+            shutil.rmtree(build_dir, ignore_errors=True)
+            build_dir.mkdir(parents=True, exist_ok=True)
+    code = run_cmd([cmake] + cmake_args +
+                   ["-S", str(src), "-B", str(build_dir)])
+    if code != 0:
+        return code
+
+    info(f"  cmake --build {build_dir} --config Release")
+    code = run_cmd([cmake, "--build", str(build_dir), "--config", "Release"])
+    if code != 0:
+        return code
+
+
+def _get_vs_generator() -> str | None:
+    """用 vswhere 获取 VS Generator 名 (如 'Visual Studio 18 2026')。"""
+    import subprocess
+    vs = C.get_vs_dir()
+    if not vs:
+        return None
+    # 从 VS 安装目录名推断版本号
+    parts = vs.parts
+    try:
+        ver_dir = parts[parts.index("Microsoft Visual Studio") + 1]  # e.g. "18" or "2022"
+        # VS versions: "18" → "Visual Studio 18 2026", "2022" → "Visual Studio 17 2022"
+        if ver_dir == "18":
+            return "Visual Studio 18 2026"
+        elif ver_dir == "2022":
+            return "Visual Studio 17 2022"
+        elif ver_dir == "2019":
+            return "Visual Studio 16 2019"
+    except (ValueError, IndexError):
+        pass
+    # Fallback: 调用 cmake --help 列出可用 generator
+    try:
+        cmake = shutil.which("cmake") or "cmake"
+        result = subprocess.run([cmake, "--help"], capture_output=True, text=True, timeout=10)
+        for line in result.stdout.splitlines():
+            if "Visual Studio" in line and "202" in line:
+                return " ".join(line.strip().split()[:4])
+    except Exception:
+        pass
+    return None
+
+    for dst in dst_paths:
+        for candidate in [
+            build_dir / "bin" / "Release" / dll_name,
+            build_dir / "Release" / dll_name,
+            build_dir / dll_name,
+        ]:
+            if candidate.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(candidate, dst)
+                info(f"  copy → {dst}")
+                break
+        else:
+            info(f"  WARNING: {dll_name} not found in build output")
+    return 0
+
+
+def _find_vs_cmake() -> str | None:
+    """用 vswhere 动态查找 VS 自带的 cmake.exe（不硬编码版本号）。"""
+    vs = C.get_vs_dir()
+    if vs:
+        p = vs / "Common7" / "IDE" / "CommonExtensions" / "Microsoft" / \
+            "CMake" / "CMake" / "bin" / "cmake.exe"
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def _go_cgo_build(src: Path, dll_name: str, dst_dir: Path) -> int:
+    """Go CGo 构建 c-shared DLL。"""
+    go = shutil.which("go") or "go"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    # CC 由 setup_toolchain 设置，其余补全
+    go_env = os.environ.copy()
+    go_env.setdefault("CGO_ENABLED", "1")
+    go_env.setdefault("GOOS", "windows")
+    go_env.setdefault("GOARCH", "amd64")
+
+    info(f"  go build -buildmode=c-shared → {dll_name}")
+    out = str(dst_dir / dll_name)
+    code = run_cmd([
+        go, "build", "-buildmode=c-shared",
+        "-trimpath", "-ldflags=-s -w",
+        "-o", out, ".",
+    ], cwd=src, env=go_env)
+    if code == 0:
+        # 清除自动生成的 .h 文件 (C# P/Invoke 不需要)
+        h_file = dst_dir / dll_name.replace(".dll", ".h")
+        if h_file.exists():
+            h_file.unlink()
+    return code
+
 
 def _make_native_fn(proj: str):
     def _build():
@@ -488,16 +663,8 @@ def _make_native_fn(proj: str):
         _built_natives.add(proj)
 
         src = C.NATIVE_PLUGINS_DIR / proj
-        script = src / "build.bat"
-        if not script.exists():
-            info(f"SKIP {proj}: no build.bat")
-            return TaskStatus.SKIPPED
-
         clean_cmake_cache(src)
-        args = ["build.bat"]
-        if proj in ("netease_bridge", "qqmusic_bridge"):
-            args.append("--no-pause")
-        code = run_cmd(args, cwd=src)
+        code = _build_native(proj)
         if code != 0:
             info(f"  WARNING: {proj} build failed (exit={code})")
         return code
@@ -505,13 +672,13 @@ def _make_native_fn(proj: str):
 
 
 def _stage_omni_pcm() -> int:
-    src = C.NATIVE_PLUGINS_DIR / "OmniPcmShared" / "build" / "x64" / "bin" / "Release" / "OmniPcmShared.dll"
+    src = C.ROOT / "bin" / "native" / "x64" / "OmniPcmShared.dll"
     if src.exists():
         C.OMNI_PCM_DLL.parent.mkdir(parents=True, exist_ok=True)
         copy_file(src, C.OMNI_PCM_DLL.parent)
         info("  OmniPcmShared.dll staged")
         return 0
-    info(f"  WARNING: OmniPcmShared.dll not found")
+    info(f"  WARNING: OmniPcmShared.dll not found at {src}")
     return 1
 
 
@@ -666,8 +833,11 @@ def _package_mod_zip() -> bool:
 
 
 def _build_fh6_bridge() -> int:
+    """FH6 bridge — CMake x64 构建 version.dll。"""
     clean_cmake_cache(C.FH6_DIR)
-    return run_cmd(["build.bat"], cwd=C.FH6_DIR)
+    dst = C.FH6_DIR / "bin" / "version.dll"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    return _cmake_build(C.FH6_DIR, "version.dll", [dst])
 
 
 def _package_fh6_asset() -> bool:

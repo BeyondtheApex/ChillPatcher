@@ -1,0 +1,34 @@
+# CodePress AI Review — 独立文件, 触发器与构建分离
+# 文档: https://github.com/marketplace/actions/codepress-review
+
+name: CodePress Review
+
+on:
+  pull_request:
+    types: [opened, reopened, review_requested]
+    # synchronize 不加 — 避免每次 push 都审查
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  contents: read
+  issues: read
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: CodePress Review
+        uses: quantfive/codepress-review@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          model_provider: deepseek
+          model_name: deepseek-v4-pro
+          deepseek_api_key: ${{ secrets.DEEPSEEK_API_KEY }}

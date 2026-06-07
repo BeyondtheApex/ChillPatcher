@@ -22,11 +22,8 @@ if %errorlevel% neq 0 (
 REM 检查 Visual Studio
 where cl >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Searching for Visual Studio...
-    call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
-    if %errorlevel% neq 0 (
-        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
-    )
+    :: CMake uses vswhere internally to find VS compiler — no need for vcvarsall
+    echo NOTE: cl.exe not in PATH, CMake will auto-detect via vswhere
 )
 
 REM ========== 构建 x64 版本 ==========

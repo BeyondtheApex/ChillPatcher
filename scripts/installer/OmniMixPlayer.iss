@@ -9,8 +9,10 @@
 #define MyAppURL "https://github.com/Kevin-2483/Chill"
 #define MyAppExeName "omnimix_gui.exe"
 #define MyAppBackendName "OmniMixPlayer.Backend.exe"
-#define MyServiceName "OmniMixPlayerBackend"; SourceDir — 构建时由脚本自动替换为实际 playerbuild 路径
-#define SourceDir "G:\Csharp\Chill\playerbuild"
+#define MyServiceName "OmniMixPlayerBackend"
+; SourceDir — 构建时由脚本自动替换为实际 playerbuild 路径
+#define SourceDir "G:/Csharp/Chill/playerbuild"
+
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}}
 AppName={#MyAppName}
@@ -27,7 +29,7 @@ DisableProgramGroupPage=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only).
 ;PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputDir=G:\Csharp\Chill\release
+OutputDir=G:/Csharp/Chill/release
 OutputBaseFilename=OmniMixPlayer_V3.0.0_installer
 Compression=lzma
 SolidCompression=yes
