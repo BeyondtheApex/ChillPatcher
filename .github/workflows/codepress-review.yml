@@ -3,6 +3,10 @@
 
 name: CodePress Review
 
+concurrency:
+  group: review-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     types: [opened, reopened, review_requested]

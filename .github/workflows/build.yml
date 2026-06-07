@@ -1,5 +1,10 @@
 name: Build & Package
 
+# 新 commit push 时自动取消旧的在跑任务
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main, master]
