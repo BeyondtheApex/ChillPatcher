@@ -21,20 +21,20 @@ namespace ChillPatcher.Patches.UIFramework
     public class MusicTagListUI_Patches
     {
         private static List<GameObject> _customTagButtons = new List<GameObject>();
-        
+
         // 队列操作按钮
         private static GameObject _clearAllQueueButton;
         private static GameObject _clearFutureQueueButton;
         private static GameObject _clearHistoryButton;
-        
+
         // TodoSwitchFinishButton 缓存
         private static GameObject _todoSwitchFinishButton;
         private static bool _todoSwitchFinishButtonWasActive = false;
-        
+
         // 缓存的原始状态
         private static MusicTagListUI _cachedTagListUI;
         private static bool _isQueueMode = false;
-        
+
         // 下拉框滚动支持
         private static ScrollRect _dropdownScrollRect;
         private static GameObject _scrollViewport;
@@ -46,7 +46,7 @@ namespace ChillPatcher.Patches.UIFramework
         private const float SCROLL_PADDING_BOTTOM = 15f;
         private const float SCROLLBAR_WIDTH = 14f;
         private const float SCROLLBAR_RIGHT_OFFSET = 50f;
-        
+
         // 保存 TagList 原始 RectTransform 状态，以便移出 viewport 时恢复
         private static bool _originalRectStored;
         private static Vector2 _originalAnchorMin;
@@ -67,28 +67,25 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 // 缓存实例，供 RefreshCustomTagButtons 使用（FindObjectOfType 找不到 inactive 对象）
                 _cachedTagListUI = __instance;
-                
+
                 // 检查是否有任何自定义 Tag
                 bool hasModuleTags = (OmniMixIntegration.Instance?.GetAllTags()?.Count ?? 0) > 0;
-                
+
                 // 1. 隐藏空Tag功能
                 if (PluginConfig.HideEmptyTags.Value)
                 {
                     HideEmptyTags(__instance);
                 }
 
-                // 2. 添加自定义Tag按钮（如果有模块注册了标签）
-                if (hasModuleTags)
-                {
-                    AddCustomTagButtons(__instance);
-                }
+                // 2. 始终调用 AddCustomTagButtons — 即使没有自定义 Tag 也需要清理旧按钮
+                AddCustomTagButtons(__instance);
 
                 // 3. 更新下拉框高度
                 if (PluginConfig.HideEmptyTags.Value || hasModuleTags)
                 {
                     UpdateDropdownHeight(__instance);
                 }
-                
+
                 // 4. 打印按钮高度调试信息
                 DebugPrintButtonHeights(__instance);
             }
@@ -97,7 +94,7 @@ namespace ChillPatcher.Patches.UIFramework
                 Plugin.Log.LogError($"Error in MusicTagListUI_Patches.Setup_Postfix: {ex}");
             }
         }
-        
+
         /// <summary>
         /// 刷新自定义 Tag 按钮（供模块在运行时添加 Tag 后调用）
         /// </summary>
@@ -109,7 +106,7 @@ namespace ChillPatcher.Patches.UIFramework
                 _cachedTagListUI.SetTitle();
             }
         }
-        
+
         /// <summary>
         /// 打印按钮高度调试信息（延迟执行以确保布局已更新）
         /// </summary>
@@ -118,35 +115,35 @@ namespace ChillPatcher.Patches.UIFramework
             // 延迟执行
             DebugPrintButtonHeightsAsync(tagListUI).Forget();
         }
-        
+
         private static async UniTaskVoid DebugPrintButtonHeightsAsync(MusicTagListUI tagListUI)
         {
             // 等待2帧让布局更新
             await UniTask.DelayFrame(2);
-            
+
             try
             {
                 var pulldown = Traverse.Create(tagListUI).Field("_pulldown").GetValue<PulldownListUI>();
                 if (pulldown == null) return;
-                
+
                 var pullDownParentRect = Traverse.Create(pulldown).Field("_pullDownParentRect").GetValue<RectTransform>();
                 if (pullDownParentRect == null) return;
-                
+
                 var tagListContainer = pullDownParentRect.Find("TagList");
                 if (tagListContainer == null && _scrollViewport != null)
                     tagListContainer = _scrollViewport.transform.Find("TagList");
                 if (tagListContainer == null) return;
-                
+
                 // 强制刷新布局
                 Canvas.ForceUpdateCanvases();
                 LayoutRebuilder.ForceRebuildLayoutImmediate(tagListContainer as RectTransform);
-                
+
                 var layout = tagListContainer.GetComponent<VerticalLayoutGroup>();
                 if (layout != null)
                 {
                     Plugin.Log.LogInfo($"[DebugLayout] VerticalLayoutGroup: spacing={layout.spacing}, padding=(T:{layout.padding.top}, B:{layout.padding.bottom}, L:{layout.padding.left}, R:{layout.padding.right})");
                 }
-                
+
                 // 使用ContentSizeFitter的preferredSize
                 var contentSizeFitter = tagListContainer.GetComponent<ContentSizeFitter>();
                 if (contentSizeFitter != null)
@@ -154,31 +151,31 @@ namespace ChillPatcher.Patches.UIFramework
                     var layoutElement = tagListContainer.GetComponent<LayoutElement>();
                     Plugin.Log.LogInfo($"[DebugLayout] ContentSizeFitter found, mode: H={contentSizeFitter.horizontalFit}, V={contentSizeFitter.verticalFit}");
                 }
-                
+
                 var buttons = Traverse.Create(tagListUI).Field("buttons").GetValue<MusicTagListButton[]>();
                 if (buttons != null && buttons.Length >= 2)
                 {
                     // 统计可见按钮
                     var visibleButtons = buttons.Where(b => b != null && b.gameObject.activeSelf).ToArray();
                     Plugin.Log.LogInfo($"[DebugLayout] Total buttons: {buttons.Length}, Visible: {visibleButtons.Length}");
-                    
+
                     if (visibleButtons.Length >= 2)
                     {
                         var btn1 = visibleButtons[0];
                         var btn2 = visibleButtons[1];
-                        
+
                         var rect1 = btn1.GetComponent<RectTransform>();
                         var rect2 = btn2.GetComponent<RectTransform>();
-                        
+
                         if (rect1 != null && rect2 != null)
                         {
                             Plugin.Log.LogInfo($"[DebugLayout] Button1 '{btn1.name}': position={rect1.anchoredPosition}, size={rect1.rect.size}, localPos={rect1.localPosition}");
                             Plugin.Log.LogInfo($"[DebugLayout] Button2 '{btn2.name}': position={rect2.anchoredPosition}, size={rect2.rect.size}, localPos={rect2.localPosition}");
-                            
+
                             // 计算实际高度差（Y坐标差值的绝对值）
                             float heightDiff = Mathf.Abs(rect1.localPosition.y - rect2.localPosition.y);
                             Plugin.Log.LogInfo($"[DebugLayout] Height difference between buttons: {heightDiff}");
-                            
+
                             // 计算真实按钮高度（包含spacing）
                             float buttonHeight = rect1.rect.height;
                             Plugin.Log.LogInfo($"[DebugLayout] Single button height: {buttonHeight}");
@@ -186,14 +183,14 @@ namespace ChillPatcher.Patches.UIFramework
                         }
                     }
                 }
-                
+
                 // 打印TagList容器的实际大小
                 var tagListRect = tagListContainer as RectTransform;
                 if (tagListRect != null)
                 {
                     Plugin.Log.LogInfo($"[DebugLayout] TagList container size: {tagListRect.rect.size}, sizeDelta: {tagListRect.sizeDelta}");
                 }
-                
+
                 // 打印原始下拉框高度设置
                 float openHeight = Traverse.Create(pulldown).Field("_openPullDownSizeDeltaY").GetValue<float>();
                 Plugin.Log.LogInfo($"[DebugLayout] Original _openPullDownSizeDeltaY: {openHeight}");
@@ -255,7 +252,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// </summary>
         private static void AddCustomTagButtons(MusicTagListUI tagListUI)
         {
-            // 清除旧的自定义按钮
+            // 始终清除旧的自定义按钮（放在最前面，确保清理一定执行）
             foreach (var btn in _customTagButtons)
             {
                 if (btn != null)
@@ -318,7 +315,7 @@ namespace ChillPatcher.Patches.UIFramework
                             // 保存布局和样式信息
                             var oldRect = oldTagName.GetComponent<RectTransform>();
                             var oldText = oldTagName.GetComponent<TMPro.TMP_Text>();
-                            
+
                             // 记录位置信息
                             Vector2 anchorMin = oldRect.anchorMin;
                             Vector2 anchorMax = oldRect.anchorMax;
@@ -326,7 +323,7 @@ namespace ChillPatcher.Patches.UIFramework
                             Vector2 sizeDelta = oldRect.sizeDelta;
                             Vector2 pivot = oldRect.pivot;
                             Vector3 localScale = oldRect.localScale;
-                            
+
                             // 记录文本样式
                             TMPro.TMP_FontAsset font = oldText.font;
                             float fontSize = oldText.fontSize;
@@ -336,12 +333,12 @@ namespace ChillPatcher.Patches.UIFramework
                             float fontSizeMin = oldText.fontSizeMin;
                             float fontSizeMax = oldText.fontSizeMax;
                             bool raycastTarget = oldText.raycastTarget;
-                            
-                        // 销毁旧的TagName（带本地化组件）
-                        UnityEngine.Object.Destroy(oldTagName.gameObject);                            // 创建新的TagName（不带本地化组件）
+
+                            // 销毁旧的TagName（带本地化组件）
+                            UnityEngine.Object.Destroy(oldTagName.gameObject);                            // 创建新的TagName（不带本地化组件）
                             var newTagName = new GameObject("TagName");
                             newTagName.transform.SetParent(buttonsContainer, false);
-                            
+
                             // 复制RectTransform
                             var newRect = newTagName.AddComponent<RectTransform>();
                             newRect.anchorMin = anchorMin;
@@ -350,7 +347,7 @@ namespace ChillPatcher.Patches.UIFramework
                             newRect.sizeDelta = sizeDelta;
                             newRect.pivot = pivot;
                             newRect.localScale = localScale;
-                            
+
                             // 添加TMP_Text（复制样式但不添加本地化组件）
                             var newText = newTagName.AddComponent<TMPro.TextMeshProUGUI>();
                             newText.text = customTag.DisplayName;  // ← 设置自定义文本
@@ -362,17 +359,17 @@ namespace ChillPatcher.Patches.UIFramework
                             newText.fontSizeMin = fontSizeMin;
                             newText.fontSizeMax = fontSizeMax;
                             newText.raycastTarget = raycastTarget;
-                            
+
                             // 保存到MusicTagListButton的_text字段
                             Traverse.Create(newButton).Field("_text").SetValue(newText);
-                            
+
                             Plugin.Log.LogInfo($"[CustomTag] Created pure text button: {customTag.DisplayName}");
                         }
                     }
 
                     // ✅ 设置点击事件（直接操作MusicService.CurrentAudioTag）
                     SetupCustomTagButton(newButton, customTag, tagListUI);
-                    
+
                     // ✅ 同步按钮初始状态 (根据CurrentAudioTag是否包含该位)
                     var currentTag = SaveDataManager.Instance.MusicSetting.CurrentAudioTag.Value;
                     bool isActive = currentTag.HasFlagFast((AudioTag)customTag.BitValue);
@@ -431,10 +428,10 @@ namespace ChillPatcher.Patches.UIFramework
 
                 // 更新按钮UI
                 button.SetCheck(!hasTag);
-                
+
                 // ✅ 直接调用 SetTitle 更新标题显示（Publicizer 消除反射）
                 tagListUI.SetTitle();
-                
+
                 // ✅ CurrentAudioTag变化会自动触发游戏的筛选逻辑！
                 // 不需要手动调用ApplyFilter，游戏已经订阅了ReactiveProperty
             });
@@ -524,10 +521,10 @@ namespace ChillPatcher.Patches.UIFramework
                         visibleNativeButtonCount++;
                 }
             }
-            
+
             int customButtonCount = _customTagButtons.Count;
             int totalVisibleButtonCount = visibleNativeButtonCount + customButtonCount;
-            
+
             Plugin.Log.LogInfo($"[UpdateDropdownHeight] Native (visible): {visibleNativeButtonCount}, Custom: {customButtonCount}, Total: {totalVisibleButtonCount}");
 
             // 强制刷新布局
@@ -546,9 +543,9 @@ namespace ChillPatcher.Patches.UIFramework
             {
                 // 滚动模式：高度 = 上padding + 可见按钮区 + 下padding
                 finalHeight = SCROLL_PADDING_TOP + (MAX_VISIBLE_BUTTONS * BUTTON_HEIGHT) + SCROLL_PADDING_BOTTOM;
-                
+
                 EnsureScrollRect(pullDownParentRect, contentTransform as RectTransform);
-                
+
                 // 设置 TagList 的高度为实际内容高度（让 ScrollRect 知道可滚动范围）
                 var contentRect = contentTransform as RectTransform;
                 if (contentRect != null)
@@ -562,20 +559,20 @@ namespace ChillPatcher.Patches.UIFramework
                     fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
                     fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
                 }
-                
+
                 Plugin.Log.LogInfo($"[UpdateDropdownHeight] Scroll enabled: {totalVisibleButtonCount} buttons, showing {MAX_VISIBLE_BUTTONS}");
             }
             else
             {
                 // 不需要滚动：高度 = a × (按钮数 × 按钮高) + b
                 finalHeight = a * (totalVisibleButtonCount * BUTTON_HEIGHT) + b;
-                
+
                 // 禁用 ScrollRect 并把 TagList 移回原父级
                 if (_dropdownScrollRect != null)
                     _dropdownScrollRect.enabled = false;
                 if (_scrollbarObj != null)
                     _scrollbarObj.SetActive(false);
-                
+
                 var contentRect = contentTransform as RectTransform;
                 if (contentRect != null && _scrollViewport != null && contentRect.parent == _scrollViewport.transform)
                 {
@@ -588,7 +585,7 @@ namespace ChillPatcher.Patches.UIFramework
             Traverse.Create(pulldown).Field("_openPullDownSizeDeltaY").SetValue(finalHeight);
             Plugin.Log.LogInfo($"Tag dropdown height: {finalHeight:F1} (scroll={needsScroll}, buttons={totalVisibleButtonCount})");
         }
-        
+
         /// <summary>
         /// 确保下拉框有 ScrollRect 和 Viewport 来支持滚动
         /// 使用 Viewport 对象实现正确的上下 padding 裁剪
@@ -597,7 +594,7 @@ namespace ChillPatcher.Patches.UIFramework
         {
             if (pullDownParentRect == null || contentRect == null)
                 return;
-            
+
             // 创建 Viewport（如果还没有）
             if (_scrollViewport == null || _scrollViewport.transform.parent != pullDownParentRect)
             {
@@ -611,32 +608,32 @@ namespace ChillPatcher.Patches.UIFramework
                 {
                     _scrollViewport = new GameObject("ChillPatcher_ScrollViewport");
                     _scrollViewport.transform.SetParent(pullDownParentRect, false);
-                    
+
                     // 添加 RectMask2D 到 viewport（裁剪溢出内容）
                     _scrollViewport.AddComponent<RectMask2D>();
-                    
+
                     Plugin.Log.LogInfo("[EnsureScrollRect] Created scroll viewport with RectMask2D");
                 }
             }
-            
+
             // 设置 Viewport 的 RectTransform，留出上下 padding
             var viewportRect = _scrollViewport.GetComponent<RectTransform>();
             if (viewportRect == null)
                 viewportRect = _scrollViewport.AddComponent<RectTransform>();
-            
+
             // Viewport 拉伸填满父容器，但留出上下间距和右侧滚动条空间
             viewportRect.anchorMin = new Vector2(0, 0);
             viewportRect.anchorMax = new Vector2(1, 1);
             viewportRect.pivot = new Vector2(0.5f, 1);
             viewportRect.offsetMin = new Vector2(0, SCROLL_PADDING_BOTTOM);  // 底部留 5px
             viewportRect.offsetMax = new Vector2(-SCROLLBAR_WIDTH - 2, -SCROLL_PADDING_TOP);     // 顶部留 100px，右侧留滚动条宽度
-            
+
             // 将 TagList 移入 Viewport（如果还没有移入）
             if (contentRect.parent != viewportRect)
             {
                 contentRect.SetParent(viewportRect, false);
             }
-            
+
             // 保存原始 RectTransform 状态（用于之后恢复）
             if (!_originalRectStored)
             {
@@ -649,15 +646,15 @@ namespace ChillPatcher.Patches.UIFramework
                 _originalRectStored = true;
                 Plugin.Log.LogInfo($"[EnsureScrollRect] Saved original rect: anchors=({_originalAnchorMin},{_originalAnchorMax}), pivot={_originalPivot}, offset=({_originalOffsetMin},{_originalOffsetMax}), pos={_originalAnchoredPosition}");
             }
-            
+
             // 确保内容的锚点和枢轴正确（顶部对齐，ScrollRect 需要）
             contentRect.anchorMin = new Vector2(0, 1);
             contentRect.anchorMax = new Vector2(1, 1);
             contentRect.pivot = new Vector2(0.5f, 1);
-            
+
             // 确保 Viewport 顺序在 TagList 的同级或之前（避免渲染层级问题）
             _scrollViewport.transform.SetAsFirstSibling();
-            
+
             // 添加或获取 ScrollRect（放在 _pullDownParentRect 上）
             _dropdownScrollRect = pullDownParentRect.GetComponent<ScrollRect>();
             if (_dropdownScrollRect == null)
@@ -665,7 +662,7 @@ namespace ChillPatcher.Patches.UIFramework
                 _dropdownScrollRect = pullDownParentRect.gameObject.AddComponent<ScrollRect>();
                 Plugin.Log.LogInfo("[EnsureScrollRect] Added ScrollRect");
             }
-            
+
             _dropdownScrollRect.content = contentRect;
             _dropdownScrollRect.viewport = viewportRect;
             _dropdownScrollRect.horizontal = false;
@@ -673,13 +670,13 @@ namespace ChillPatcher.Patches.UIFramework
             _dropdownScrollRect.movementType = ScrollRect.MovementType.Clamped;
             _dropdownScrollRect.scrollSensitivity = BUTTON_HEIGHT;
             _dropdownScrollRect.enabled = true;
-            
+
             // 创建可见的垂直滚动条
             EnsureScrollbar(pullDownParentRect, viewportRect);
             _dropdownScrollRect.verticalScrollbar = _scrollbar;
             _dropdownScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
         }
-        
+
         /// <summary>
         /// 创建或获取可见的垂直滚动条，从 PrefabFactory 克隆游戏原生风格
         /// </summary>
@@ -708,7 +705,7 @@ namespace ChillPatcher.Patches.UIFramework
                     CreateFallbackScrollbar(pullDownParentRect);
                 }
             }
-            
+
             // 定位：右侧，与 viewport 垂直对齐
             var sbRect = _scrollbarObj.GetComponent<RectTransform>();
             sbRect.anchorMin = new Vector2(1, 0);
@@ -716,10 +713,10 @@ namespace ChillPatcher.Patches.UIFramework
             sbRect.pivot = new Vector2(1, 1);
             sbRect.offsetMin = new Vector2(-SCROLLBAR_WIDTH - SCROLLBAR_RIGHT_OFFSET, SCROLL_PADDING_BOTTOM);
             sbRect.offsetMax = new Vector2(-SCROLLBAR_RIGHT_OFFSET, -SCROLL_PADDING_TOP);
-            
+
             _scrollbarObj.SetActive(true);
         }
-        
+
         /// <summary>
         /// 手动创建简单滚动条（MusicUI 不可用时的回退方案）
         /// </summary>
@@ -727,10 +724,10 @@ namespace ChillPatcher.Patches.UIFramework
         {
             _scrollbarObj = new GameObject("ChillPatcher_Scrollbar");
             _scrollbarObj.transform.SetParent(pullDownParentRect, false);
-            
+
             var trackImage = _scrollbarObj.AddComponent<Image>();
             trackImage.color = new Color(0.15f, 0.15f, 0.18f, 0.6f);
-            
+
             var slidingArea = new GameObject("Sliding Area");
             slidingArea.transform.SetParent(_scrollbarObj.transform, false);
             var slidingRect = slidingArea.AddComponent<RectTransform>();
@@ -738,7 +735,7 @@ namespace ChillPatcher.Patches.UIFramework
             slidingRect.anchorMax = Vector2.one;
             slidingRect.offsetMin = Vector2.zero;
             slidingRect.offsetMax = Vector2.zero;
-            
+
             var handle = new GameObject("Handle");
             handle.transform.SetParent(slidingArea.transform, false);
             var handleRect = handle.AddComponent<RectTransform>();
@@ -748,22 +745,22 @@ namespace ChillPatcher.Patches.UIFramework
             handleRect.offsetMax = Vector2.zero;
             var handleImage = handle.AddComponent<Image>();
             handleImage.color = new Color(0.6f, 0.6f, 0.65f, 0.8f);
-            
+
             _scrollbar = _scrollbarObj.AddComponent<Scrollbar>();
             _scrollbar.handleRect = handleRect;
             _scrollbar.targetGraphic = handleImage;
             _scrollbar.direction = Scrollbar.Direction.BottomToTop;
-            
+
             Plugin.Log.LogInfo("[EnsureScrollbar] Created fallback scrollbar (MusicUI not available)");
         }
-        
+
         /// <summary>
         /// 恢复 TagList 的原始 RectTransform 状态
         /// </summary>
         private static void RestoreContentRectState(RectTransform contentRect)
         {
             if (contentRect == null || !_originalRectStored) return;
-            
+
             contentRect.anchorMin = _originalAnchorMin;
             contentRect.anchorMax = _originalAnchorMax;
             contentRect.pivot = _originalPivot;
@@ -771,9 +768,9 @@ namespace ChillPatcher.Patches.UIFramework
             contentRect.offsetMax = _originalOffsetMax;
             contentRect.anchoredPosition = _originalAnchoredPosition;
         }
-        
+
         #region 队列模式切换
-        
+
         /// <summary>
         /// 切换到队列模式 - 隐藏Tag显示队列操作按钮
         /// </summary>
@@ -781,35 +778,35 @@ namespace ChillPatcher.Patches.UIFramework
         {
             if (_isQueueMode) return;
             _isQueueMode = true;
-            
+
             var tagListUI = UnityEngine.Object.FindObjectOfType<MusicTagListUI>();
             if (tagListUI == null)
             {
                 Plugin.Log.LogWarning("[TagListUI] Cannot find MusicTagListUI");
                 return;
             }
-            
+
             _cachedTagListUI = tagListUI;
-            
+
             // 获取下拉框
             var pulldown = Traverse.Create(tagListUI).Field("_pulldown").GetValue<PulldownListUI>();
             if (pulldown == null) return;
-            
+
             // 关闭下拉框（如果打开的话）
             pulldown.ClosePullDown(true);
-            
+
             // 更改标题为"队列动作"
             pulldown.ChangeSelectContentText("队列动作");
-            
+
             // 获取Tag按钮容器
             var pullDownParentRect = Traverse.Create(pulldown).Field("_pullDownParentRect").GetValue<RectTransform>();
             if (pullDownParentRect == null) return;
-            
+
             var tagListContainer = pullDownParentRect.Find("TagList");
             if (tagListContainer == null && _scrollViewport != null)
                 tagListContainer = _scrollViewport.transform.Find("TagList");
             if (tagListContainer == null) return;
-            
+
             // 队列模式不需要滚动，把 TagList 移回原父级（如果在 viewport 里）
             if (_scrollViewport != null && tagListContainer.parent == _scrollViewport.transform)
             {
@@ -821,10 +818,10 @@ namespace ChillPatcher.Patches.UIFramework
                 _dropdownScrollRect.enabled = false;
             if (_scrollbarObj != null)
                 _scrollbarObj.SetActive(false);
-            
+
             // 隐藏 TodoSwitchFinishButton
             HideTodoSwitchFinishButton(tagListContainer);
-            
+
             // 隐藏所有原生Tag按钮
             var buttons = Traverse.Create(tagListUI).Field("buttons").GetValue<MusicTagListButton[]>();
             if (buttons != null)
@@ -835,23 +832,23 @@ namespace ChillPatcher.Patches.UIFramework
                         btn.gameObject.SetActive(false);
                 }
             }
-            
+
             // 隐藏自定义Tag按钮
             foreach (var btn in _customTagButtons)
             {
                 if (btn != null)
                     btn.SetActive(false);
             }
-            
+
             // 创建队列操作按钮（直接添加到容器）并获取按钮数量
             int queueButtonCount = CreateQueueButtons(tagListContainer);
-            
+
             // 更新下拉框高度（根据实际创建的按钮数量）
             UpdateDropdownHeightForQueueMode(pulldown, queueButtonCount);
-            
+
             Plugin.Log.LogInfo($"[TagListUI] Switched to queue mode with {queueButtonCount} buttons");
         }
-        
+
         /// <summary>
         /// 切换回正常模式 - 恢复Tag显示
         /// </summary>
@@ -859,17 +856,17 @@ namespace ChillPatcher.Patches.UIFramework
         {
             if (!_isQueueMode) return;
             _isQueueMode = false;
-            
+
             var tagListUI = _cachedTagListUI ?? UnityEngine.Object.FindObjectOfType<MusicTagListUI>();
             if (tagListUI == null) return;
-            
+
             // 获取下拉框
             var pulldown = Traverse.Create(tagListUI).Field("_pulldown").GetValue<PulldownListUI>();
             if (pulldown == null) return;
-            
+
             // 关闭下拉框
             pulldown.ClosePullDown(true);
-            
+
             // 销毁队列操作按钮
             if (_clearAllQueueButton != null)
             {
@@ -886,10 +883,10 @@ namespace ChillPatcher.Patches.UIFramework
                 UnityEngine.Object.Destroy(_clearHistoryButton);
                 _clearHistoryButton = null;
             }
-            
+
             // 恢复 TodoSwitchFinishButton
             ShowTodoSwitchFinishButton();
-            
+
             // 恢复原生Tag按钮
             var buttons = Traverse.Create(tagListUI).Field("buttons").GetValue<MusicTagListButton[]>();
             if (buttons != null)
@@ -900,29 +897,29 @@ namespace ChillPatcher.Patches.UIFramework
                         btn.gameObject.SetActive(true);
                 }
             }
-            
+
             // 恢复自定义Tag按钮
             foreach (var btn in _customTagButtons)
             {
                 if (btn != null)
                     btn.SetActive(true);
             }
-            
+
             // 重新应用隐藏空Tag
             if (PluginConfig.HideEmptyTags.Value)
             {
                 HideEmptyTags(tagListUI);
             }
-            
+
             // 恢复标题
             tagListUI.SetTitle();
-            
+
             // 更新下拉框高度
             UpdateDropdownHeight(tagListUI);
-            
+
             Plugin.Log.LogInfo("[TagListUI] Switched to normal mode");
         }
-        
+
         /// <summary>
         /// 创建队列操作按钮（克隆原生Tag按钮样式）
         /// </summary>
@@ -933,7 +930,7 @@ namespace ChillPatcher.Patches.UIFramework
         private static int CreateQueueButtons(Transform container)
         {
             int buttonCount = 0;
-            
+
             // 如果已存在，先销毁
             if (_clearAllQueueButton != null)
             {
@@ -950,7 +947,7 @@ namespace ChillPatcher.Patches.UIFramework
                 UnityEngine.Object.Destroy(_clearHistoryButton);
                 _clearHistoryButton = null;
             }
-            
+
             // 获取原生按钮作为模板
             var buttons = Traverse.Create(_cachedTagListUI).Field("buttons").GetValue<MusicTagListButton[]>();
             if (buttons == null || buttons.Length == 0)
@@ -958,9 +955,9 @@ namespace ChillPatcher.Patches.UIFramework
                 Plugin.Log.LogError("[CreateQueueButtons] No template button found");
                 return buttonCount;
             }
-            
+
             var templateButton = buttons[0];
-            
+
             // 创建"清空全部队列"按钮
             _clearAllQueueButton = CreateQueueButtonFromTemplate(
                 container,
@@ -970,7 +967,7 @@ namespace ChillPatcher.Patches.UIFramework
                 OnClearAllQueueClicked
             );
             if (_clearAllQueueButton != null) buttonCount++;
-            
+
             // 创建"清空未来队列"按钮
             _clearFutureQueueButton = CreateQueueButtonFromTemplate(
                 container,
@@ -980,7 +977,7 @@ namespace ChillPatcher.Patches.UIFramework
                 OnClearFutureQueueClicked
             );
             if (_clearFutureQueueButton != null) buttonCount++;
-            
+
             // 创建"清空播放历史"按钮
             _clearHistoryButton = CreateQueueButtonFromTemplate(
                 container,
@@ -990,36 +987,36 @@ namespace ChillPatcher.Patches.UIFramework
                 OnClearHistoryClicked
             );
             if (_clearHistoryButton != null) buttonCount++;
-            
+
             // 强制刷新布局
             Canvas.ForceUpdateCanvases();
             LayoutRebuilder.ForceRebuildLayoutImmediate(container as RectTransform);
-            
+
             return buttonCount;
         }
-        
+
         /// <summary>
         /// 从模板创建队列操作按钮（保持原生样式）
         /// </summary>
         private static GameObject CreateQueueButtonFromTemplate(
-            Transform parent, 
-            MusicTagListButton template, 
+            Transform parent,
+            MusicTagListButton template,
             string name,
-            string displayText, 
+            string displayText,
             UnityEngine.Events.UnityAction onClick)
         {
             // 克隆模板按钮
             var buttonObj = UnityEngine.Object.Instantiate(template.gameObject, parent);
             buttonObj.name = name;
             buttonObj.SetActive(true);
-            
+
             // 移除原有的MusicTagListButton行为（我们不需要Tag逻辑）
             var tagButton = buttonObj.GetComponent<MusicTagListButton>();
             if (tagButton != null)
             {
                 UnityEngine.Object.Destroy(tagButton);
             }
-            
+
             // 隐藏复选框（队列操作不需要）
             var buttonsContainer = buttonObj.transform.Find("Buttons");
             if (buttonsContainer != null)
@@ -1029,7 +1026,7 @@ namespace ChillPatcher.Patches.UIFramework
                 {
                     checkBox.gameObject.SetActive(false);
                 }
-                
+
                 // 查找并修改TagName文本
                 var tagName = buttonsContainer.Find("TagName");
                 if (tagName != null)
@@ -1044,13 +1041,13 @@ namespace ChillPatcher.Patches.UIFramework
                         {
                             UnityEngine.Object.Destroy(localization);
                         }
-                        
+
                         // 设置文本
                         tmpText.text = displayText;
                     }
                 }
             }
-            
+
             // 设置点击事件
             var button = buttonObj.GetComponent<Button>();
             if (button != null)
@@ -1066,11 +1063,11 @@ namespace ChillPatcher.Patches.UIFramework
                 button = buttonObj.AddComponent<Button>();
                 button.onClick.AddListener(onClick);
             }
-            
+
             Plugin.Log.LogInfo($"[CreateQueueButton] Created queue button: {displayText}");
             return buttonObj;
         }
-        
+
         /// <summary>
         /// 隐藏 TodoSwitchFinishButton
         /// </summary>
@@ -1097,7 +1094,7 @@ namespace ChillPatcher.Patches.UIFramework
                 }
             }
         }
-        
+
         /// <summary>
         /// 显示 TodoSwitchFinishButton
         /// </summary>
@@ -1110,7 +1107,7 @@ namespace ChillPatcher.Patches.UIFramework
                 Plugin.Log.LogInfo("[TagListUI] Restored TodoSwitchFinishButton");
             }
         }
-        
+
         /// <summary>
         /// 更新队列模式下的下拉框高度（使用与正常模式相同的计算公式）
         /// </summary>
@@ -1120,78 +1117,78 @@ namespace ChillPatcher.Patches.UIFramework
             float b = PluginConfig.TagDropdownHeightOffset.Value;
             int displayCount = Math.Min(buttonCount, MAX_VISIBLE_BUTTONS);
             float finalHeight = a * (displayCount * BUTTON_HEIGHT) + b;
-            
+
             // 队列模式按钮数通常很少，不需要滚动，禁用 ScrollRect
             if (_dropdownScrollRect != null)
                 _dropdownScrollRect.enabled = false;
             if (_scrollbarObj != null)
                 _scrollbarObj.SetActive(false);
-            
+
             Traverse.Create(pulldown).Field("_openPullDownSizeDeltaY").SetValue(finalHeight);
             Plugin.Log.LogInfo($"[QueueMode] Dropdown height: {a} × ({displayCount} × {BUTTON_HEIGHT}) + {b} = {finalHeight:F1}");
         }
-        
+
         /// <summary>
         /// 清空全部队列按钮点击
         /// </summary>
         private static void OnClearAllQueueClicked()
         {
             Plugin.Log.LogInfo("[TagListUI] Clear all queue clicked");
-            
+
             // 清空整个队列
             PlayQueueManager.Instance.Clear();
-            
+
             // 从播放列表获取下一首开始播放
             // 这会触发 AdvanceToNext，从播放列表补充
             var musicService = Traverse.Create(_cachedTagListUI)
                 .Field("musicService")
                 .GetValue<MusicService>();
-                
+
             if (musicService != null)
             {
                 // 播放下一首（从播放列表位置或随机）
                 musicService.SkipCurrentMusic(MusicChangeKind.Manual).Forget();
             }
-            
+
             // 自动切换回播放列表视图
             PlayQueueButton_Patch.SwitchToPlaylist();
         }
-        
+
         /// <summary>
         /// 清空未来队列按钮点击（保留当前播放）
         /// </summary>
         private static void OnClearFutureQueueClicked()
         {
             Plugin.Log.LogInfo("[TagListUI] Clear future queue clicked");
-            
+
             // 只清空待播放的，保留当前播放
             PlayQueueManager.Instance.ClearPending();
-            
+
             // 自动切换回播放列表视图
             PlayQueueButton_Patch.SwitchToPlaylist();
         }
-        
+
         /// <summary>
         /// 清空播放历史按钮点击
         /// </summary>
         private static void OnClearHistoryClicked()
         {
             Plugin.Log.LogInfo("[TagListUI] Clear history clicked");
-            
+
             // 清空播放历史
             PlayQueueManager.Instance.ClearHistory();
-            
+
             // 自动切换回播放列表视图
             PlayQueueButton_Patch.SwitchToPlaylist();
-            
+
             Plugin.Log.LogInfo("[TagListUI] Play history cleared");
         }
-        
+
         /// <summary>
         /// 当前是否处于队列模式
         /// </summary>
         public static bool IsQueueMode => _isQueueMode;
-        
+
         #endregion
     }
 }

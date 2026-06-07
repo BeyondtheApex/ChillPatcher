@@ -18,8 +18,13 @@ namespace ChillPatcher.UIFramework.Audio
         public static bool IsStreamingSource(GameAudioInfo audioInfo)
         {
             if (audioInfo == null) return false;
-            // Module songs have empty LocalPath and non-null UUID
-            return !string.IsNullOrEmpty(audioInfo.UUID) && string.IsNullOrEmpty(audioInfo.LocalPath);
+            // OmniMix streaming songs use PathType=LocalPc with empty LocalPath.
+            // Game-native songs use PathType=Normal with empty LocalPath — must NOT
+            // be treated as streaming, otherwise onPlayMusic will call Play(uuid)
+            // instead of StopBackendPlayback(), breaking song transitions.
+            return audioInfo.PathType == AudioMode.LocalPc
+                && !string.IsNullOrEmpty(audioInfo.UUID)
+                && string.IsNullOrEmpty(audioInfo.LocalPath);
         }
 
         public static async Task<AudioClip> LoadFromSharedMemoryAsync(
@@ -186,7 +191,7 @@ namespace ChillPatcher.UIFramework.Audio
         }
 
         public static async Task<AudioClip> SmartLoadAsync(
-            GameAudioInfo audioInfo, 
+            GameAudioInfo audioInfo,
             CancellationToken cancellationToken = default)
         {
             if (audioInfo == null) return null;

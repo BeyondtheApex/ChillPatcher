@@ -38,7 +38,7 @@ namespace ChillPatcher.JSApi
             var facility = GetFacilityMusic();
             if (facility == null) return;
             facility.PauseMusic();
-            _ = OmniMixIntegration.Instance.Pause();
+            // Backend pause is NOT sent — game AudioSource handles the actual audio gating.
         }
 
         public void resume()
@@ -46,7 +46,7 @@ namespace ChillPatcher.JSApi
             var facility = GetFacilityMusic();
             if (facility == null) return;
             facility.UnPauseMusic();
-            _ = OmniMixIntegration.Instance.Resume();
+            // Backend resume is NOT sent — game AudioSource handles the actual audio gating.
         }
 
         public void next()

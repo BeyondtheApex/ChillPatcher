@@ -21,7 +21,7 @@ namespace ChillPatcher.Patches.UIFramework
         /// 全局MusicService实例引用 - 供CustomTagManager使用
         /// </summary>
         public static MusicService CurrentInstance { get; internal set; }
-        
+
         /// <summary>
         /// Patch MusicService.AddMusicItem - 可选移除100首限制
         /// </summary>
@@ -31,7 +31,7 @@ namespace ChillPatcher.Patches.UIFramework
         {
             // ✅ 保存实例引用
             CurrentInstance = __instance;
-            
+
             // 检查是否需要移除100首限制：
             // 1. 启用了无限歌曲配置
             if (!UIFrameworkConfig.EnableUnlimitedSongs.Value)
@@ -138,7 +138,7 @@ namespace ChillPatcher.Patches.UIFramework
         {
             // ✅ 保存实例引用
             CurrentInstance = __instance;
-            
+
             // 检查是否需要移除100首限制
             if (!UIFrameworkConfig.EnableUnlimitedSongs.Value)
             {
@@ -179,7 +179,7 @@ namespace ChillPatcher.Patches.UIFramework
 
             // 添加到列表
             allMusicList.Add(music);
-            
+
             // TODO: IPC bridge needed - TagMerge via MusicRegistry/TagRegistry removed
             /*
             // ✅ 合并自定义Tag到音频对象 (通过 TagRegistry 获取)
@@ -194,7 +194,7 @@ namespace ChillPatcher.Patches.UIFramework
                 }
             }
             */
-            
+
             // ⚠️ 注释掉存档保存：运行时加载的歌曲不需要保存到存档
             // SaveDataManager.Instance.MusicSetting.PlaylistOrder.Add(music.UUID);
             // SaveDataManager.Instance.SaveMusicSetting();
@@ -239,11 +239,20 @@ namespace ChillPatcher.Patches.UIFramework
     [HarmonyPatch(typeof(MusicService), "Load")]
     public static class MusicService_Load_SaveInstance_Patch
     {
+        /// <summary>防止重复订阅 onPlayMusic（场景重载时 Load 可能被多次调用）</summary>
+        private static bool _onPlayMusicSubscribed;
+
         [HarmonyPostfix]
         static void Postfix(MusicService __instance)
         {
             // ✅ 保存实例引用供后续使用
             MusicService_RemoveLimit_Patch.CurrentInstance = __instance;
+
+            // 防止重复订阅：场景重载时 Load 可能被多次调用，每次 Postfix 都会添加新订阅者，
+            // 导致 onPlayMusic 触发时多个订阅者重复调用 Play(uuid)，造成后端重复解析同一首歌。
+            if (_onPlayMusicSubscribed)
+                return;
+            _onPlayMusicSubscribed = true;
 
             // 监听播放事件以同步到 OmniMix 后端
             __instance.onPlayMusic.Subscribe(audioInfo =>
@@ -254,17 +263,25 @@ namespace ChillPatcher.Patches.UIFramework
                     {
                         var shm = OmniMixIntegration.Instance.SharedMemory;
                         string shmUuid = shm?.CurrentUuid;
-                        if (shmUuid == audioInfo.UUID)
-                        {
-                            Plugin.Log?.LogInfo($"[MusicService_PlayPatch] Song {audioInfo.UUID} is already active, ensuring resumed in backend");
-                            OmniMixIntegration.Instance.Resume().Forget();
-                        }
-                        else
+                        if (shmUuid != audioInfo.UUID)
                         {
                             Plugin.Log?.LogInfo($"[MusicService_PlayPatch] Song changed in game, playing in OmniMix backend: {audioInfo.UUID}");
                             OmniMixIntegration.Instance.Play(audioInfo.UUID).Forget();
                         }
+                        // Same song: no action needed.  Backend is never paused by chillPatcher,
+                        // so no Resume is required.  Game AudioSource handles the actual audio gating.
                     }
+                }
+                else
+                {
+                    // Game-native song — stop backend streaming and clear all PCM state.
+                    // Previously only cleared PCM reader state without stopping the backend,
+                    // causing the backend to keep streaming the old track into shared memory.
+                    // When switching back to a streaming song, the stale shared memory state
+                    // could cause the new track to fail to start properly.
+                    Plugin.Log?.LogInfo("[MusicService_PlayPatch] Game-native song selected, stopping backend stream");
+                    MusicService_SetProgress_Patch.ClearActivePcmReader();
+                    AudioPlayer_Update_Patch.ResetEofTracking();
                 }
             });
         }

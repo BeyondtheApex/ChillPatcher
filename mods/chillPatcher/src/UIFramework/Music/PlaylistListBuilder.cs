@@ -30,10 +30,25 @@ namespace ChillPatcher.UIFramework.Music
             bool loadCovers = true)
         {
             var result = new List<PlaylistListItem>();
-            Logger.LogInfo($"BuildWithAlbumHeaders called with {songs?.Count ?? 0} songs");
 
             if (songs == null || songs.Count == 0)
                 return result;
+
+            // Album headers disabled — current tag-bit based playlist model incompatible.
+            // Flat list: just wrap each song as a PlaylistListItem.
+            for (int i = 0; i < songs.Count; i++)
+            {
+                result.Add(PlaylistListItem.CreateSongItem(songs[i], i));
+            }
+            return result;
+        }
+
+        // ReSharper disable once UnusedMember.Local
+        private async Task<List<PlaylistListItem>> BuildWithAlbumHeaders_Legacy(
+            IReadOnlyList<GameAudioInfo> songs,
+            bool loadCovers = true)
+        {
+            var result = new List<PlaylistListItem>();
 
             var groups = new List<AlbumGroup>();
             var groupMap = new Dictionary<string, AlbumGroup>();

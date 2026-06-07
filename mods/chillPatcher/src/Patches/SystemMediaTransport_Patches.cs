@@ -100,7 +100,9 @@ namespace ChillPatcher.Patches
 
 
         /// <summary>
-        /// 当暂停音乐时更新 SMTC 状态并同步到后端
+        /// 当暂停音乐时更新 SMTC 状态
+        /// 注意：不向后端发送 Pause — 游戏通过 AudioSource 暂停管理播放，
+        /// 后端依赖共享内存缓冲区背压自然暂停解码。
         /// </summary>
         [HarmonyPatch(typeof(FacilityMusic), "PauseMusic")]
         [HarmonyPostfix]
@@ -111,10 +113,10 @@ namespace ChillPatcher.Patches
                 if (PluginConfig.EnableSystemMediaTransport.Value)
                     SystemMediaTransportService.Instance.SetPlaybackStatus(false);
 
-                if (OmniMixIntegration.Instance != null && OmniMixIntegration.Instance.IsConnected)
-                {
-                    OmniMixIntegration.Instance.Pause().Forget();
-                }
+                // Pause command is NOT sent to backend — see PlaybackController.cs:
+                // Pause sets _playState=2 which stops the decode+write loop.
+                // Instead, let the game's AudioSource.Pause() stop consuming PCM;
+                // the backend's buffer-backpressure will naturally throttle decoding.
             }
             catch (Exception ex)
             {
@@ -123,7 +125,8 @@ namespace ChillPatcher.Patches
         }
 
         /// <summary>
-        /// 当恢复播放时更新 SMTC 状态并同步到后端
+        /// 当恢复播放时更新 SMTC 状态
+        /// 注意：不向后端发送 Resume — 原因同上。
         /// </summary>
         [HarmonyPatch(typeof(FacilityMusic), "UnPauseMusic")]
         [HarmonyPostfix]
@@ -134,10 +137,9 @@ namespace ChillPatcher.Patches
                 if (PluginConfig.EnableSystemMediaTransport.Value)
                     SystemMediaTransportService.Instance.SetPlaybackStatus(true);
 
-                if (OmniMixIntegration.Instance != null && OmniMixIntegration.Instance.IsConnected)
-                {
-                    OmniMixIntegration.Instance.Resume().Forget();
-                }
+                // Resume command is NOT sent to backend.
+                // AudioSource.UnPause() resumes consuming PCM from the buffer;
+                // the backend's buffer-backpressure loop will resume decoding naturally.
             }
             catch (Exception ex)
             {

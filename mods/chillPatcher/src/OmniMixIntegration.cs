@@ -775,22 +775,23 @@ namespace ChillPatcher
                     Plugin.Log?.LogInfo($"[OmniMix] Source bit={bit} matched {matched} tracks");
                 }
 
-                // Build GameAudioInfo — only tracks that belong to at least one playlist source
-                var allGameAudios = new List<GameAudioInfo>();
+                // Build lookup: uuid → tag value (no GameAudioInfo allocation yet)
+                var uuidTagMap = new Dictionary<string, ulong>();
                 foreach (var kvp in songDict)
                 {
                     var mi = kvp.Value;
                     var tagValue = uuidTagBits.TryGetValue(mi.UUID, out var b) ? b : 0;
-                    if (tagValue == 0) continue; // skip tracks not in any playlist source
-                    mi.TagIds = new List<string> { $"bit_{tagValue}" };
-                    allGameAudios.Add(ConvertToGameAudio(mi, tagValue));
+                    if (tagValue != 0)
+                    {
+                        mi.TagIds = new List<string> { $"bit_{tagValue}" };
+                        uuidTagMap[mi.UUID] = tagValue;
+                    }
                 }
-                Plugin.Log?.LogInfo($"[OmniMix] Built {allGameAudios.Count} GameAudioInfo items (skipped {songDict.Count - allGameAudios.Count} unassigned)");
+                Plugin.Log?.LogInfo($"[OmniMix] Built {uuidTagMap.Count} uuid→tag mappings");
 
                 // Supplement with queue items
                 if (queueJson is JArray queueArr)
                 {
-                    int queueAdded = 0;
                     foreach (var item in queueArr)
                     {
                         var uuid = item.GetStringIgnoreCase("uuid");
@@ -814,11 +815,8 @@ namespace ChillPatcher
                         if (!songDict.ContainsKey(uuid))
                             songDict[uuid] = mi;
 
-                        allGameAudios.Add(ConvertToGameAudio(mi, tagValue));
-                        queueAdded++;
+                        uuidTagMap[uuid] = tagValue;
                     }
-                    if (queueAdded > 0)
-                        Plugin.Log?.LogInfo($"[OmniMix] Added {queueAdded} queue-only tracks");
                 }
 
                 // Cache for UI
@@ -836,21 +834,49 @@ namespace ChillPatcher
                     return 0;
                 }
 
+                // Build UUID → existing GameAudioInfo index for O(1) lookup
+                var existingIndex = new Dictionary<string, int>();
+                for (int i = 0; i < allMusicList.Count; i++)
+                {
+                    var a = allMusicList[i];
+                    if (a != null && !string.IsNullOrEmpty(a.UUID))
+                        existingIndex[a.UUID] = i;
+                }
+
                 if (replace)
                 {
                     allMusicList.RemoveAll(a => ((ulong)a.Tag & ~31UL) != 0);
+                    existingIndex.Clear();
                 }
 
-                var newUuids = new HashSet<string>(allGameAudios.Select(g => g.UUID));
-                foreach (var ga in allGameAudios)
+                var newUuids = new HashSet<string>(uuidTagMap.Keys);
+                int addedCount = 0;
+
+                foreach (var kvp in uuidTagMap)
                 {
-                    if (!allMusicList.Any(a => a.UUID == ga.UUID))
-                        allMusicList.Add(ga);
+                    var uuid = kvp.Key;
+                    var tagValue = kvp.Value;
+                    if (tagValue == 0) continue;
+
+                    if (existingIndex.TryGetValue(uuid, out var idx))
+                    {
+                        // Update tag bits in-place — no allocation
+                        allMusicList[idx].Tag = (AudioTag)tagValue;
+                    }
+                    else
+                    {
+                        // Only allocate GameAudioInfo for genuinely new songs
+                        if (songDict.TryGetValue(uuid, out var mi))
+                            allMusicList.Add(ConvertToGameAudio(mi, tagValue));
+                        addedCount++;
+                    }
                 }
+                Plugin.Log?.LogInfo($"[OmniMix] Updated {uuidTagMap.Count - addedCount} existing, added {addedCount} new songs");
+
                 // Remove imported songs no longer in any playlist source
                 allMusicList.RemoveAll(a => ((ulong)a.Tag & ~31UL) != 0 && !newUuids.Contains(a.UUID));
 
-                // Sync to current playlist
+                // Sync to current playlist (use same uuid→tag map, no extra allocations)
                 var currentPlayList = musicService.CurrentPlayList;
                 if (currentPlayList != null)
                 {
@@ -863,11 +889,28 @@ namespace ChillPatcher
                         }
                     }
 
-                    var currentTag = SaveDataManager.Instance?.MusicSetting?.CurrentAudioTag?.CurrentValue ?? AudioTag.All;
-                    foreach (var ga in allGameAudios)
+                    // Build index for currentPlayList
+                    var cpIndex = new Dictionary<string, int>();
+                    for (int i = 0; i < currentPlayList.Count; i++)
                     {
-                        if (!currentPlayList.Any(a => a.UUID == ga.UUID) && currentTag.HasFlagFast(ga.Tag))
-                            currentPlayList.Add(ga);
+                        var a = currentPlayList[i];
+                        if (a != null && !string.IsNullOrEmpty(a.UUID))
+                            cpIndex[a.UUID] = i;
+                    }
+
+                    var currentTag = SaveDataManager.Instance?.MusicSetting?.CurrentAudioTag?.CurrentValue ?? AudioTag.All;
+                    foreach (var kvp in uuidTagMap)
+                    {
+                        if (kvp.Value == 0) continue;
+                        if (cpIndex.TryGetValue(kvp.Key, out var idx))
+                        {
+                            currentPlayList[idx].Tag = (AudioTag)kvp.Value;
+                        }
+                        else if (currentTag.HasFlagFast((AudioTag)kvp.Value))
+                        {
+                            if (songDict.TryGetValue(kvp.Key, out var mi))
+                                currentPlayList.Add(ConvertToGameAudio(mi, kvp.Value));
+                        }
                     }
                     // Remove stale imported songs from current playlist
                     for (int i = currentPlayList.Count - 1; i >= 0; i--)
@@ -877,7 +920,8 @@ namespace ChillPatcher
                     }
                 }
 
-                Plugin.Log?.LogInfo($"[OmniMix] Imported {allGameAudios.Count} songs to game MusicService");
+                int totalSynced = uuidTagMap.Count;
+                Plugin.Log?.LogInfo($"[OmniMix] Synced {totalSynced} songs to game MusicService");
 
                 try { MusicUI_VirtualScroll_Patch.RefreshPlaylistDisplay(); }
                 catch (Exception ex) { Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh playlist display: {ex.Message}"); }
@@ -885,7 +929,7 @@ namespace ChillPatcher
                 try { MusicTagListUI_Patches.RefreshCustomTagButtons(); }
                 catch (Exception ex) { Plugin.Log?.LogWarning($"[OmniMix] Failed to refresh custom tag buttons: {ex.Message}"); }
 
-                return allGameAudios.Count;
+                return totalSynced;
             }
             catch (Exception ex)
             {

@@ -62,7 +62,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<PauseResponse> Pause(PauseRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "pause");
+            InstanceCapabilityPolicy.RequireServerPlayback(caps, "pause");
             GetController(request.InstanceId).Pause();
             return Task.FromResult(new PauseResponse());
         }
@@ -70,7 +70,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<ResumeResponse> Resume(ResumeRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "resume");
+            InstanceCapabilityPolicy.RequireServerPlayback(caps, "resume");
             GetController(request.InstanceId).Resume();
             return Task.FromResult(new ResumeResponse());
         }
@@ -78,7 +78,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<ToggleResponse> Toggle(ToggleRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "toggle");
+            InstanceCapabilityPolicy.RequireServerPlayback(caps, "toggle");
             GetController(request.InstanceId).Toggle();
             return Task.FromResult(new ToggleResponse());
         }
@@ -110,7 +110,7 @@ namespace OmniMixPlayer.Backend.Services
         public override Task<StopResponse> Stop(StopRequest request, ServerCallContext context)
         {
             var caps = GetCapabilities(request.InstanceId);
-            InstanceCapabilityPolicy.RequireAudioPlayback(caps, "stop");
+            InstanceCapabilityPolicy.RequireServerPlayback(caps, "stop");
             GetController(request.InstanceId).Stop();
             return Task.FromResult(new StopResponse());
         }
