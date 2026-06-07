@@ -151,7 +151,6 @@ namespace OmniMixPlayer.Backend.Audio
             long targetFrame;
             lock (_lock)
             {
-                Position = position;
                 reader = _currentReader;
                 sampleRate = reader?.Info.SampleRate > 0 ? reader.Info.SampleRate : 44100;
                 targetFrame = Math.Max(0, (long)(position * sampleRate));
@@ -160,6 +159,7 @@ namespace OmniMixPlayer.Backend.Audio
                     _logger.LogWarning("Seek failed: position={Position}, frame={Frame}", position, targetFrame);
                     return;
                 }
+                Position = position;
                 OnPositionChanged?.Invoke(position);
             }
             if (reader != null)
