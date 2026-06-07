@@ -27,3 +27,8 @@ build_logs/
 # Flutter web build outputs
 **/wwwroot/
 *.pyc
+# Reference-only directories (not part of the build)
+game/
+NativePlugins/dr_libs/
+NativePlugins/fdk-aac/
+NativePlugins/minimp4/
