@@ -103,10 +103,6 @@ jobs:
           dotnet-version: |
             10.0.x
           dotnet-quality: preview
-          # 配置 GitHub Packages 私有 NuGet 源（ChillPatcher.GameRefs）
-          source-url: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
-        env:
-          NUGET_AUTH_TOKEN: ${{ secrets.PACKAGES_PAT }}
 
       # .NET Framework 4.7.2 — Mod (ChillPatcher) — 预装在 windows-latest
       - name: Verify .NET Framework 4.7.2
@@ -115,16 +111,15 @@ jobs:
           Write-Host "MSBuild path:"
           Resolve-Path "${env:ProgramFiles}\Microsoft Visual Studio\2022\*\MSBuild\Current\Bin\MSBuild.exe" -ErrorAction SilentlyContinue
 
-      # NuGet 私有源认证（本地开发备选，CI 中由 setup-dotnet 处理）
-      - name: Add private NuGet source (fallback)
+      # 配置私有 NuGet 源认证
+      - name: Configure private NuGet auth
         shell: pwsh
         run: |
-          dotnet nuget add source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
-            --name github-private `
+          dotnet nuget update source github-private `
             --username "${{ github.repository_owner }}" `
             --password "${{ secrets.PACKAGES_PAT }}" `
             --store-password-in-clear-text `
-            --configfile nuget.config 2>$null || echo "Source may already exist, continuing..."
+            --configfile nuget.config
 
       # Python 3.11 — 构建脚本
       - name: Setup Python
