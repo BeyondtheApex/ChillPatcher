@@ -511,7 +511,7 @@ def _build_native(proj: str) -> int:
         return run_cmd(["build.bat", "--no-pause"], cwd=src)
     else:
         info(f"  WARNING: unknown native project: {proj}")
-        return TaskStatus.FAILED
+        return 1
 
 
 def _rust_build(src: Path, dll_stem: str,
@@ -571,6 +571,7 @@ def _cmake_build(src: Path, dll_name: str,
     if code != 0:
         return code
 
+    found_any = False
     for dst in dst_paths:
         for candidate in [
             build_dir / "bin" / "Release" / dll_name,
@@ -581,10 +582,11 @@ def _cmake_build(src: Path, dll_name: str,
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(candidate, dst)
                 info(f"  copy → {dst}")
+                found_any = True
                 break
         else:
             info(f"  WARNING: {dll_name} not found in build output")
-    return 0
+    return 0 if found_any else 1
 
 
 def _get_vs_generator() -> str | None:
@@ -669,11 +671,11 @@ def _make_native_fn(proj: str):
 
 
 def _stage_omni_pcm() -> int:
+    """验证 OmniPcmShared.dll 是否已就位 (由 Native Plugins/OmniPcmShared 构建产出)。
+    DLL 已被 _cmake_build 复制到 bin/native/x64/, _assemble_mod 会从此处 glob 到 release/。"""
     src = C.ROOT / "bin" / "native" / "x64" / "OmniPcmShared.dll"
     if src.exists():
-        C.OMNI_PCM_DLL.parent.mkdir(parents=True, exist_ok=True)
-        copy_file(src, C.OMNI_PCM_DLL.parent)
-        info("  OmniPcmShared.dll staged")
+        info("  OmniPcmShared.dll ready")
         return 0
     info(f"  WARNING: OmniPcmShared.dll not found at {src}")
     return 1

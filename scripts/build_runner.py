@@ -100,7 +100,8 @@ class BuildRunner:
             node.status = TaskStatus.DISABLED
         elif fail_occurred:
             node.status = TaskStatus.FAILED
-        elif all(c.status in (TaskStatus.DISABLED,) for c in node.children):
+        elif all(c.status in (TaskStatus.DISABLED, TaskStatus.SKIPPED)
+                 for c in node.children):
             node.status = TaskStatus.DISABLED
         else:
             node.status = TaskStatus.SUCCESS
