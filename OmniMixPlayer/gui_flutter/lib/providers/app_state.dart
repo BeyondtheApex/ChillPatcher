@@ -261,6 +261,7 @@ class AppState extends ChangeNotifier {
   Future<void> setGamePath(String p, {String gameId = 'chill_with_you'}) =>
       _game.setGamePath(p, gameId: gameId);
   void refreshModStatuses([String? gid]) => _game.refreshModStatuses(gid);
+  Future<void> checkModUpdates([String? gid]) => _game.checkModUpdates(gid);
   void refreshInstances() => _game.refreshInstances();
   Future<void> refreshBackendArchives() => _game.refreshBackendArchives();
   Future<bool> deleteInstance(String id) => _game.deleteInstance(id);

@@ -137,6 +137,7 @@ class GameIntegrationManager extends ChangeNotifier {
       }
       refreshModStatuses();
       refreshInstances();
+      await checkModUpdates(); // compare installed vs bundled versions
     } catch (e) {}
   }
 
@@ -191,6 +192,31 @@ class GameIntegrationManager extends ChangeNotifier {
                 mod.folderName,
                 pluginTargetDir: mod.pluginTargetDir,
               );
+      }
+    }
+    notifyListeners();
+  }
+
+  /// After refreshModStatuses, check if any installed mod needs an update
+  /// by comparing the .managed marker version against the bundled version.
+  Future<void> checkModUpdates([String? gameId]) async {
+    final games = gameId == null
+        ? gameCatalog
+        : gameCatalog.where((g) => g.id == gameId);
+    for (final game in games) {
+      final path = gamePathFor(game.id);
+      if (path.isEmpty) continue;
+      for (final mod in modsForGame(game)) {
+        final key = _modStatusKey(game.id, mod.id);
+        if (_modStatuses[key] == ModStatus.installed) {
+          final needs = await ModDeploymentService.needsVersionUpdate(
+            path,
+            mod.id,
+          );
+          if (needs) {
+            _modStatuses[key] = ModStatus.needsUpdate;
+          }
+        }
       }
     }
     notifyListeners();
@@ -395,6 +421,7 @@ class GameIntegrationManager extends ChangeNotifier {
 
       refreshModStatuses(gameId);
       refreshInstances();
+      await checkModUpdates(gameId); // verify installed version matches bundled
       addDeploymentLog('Calling refreshPlayback...');
       await _refreshPlayback();
       addDeploymentLog('refreshPlayback completed');

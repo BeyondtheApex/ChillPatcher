@@ -13,7 +13,8 @@ class Fh6OmniBridgeMod extends ModDeclaration {
     : super(
         id: 'fh6_omni_bridge',
         name: 'Forza Horizon 6 Omni Bridge',
-        version: '1.0.0',
+        version:
+            '2.0.0', // fallback; authoritative version in assets/version_info.json → mod_versions.fh6_omni_bridge
         archiveName: 'FH6OmniBridge.zip',
         folderName: 'fh6-omnimix',
         rootFilesToLink: const ['version.dll', 'OmniPcmShared.dll'],

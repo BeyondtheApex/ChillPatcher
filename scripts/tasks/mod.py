@@ -7,7 +7,7 @@ import shutil
 from build_config import (
     MOD_DIR, MOD_RELEASE, MOD_SDK_PROJ, MOD_MAIN_PROJ, MOD_ONEJS_PROJ,
     MOD_UI_DIRS, MOD_RELEASE_ZIP, MOD_FLUTTER_ASSET,
-    NATIVE_PLUGINS_DIR, OMNI_PCM_DLL, ROOT,
+    NATIVE_PLUGINS_DIR, OMNI_PCM_DLL, ROOT, FH6_DIR,
 )
 from .base import TaskNode, TaskStatus
 from .common import (
@@ -238,9 +238,10 @@ def _package() -> bool:
 
 def _write_version() -> bool:
     from build_config import PLAYER_FLUTTER_DIR
+    fh6_file = FH6_DIR / "src" / "bridge.cpp" if FH6_DIR else (MOD_DIR / "MyPluginInfo.cs")
     data = read_version_info(
-        MOD_DIR, PLAYER_FLUTTER_DIR, MOD_DIR,
-        MOD_DIR / "MyPluginInfo.cs",
+        MOD_DIR, PLAYER_FLUTTER_DIR, FH6_DIR,
+        fh6_file,
     )
     asset_ver = MOD_FLUTTER_ASSET.parent / "version_info.json"
     write_version_json(data, asset_ver)

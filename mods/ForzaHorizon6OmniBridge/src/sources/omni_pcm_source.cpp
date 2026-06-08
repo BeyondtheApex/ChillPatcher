@@ -343,19 +343,25 @@ void OmniPcmSource::on_sdk_event(const OmniPcmEventInfo* evt, void* user_data) {
 }
 
 void OmniPcmSource::handle_sdk_event(const OmniPcmEventInfo& evt) {
-    // Update cached TrackInfo from backend status events
+    // Update cached TrackInfo from backend WS events.
+    // Event types match what the backend ApiServer broadcasts:
+    //   "track.changed"  → OnTrackChanged
+    //   "state.changed"  → OnStateChanged
     std::string type{evt.type};
-    if (type == "playback_status" || type == "track_change" || type == "play_state") {
+    if (type == "track.changed" || type == "state.changed") {
         TrackInfo t{};
         if (evt.title[0])   t.title       = evt.title;
-        else                t.title       = "OmniMixPlayer";
+        else                t.title       = track_.title.empty() ? "OmniMixPlayer" : track_.title;
         if (evt.artist[0])  t.artist      = evt.artist;
-        else                t.artist      = playing_ ? "Playing" : "Idle";
-        t.album      = evt.album_id;
-        t.duration_ms = static_cast<uint64_t>(std::max(0.0f, evt.duration) * 1000.0f);
+        else                t.artist      = track_.artist.empty() ? (playing_ ? "Playing" : "Idle") : track_.artist;
+        t.album      = evt.album_id[0] ? evt.album_id : track_.album;
+        t.duration_ms = evt.duration > 0
+            ? static_cast<uint64_t>(std::max(0.0f, evt.duration) * 1000.0f)
+            : track_.duration_ms;
         t.position_ms = static_cast<uint64_t>(std::max(0.0f, evt.position) * 1000.0f);
         track_ = std::move(t);
-        playing_ = (evt.state == OMNI_PCM_STATE_PLAYING);
+        // Backend sends state=1 for playing, 2 for paused, 0 for stopped
+        playing_ = (evt.state == 1);
     }
 }
 
@@ -505,18 +511,20 @@ void OmniPcmSource::heartbeat_if_due() {
         return;
     }
     // Fallback: poll status every heartbeat tick as a safety net in case
-    // SDK events are delayed or dropped. Only backfills metadata; once
-    // events have populated track_ the poll becomes a no-op for title/artist.
+    // SDK events are delayed or dropped. Updates track_ when the backend
+    // reports a different track uuid than what we currently have cached.
     OmniPcmPlaybackStatusInfo status{};
     if (api_.client_status(client_, instance_id_.c_str(), &status) == OMNI_PCM_OK) {
         playing_ = status.is_playing != 0;
-        if (track_.title.empty() && status.title[0]) {
+        std::string backend_uuid{status.track_uuid};
+        if (!backend_uuid.empty() && backend_uuid != current_uuid_) {
             TrackInfo t{};
-            t.title       = status.title;
-            t.artist      = status.artist;
+            t.title       = status.title[0] ? status.title : "OmniMixPlayer";
+            t.artist      = status.artist[0] ? status.artist : "Idle";
             t.duration_ms = static_cast<uint64_t>(std::max(0.0f, status.duration) * 1000.0f);
             t.position_ms = static_cast<uint64_t>(std::max(0.0f, status.position) * 1000.0f);
             track_ = std::move(t);
+            current_uuid_ = backend_uuid;
         }
     }
     next_heartbeat_ = now + std::chrono::seconds(10);

@@ -613,7 +613,11 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
               l10n,
               cs,
             ),
-            versionInfo: _buildVersionInfo(mod.id, mod.version, cs),
+            versionInfo: _buildVersionInfo(
+              mod.id,
+              ModDeploymentService.getBundledVersionSync(mod.id) ?? mod.version,
+              cs,
+            ),
             actions: _buildModActions(st, l10n, cs, game, mod),
             onSettingsPressed: mod.hasSettings
                 ? () => _showModSettings(context, mod, game.id)
@@ -894,6 +898,27 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
             ),
           ],
         );
+      case ModStatus.needsUpdate:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _iconAction(
+              icon: Icons.system_update_rounded,
+              label: l10n.reinstallMod,
+              color: cs.tertiaryContainer,
+              fg: cs.onTertiaryContainer,
+              onPressed: () => _installWithArchiveChoice(game.id, mod.id),
+            ),
+            const SizedBox(width: 8),
+            _iconAction(
+              icon: Icons.delete_rounded,
+              label: l10n.uninstallMod,
+              color: cs.errorContainer,
+              fg: cs.onErrorContainer,
+              onPressed: () => st.uninstallMod(gameId: game.id, modId: mod.id),
+            ),
+          ],
+        );
     }
   }
 
@@ -1056,6 +1081,15 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
             _badge('${mod.name}: ${l10n.modInstalled}', Colors.green, cs),
           );
           break;
+        case ModStatus.needsUpdate:
+          list.add(
+            _badge(
+              '${mod.name}: ${l10n.modInstalled} — Update available',
+              Colors.orange,
+              cs,
+            ),
+          );
+          break;
       }
       list.add(const SizedBox(width: 8));
     }
@@ -1094,6 +1128,8 @@ class _GameIntegrationPageState extends State<GameIntegrationPage> {
         return _badge(l10n.statusNotInstalled, Colors.grey, cs);
       case ModStatus.installed:
         return _badge(l10n.modInstalled, Colors.green, cs);
+      case ModStatus.needsUpdate:
+        return _badge(l10n.modInstalled, Colors.orange, cs);
     }
   }
 

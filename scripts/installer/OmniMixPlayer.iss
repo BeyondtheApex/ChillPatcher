@@ -4,7 +4,7 @@
 ; =============================================================================
 
 #define MyAppName "OmniMixPlayer"
-#define MyAppVersion "3.0.1"
+#define MyAppVersion "3.0.2"
 #define MyAppPublisher "Kevin-2483"
 #define MyAppURL "https://github.com/Kevin-2483/Chill"
 #define MyAppExeName "omnimix_gui.exe"
@@ -30,9 +30,10 @@ DisableProgramGroupPage=yes
 ;PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=G:/Csharp/Chill/release
-OutputBaseFilename=OmniMixPlayer_V3.0.1_installer
-Compression=lzma
+OutputBaseFilename=OmniMixPlayer_V3.0.2_installer
+Compression=lzma2/ultra64
 SolidCompression=yes
+LZMAUseSeparateProcess=yes
 WizardStyle=modern
 ; 最小 Windows 版本: Windows 10 (10.0.10240) 或 Windows 11 on Arm
 MinVersion=10.0.10240

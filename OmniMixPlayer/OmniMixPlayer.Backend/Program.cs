@@ -362,37 +362,74 @@ namespace OmniMixPlayer.Backend
 
     /// <summary>
     /// Minimal file logger that writes to a text file.
-    /// Used to capture backend logs for debugging when running headless.
+    /// Rotates when file exceeds 10 MB, keeping one old copy.
     /// </summary>
     public class SimpleFileLoggerProvider : ILoggerProvider
     {
         private readonly string _filePath;
-        private readonly StreamWriter _writer;
+        private readonly long _maxSizeBytes = 10 * 1024 * 1024; // 10 MB
+        private StreamWriter _writer;
         private readonly object _lock = new();
 
         public SimpleFileLoggerProvider(string filePath)
         {
             _filePath = filePath;
-            var stream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-            _writer = new StreamWriter(stream) { AutoFlush = true };
+            _writer = OpenWriter();
+        }
+
+        private StreamWriter OpenWriter()
+        {
+            // Rotate if file exceeds max size
+            try
+            {
+                var info = new FileInfo(_filePath);
+                if (info.Exists && info.Length > _maxSizeBytes)
+                {
+                    var oldPath = _filePath + ".old";
+                    if (File.Exists(oldPath))
+                        File.Delete(oldPath);
+                    File.Move(_filePath, oldPath);
+                }
+            }
+            catch { /* best effort */ }
+
+            _writer?.Dispose();
+            var stream = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            return new StreamWriter(stream) { AutoFlush = true };
         }
 
         public ILogger CreateLogger(string categoryName)
-            => new SimpleFileLogger(categoryName, _writer, _lock);
+            => new SimpleFileLogger(categoryName, this, _lock);
 
         public void Dispose() => _writer?.Dispose();
+
+        // Called by SimpleFileLogger to write a line (with auto-rotate on overflow)
+        internal void WriteLine(string line)
+        {
+            lock (_lock)
+            {
+                try
+                {
+                    _writer.WriteLine(line);
+                    // Check if we just crossed the threshold
+                    if (_writer.BaseStream.Length > _maxSizeBytes)
+                        _writer = OpenWriter();
+                }
+                catch { /* best effort */ }
+            }
+        }
     }
 
     public class SimpleFileLogger : ILogger
     {
         private readonly string _category;
-        private readonly StreamWriter _writer;
+        private readonly SimpleFileLoggerProvider _provider;
         private readonly object _lock;
 
-        public SimpleFileLogger(string category, StreamWriter writer, object @lock)
+        public SimpleFileLogger(string category, SimpleFileLoggerProvider provider, object @lock)
         {
             _category = category;
-            _writer = writer;
+            _provider = provider;
             _lock = @lock;
         }
 
@@ -403,13 +440,10 @@ namespace OmniMixPlayer.Backend
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
             Exception exception, Func<TState, Exception, string> formatter)
         {
-            lock (_lock)
-            {
-                var msg = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{logLevel}] {_category}: {formatter(state, exception)}";
-                if (exception != null)
-                    msg += $"\n{exception}";
-                _writer.WriteLine(msg);
-            }
+            var msg = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{logLevel}] {_category}: {formatter(state, exception)}";
+            if (exception != null)
+                msg += $"\n{exception}";
+            _provider.WriteLine(msg);
         }
     }
 }

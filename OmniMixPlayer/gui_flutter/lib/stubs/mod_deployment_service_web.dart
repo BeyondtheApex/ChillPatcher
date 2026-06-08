@@ -25,8 +25,7 @@ class ModDeploymentService {
     String gameDir,
     String folderName, {
     String pluginTargetDir = 'BepInEx/plugins',
-  }) =>
-      ModStatus.notInstalled;
+  }) => ModStatus.notInstalled;
 
   static ModStatus checkRootModStatus(String gameDir, ModDeclaration mod) =>
       ModStatus.notInstalled;
@@ -69,6 +68,21 @@ class ModDeploymentService {
   static String? getInstalledVersion(String id) => null;
 
   static void recordInstalledVersion(String id, String version) {}
+
+  static void writeManagedMarker(
+    String gameDir,
+    String modId,
+    String version,
+  ) {}
+
+  static String? readManagedMarker(String gameDir, String modId) => null;
+
+  static void removeManagedMarker(String gameDir, String modId) {}
+
+  static Future<String?> getBundledVersion(String modId) async => null;
+  static String? getBundledVersionSync(String modId) => null;
+  static Future<bool> needsVersionUpdate(String gameDir, String modId) async =>
+      false;
 
   static Future<PrepResult> prepareInstallStaging(
     String gameDir,

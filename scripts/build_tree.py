@@ -21,6 +21,24 @@ from tasks.common import (
 import build_config as C
 
 
+# ── 清理 gui_flutter/assets/ 中的生成文件，避免跨构建残留 ──
+
+_GENERATED_ASSETS = ["ChillPatcher.zip", "FH6OmniBridge.zip", "version_info.json"]
+
+
+def _clean_generated_assets() -> bool:
+    """删除 gui_flutter/assets/ 中由构建脚本生成的文件。"""
+    assets_dir = C.PLAYER_FLUTTER_DIR / "assets"
+    if not assets_dir.exists():
+        return True
+    for name in _GENERATED_ASSETS:
+        p = assets_dir / name
+        if p.exists():
+            p.unlink()
+            info(f"  Removed stale asset: {name}")
+    return True
+
+
 # ════════════════════════════════════════════
 #  构建树入口: 根据模式返回 TaskNode 根列表
 # ════════════════════════════════════════════
@@ -75,6 +93,11 @@ def _backend(full: bool, skip_flutter: bool) -> TaskNode:
                       run_fn=lambda: TaskStatus.DISABLED)
     else:
         fw = g.create_group("Flutter Web → wwwroot/", "WASM 编译后放入 Backend wwwroot")
+        fw.create_leaf("clean assets", "清理 gui_flutter/assets/ 中的生成文件",
+                       run_fn=_clean_generated_assets)
+        fw.create_leaf("flutter clean", "清除 Flutter 构建缓存",
+                       run_fn=lambda: run_cmd(["flutter", "clean"],
+                                              cwd=C.PLAYER_FLUTTER_DIR))
         fw.create_leaf("pub get", "",
                        run_fn=lambda: run_cmd(["flutter", "pub", "get"],
                                               cwd=C.PLAYER_FLUTTER_DIR))
@@ -152,6 +175,13 @@ def _flutter_gui(full: bool, skip_flutter: bool) -> TaskNode:
         g.children.append(_chillpatcher_asset(full))
         g.children.append(_fh6_asset(full))
         return g
+
+    g.create_leaf("clean assets", "清理 gui_flutter/assets/ 中的生成文件",
+                  run_fn=_clean_generated_assets)
+
+    g.create_leaf("flutter clean", "清除 Flutter 构建缓存",
+                  run_fn=lambda: run_cmd(["flutter", "clean"],
+                                         cwd=C.PLAYER_FLUTTER_DIR))
 
     g.create_leaf("gen-l10n", "",
                   run_fn=lambda: run_cmd(["flutter", "gen-l10n"],

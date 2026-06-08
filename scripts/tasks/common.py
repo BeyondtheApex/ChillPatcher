@@ -281,6 +281,10 @@ def read_version_info(mod_dir: Path, flutter_dir: Path,
         "flutter_version": flutter_ver,
         "mod_version": cs_ver,
         "fh6_bridge_version": fh6_ver,
+        "mod_versions": {
+            "chill_patcher": cs_ver,
+            "fh6_omni_bridge": fh6_ver,
+        },
         "build_time": datetime.now().isoformat(),
     }
 

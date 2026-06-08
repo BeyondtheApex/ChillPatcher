@@ -30,8 +30,7 @@ class ModDeploymentService {
         dialogTitle: 'Select Game Directory',
       );
       return path;
-    } catch (e) {
-      }
+    } catch (e) {}
     return null;
   }
 
@@ -75,8 +74,12 @@ class ModDeploymentService {
         : framework.dirsToLink;
 
     final exists =
-        statusFiles.any((relativePath) => File('$gameDir/$relativePath').existsSync()) ||
-        statusDirs.any((relativePath) => Directory('$gameDir/$relativePath').existsSync());
+        statusFiles.any(
+          (relativePath) => File('$gameDir/$relativePath').existsSync(),
+        ) ||
+        statusDirs.any(
+          (relativePath) => Directory('$gameDir/$relativePath').existsSync(),
+        );
     if (!exists) return BepInExStatus.notInstalled;
 
     if (framework.managedMarkerFile.isEmpty) return BepInExStatus.unmanaged;
@@ -119,8 +122,6 @@ class ModDeploymentService {
     return ModStatus.installed;
   }
 
-
-
   /// Remove BepInEx files (only if managed) and clean up.
   static Future<bool> undeployBepInEx(
     String gameDir,
@@ -134,7 +135,11 @@ class ModDeploymentService {
     if (uninstallScript.existsSync()) {
       try {
         log('Starting ${framework.name} uninstallation using script...');
-        final success = await runUninstallScript(uninstallScriptPath, managerFwDir, log);
+        final success = await runUninstallScript(
+          uninstallScriptPath,
+          managerFwDir,
+          log,
+        );
         if (!success) {
           log('WARNING: Uninstallation script returned non-zero exit code.');
         }
@@ -143,7 +148,9 @@ class ModDeploymentService {
           final d = Directory(managerFwDir);
           if (d.existsSync()) d.deleteSync(recursive: true);
         } catch (e) {
-          log('Note: could not delete framework directory from manager cache ($e)');
+          log(
+            'Note: could not delete framework directory from manager cache ($e)',
+          );
         }
 
         removeVersionRecord(framework.id);
@@ -216,7 +223,11 @@ class ModDeploymentService {
     if (uninstallScript.existsSync()) {
       try {
         log('Starting ${mod.name} uninstallation using script...');
-        final success = await runUninstallScript(uninstallScriptPath, managerModsDir, log);
+        final success = await runUninstallScript(
+          uninstallScriptPath,
+          managerModsDir,
+          log,
+        );
         if (!success) {
           log('WARNING: Uninstallation script returned non-zero exit code.');
         }
@@ -337,23 +348,119 @@ class ModDeploymentService {
     _writeVersions(v);
   }
 
-  static String? _latestModVersion;
-
-  static Future<void> loadLatestModVersion() async {
-    _latestModVersion = await getLatestModVersion();
-  }
-
-  static String get latestModVersion => _latestModVersion ?? '1.0.0';
-
   /// Get installed version for a framework/mod, or null if not installed.
   static String? getInstalledVersion(String id) {
     return _readVersions()[id];
   }
 
+  // ── .managed marker (per-mod, per-game-dir) ──
+
+  /// Path to the .managed marker for a root mod.
+  static String _managedMarkerPath(String gameDir, String modId) =>
+      '$gameDir/.omnimix_mods/$modId.managed';
+
+  /// Write the installed version into the .managed marker file.
+  static void writeManagedMarker(String gameDir, String modId, String version) {
+    try {
+      final dir = Directory('$gameDir/.omnimix_mods');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      File(_managedMarkerPath(gameDir, modId)).writeAsStringSync(version);
+    } catch (_) {}
+  }
+
+  /// Read the installed version from a .managed marker file.
+  static String? readManagedMarker(String gameDir, String modId) {
+    try {
+      final f = File(_managedMarkerPath(gameDir, modId));
+      if (f.existsSync()) return f.readAsStringSync().trim();
+    } catch (_) {}
+    return null;
+  }
+
+  /// Remove the .managed marker for a root mod.
+  static void removeManagedMarker(String gameDir, String modId) {
+    try {
+      final f = File(_managedMarkerPath(gameDir, modId));
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
+  }
+
+  // ── Bundled version (from version_info.json) ──
+
+  static Map<String, String>? _cachedModVersions;
+  static Map<String, String>? _cachedModVersionsFromAsset;
+
+  /// Load bundled per-mod versions from version_info.json.
+  /// Caches after first read.
+  static Future<Map<String, String>> _loadBundledModVersions() async {
+    if (_cachedModVersions != null) return _cachedModVersions!;
+    if (_cachedModVersionsFromAsset != null)
+      return _cachedModVersionsFromAsset!;
+
+    // Try filesystem first (playerbuild/), then fall back to Flutter asset
+    try {
+      final exeDir = Directory(Platform.resolvedExecutable).parent.path;
+      final verFile = File('$exeDir/version_info.json');
+      if (verFile.existsSync()) {
+        final data = jsonDecode(verFile.readAsStringSync());
+        if (data is Map && data['mod_versions'] is Map) {
+          _cachedModVersions = Map<String, String>.from(
+            data['mod_versions'] as Map,
+          );
+          return _cachedModVersions!;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final raw = await rootBundle.loadString('assets/version_info.json');
+      final parsed = jsonDecode(raw);
+      if (parsed is Map && parsed['mod_versions'] is Map) {
+        _cachedModVersionsFromAsset = Map<String, String>.from(
+          parsed['mod_versions'] as Map,
+        );
+        return _cachedModVersionsFromAsset!;
+      }
+    } catch (_) {}
+
+    return {};
+  }
+
+  /// Get the bundled (ship-with-app) version for a mod id.
+  static Future<String?> getBundledVersion(String modId) async {
+    final versions = await _loadBundledModVersions();
+    return versions[modId];
+  }
+
+  /// Check if an installed mod's version is older than what ships with the app.
+  static Future<bool> needsVersionUpdate(String gameDir, String modId) async {
+    final bundled = await getBundledVersion(modId);
+    if (bundled == null || bundled.isEmpty) return false;
+    final installed =
+        readManagedMarker(gameDir, modId) ?? getInstalledVersion(modId);
+    if (installed == null || installed.isEmpty) return false;
+    return installed != bundled;
+  }
+
+  // ── Legacy (kept for compatibility) ──
+
+  static String? _latestModVersion;
+
+  static Future<void> loadLatestModVersion() async {
+    await _loadBundledModVersions(); // warm the per-mod version cache
+    _latestModVersion = await getLatestModVersion();
+  }
+
+  static String get latestModVersion => _latestModVersion ?? '1.0.0';
+
+  /// Synchronous accessor for bundled mod version (cache must be warm).
+  static String? getBundledVersionSync(String modId) {
+    return _cachedModVersions?[modId] ?? _cachedModVersionsFromAsset?[modId];
+  }
+
   /// Get the latest available version from the app's bundled version_info.json.
   /// Looks in the exe directory first, then falls back to assets.
   static Future<String?> getLatestModVersion() async {
-    // Try reading from file system (playerbuild/)
     try {
       final exeDir = Directory(Platform.resolvedExecutable).parent.path;
       final verFile = File('$exeDir/version_info.json');
@@ -364,7 +471,6 @@ class ModDeploymentService {
         }
       }
     } catch (_) {}
-    // Fallback: try bundled asset
     try {
       final data = await rootBundle.loadString('assets/version_info.json');
       final parsed = jsonDecode(data);
@@ -480,8 +586,6 @@ class ModDeploymentService {
     }
   }
 
-
-
   // ═══════════════════════════════════════════════════════════
   //  Instance Management (UUID-based, with archive)
   // ═══════════════════════════════════════════════════════════
@@ -501,8 +605,7 @@ class ModDeploymentService {
   static void _writeInstanceId(String gameDir, String instanceId) {
     try {
       File(_instanceIdPath(gameDir)).writeAsStringSync(instanceId);
-    } catch (e) {
-      }
+    } catch (e) {}
   }
 
   static void _deleteInstanceId(String gameDir) {
@@ -675,7 +778,9 @@ class ModDeploymentService {
     void Function(String) log,
   ) async {
     log('Preparing temporary directory for staging...');
-    final tempDir = Directory.systemTemp.createTempSync('omnimix_mod_install_').path;
+    final tempDir = Directory.systemTemp
+        .createTempSync('omnimix_mod_install_')
+        .path;
     log('Staging path: $tempDir');
 
     // 1. Call mod preparation
@@ -684,14 +789,15 @@ class ModDeploymentService {
     // 2. Prepare backups: Copy files from game or from manager backups to tempDir with .vVERSION.bak suffix
     final backupFiles = mod.getFilesToBackup(gameDir);
     final version = mod.getGameVersion(gameDir);
-    
+
     for (final relPath in backupFiles) {
-      final managerBackupPath = '$managerDir/backups/${mod.id}/v$version/$relPath';
+      final managerBackupPath =
+          '$managerDir/backups/${mod.id}/v$version/$relPath';
       final tempBackupPath = '$tempDir/$relPath.v$version.bak';
-      
+
       final managerBackupFile = File(managerBackupPath);
       final gameFile = File('$gameDir/$relPath');
-      
+
       if (managerBackupFile.existsSync()) {
         log('Staging backup from manager cache: $relPath.v$version.bak');
         File(tempBackupPath).parent.createSync(recursive: true);
@@ -730,12 +836,12 @@ class ModDeploymentService {
 
     final tempDirObj = Directory(tempDir);
     final allEntities = tempDirObj.listSync(recursive: true);
-    
+
     for (final entity in allEntities) {
       final relPath = entity.path
           .substring(tempDir.length + 1)
           .replaceAll('\\', '/');
-      
+
       final isDir = entity is Directory;
       isDirectoryMap[relPath] = isDir;
 
@@ -747,7 +853,10 @@ class ModDeploymentService {
       }
 
       if (relPath.endsWith(backupSuffix)) {
-        final originalRelPath = relPath.substring(0, relPath.length - backupSuffix.length);
+        final originalRelPath = relPath.substring(
+          0,
+          relPath.length - backupSuffix.length,
+        );
         backups.add(originalRelPath);
         continue;
       }
@@ -844,17 +953,26 @@ class ModDeploymentService {
       installScriptFile.writeAsStringSync(installScriptContent);
       log('Generated installation script: ${installScriptFile.path}');
 
-      final uninstallScriptFile = File('$tempDir/uninstall${batchGen.extension}');
+      final uninstallScriptFile = File(
+        '$tempDir/uninstall${batchGen.extension}',
+      );
       uninstallScriptFile.writeAsStringSync(uninstallScriptContent);
       log('Generated uninstallation script: ${uninstallScriptFile.path}');
 
       // 4. Save uninstall script to manager folder for future use
-      final persistentUninstallFile = File('$managerModsDir/uninstall${batchGen.extension}');
+      final persistentUninstallFile = File(
+        '$managerModsDir/uninstall${batchGen.extension}',
+      );
       persistentUninstallFile.parent.createSync(recursive: true);
       persistentUninstallFile.writeAsStringSync(uninstallScriptContent);
 
-      // 5. Save instance info
-      recordInstalledVersion(mod.id, mod.version);
+      // 5. Save instance info — use bundled version from version_info.json
+      final bundledVer = await getBundledVersion(mod.id);
+      final modVersion = bundledVer ?? mod.version;
+      recordInstalledVersion(mod.id, modVersion);
+      if (mod.installsToGameRoot) {
+        writeManagedMarker(gameDir, mod.id, modVersion);
+      }
       var instanceId = _readInstanceId(gameDir);
       if (instanceId == null || instanceId.isEmpty) {
         _cleanupStaleInstances(gameDir);
@@ -887,7 +1005,9 @@ class ModDeploymentService {
     String tempDir,
     void Function(String) log,
   ) async {
-    log('Requesting administrator permissions to execute installation script...');
+    log(
+      'Requesting administrator permissions to execute installation script...',
+    );
     final scriptFile = File('$tempDir/install.bat');
     if (!scriptFile.existsSync()) {
       log('ERROR: Installation script not found at ${scriptFile.path}');
@@ -939,12 +1059,14 @@ class ModDeploymentService {
           "-ArgumentList '/c','\"$scriptPath\"' "
           "-Verb RunAs -Wait -WindowStyle Hidden -PassThru; exit \$p.ExitCode";
 
-      final tempPsFile = File('${Directory.systemTemp.path}/run_uninstall_${DateTime.now().millisecondsSinceEpoch}.ps1');
+      final tempPsFile = File(
+        '${Directory.systemTemp.path}/run_uninstall_${DateTime.now().millisecondsSinceEpoch}.ps1',
+      );
       tempPsFile.writeAsStringSync(psScript);
 
       var running = true;
       var lastReadPos = 0;
-      
+
       void readLog() {
         if (logFile.existsSync()) {
           try {
@@ -995,7 +1117,9 @@ class ModDeploymentService {
     void Function(String) log,
   ) async {
     log('Preparing temporary directory for framework staging...');
-    final tempDir = Directory.systemTemp.createTempSync('omnimix_fw_install_').path;
+    final tempDir = Directory.systemTemp
+        .createTempSync('omnimix_fw_install_')
+        .path;
     log('Staging path: $tempDir');
 
     // 1. Call framework preparation
@@ -1004,14 +1128,15 @@ class ModDeploymentService {
     // 2. Prepare backups
     final backupFiles = framework.getFilesToBackup(gameDir);
     final version = framework.getGameVersion(gameDir);
-    
+
     for (final relPath in backupFiles) {
-      final managerBackupPath = '$managerDir/backups/${framework.id}/v$version/$relPath';
+      final managerBackupPath =
+          '$managerDir/backups/${framework.id}/v$version/$relPath';
       final tempBackupPath = '$tempDir/$relPath.v$version.bak';
-      
+
       final managerBackupFile = File(managerBackupPath);
       final gameFile = File('$gameDir/$relPath');
-      
+
       if (managerBackupFile.existsSync()) {
         log('Staging backup from manager cache: $relPath.v$version.bak');
         File(tempBackupPath).parent.createSync(recursive: true);
@@ -1050,12 +1175,12 @@ class ModDeploymentService {
 
     final tempDirObj = Directory(tempDir);
     final allEntities = tempDirObj.listSync(recursive: true);
-    
+
     for (final entity in allEntities) {
       final relPath = entity.path
           .substring(tempDir.length + 1)
           .replaceAll('\\', '/');
-      
+
       final isDir = entity is Directory;
       isDirectoryMap[relPath] = isDir;
 
@@ -1067,7 +1192,10 @@ class ModDeploymentService {
       }
 
       if (relPath.endsWith(backupSuffix)) {
-        final originalRelPath = relPath.substring(0, relPath.length - backupSuffix.length);
+        final originalRelPath = relPath.substring(
+          0,
+          relPath.length - backupSuffix.length,
+        );
         backups.add(originalRelPath);
         continue;
       }
@@ -1162,12 +1290,16 @@ class ModDeploymentService {
       installScriptFile.writeAsStringSync(installScriptContent);
       log('Generated installation script: ${installScriptFile.path}');
 
-      final uninstallScriptFile = File('$tempDir/uninstall${batchGen.extension}');
+      final uninstallScriptFile = File(
+        '$tempDir/uninstall${batchGen.extension}',
+      );
       uninstallScriptFile.writeAsStringSync(uninstallScriptContent);
       log('Generated uninstallation script: ${uninstallScriptFile.path}');
 
       // 4. Save uninstall script to manager folder for future use
-      final persistentUninstallFile = File('$managerFwDir/uninstall${batchGen.extension}');
+      final persistentUninstallFile = File(
+        '$managerFwDir/uninstall${batchGen.extension}',
+      );
       persistentUninstallFile.parent.createSync(recursive: true);
       persistentUninstallFile.writeAsStringSync(uninstallScriptContent);
 
