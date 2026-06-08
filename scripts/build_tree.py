@@ -582,8 +582,11 @@ def _cmake_build(src: Path, dll_name: str,
         ]:
             if candidate.exists():
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(candidate, dst)
-                info(f"  copy → {dst}")
+                if candidate.resolve() == dst.resolve():
+                    info(f"  skip (same file): {dst}")
+                else:
+                    shutil.copy2(candidate, dst)
+                    info(f"  copy → {dst}")
                 found_any = True
                 break
         else:
