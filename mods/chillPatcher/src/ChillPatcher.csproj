@@ -111,7 +111,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.*" PrivateAssets="all" />
     <!-- 游戏/Unity 引用 DLL（私有 NuGet 包，CI 使用） -->
-    <PackageReference Include="ChillPatcher.GameRefs" Version="1.0.0"
+    <PackageReference Include="ChillPatcher.GameRefs" Version="*"
                       Condition="'$(CHILL_USE_PRIVATE_PACKAGE)' == 'true'" />
   </ItemGroup>
 
