@@ -1,0 +1,148 @@
+name: AI Release
+
+# 并发控制：同一分支只保留最新
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: "版本类型"
+        required: true
+        type: choice
+        default: "patch"
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  # ═══════════════════════════════════════════
+  #  创建 Release（AI 生成 changelog + tag）
+  # ═══════════════════════════════════════════
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.get-tag.outputs.tag }}
+      created: ${{ steps.get-tag.outputs.created }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 记录 release-helper 运行前的 tag
+      - name: Capture previous tag
+        id: prev-tag
+        run: |
+          git fetch --tags
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+          echo "prev=$PREV" >> $GITHUB_OUTPUT
+          echo "📌 Previous tag: $PREV"
+
+      - name: AI Release
+        uses: zxcloli666/release-helper@main
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_BASE_URL: "https://api.deepseek.com/chat/completions"
+          OPENAI_API_MODEL: "deepseek-v4-flash"
+          LANGUAGE: "zh"
+          VERSION_TYPE: ${{ github.event.inputs.version_type }}
+
+      # 对比前后 tag，判断是否真的创建了新 release
+      - name: Get release tag
+        id: get-tag
+        run: |
+          git fetch --tags
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          if [ "$TAG" != "none" ] && [ "$TAG" != "${{ steps.prev-tag.outputs.prev }}" ]; then
+            echo "created=true" >> $GITHUB_OUTPUT
+            echo "✅ New release created: $TAG"
+          else
+            echo "created=false" >> $GITHUB_OUTPUT
+            echo "⏭️ No new release (commit 不含 !release: 标记)"
+          fi
+
+  # ═══════════════════════════════════════════
+  #  等待构建 → 下载产物 → 附加到 Release
+  # ═══════════════════════════════════════════
+  attach-assets:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120 # 等构建最多 2 小时
+    steps:
+      # ── 等待 Build 工作流完成（仅 push 触发时需要） ──
+      # push: 等待同一次 commit 的构建完成
+      # workflow_dispatch: 跳过等待，直接拿最新的成功构建产物
+      - name: Wait for Build workflow
+        if: github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const maxWait = 110 * 60;
+            const pollInterval = 30;
+            let waited = 0;
+
+            while (waited < maxWait) {
+              const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'build.yml',
+                head_sha: context.sha,
+                per_page: 1,
+              });
+
+              if (runs.workflow_runs.length > 0) {
+                const run = runs.workflow_runs[0];
+                console.log(`Build status: ${run.status} / ${run.conclusion}`);
+                if (run.status === 'completed') {
+                  if (run.conclusion === 'success') {
+                    console.log('✅ Build succeeded!');
+                    return;
+                  }
+                  throw new Error(`Build failed: ${run.conclusion}`);
+                }
+              } else {
+                console.log('⏳ Build workflow not yet started...');
+              }
+
+              await new Promise(r => setTimeout(r, pollInterval * 1000));
+              waited += pollInterval;
+            }
+            throw new Error('Timed out waiting for build');
+
+      # ── 下载构建产物（同 commit 的构建结果） ──
+      - name: Download installer
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: build.yml
+          workflow_conclusion: success
+          name: installer
+          path: assets/
+
+      - name: Download playerbuild
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: build.yml
+          workflow_conclusion: success
+          name: playerbuild
+          path: assets/playerbuild/
+
+      # ── 附加产物到 Release ──
+      - name: Upload assets to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release.outputs.tag_name }}
+          files: |
+            assets/**/*
