@@ -577,6 +577,8 @@ def _cmake_build(src: Path, dll_name: str,
             build_dir / "bin" / "Release" / dll_name,
             build_dir / "Release" / dll_name,
             build_dir / dll_name,
+            src / "bin" / dll_name,          # 有些 CMake 项目输出到 src/bin/
+            src / "bin" / "Release" / dll_name,
         ]:
             if candidate.exists():
                 dst.parent.mkdir(parents=True, exist_ok=True)
