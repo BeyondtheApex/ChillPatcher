@@ -50,6 +50,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 english.CleanupPageTitle=Optional cleanup
 english.CleanupPageDescription=Choose data left by previous OmniMixPlayer installations
 english.CleanupPageSubCaption=All options are disabled by default. Only select data you explicitly want to remove.
+english.OldInstallDirPageTitle=Previous installation directory
+english.OldInstallDirPageDescription=Select the previous OmniMixPlayer installation to remove
+english.OldInstallDirPageSubCaption=The detected directory is filled automatically. You can browse to another previous installation directory. The directory is only deleted when the deletion option is selected.
+english.OldInstallDirLabel=Previous installation directory:
 english.CleanupAudioCache=Clear rebuildable audio and image caches
 english.CleanupGuiSettings=Reset desktop GUI preferences (theme, volume, shortcuts, window position and saved game paths)
 english.CleanupPreviousInstallDir=Delete the entire previous installation directory (removes its backend configuration, library and module data)
@@ -61,9 +65,15 @@ english.CleanupPreviousInstall=Previous installer directory detected:
 english.CleanupNoOldInstall=No valid previous installation directory was detected. Directory deletion is unavailable; other cleanup options still apply to the selected installation directory and user profile data.
 english.CleanupLogPrefix=Optional cleanup:
 english.ServiceUpdateFailed=Failed to update the OmniMixPlayerBackend service path. Check the setup log or run the installer as administrator.
+english.InvalidOldInstallDir=The selected previous installation directory is not recognized as an OmniMixPlayer installation:
+english.DeleteOldInstallFailed=Failed to completely delete the previous installation directory. Close programs using this directory and try again:
 chinesesimplified.CleanupPageTitle=可选清理
 chinesesimplified.CleanupPageDescription=选择需要清理的旧版 OmniMixPlayer 数据
 chinesesimplified.CleanupPageSubCaption=所有选项默认不勾选。请只选择你明确需要删除的数据。
+chinesesimplified.OldInstallDirPageTitle=原安装目录
+chinesesimplified.OldInstallDirPageDescription=选择需要删除的旧版 OmniMixPlayer 安装目录
+chinesesimplified.OldInstallDirPageSubCaption=安装器会自动填入检测到的目录，你也可以浏览选择其他旧版安装目录。仅在勾选删除选项后才会删除该目录。
+chinesesimplified.OldInstallDirLabel=原安装目录：
 chinesesimplified.CleanupAudioCache=清理可重新生成的音频与图片缓存
 chinesesimplified.CleanupGuiSettings=重置桌面 GUI 偏好（主题、音量、快捷键、窗口位置和已保存的游戏路径）
 chinesesimplified.CleanupPreviousInstallDir=完整删除原安装目录（包括其中的后端配置、曲库和模块数据）
@@ -75,6 +85,8 @@ chinesesimplified.CleanupPreviousInstall=检测到上一次安装目录：
 chinesesimplified.CleanupNoOldInstall=未检测到有效的原安装目录，无法使用完整目录删除；其他清理选项仍会作用于当前安装目录和用户配置目录。
 chinesesimplified.CleanupLogPrefix=可选清理：
 chinesesimplified.ServiceUpdateFailed=OmniMixPlayerBackend 服务路径更新失败。请检查安装日志，或以管理员身份重新运行安装程序。
+chinesesimplified.InvalidOldInstallDir=所选目录不是可识别的 OmniMixPlayer 安装目录：
+chinesesimplified.DeleteOldInstallFailed=无法完整删除原安装目录。请关闭正在使用该目录的程序后重试：
 
 [Files]
 ; ═══ 所有可执行文件和 DLL (排除 VC 运行库，它单独处理) ═══
@@ -127,9 +139,12 @@ Filename: "sc.exe"; Parameters: "delete {#MyServiceName}"; Flags: runhidden; Run
 
 var
   CleanupPage: TInputOptionWizardPage;
+  OldInstallDirPage: TInputDirWizardPage;
   OldServiceDir: string;
   PreviousInstallDir: string;
   CleanupConfirmed: Boolean;
+  CleanupFailure: string;
+  ApprovedOldInstallDir: string;
 
 const
   ServiceRegistryPath = 'SYSTEM\CurrentControlSet\Services\{#MyServiceName}';
@@ -246,19 +261,25 @@ begin
   DeleteTreeLogged(Path);
 end;
 
-procedure DeletePreviousInstallDir(const BaseDir: string);
+function DeletePreviousInstallDir(const BaseDir: string): Boolean;
 var
   Normalized: string;
 begin
+  Result := False;
   Normalized := StripTrailingSlash(BaseDir);
-  if not IsKnownInstallDir(Normalized) then
+  if (not IsKnownInstallDir(Normalized)) and
+     (CompareText(Normalized, ApprovedOldInstallDir) <> 0) then
   begin
     if Normalized <> '' then
       Log(CustomMessage('CleanupLogPrefix') + ' refused unrecognized installation directory ' + Normalized);
     Exit;
   end;
 
-  DeleteTreeLogged(Normalized);
+  Result := DelTree(Normalized, True, True, True);
+  if Result then
+    Log(CustomMessage('CleanupLogPrefix') + ' deleted previous installation directory ' + Normalized)
+  else
+    Log(CustomMessage('CleanupLogPrefix') + ' failed to delete previous installation directory ' + Normalized);
 end;
 
 procedure CleanupInstallLocation(const BaseDir: string);
@@ -287,29 +308,38 @@ end;
 procedure RunOptionalCleanup();
 var
   CurrentInstallDir: string;
+  SelectedOldInstallDir: string;
   GuiDataDir: string;
 begin
   CurrentInstallDir := StripTrailingSlash(WizardDirValue());
+  SelectedOldInstallDir := StripTrailingSlash(OldInstallDirPage.Values[0]);
 
   if CleanupPage.Values[2] then
   begin
-    DeletePreviousInstallDir(OldServiceDir);
-    if CompareText(PreviousInstallDir, OldServiceDir) <> 0 then
-      DeletePreviousInstallDir(PreviousInstallDir);
+    if IsKnownInstallDir(SelectedOldInstallDir) then
+      ApprovedOldInstallDir := SelectedOldInstallDir;
+
+    if CompareText(SelectedOldInstallDir, ApprovedOldInstallDir) <> 0 then
+      CleanupFailure :=
+        CustomMessage('InvalidOldInstallDir') + #13#10 + SelectedOldInstallDir
+    else if not DeletePreviousInstallDir(SelectedOldInstallDir) then
+      CleanupFailure :=
+        CustomMessage('DeleteOldInstallFailed') + #13#10 + SelectedOldInstallDir;
   end;
 
-  CleanupInstallLocation(OldServiceDir);
-  if CompareText(PreviousInstallDir, OldServiceDir) <> 0 then
-    CleanupInstallLocation(PreviousInstallDir);
-  if (CompareText(CurrentInstallDir, OldServiceDir) <> 0) and
-     (CompareText(CurrentInstallDir, PreviousInstallDir) <> 0) then
-    CleanupInstallLocation(CurrentInstallDir);
+  if CleanupFailure = '' then
+  begin
+    CleanupInstallLocation(SelectedOldInstallDir);
+    if CompareText(CurrentInstallDir, SelectedOldInstallDir) <> 0 then
+      CleanupInstallLocation(CurrentInstallDir);
+  end;
 
   GuiDataDir := ExpandConstant('{userappdata}\com.omnimixplayer\omnimix_gui');
 
   if CleanupPage.Values[0] then
   begin
     DeleteTreeLogged(AddBackslash(GetEnv('TEMP')) + 'chillpatcher_audio_cache');
+    DeleteTreeLogged(ExpandConstant('{win}\SystemTemp\chillpatcher_audio_cache'));
     DeleteFileLogged(AddBackslash(GuiDataDir) + 'libCachedImageData.json');
   end;
 
@@ -317,7 +347,10 @@ begin
     DeleteFileLogged(AddBackslash(GuiDataDir) + 'shared_preferences.json');
 
   if CleanupPage.Values[3] then
+  begin
     DeleteTreeLogged(ExpandConstant('{localappdata}\go-musicfox'));
+    DeleteTreeLogged(ExpandConstant('{sys}\config\systemprofile\AppData\Local\go-musicfox'));
+  end;
 
   if CleanupPage.Values[4] then
     DeleteTreeLogged(ExpandConstant('{localappdata}\OmniMixPlayer\mod_manager'));
@@ -326,27 +359,38 @@ end;
 procedure InitializeWizard();
 var
   PageSubCaption: string;
-  CanDeletePreviousInstall: Boolean;
+  DetectedInstallDir: string;
 begin
   CleanupConfirmed := False;
+  CleanupFailure := '';
+  ApprovedOldInstallDir := '';
   OldServiceDir := ReadServiceInstallDir();
   PreviousInstallDir := ReadRegisteredInstallDir();
-  CanDeletePreviousInstall :=
-    IsKnownInstallDir(OldServiceDir) or
-    IsKnownInstallDir(PreviousInstallDir);
 
-  if CanDeletePreviousInstall then
+  if IsKnownInstallDir(PreviousInstallDir) then
+    DetectedInstallDir := PreviousInstallDir
+  else if IsKnownInstallDir(OldServiceDir) then
+    DetectedInstallDir := OldServiceDir
+  else
+    DetectedInstallDir := '';
+
+  OldInstallDirPage := CreateInputDirPage(
+    wpSelectDir,
+    CustomMessage('OldInstallDirPageTitle'),
+    CustomMessage('OldInstallDirPageDescription'),
+    CustomMessage('OldInstallDirPageSubCaption'),
+    False,
+    ''
+  );
+  OldInstallDirPage.Add(CustomMessage('OldInstallDirLabel'));
+  OldInstallDirPage.Values[0] := DetectedInstallDir;
+
+  if DetectedInstallDir <> '' then
   begin
     PageSubCaption := CustomMessage('CleanupPageSubCaption');
-    if OldServiceDir <> '' then
-      PageSubCaption :=
-        PageSubCaption + #13#10 + #13#10 +
-        CustomMessage('CleanupOldInstall') + #13#10 + OldServiceDir;
-    if (PreviousInstallDir <> '') and
-       (CompareText(PreviousInstallDir, OldServiceDir) <> 0) then
-      PageSubCaption :=
-        PageSubCaption + #13#10 + #13#10 +
-        CustomMessage('CleanupPreviousInstall') + #13#10 + PreviousInstallDir;
+    PageSubCaption :=
+      PageSubCaption + #13#10 + #13#10 +
+      CustomMessage('CleanupPreviousInstall') + #13#10 + DetectedInstallDir;
   end
   else
     PageSubCaption :=
@@ -354,7 +398,7 @@ begin
       CustomMessage('CleanupNoOldInstall');
 
   CleanupPage := CreateInputOptionPage(
-    wpSelectDir,
+    OldInstallDirPage.ID,
     CustomMessage('CleanupPageTitle'),
     CustomMessage('CleanupPageDescription'),
     PageSubCaption,
@@ -366,7 +410,6 @@ begin
   CleanupPage.Add(CustomMessage('CleanupPreviousInstallDir'));
   CleanupPage.Add(CustomMessage('CleanupLoginData'));
   CleanupPage.Add(CustomMessage('CleanupIntegrationData'));
-  CleanupPage.CheckListBox.ItemEnabled[2] := CanDeletePreviousInstall;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -497,6 +540,7 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
+  CleanupFailure := '';
 
   // 1. 检查并停止 OmniMixPlayerBackend 服务
   if ServiceExists('{#MyServiceName}') then
@@ -525,6 +569,7 @@ begin
 
   // 4. 执行用户在向导中明确选择的清理项
   RunOptionalCleanup();
+  Result := CleanupFailure;
 end;
 
 // ── 安装完成后创建或更新服务 ──
