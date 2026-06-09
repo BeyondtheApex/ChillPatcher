@@ -390,7 +390,7 @@ UninstallDataCorrupted=文件“%1”已损坏。无法卸载
 
 ; *** Uninstallation phase messages
 ConfirmDeleteSharedFileTitle=删除共享的文件吗？
-ConfirmDeleteSharedFile2=系统表示下列共享的文件已不有其他程序使用。您希望卸载程序删除这些共享的文件吗？%n%n如果删除这些文件，但仍有程序在使用这些文件，则这些程序可能出现异常。如果您不能确定，请选择“否”，在系统中保留这些文件以免引发问题。
+ConfirmDeleteSharedFile2=系统表示下列共享的文件已不再被其他程序使用。您希望卸载程序删除这些共享的文件吗？%n%n如果删除这些文件，但仍有程序在使用这些文件，则这些程序可能出现异常。如果您不能确定，请选择“否”，在系统中保留这些文件以免引发问题。
 SharedFileNameLabel=文件名：
 SharedFileLocationLabel=位置：
 WizardUninstalling=卸载状态

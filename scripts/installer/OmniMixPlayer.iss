@@ -67,6 +67,7 @@ english.CleanupLogPrefix=Optional cleanup:
 english.ServiceUpdateFailed=Failed to update the OmniMixPlayerBackend service path. Check the setup log or run the installer as administrator.
 english.InvalidOldInstallDir=The selected previous installation directory is not recognized as an OmniMixPlayer installation:
 english.DeleteOldInstallFailed=Failed to completely delete the previous installation directory. Close programs using this directory and try again:
+english.CleanupPathFailed=Failed to remove selected cleanup data. Close OmniMixPlayer and try again:
 chinesesimplified.CleanupPageTitle=可选清理
 chinesesimplified.CleanupPageDescription=选择需要清理的旧版 OmniMixPlayer 数据
 chinesesimplified.CleanupPageSubCaption=所有选项默认不勾选。请只选择你明确需要删除的数据。
@@ -87,6 +88,7 @@ chinesesimplified.CleanupLogPrefix=可选清理：
 chinesesimplified.ServiceUpdateFailed=OmniMixPlayerBackend 服务路径更新失败。请检查安装日志，或以管理员身份重新运行安装程序。
 chinesesimplified.InvalidOldInstallDir=所选目录不是可识别的 OmniMixPlayer 安装目录：
 chinesesimplified.DeleteOldInstallFailed=无法完整删除原安装目录。请关闭正在使用该目录的程序后重试：
+chinesesimplified.CleanupPathFailed=无法删除所选清理数据。请关闭 OmniMixPlayer 后重试：
 
 [Files]
 ; ═══ 所有可执行文件和 DLL (排除 VC 运行库，它单独处理) ═══
@@ -128,8 +130,8 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 
 [UninstallRun]
 ; 卸载前停止并删除服务
-Filename: "sc.exe"; Parameters: "stop {#MyServiceName}"; Flags: runhidden; RunOnceId: "StopOmniMixPlayerBackend"
-Filename: "sc.exe"; Parameters: "delete {#MyServiceName}"; Flags: runhidden; RunOnceId: "DeleteOmniMixPlayerBackend"
+Filename: "{sys}\sc.exe"; Parameters: "stop {#MyServiceName}"; Flags: runhidden; RunOnceId: "StopOmniMixPlayerBackend"; Check: ShouldRemoveServiceOnUninstall
+Filename: "{sys}\sc.exe"; Parameters: "delete {#MyServiceName}"; Flags: runhidden; RunOnceId: "DeleteOmniMixPlayerBackend"; Check: ShouldRemoveServiceOnUninstall
 
 ; ═════════════════════════════════════════════════════════════════════════════
 ; [Code] 部分 — Pascal 脚本
@@ -142,7 +144,7 @@ var
   OldInstallDirPage: TInputDirWizardPage;
   OldServiceDir: string;
   PreviousInstallDir: string;
-  CleanupConfirmed: Boolean;
+  ConfirmedCleanupSignature: string;
   CleanupFailure: string;
   ApprovedOldInstallDir: string;
 
@@ -220,6 +222,15 @@ begin
   Result := StripTrailingSlash(RemoveQuotes(Result));
 end;
 
+function ShouldRemoveServiceOnUninstall(): Boolean;
+begin
+  Result :=
+    CompareText(
+      ReadServiceInstallDir(),
+      StripTrailingSlash(ExpandConstant('{app}'))
+    ) = 0;
+end;
+
 function IsKnownInstallDir(const BaseDir: string): Boolean;
 var
   Normalized: string;
@@ -252,6 +263,26 @@ begin
       Log(CustomMessage('CleanupLogPrefix') + ' deleted directory ' + DirName)
     else
       Log(CustomMessage('CleanupLogPrefix') + ' failed to delete directory ' + DirName);
+  end;
+end;
+
+procedure DeleteFileRequired(const FileName: string);
+begin
+  if FileExists(FileName) and (not DeleteFile(FileName)) then
+  begin
+    Log(CustomMessage('CleanupLogPrefix') + ' failed to delete required file ' + FileName);
+    if CleanupFailure = '' then
+      CleanupFailure := CustomMessage('CleanupPathFailed') + #13#10 + FileName;
+  end;
+end;
+
+procedure DeleteTreeRequired(const DirName: string);
+begin
+  if DirExists(DirName) and (not DelTree(DirName, True, True, True)) then
+  begin
+    Log(CustomMessage('CleanupLogPrefix') + ' failed to delete required directory ' + DirName);
+    if CleanupFailure = '' then
+      CleanupFailure := CustomMessage('CleanupPathFailed') + #13#10 + DirName;
   end;
 end;
 
@@ -299,9 +330,9 @@ begin
 
   if CleanupPage.Values[3] then
   begin
-    DeleteFileLogged(ModulesDir + 'com.chillpatcher.qqmusic\data\qqmusic_cookie.json');
-    DeleteFileLogged(ModulesDir + 'com.chillpatcher.bilibili\data\bilibili_session.json');
-    DeleteFileLogged(ModulesDir + 'com.chillpatcher.spotify\data\spotify_session.json');
+    DeleteFileRequired(ModulesDir + 'com.chillpatcher.qqmusic\data\qqmusic_cookie.json');
+    DeleteFileRequired(ModulesDir + 'com.chillpatcher.bilibili\data\bilibili_session.json');
+    DeleteFileRequired(ModulesDir + 'com.chillpatcher.spotify\data\spotify_session.json');
   end;
 end;
 
@@ -348,8 +379,8 @@ begin
 
   if CleanupPage.Values[3] then
   begin
-    DeleteTreeLogged(ExpandConstant('{localappdata}\go-musicfox'));
-    DeleteTreeLogged(ExpandConstant('{sys}\config\systemprofile\AppData\Local\go-musicfox'));
+    DeleteTreeRequired(ExpandConstant('{localappdata}\go-musicfox'));
+    DeleteTreeRequired(ExpandConstant('{sys}\config\systemprofile\AppData\Local\go-musicfox'));
   end;
 
   if CleanupPage.Values[4] then
@@ -361,7 +392,7 @@ var
   PageSubCaption: string;
   DetectedInstallDir: string;
 begin
-  CleanupConfirmed := False;
+  ConfirmedCleanupSignature := '';
   CleanupFailure := '';
   ApprovedOldInstallDir := '';
   OldServiceDir := ReadServiceInstallDir();
@@ -412,9 +443,24 @@ begin
   CleanupPage.Add(CustomMessage('CleanupIntegrationData'));
 end;
 
+function GetCleanupSignature(): string;
+var
+  I: Integer;
+begin
+  Result := Lowercase(StripTrailingSlash(OldInstallDirPage.Values[0])) + '|';
+  for I := 0 to 4 do
+  begin
+    if CleanupPage.Values[I] then
+      Result := Result + '1'
+    else
+      Result := Result + '0';
+  end;
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   HasDestructiveSelection: Boolean;
+  CleanupSignature: string;
 begin
   Result := True;
   if CurPageID <> CleanupPage.ID then
@@ -426,7 +472,9 @@ begin
     CleanupPage.Values[3] or
     CleanupPage.Values[4];
 
-  if HasDestructiveSelection and not CleanupConfirmed then
+  CleanupSignature := GetCleanupSignature();
+  if HasDestructiveSelection and
+     (CompareText(CleanupSignature, ConfirmedCleanupSignature) <> 0) then
   begin
     Result :=
       MsgBox(
@@ -434,7 +482,10 @@ begin
         mbConfirmation,
         MB_YESNO
       ) = IDYES;
-    CleanupConfirmed := Result;
+    if Result then
+      ConfirmedCleanupSignature := CleanupSignature
+    else
+      ConfirmedCleanupSignature := '';
   end;
 end;
 
@@ -482,7 +533,7 @@ function ServiceExists(ServiceName: string): Boolean;
 var
   ResultCode: Integer;
 begin
-  Exec('sc.exe', 'query "' + ServiceName + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\sc.exe'), 'query "' + ServiceName + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := (ResultCode = 0);
 end;
 
@@ -497,7 +548,7 @@ begin
   begin
     Result :=
       Exec(
-        'sc.exe',
+        ExpandConstant('{sys}\sc.exe'),
         'stop "' + ServiceName + '"',
         '',
         SW_HIDE,
@@ -516,7 +567,8 @@ var
 begin
   TempFile := ExpandConstant('{tmp}\process_check.txt');
   // 使用 tasklist 检查进程
-  Exec('cmd.exe', '/c tasklist /FI "IMAGENAME eq ' + ProcName + '" /NH > "' + TempFile + '"',
+  Exec(ExpandConstant('{cmd}'), '/c ""' + ExpandConstant('{sys}\tasklist.exe') +
+       '" /FI "IMAGENAME eq ' + ProcName + '" /NH > "' + TempFile + '""',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := FileExists(TempFile) and (Pos(ProcName, GetFileContents(TempFile)) > 0);
   if FileExists(TempFile) then
@@ -530,7 +582,7 @@ var
 begin
   if IsProcessRunning(ProcName) then
   begin
-    Exec('taskkill', '/F /IM "' + ProcName + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM "' + ProcName + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     // 等待进程退出
     Sleep(2000);
   end;
@@ -587,7 +639,7 @@ begin
     begin
       ServiceUpdated :=
         Exec(
-          'sc.exe',
+          ExpandConstant('{sys}\sc.exe'),
           'config "{#MyServiceName}" binPath= "' + BackendPath + '" start= demand',
           '',
           SW_HIDE,
@@ -601,7 +653,7 @@ begin
     begin
       ServiceUpdated :=
         Exec(
-          'sc.exe',
+          ExpandConstant('{sys}\sc.exe'),
           'create "{#MyServiceName}" binPath= "' + BackendPath + '" start= demand',
           '',
           SW_HIDE,
@@ -615,7 +667,7 @@ begin
     if ServiceUpdated then
     begin
       // 配置 DACL：允许 Authenticated Users (AU) 无提权启停服务
-      Exec('sc.exe', 'sdset {#MyServiceName} D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)(A;;CCDCRPWP;;;AU)',
+      Exec(ExpandConstant('{sys}\sc.exe'), 'sdset {#MyServiceName} D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)(A;;CCDCRPWP;;;AU)',
           '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Log('服务 DACL 配置完成');
     end
