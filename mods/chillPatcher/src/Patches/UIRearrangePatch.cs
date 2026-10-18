@@ -241,6 +241,11 @@ namespace ChillPatcher.Patches
                 // 8. 移动 IconMusicPlaylist_Button 到 UI_FacilityMusic 上方
                 MoveMusicPlaylistButton(centerIcons);
 
+                // 9. 启动 TopIcons / RightIcons 自动避让（issue #98）
+                // 追加的 4 个按钮会让 TopIcons 列变长，底端压到 RightIcons 的「隐藏UI」上；
+                // 监视器在 UI 激活后测量两列世界矩形并持续纠正，全屏/窗口切换也不会再重叠。
+                TopIconsAutoFit.EnsureWatcher();
+
                 _hasRearranged = true;
                 Logger.LogInfo("UI 重排列完成");
             }
